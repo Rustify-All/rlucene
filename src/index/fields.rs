@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::index::terms::Terms;
+use crate::index::terms::{Either2Terms, Terms};
 use crate::util::error::lucene_error::Result;
 /// Provides a [`Terms`] index for fields that have it, and lists which fields
 /// do.
@@ -40,3 +40,78 @@ pub trait Fields {
     /// is unknown. If >= 0, [`iterator`](Self::iterator) will return as many field names.
     fn size(&self) -> Result<i32>;
 }
+
+/// Iterator used by [`Either2Fields`].
+pub enum Either2FieldIter<'a, A, B>
+where
+    A: Iterator<Item = &'a String>,
+    B: Iterator<Item = &'a String>,
+{
+    A(A),
+    B(B),
+}
+
+impl<'a, A, B> Iterator for Either2FieldIter<'a, A, B>
+where
+    A: Iterator<Item = &'a String>,
+    B: Iterator<Item = &'a String>,
+{
+    type Item = &'a String;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Either2FieldIter::A(it) => it.next(),
+            Either2FieldIter::B(it) => it.next(),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            Either2FieldIter::A(it) => it.size_hint(),
+            Either2FieldIter::B(it) => it.size_hint(),
+        }
+    }
+}
+
+macro_rules! either_fields {
+    ($vis:vis $name:ident => { fi: $fi:ident, te: $te:ident } { $( $Variant:ident : $T:ident ),+ $(,)? }) => {
+        $vis enum $name<$( $T ),+> {
+            $( $Variant($T), )+
+        }
+
+        impl<$( $T ),+> Fields for $name<$( $T ),+>
+        where
+            $( $T: Fields ),+
+        {
+            type FieldIter<'a> = $fi<'a, $( <$T as Fields>::FieldIter<'a> ),+>
+            where
+                $( $T: 'a ),+;
+            type Terms = $te<$( <$T as Fields>::Terms ),+>;
+
+            fn iterator(&self) -> Self::FieldIter<'_> {
+                match self {
+                    $( Self::$Variant(inner) => $fi::$Variant(inner.iterator()), )+
+                }
+            }
+
+            fn terms(&self, field: &str) -> Result<Option<Self::Terms>> {
+                match self {
+                    $( Self::$Variant(inner) => {
+                        let terms = inner.terms(field)?;
+                        Ok(terms.map($te::$Variant))
+                    } ),+
+                }
+            }
+
+            fn size(&self) -> Result<i32> {
+                match self { $( Self::$Variant(inner) => inner.size(), )+ }
+            }
+        }
+    };
+}
+
+either_fields!(
+    pub Either2Fields => { fi: Either2FieldIter, te: Either2Terms }
+    { A: A, B: B }
+);
+
