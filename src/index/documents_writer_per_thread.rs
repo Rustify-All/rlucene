@@ -714,13 +714,16 @@ where
         })();
 
         self.maybe_abort("flush", flush_notifications)?;
-        self.has_flushed.set(true);
+        self
+            .has_flushed
+            .set(true)
+            .map_err(|_| LuceneError::illegal_state("flush already called"))?;
         match &result {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(_e) => {
                 // TODO Lucene 没有实现clone
                 self.on_aborting_exception(LuceneError::illegal_state(""))
-            },
+            }
         }
         result
     }
