@@ -65,15 +65,15 @@ fn check_uncommitted() {
     if stdout.trim().is_empty() {
         println!("✅ ✅ ✅ Working directory clean. All changes committed.");
     } else {
-        eprintln!(
-            "❌ ❌ ❌ Uncommitted changes detected after code check. Please commit your work again."
+        log(
+            "❌ ❌ ❌ Uncommitted changes detected after code check. Please commit your work again.",
         );
-        eprintln!("{}", stdout);
+        log(&stdout);
         let diff = Command::new("git")
             .args(["diff"])
             .output()
             .expect("failed to execute git diff");
-        eprintln!("{}", String::from_utf8_lossy(&diff.stdout));
+        log(&String::from_utf8_lossy(&diff.stdout));
         process::exit(1);
     }
     log("\x1b[1;32mFinished uncommitted changes\x1b[0m");
@@ -137,7 +137,7 @@ fn license_check() {
     let license_path = find_file(&xtask_dir, "LICENSE_HEADER");
     let license_header_path: String = license_path.as_ref().unwrap().to_str().unwrap().to_string();
     if license_path.is_none() {
-        eprintln!("LICENSE_HEADER file not found: LICENSE_HEADER");
+        log("LICENSE_HEADER file not found: LICENSE_HEADER");
         process::exit(1);
     }
 
@@ -159,10 +159,10 @@ fn license_check() {
     if src_valid && libs_valid && xtask_valid && examples_valid {
         log("\x1b[1;32m✅ ✅ ✅ All files have the correct license header\x1b[0m");
     } else {
-        eprintln!(
+        log(&format!(
             "❌ ❌ ❌ License check failed: you should copy the correct license header from \x1b[31m{}\x1b[0m",
             license_header_path
-        );
+        ));
         process::exit(1);
     }
 }
@@ -176,8 +176,8 @@ fn main() {
         Some("check-uncommitted") => check_uncommitted(),
         Some("license-check") => license_check(),
         _ => {
-            eprintln!(
-                "Available commands: tidy, commit, ci, check-uncommitted, check-rust-version, license-check"
+            log(
+                "Available commands: tidy, commit, ci, check-uncommitted, check-rust-version, license-check",
             );
             process::exit(1);
         },
