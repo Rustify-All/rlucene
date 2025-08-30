@@ -14,6 +14,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-pub(crate) mod commit;
-pub(crate) mod license;
-pub(crate) mod tidy;
+use crate::{check_uncommitted, log, run_cargo};
+
+pub(crate) fn run() {
+    super::tidy::run();
+    check_uncommitted();
+    log("\x1b[1;32mRunning Cargo test \x1b[0m");
+    run_cargo(&["test"]);
+    log("\x1b[1;32m✅ ✅ ✅ Finished Cargo test \x1b[0m");
+    log("\x1b[1;32m✅ ✅ ✅ Finished Cargo commit\x1b[0m");
+}

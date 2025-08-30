@@ -40,7 +40,7 @@ fn find_file(dir: &Path, file_name: &str) -> Option<PathBuf> {
     None
 }
 
-fn run_cargo(args: &[&str]) {
+pub(crate) fn run_cargo(args: &[&str]) {
     let status = Command::new("cargo")
         .args(args)
         .status()
@@ -50,12 +50,12 @@ fn run_cargo(args: &[&str]) {
     }
 }
 
-fn log(msg: &str) {
+pub(crate) fn log(msg: &str) {
     let now = Local::now();
     eprintln!("[{}] {}", now.format("%Y-%m-%d %H:%M:%S"), msg);
 }
 /// Check if there are uncommitted changes.
-fn check_uncommitted() {
+pub(crate) fn check_uncommitted() {
     log("\x1b[1;32mRunning uncommitted changes\x1b[0m");
     let output = Command::new("git")
         .args(["status", "--porcelain"])
@@ -79,46 +79,9 @@ fn check_uncommitted() {
     log("\x1b[1;32mFinished uncommitted changes\x1b[0m");
 }
 
-/// format code
-fn tidy() {
-    license_check();
-    log("\x1b[1;32mRunning Cargo clippy \x1b[0m");
-    run_cargo(&[
-        "clippy",
-        "--fix",
-        "--all-targets",
-        "--all-features",
-        "--allow-dirty",
-        "--allow-staged",
-    ]);
-    log("\x1b[1;32mFinished Cargo clippy \x1b[0m");
-    log("\x1b[1;32mRunning Cargo fix\x1b[0m");
-    run_cargo(&[
-        "fix",
-        "--all-targets",
-        "--all-features",
-        "--allow-dirty",
-        "--allow-staged",
-    ]);
-    log("\x1b[1;32mFinished Cargo fix\x1b[0m");
-    log("\x1b[1;32mRunning Cargo fmt \x1b[0m");
-    run_cargo(&["fmt"]);
-    log("\x1b[1;32mFinished Cargo fmt \x1b[0m");
-    log("\x1b[1;32m✅ ✅ ✅ Finished Cargo tidy\x1b[0m");
-}
-
-/// Before submitting a PR, run this command to format and test the code.
-fn commit() {
-    tidy();
-    check_uncommitted();
-    log("\x1b[1;32mRunning Cargo test \x1b[0m");
-    run_cargo(&["test"]);
-    log("\x1b[1;32m✅ ✅ ✅ Finished Cargo test \x1b[0m");
-    log("\x1b[1;32m✅ ✅ ✅ Finished Cargo commit\x1b[0m");
-}
 /// CI task for Github actions
 fn ci() {
-    tidy();
+    tasks::tidy::run();
     check_uncommitted();
     log("\x1b[1;32mRunning Cargo test \x1b[0m");
     run_cargo(&[
@@ -130,7 +93,7 @@ fn ci() {
     log("\x1b[1;32m✅ ✅ ✅ Finished Cargo test \x1b[0m");
 }
 
-fn license_check() {
+pub(crate) fn license_check() {
     let project_dir = env::current_dir().unwrap();
     let xtask_dir = project_dir.join("xtask");
 
@@ -170,8 +133,8 @@ fn license_check() {
 fn main() {
     let mut args = env::args().skip(1);
     match args.next().as_deref() {
-        Some("tidy") => tidy(),
-        Some("commit") => commit(),
+        Some("tidy") => tasks::tidy::run(),
+        Some("commit") => tasks::commit::run(),
         Some("ci") => ci(),
         Some("check-uncommitted") => check_uncommitted(),
         Some("license-check") => license_check(),

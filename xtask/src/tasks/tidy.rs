@@ -14,6 +14,31 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-pub(crate) mod commit;
-pub(crate) mod license;
-pub(crate) mod tidy;
+use crate::{license_check, log, run_cargo};
+
+pub(crate) fn run() {
+    license_check();
+    log("\x1b[1;32mRunning Cargo clippy \x1b[0m");
+    run_cargo(&[
+        "clippy",
+        "--fix",
+        "--all-targets",
+        "--all-features",
+        "--allow-dirty",
+        "--allow-staged",
+    ]);
+    log("\x1b[1;32mFinished Cargo clippy \x1b[0m");
+    log("\x1b[1;32mRunning Cargo fix\x1b[0m");
+    run_cargo(&[
+        "fix",
+        "--all-targets",
+        "--all-features",
+        "--allow-dirty",
+        "--allow-staged",
+    ]);
+    log("\x1b[1;32mFinished Cargo fix\x1b[0m");
+    log("\x1b[1;32mRunning Cargo fmt \x1b[0m");
+    run_cargo(&["fmt"]);
+    log("\x1b[1;32mFinished Cargo fmt \x1b[0m");
+    log("\x1b[1;32m✅ ✅ ✅ Finished Cargo tidy\x1b[0m");
+}
