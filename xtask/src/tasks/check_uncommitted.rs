@@ -14,11 +14,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::log;
+use crate::{LogColor, colorize, log};
 use std::process::{self, Command};
 
 pub(crate) fn run() {
-    log("\x1b[1;32mRunning uncommitted changes\x1b[0m");
+    log(&colorize(
+        "Running uncommitted changes",
+        LogColor::Green,
+        true,
+    ));
     let output = Command::new("git")
         .args(["status", "--porcelain"])
         .output()
@@ -38,5 +42,9 @@ pub(crate) fn run() {
         log(&String::from_utf8_lossy(&diff.stdout));
         process::exit(1);
     }
-    log("\x1b[1;32mFinished uncommitted changes\x1b[0m");
+    log(&colorize(
+        "Finished uncommitted changes",
+        LogColor::Green,
+        true,
+    ));
 }

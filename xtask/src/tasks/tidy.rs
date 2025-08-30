@@ -15,11 +15,11 @@
  * limitations under the License.
  */
 use crate::tasks::license::license_check;
-use crate::{log, run_cargo};
+use crate::{LogColor, colorize, log, run_cargo};
 
 pub(crate) fn run() {
     license_check::run();
-    log("\x1b[1;32mRunning Cargo clippy \x1b[0m");
+    log(&colorize("Running Cargo clippy ", LogColor::Green, true));
     run_cargo(&[
         "clippy",
         "--fix",
@@ -28,8 +28,8 @@ pub(crate) fn run() {
         "--allow-dirty",
         "--allow-staged",
     ]);
-    log("\x1b[1;32mFinished Cargo clippy \x1b[0m");
-    log("\x1b[1;32mRunning Cargo fix\x1b[0m");
+    log(&colorize("Finished Cargo clippy ", LogColor::Green, true));
+    log(&colorize("Running Cargo fix", LogColor::Green, true));
     run_cargo(&[
         "fix",
         "--all-targets",
@@ -37,9 +37,13 @@ pub(crate) fn run() {
         "--allow-dirty",
         "--allow-staged",
     ]);
-    log("\x1b[1;32mFinished Cargo fix\x1b[0m");
-    log("\x1b[1;32mRunning Cargo fmt \x1b[0m");
+    log(&colorize("Finished Cargo fix", LogColor::Green, true));
+    log(&colorize("Running Cargo fmt ", LogColor::Green, true));
     run_cargo(&["fmt"]);
-    log("\x1b[1;32mFinished Cargo fmt \x1b[0m");
-    log("\x1b[1;32m✅ ✅ ✅ Finished Cargo tidy\x1b[0m");
+    log(&colorize("Finished Cargo fmt ", LogColor::Green, true));
+    log(&colorize(
+        "✅ ✅ ✅ Finished Cargo tidy",
+        LogColor::Green,
+        true,
+    ));
 }

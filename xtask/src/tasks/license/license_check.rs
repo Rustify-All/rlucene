@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::log;
+use crate::{LogColor, colorize, log};
 use std::path::{Path, PathBuf};
 use std::{env, fs, process};
 
@@ -41,11 +41,15 @@ pub(crate) fn run() {
     let examples_valid = check_licenses_in_dir(&examples_dir, &license_text);
 
     if src_valid && libs_valid && xtask_valid && examples_valid {
-        log("\x1b[1;32m✅ ✅ ✅ All files have the correct license header\x1b[0m");
+        log(&colorize(
+            "✅ ✅ ✅ All files have the correct license header",
+            LogColor::Green,
+            true,
+        ));
     } else {
         log(&format!(
-            "❌ ❌ ❌ License check failed: you should copy the correct license header from \x1b[31m{}\x1b[0m",
-            license_header_path
+            "❌ ❌ ❌ License check failed: you should copy the correct license header from {}",
+            colorize(&license_header_path, LogColor::Red, false)
         ));
         process::exit(1);
     }
@@ -87,8 +91,8 @@ pub(crate) fn run() {
                 && !check_license_in_file(&path, license_text)
             {
                 println!(
-                    "Missing or incorrect license in file: \x1b[31m{}\x1b[0m",
-                    path.display()
+                    "Missing or incorrect license in file: {}",
+                    colorize(&path.display().to_string(), LogColor::Red, false)
                 );
                 all_valid = false;
             }

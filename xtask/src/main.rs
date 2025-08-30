@@ -33,6 +33,29 @@ pub(crate) fn run_cargo(args: &[&str]) {
     }
 }
 
+pub(crate) enum LogColor {
+    Green,
+    Red,
+}
+
+impl LogColor {
+    fn code(self) -> u8 {
+        match self {
+            LogColor::Green => 32,
+            LogColor::Red => 31,
+        }
+    }
+}
+
+pub(crate) fn colorize(msg: &str, color: LogColor, bold: bool) -> String {
+    let code = color.code();
+    if bold {
+        format!("\x1b[1;{code}m{msg}\x1b[0m")
+    } else {
+        format!("\x1b[{code}m{msg}\x1b[0m")
+    }
+}
+
 pub(crate) fn log(msg: &str) {
     let now = Local::now();
     eprintln!("[{}] {}", now.format("%Y-%m-%d %H:%M:%S"), msg);
