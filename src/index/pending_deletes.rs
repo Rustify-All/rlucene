@@ -98,46 +98,32 @@ impl PendingDeletes {
         }
     }
     pub(crate) fn get_mutable_bits(&mut self) -> Result<&mut FixedBitSet> {
-        // if we pull mutable bits but we haven't been initialized something is completely off.
-        // this means we receive deletes without having the bitset that is on-disk ready to be cloned
+        // If we pull mutable bits but we haven't been initialized something is completely off.
         assert!(
             self.live_docs_initialized,
-            "can't delete if liveDocs are not initialized"
+            "can't delete if liveDocs are not initialized",
         );
         if !self.writeable_live_docs {
             self.writeable_live_docs = true;
-            self.live_docs = match &self.live_docs {
-                Some(bits) => match bits {
-                    Either2Bits::A(b) => {
-                        let v = b.copy_of();
-                        Some(Either2Bits::B(Either2Bits::B(v)))
-                    },
-                    Either2Bits::B(bs) => match bs {
-                        Either2Bits::A(fb) => {
-                            let v = fb.copy_of();
-                            Some(Either2Bits::B(Either2Bits::B(v)))
-                        },
-                        Either2Bits::B(_) => {
-                            return Err(LuceneError::illegal_state("should not here"));
-                        },
-                    },
+            self.live_docs = Some(match self.live_docs.take() {
+                Some(Either2Bits::A(b)) => Either2Bits::B(Either2Bits::B(b.copy_of())),
+                Some(Either2Bits::B(Either2Bits::A(fb))) => {
+                    Either2Bits::B(Either2Bits::B(fb.copy_of()))
+                },
+                Some(Either2Bits::B(Either2Bits::B(_))) => {
+                    return Err(LuceneError::illegal_state("should not be here"));
                 },
                 None => {
                     let mut v = FixedBitSet::new(self.max_doc);
                     v.set_with_range(0, self.max_doc);
-                    Some(Either2Bits::B(Either2Bits::B(v)))
+                    Either2Bits::B(Either2Bits::B(v))
                 },
-            }
+            });
         }
-        match self.live_docs.as_mut().unwrap() {
-            Either2Bits::B(bs) => match bs {
-                Either2Bits::A(_) => Err(LuceneError::illegal_state(
-                    "live_docs should be FixedBitSet ",
-                )),
-                Either2Bits::B(v) => Ok(v),
-            },
-            Either2Bits::A(_) => Err(LuceneError::illegal_state(
-                "live_docs should be FixedBitSet ",
+        match self.live_docs.as_mut() {
+            Some(Either2Bits::B(Either2Bits::B(v))) => Ok(v),
+            _ => Err(LuceneError::illegal_state(
+                "live_docs should be FixedBitSet",
             )),
         }
     }
@@ -208,26 +194,21 @@ impl PendingDeletesBase for PendingDeletes {
     fn get_live_docs(&mut self) -> Option<DocBits> {
         // Prevent modifications to the returned live docs
         self.writeable_live_docs = false;
-        match self.live_docs.take() {
-            Some(ref mut bits) => match bits {
-                Either2Bits::A(b) => {
-                    self.live_docs = Some(DocBits::A(b.clone()));
-                    Some(Either2Bits::A(b.clone()))
-                },
-                Either2Bits::B(b) => match b {
-                    Either2Bits::A(fb) => {
-                        self.live_docs = Some(DocBits::B(Either2Bits::A(fb.clone())));
-                        Some(Either2Bits::B(Either2Bits::A(fb.clone())))
-                    },
-                    Either2Bits::B(fbs) => {
-                        let fix_bit = Arc::new(std::mem::take(fbs).to_read_only_bits());
-                        self.live_docs = Some(DocBits::B(Either2Bits::A(fix_bit.clone())));
-                        Some(Either2Bits::B(Either2Bits::A(fix_bit)))
-                    },
-                },
+        self.live_docs.take().map(|bits| match bits {
+            Either2Bits::A(b) => {
+                self.live_docs = Some(DocBits::A(b.clone()));
+                Either2Bits::A(b)
             },
-            None => None,
-        }
+            Either2Bits::B(Either2Bits::A(fb)) => {
+                self.live_docs = Some(DocBits::B(Either2Bits::A(fb.clone())));
+                Either2Bits::B(Either2Bits::A(fb))
+            },
+            Either2Bits::B(Either2Bits::B(fbs)) => {
+                let fix_bit = Arc::new(fbs.to_read_only_bits());
+                self.live_docs = Some(DocBits::B(Either2Bits::A(fix_bit.clone())));
+                Either2Bits::B(Either2Bits::A(fix_bit))
+            },
+        })
     }
 
     fn num_pending_deletes(&self) -> i32 {
