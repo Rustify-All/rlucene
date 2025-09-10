@@ -304,7 +304,7 @@ where
         let mut v = self.step1(self.input_mode, Some(reuse))?;
         let (fst, _, _) = self.get_fst(seed)?;
         let padding_fst = unwrap_fn(fst.unwrap());
-        reuse = std::mem::replace(&mut v.base.as_mut().unwrap().fst, padding_fst);
+        reuse = std::mem::replace(&mut v.base.fst, padding_fst);
 
         // init terms_map
         let mut terms_map = HashMap::new();
@@ -316,7 +316,7 @@ where
         let mut v = self.step2(self.input_mode, Some(reuse), &terms_map)?;
         let (fst, _, _) = self.get_fst(seed)?;
         let padding_fst = unwrap_fn(fst.unwrap());
-        reuse = std::mem::replace(&mut v.base.as_mut().unwrap().fst, padding_fst);
+        reuse = std::mem::replace(&mut v.base.fst, padding_fst);
 
         // step 3
         let num = at_least(&mut self.random, 100);
@@ -328,7 +328,7 @@ where
             let mut v = self.step3(self.input_mode, fst_enum, &terms_map)?;
             let (fst, _, _) = self.get_fst(seed)?;
             let padding_fst = unwrap_fn(fst.unwrap());
-            reuse = std::mem::replace(&mut v.base.as_mut().unwrap().fst, padding_fst);
+            reuse = std::mem::replace(&mut v.base.fst, padding_fst);
         }
 
         Ok(())
@@ -666,8 +666,7 @@ where
 
         for pair in &self.pairs {
             let term = &pair.input;
-            let output =
-                FSTTester::<D, R, O, S>::run(&fst_enum.base.as_mut().unwrap().fst, term, None)?;
+            let output = FSTTester::<D, R, O, S>::run(&fst_enum.base.fst, term, None)?;
             assert!(
                 output.is_some(),
                 "term {} is not accepted",
