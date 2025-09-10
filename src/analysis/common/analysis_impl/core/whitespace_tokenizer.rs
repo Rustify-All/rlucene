@@ -82,8 +82,8 @@ impl Tokenizer for WhitespaceTokenizer {
 
 impl TokenStream for WhitespaceTokenizer {
     fn increment_token(&mut self) -> Result<bool> {
-        let outer: &WhitespaceTokenizer = unsafe { &*(self as *const _) };
-        self.base.increment_token_with_ct(outer)
+        self.base
+            .increment_token_with(|c| !c.is_whitespace())
     }
 
     fn end(&mut self) -> Result<()> {

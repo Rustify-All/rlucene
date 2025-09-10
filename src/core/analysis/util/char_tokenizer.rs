@@ -100,9 +100,9 @@ impl CharTokenizerBase {
             tokenizer_base: TokenizerBase::new(),
         })
     }
-    pub(crate) fn increment_token_with_ct<T>(&mut self, sub: &T) -> Result<bool>
+    pub(crate) fn increment_token_with<F>(&mut self, mut is_token_char: F) -> Result<bool>
     where
-        T: CharTokenizer,
+        F: FnMut(&char) -> bool,
     {
         // TODO: clear_attributes 未实现
         // self.clear_attributes();
@@ -129,7 +129,7 @@ impl CharTokenizerBase {
             }
             let c = self.io_buffer.get_buffer()[self.buffer_index as usize];
             self.buffer_index += 1;
-            if sub.is_token_char(&c) {
+            if is_token_char(&c) {
                 if length == 0 {
                     // start of token
                     debug_assert_eq!(start, -1);
@@ -231,8 +231,8 @@ impl Tokenizer for CharTokenizerImpl {
 
 impl TokenStream for CharTokenizerImpl {
     fn increment_token(&mut self) -> Result<bool> {
-        let outer: &CharTokenizerImpl = unsafe { &*(self as *const _) };
-        self.base.increment_token_with_ct(outer)
+        let pred = self.token_char_predicate;
+        self.base.increment_token_with(|c| pred(*c as i32))
     }
 
     fn end(&mut self) -> Result<()> {
