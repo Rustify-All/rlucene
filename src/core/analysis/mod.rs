@@ -25,6 +25,7 @@ mod filtering_token_filter;
 pub mod reader;
 pub(crate) mod reusable_string_reader;
 pub mod standard;
+mod stop_filter;
 pub mod token_attributes;
 pub mod token_filter;
 pub mod token_stream;

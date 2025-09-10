@@ -96,8 +96,12 @@ impl CharTermAttribute for CharTermAttributeImpl {
         self.term_length = length
     }
 
-    fn buffer(&mut self) -> &mut [char] {
+    fn buffer_mut(&mut self) -> &mut [char] {
         &mut self.term_buffer
+    }
+
+    fn buffer(&self) -> &[char] {
+        &self.term_buffer
     }
 
     fn resize_buffer(&mut self, new_size: usize) -> &mut [char] {
@@ -155,7 +159,7 @@ impl CharTermAttribute for CharTermAttributeImpl {
             let len = other.length();
             self.resize_buffer(self.term_length + len);
             self.term_buffer
-                .copy_from(&other.buffer()[0..len], self.term_length);
+                .copy_from(&other.buffer_mut()[0..len], self.term_length);
             self.term_length += len;
             self
         } else {

@@ -36,7 +36,8 @@ pub trait CharTermAttribute: Attribute {
     /// of valid characters placed into it.
     ///
     /// **Note:** the returned slice may be larger than the valid length.
-    fn buffer(&mut self) -> &mut [char];
+    fn buffer_mut(&mut self) -> &mut [char];
+    fn buffer(&self) -> &[char];
 
     /// Grows the term buffer to at least `new_size`, preserving existing content.
     ///

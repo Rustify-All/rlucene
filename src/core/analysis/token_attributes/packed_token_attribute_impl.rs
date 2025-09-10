@@ -157,7 +157,11 @@ impl CharTermAttribute for PackedTokenAttributeImpl {
         self.base.copy_buffer(buffer, offset, length);
     }
 
-    fn buffer(&mut self) -> &mut [char] {
+    fn buffer_mut(&mut self) -> &mut [char] {
+        self.base.buffer_mut()
+    }
+
+    fn buffer(&self) -> &[char] {
         self.base.buffer()
     }
 
@@ -235,7 +239,7 @@ impl AttributeImpl for PackedTokenAttributeImpl {
 
     fn copy_to(&mut self, to: &mut Self::AttributeImpl) {
         let len = self.base.length();
-        let buf = self.base.buffer();
+        let buf = self.base.buffer_mut();
         to.base.copy_buffer(buf, 0, len);
         to.position_increment = self.position_increment;
         to.position_length = self.position_length;

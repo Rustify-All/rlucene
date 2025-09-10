@@ -27,6 +27,11 @@ impl<T> CharArrayMap<T>
 where
     T: Debug,
 {
+    /// Creates a map with enough capacity to hold `start_size` terms.
+    ///
+    /// # Arguments
+    ///
+    /// * `ignore_case` — `false` if and only if the set should be case-sensitive, otherwise `true`.
     pub fn new(ignore: bool) -> Self {
         CharArrayMap {
             ignore,

@@ -81,7 +81,13 @@ impl CharTermAttribute for Attributes {
         }
     }
 
-    fn buffer(&mut self) -> &mut [char] {
+    fn buffer_mut(&mut self) -> &mut [char] {
+        match self {
+            Attributes::PackedToken(attr) => attr.buffer_mut(),
+        }
+    }
+
+    fn buffer(&self) -> &[char] {
         match self {
             Attributes::PackedToken(attr) => attr.buffer(),
         }

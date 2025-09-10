@@ -16,54 +16,69 @@
  */
 use crate::core::analysis::token_filter::{TokenFilter, TokenFilterBase};
 use crate::core::analysis::token_stream::TokenStream;
-use crate::core::util::attribute_source::AttributeSource;
+use crate::core::util::attribute_source::{AttributeSource, Attributes};
 use crate::core::util::error::lucene_error::{LuceneError, Result};
-/// Abstract base class for `TokenFilter`s that may remove tokens.
-/// You must implement [`accept`](FilteringTokenFilter::accept) and return a boolean indicating whether the current token should be preserved.
-/// [`increment_token`](TokenStream::increment_token) uses this method to decide if a token should be passed to the caller.
-pub trait FilteringTokenFilter {
-    /// Override this method and return if the current input token should be returned by #incrementToken.
-    fn accept(&mut self) -> bool;
-}
 
-pub struct FilteringTokenFilterBase<T>
+pub struct FilteringTokenFilter<T, V>
 where
-    T: TokenFilter,
+    T: TokenStream,
+    V: FilteringTokenFilterBase,
 {
     skipped_positions: i32,
-    base: TokenFilterBase<T>,
+    pub(crate) base: TokenFilterBase<T>,
+    sub: V,
 }
-impl<T> FilteringTokenFilterBase<T>
+impl<T, V> FilteringTokenFilter<T, V>
 where
-    T: TokenFilter,
+    T: TokenStream,
+    V: FilteringTokenFilterBase,
 {
-    pub fn new(input: T) -> Self {
+    pub fn new(input: T, sub: V) -> Self {
         Self {
             skipped_positions: 0,
             base: TokenFilterBase::new(input),
+            sub,
         }
-    }
-    pub fn increment_token_with(&mut self) -> Result<bool> {
-        todo!()
     }
 }
 
-impl<T> TokenStream for FilteringTokenFilterBase<T>
+impl<T, V> TokenStream for FilteringTokenFilter<T, V>
 where
-    T: TokenFilter,
+    T: TokenStream<AttributeSource = Attributes>,
+    V: FilteringTokenFilterBase,
 {
-    fn end(&mut self) -> Result<()> {
-        self.base.end()?;
-        let att = self.base.input.get_attribute_source_mut();
-        let pos = match att.get_position_increment() {
-            Some(p) => p,
-            None => {
+    fn increment_token(&mut self) -> Result<bool> {
+        self.skipped_positions = 0;
+        {
+            let att = self.base.input.get_attribute_source_mut();
+            if att.get_position_increment().is_none() {
                 return Err(LuceneError::illegal_state(
                     "PositionIncrementAttribute is missing",
                 ));
-            },
-        };
-        att.set_position_increment(pos + self.skipped_positions)?;
+            }
+        }
+        loop {
+            if !self.base.input.increment_token()? {
+                break;
+            }
+            let att = self.base.input.get_attribute_source_mut();
+            if self.sub.accept(att) {
+                if self.skipped_positions != 0 {
+                    let new_pos = att.get_position_increment().unwrap() + self.skipped_positions;
+                    att.set_position_increment(new_pos)?;
+                }
+                return Ok(true);
+            }
+            self.skipped_positions += att.get_position_increment().unwrap();
+        }
+        Ok(false)
+    }
+
+    fn end(&mut self) -> Result<()> {
+        self.base.end()?;
+        let att = self.base.input.get_attribute_source_mut();
+        // we can safely unwrap
+        att.set_position_increment(att.get_position_increment().unwrap() + self.skipped_positions)?;
         Ok(())
     }
 
@@ -73,7 +88,11 @@ where
         Ok(())
     }
 
-    type AttributeSource = <T as TokenStream>::AttributeSource;
+    fn close(&mut self) -> Result<()> {
+        self.base.close()
+    }
+
+    type AttributeSource = Attributes;
 
     fn get_attribute_source(&self) -> &Self::AttributeSource {
         self.base.input.get_attribute_source()
@@ -84,4 +103,17 @@ where
     }
 }
 
-impl<T> TokenFilter for FilteringTokenFilterBase<T> where T: TokenFilter {}
+impl<T, V> TokenFilter for FilteringTokenFilter<T, V>
+where
+    T: TokenStream<AttributeSource = Attributes>,
+    V: FilteringTokenFilterBase,
+{
+}
+
+/// Abstract base class for `TokenFilter`s that may remove tokens.
+/// You must implement [`accept`](FilteringTokenFilterBase::accept) and return a boolean indicating whether the current token should be preserved.
+/// [`increment_token`](TokenStream::increment_token) uses this method to decide if a token should be passed to the caller.
+pub trait FilteringTokenFilterBase {
+    /// Override this method and return if the current input token should be returned by #incrementToken.
+    fn accept(&self, att: &Attributes) -> bool;
+}
