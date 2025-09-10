@@ -159,7 +159,7 @@ impl CharTermAttribute for CharTermAttributeImpl {
             let len = other.length();
             self.resize_buffer(self.term_length + len);
             self.term_buffer
-                .copy_from(&other.buffer_mut()[0..len], self.term_length);
+                .copy_from(&other.buffer()[0..len], self.term_length);
             self.term_length += len;
             self
         } else {
