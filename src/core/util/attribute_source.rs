@@ -182,6 +182,12 @@ impl AttributeSource for Attributes {
         }
     }
 
+    fn set_position_increment(&mut self, position_increment: i32) -> Result<()> {
+        match self {
+            Attributes::PackedToken(attr) => attr.set_position_increment(position_increment),
+        }
+    }
+
     fn get_payload(&self) -> Option<&BytesRef<Vec<u8>>> {
         match self {
             Attributes::PackedToken(_) => None,
