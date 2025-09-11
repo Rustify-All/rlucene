@@ -277,6 +277,13 @@ where
         }
     }
 
+    fn set_position_increment(&mut self, _position_increment: i32) -> Result<()> {
+        match self {
+            Either2AttributeSource::A(t) => t.set_position_increment(_position_increment),
+            Either2AttributeSource::B(s) => s.set_position_increment(_position_increment),
+        }
+    }
+
     fn get_payload(&self) -> Option<&BytesRef<Vec<u8>>> {
         match self {
             Either2AttributeSource::A(t) => t.get_payload(),
