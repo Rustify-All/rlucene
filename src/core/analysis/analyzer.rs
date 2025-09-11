@@ -109,7 +109,7 @@ pub trait Analyzer {
         let mut reader =
             self.init_reader_for_normalization(field_name, ReaderEnum::ReusedString(str_reader));
 
-        let mut buf = [0 as char; 64];
+        let mut buf = ['\0'; 64];
         let mut filtered = String::new();
         loop {
             let len = buf.len();
