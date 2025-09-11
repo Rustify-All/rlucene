@@ -21,7 +21,7 @@ use crate::core::util::error::lucene_error::{LuceneError, Result};
 
 pub struct FilteringTokenFilter<T, V>
 where
-    T: TokenStream<AttributeSource = Attributes>,
+    T: TokenStream,
     V: FilteringTokenFilterBase,
 {
     skipped_positions: i32,
@@ -30,7 +30,7 @@ where
 }
 impl<T, V> FilteringTokenFilter<T, V>
 where
-    T: TokenStream<AttributeSource = Attributes>,
+    T: TokenStream,
     V: FilteringTokenFilterBase,
 {
     pub fn new(input: T, sub: V) -> Self {
@@ -44,7 +44,7 @@ where
 
 impl<T, V> Drop for FilteringTokenFilter<T, V>
 where
-    T: TokenStream<AttributeSource = Attributes>,
+    T: TokenStream,
     V: FilteringTokenFilterBase,
 {
     fn drop(&mut self) {
@@ -54,7 +54,7 @@ where
 
 impl<T, V> TokenStream for FilteringTokenFilter<T, V>
 where
-    T: TokenStream<AttributeSource = Attributes>,
+    T: TokenStream,
     V: FilteringTokenFilterBase,
 {
     fn increment_token(&mut self) -> Result<bool> {
@@ -102,20 +102,19 @@ where
         self.base.close()
     }
 
-    type AttributeSource = Attributes;
 
-    fn get_attribute_source(&self) -> &Self::AttributeSource {
+    fn get_attribute_source(&self) -> &Attributes {
         self.base.input.get_attribute_source()
     }
 
-    fn get_attribute_source_mut(&mut self) -> &mut Self::AttributeSource {
+    fn get_attribute_source_mut(&mut self) -> &mut Attributes {
         self.base.input.get_attribute_source_mut()
     }
 }
 
 impl<T, V> TokenFilter for FilteringTokenFilter<T, V>
 where
-    T: TokenStream<AttributeSource = Attributes>,
+    T: TokenStream,
     V: FilteringTokenFilterBase,
 {
 }

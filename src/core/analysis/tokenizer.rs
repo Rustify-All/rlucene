@@ -80,13 +80,12 @@ impl TokenStream for TokenizerBase {
         Ok(())
     }
 
-    type AttributeSource = Attributes;
 
-    fn get_attribute_source(&self) -> &Self::AttributeSource {
+    fn get_attribute_source(&self) -> &Attributes {
         unreachable!("should not be called")
     }
 
-    fn get_attribute_source_mut(&mut self) -> &mut Self::AttributeSource {
+    fn get_attribute_source_mut(&mut self) -> &mut Attributes {
         unreachable!("should not be called")
     }
 

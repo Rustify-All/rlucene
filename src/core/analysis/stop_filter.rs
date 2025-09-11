@@ -28,7 +28,7 @@ pub struct StopFilter {
 impl StopFilter {
     pub fn new<T>(input: T, stop_words: CharArraySet) -> FilteringTokenFilter<T, StopFilter>
     where
-        T: TokenStream<AttributeSource = Attributes>,
+        T: TokenStream,
     {
         let v = StopFilter { stop_words };
         FilteringTokenFilter::new(input, v)

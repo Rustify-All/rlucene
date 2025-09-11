@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 use crate::core::analysis::token_stream::TokenStream;
+use crate::core::util::attribute_source::Attributes;
 use crate::core::util::dummy::dummy_attribute_source::DummyAttributeSource;
 
 #[derive(Debug)]
@@ -45,13 +46,12 @@ impl TokenStream for DummyTokenStream {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    type AttributeSource = DummyAttributeSource;
 
-    fn get_attribute_source(&self) -> &Self::AttributeSource {
+    fn get_attribute_source(&self) -> &Attributes {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    fn get_attribute_source_mut(&mut self) -> &mut Self::AttributeSource {
+    fn get_attribute_source_mut(&mut self) -> &mut Attributes {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 }

@@ -488,16 +488,16 @@ impl IndexableField for Field {
         &self.indexable_field_type
     }
 
-    type TokenStream = DummyTokenStream;
+    type TokenStream = Either2TokenStream<BinaryTokenStream, StringTokenStream>;
 
     fn token_stream<A>(
         &self,
-        _analyzer: &A,
-        _reuse: Option<Self::TokenStream>,
-    ) -> Result<Option<Self::TokenStream>>
+        analyzer: &mut A,
+    ) -> Result<Option<Either2TokenStream<A::TokenStream, Self::TokenStream>>>
     where
         A: Analyzer,
     {
+        let v = analyzer.token_stream("","")?;
         todo!()
     }
 
@@ -722,13 +722,12 @@ impl TokenStream for BinaryTokenStream {
         Ok(())
     }
 
-    type AttributeSource = Attributes;
 
-    fn get_attribute_source(&self) -> &Self::AttributeSource {
+    fn get_attribute_source(&self) -> &Attributes {
         &self.att
     }
 
-    fn get_attribute_source_mut(&mut self) -> &mut Self::AttributeSource {
+    fn get_attribute_source_mut(&mut self) -> &mut Attributes {
         &mut self.att
     }
 }
@@ -788,13 +787,12 @@ impl TokenStream for StringTokenStream {
         Ok(())
     }
 
-    type AttributeSource = Attributes;
 
-    fn get_attribute_source(&self) -> &Self::AttributeSource {
+    fn get_attribute_source(&self) -> &Attributes {
         &self.att
     }
 
-    fn get_attribute_source_mut(&mut self) -> &mut Self::AttributeSource {
+    fn get_attribute_source_mut(&mut self) -> &mut Attributes {
         &mut self.att
     }
 }

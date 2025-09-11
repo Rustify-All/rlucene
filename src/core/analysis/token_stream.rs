@@ -36,9 +36,8 @@ pub trait TokenStream {
     fn close(&mut self) -> Result<()> {
         Ok(())
     }
-    type AttributeSource: AttributeSource;
-    fn get_attribute_source(&self) -> &Self::AttributeSource;
-    fn get_attribute_source_mut(&mut self) -> &mut Self::AttributeSource;
+    fn get_attribute_source(&self) -> &Attributes;
+    fn get_attribute_source_mut(&mut self) -> &mut Attributes;
     fn set_reader(&mut self, _input: ReaderEnum) -> Result<()> {
         Ok(())
     }
@@ -54,8 +53,8 @@ pub enum Either2TokenStream<A, B> {
 }
 impl<A, B> TokenStream for Either2TokenStream<A, B>
 where
-    A: TokenStream<AttributeSource = Attributes>,
-    B: TokenStream<AttributeSource = Attributes>,
+    A: TokenStream,
+    B: TokenStream,
 {
     fn increment_token(&mut self) -> Result<bool> {
         match self {
@@ -99,16 +98,14 @@ where
         }
     }
 
-    type AttributeSource = Attributes;
-
-    fn get_attribute_source(&self) -> &Self::AttributeSource {
+    fn get_attribute_source(&self) -> &Attributes {
         match self {
             Either2TokenStream::A(a) => a.get_attribute_source(),
             Either2TokenStream::B(b) => b.get_attribute_source(),
         }
     }
 
-    fn get_attribute_source_mut(&mut self) -> &mut Self::AttributeSource {
+    fn get_attribute_source_mut(&mut self) -> &mut Attributes {
         match self {
             Either2TokenStream::A(a) => a.get_attribute_source_mut(),
             Either2TokenStream::B(b) => b.get_attribute_source_mut(),

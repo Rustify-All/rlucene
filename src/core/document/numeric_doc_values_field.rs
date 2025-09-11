@@ -29,6 +29,7 @@ use crate::core::util::number::Number;
 use once_cell::sync::Lazy;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
+use crate::core::analysis::token_stream::Either2TokenStream;
 
 static TYPE: Lazy<FieldType> = Lazy::new(|| {
     let mut ft = FieldType::new();
@@ -83,15 +84,11 @@ impl IndexableField for NumericDocValuesField {
 
     type TokenStream = <Field as IndexableField>::TokenStream;
 
-    fn token_stream<A>(
-        &self,
-        analyzer: &A,
-        reuse: Option<Self::TokenStream>,
-    ) -> Result<Option<Self::TokenStream>>
+    fn token_stream<A>(&self, analyzer: &mut A) -> Result<Option<Either2TokenStream<A::TokenStream, Self::TokenStream>>>
     where
-        A: Analyzer,
+        A: Analyzer
     {
-        self.parent_field.token_stream(analyzer, reuse)
+        self.parent_field.token_stream(analyzer)
     }
 
     fn binary_value(&self) -> Result<Option<Rc<BytesRef<Vec<u8>>>>> {

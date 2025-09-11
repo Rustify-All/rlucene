@@ -375,13 +375,12 @@ impl TokenStream for StringTokenStream {
         Ok(())
     }
 
-    type AttributeSource = Attributes;
 
-    fn get_attribute_source(&self) -> &Self::AttributeSource {
+    fn get_attribute_source(&self) -> &Attributes {
         &self.att
     }
 
-    fn get_attribute_source_mut(&mut self) -> &mut Self::AttributeSource {
+    fn get_attribute_source_mut(&mut self) -> &mut Attributes {
         &mut self.att
     }
 }

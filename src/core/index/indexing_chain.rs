@@ -14,8 +14,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use std::cell::RefCell;
 use crate::core::analysis::analyzer::Analyzer;
-use crate::core::analysis::token_stream::TokenStream;
+use crate::core::analysis::token_stream::{Either2TokenStream, TokenStream};
 use crate::core::codecs::Codec;
 use crate::core::codecs::doc_values_format::DocValuesFormat;
 use crate::core::codecs::field_infos_format::FieldInfosFormat;
@@ -116,7 +117,6 @@ use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
-
 /// Default general purpose indexing chain, which handles indexing all types of fields.
 pub(crate) struct IndexingChain<D>
 where
@@ -1408,7 +1408,7 @@ impl PerField {
         doc_id: i32,
         field: &impl IndexableField,
         first: bool,
-        analyzer: &A,
+        analyzer: &mut A,
     ) -> Result<()>
     where
         A: Analyzer,
@@ -1426,7 +1426,7 @@ impl PerField {
         //     .ok_or_else(|| LuceneError::illegal_state("token_stream is None".to_string()))?;
 
         let mut stream = field
-            .token_stream(analyzer, None)?
+            .token_stream(analyzer)?
             .ok_or_else(|| LuceneError::illegal_state("token_stream is None"))?;
 
         let mut succeeded = false;
@@ -2354,16 +2354,13 @@ where
 
     type TokenStream = <T as IndexableField>::TokenStream;
 
-    fn token_stream<A>(
-        &self,
-        analyzer: &A,
-        reuse: Option<Self::TokenStream>,
-    ) -> Result<Option<Self::TokenStream>>
+    fn token_stream<A>(&self, analyzer: &mut A) -> Result<Option<Either2TokenStream<A::TokenStream, Self::TokenStream>>>
     where
-        A: Analyzer,
+        A: Analyzer
     {
-        self.delegate.token_stream(analyzer, reuse)
+        self.delegate.token_stream(analyzer)
     }
+
 
     fn binary_value(&self) -> Result<Option<Rc<BytesRef<Vec<u8>>>>> {
         self.delegate.binary_value()

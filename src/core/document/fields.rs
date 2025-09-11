@@ -21,7 +21,8 @@ use std::sync::Arc;
 use crate::core::analysis::analyzer::Analyzer;
 use crate::core::analysis::dummy::dummy_token_stream::DummyTokenStream;
 use crate::core::analysis::reader::ReaderEnum;
-use crate::core::document::field::Field;
+use crate::core::analysis::token_stream::Either2TokenStream;
+use crate::core::document::field::{BinaryTokenStream, Field, StringTokenStream};
 use crate::core::document::field_type::FieldType;
 use crate::core::document::invertable_field::InvertableType;
 use crate::core::document::numeric_doc_values_field::NumericDocValuesField;
@@ -81,25 +82,22 @@ impl IndexableField for Fields {
         }
     }
 
-    type TokenStream = DummyTokenStream;
+    type TokenStream = <Field as IndexableField>::TokenStream;
 
-    fn token_stream<A>(
-        &self,
-        analyzer: &A,
-        reuse: Option<Self::TokenStream>,
-    ) -> Result<Option<Self::TokenStream>>
+    fn token_stream<A>(&self, analyzer: &mut A) -> Result<Option<Either2TokenStream<A::TokenStream, Self::TokenStream>>>
     where
-        A: Analyzer,
+        A: Analyzer
     {
         match self {
-            Fields::Field(f) => f.token_stream(analyzer, reuse),
-            Fields::Text(f) => f.token_stream(analyzer, reuse),
-            Fields::String(f) => f.token_stream(analyzer, reuse),
-            Fields::Stored(f) => f.token_stream(analyzer, reuse),
-            Fields::NumericDocValues(f) => f.token_stream(analyzer, reuse),
-            Fields::Reverse(f) => f.token_stream(analyzer, reuse),
+            Fields::Field(f) => f.token_stream(analyzer),
+            Fields::Text(f) => f.token_stream(analyzer),
+            Fields::String(f) => f.token_stream(analyzer),
+            Fields::Stored(f) => f.token_stream(analyzer),
+            Fields::NumericDocValues(f) => f.token_stream(analyzer),
+            Fields::Reverse(f) => f.token_stream(analyzer),
         }
     }
+
 
     fn binary_value(&self) -> Result<Option<Rc<BytesRef<Vec<u8>>>>> {
         match self {

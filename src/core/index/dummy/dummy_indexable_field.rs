@@ -25,6 +25,7 @@ use crate::core::index::indexable_field::IndexableField;
 use crate::core::util::number::Number;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
+use crate::core::analysis::token_stream::Either2TokenStream;
 
 pub struct DummyIndexableField;
 
@@ -47,16 +48,13 @@ impl IndexableField for DummyIndexableField {
 
     type TokenStream = DummyTokenStream;
 
-    fn token_stream<A>(
-        &self,
-        _analyzer: &A,
-        _reuse: Option<Self::TokenStream>,
-    ) -> crate::core::util::error::lucene_error::Result<Option<Self::TokenStream>>
+    fn token_stream<A>(&self, analyzer: &mut A) -> crate::core::util::error::lucene_error::Result<Option<Either2TokenStream<A::TokenStream, Self::TokenStream>>>
     where
-        A: Analyzer,
+        A: Analyzer
     {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
+
 
     fn binary_value(
         &self,
