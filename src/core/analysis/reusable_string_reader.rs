@@ -87,6 +87,11 @@ impl Reader for ReusableStringReader {
         Ok(())
     }
 }
+impl Drop for ReusableStringReader {
+    fn drop(&mut self) {
+        self.close().expect("never fails");
+    }
+}
 #[cfg(test)]
 mod tests {
     use crate::core::analysis::reader::Reader;

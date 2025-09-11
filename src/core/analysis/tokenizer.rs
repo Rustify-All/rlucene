@@ -53,6 +53,13 @@ impl TokenizerBase {
         self.input_pending = input;
     }
 }
+
+impl Drop for TokenizerBase {
+    fn drop(&mut self) {
+        self.close().expect("should not fail");
+    }
+}
+
 impl TokenStream for TokenizerBase {
     fn end(&mut self) -> Result<()> {
         self.default_end()

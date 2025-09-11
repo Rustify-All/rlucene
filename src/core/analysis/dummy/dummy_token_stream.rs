@@ -20,6 +20,12 @@ use crate::core::util::dummy::dummy_attribute_source::DummyAttributeSource;
 #[derive(Debug)]
 pub struct DummyTokenStream;
 
+impl Drop for DummyTokenStream {
+    fn drop(&mut self) {
+        unreachable!("Dummy implementation: this method should never be called in real usage")
+    }
+}
+
 impl TokenStream for DummyTokenStream {
     fn increment_token(&mut self) -> crate::core::util::error::lucene_error::Result<bool> {
         unreachable!("Dummy implementation: this method should never be called in real usage")

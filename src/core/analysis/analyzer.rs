@@ -14,12 +14,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::core::analysis::reader::ReaderEnum;
+use crate::core::analysis::reader::{Reader, ReaderEnum};
 use crate::core::analysis::reusable_string_reader::ReusableStringReader;
 use crate::core::analysis::token_attributes::char_term_attribute::CharTermAttribute;
 use crate::core::analysis::token_attributes::offset_attribute::OffsetAttribute;
 use crate::core::analysis::token_stream::TokenStream;
-use crate::core::util::attribute_source::Attributes;
+use crate::core::index::BytesRef;
+use crate::core::util::attribute_source::{AttributeSource, Attributes};
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use std::collections::HashMap;
 use std::marker::PhantomData;
@@ -29,12 +30,43 @@ pub trait Analyzer {
     where
         TS: TokenStream;
 
-    fn get_position_increment_gap(&self, _field_name: &str) -> i32 {
-        0
+    fn normalize_with_ts<TS>(&self, _field_name: &str, in_: TS) -> Result<impl TokenStream>
+    where
+        TS: TokenStream,
+    {
+        Ok(in_)
     }
-    fn get_offset_gap(&self, _field_name: &str) -> i32 {
-        1
+
+    fn token_stream_with_reader<'a, TS, RS>(
+        &'a mut self,
+        field_name: &str,
+        reader: ReaderEnum,
+    ) -> Result<&'a mut TS>
+    where
+        TS: TokenStream,
+        RS: ReuseStrategy<TS> + 'a,
+    {
+        let r = self.init_reader(field_name, reader);
+        let analyzer_base: &mut AnalyzerBase<TS, RS> = self.get_analyzer_base();
+        let components = analyzer_base
+            .reuse_strategy
+            .get_reusable_components(field_name)?;
+        if components.is_none() {
+            let v: TokenStreamComponents<TS> = self.create_components(field_name);
+            let analyzer_base: &mut AnalyzerBase<TS, RS> = self.get_analyzer_base();
+            analyzer_base
+                .reuse_strategy
+                .set_reusable_components(field_name, v)?;
+        }
+        let analyzer_base: &mut AnalyzerBase<TS, RS> = self.get_analyzer_base();
+        let components = analyzer_base
+            .reuse_strategy
+            .get_reusable_components(field_name)?
+            .unwrap();
+        components.set_reader(r)?;
+        Ok(components.get_token_stream())
     }
+
     fn get_analyzer_base<TS, RS>(&mut self) -> &mut AnalyzerBase<TS, RS>
     where
         TS: TokenStream,
@@ -71,8 +103,75 @@ pub trait Analyzer {
         Ok(components.get_token_stream())
     }
 
+    fn normalize(&self, field_name: &str, text: &str) -> Result<BytesRef<Vec<u8>>> {
+        let mut str_reader = ReusableStringReader::new();
+        str_reader.set_value(text);
+        let mut reader =
+            self.init_reader_for_normalization(field_name, ReaderEnum::ReusedString(str_reader));
+
+        let mut buf = [0 as char; 64];
+        let mut filtered = String::new();
+        loop {
+            let len = buf.len();
+            let read = reader.read_range(&mut buf, 0, len)?;
+            if read == -1 {
+                break;
+            }
+            for &ch in &buf[..read as usize] {
+                filtered.push(ch);
+            }
+        }
+
+        let att = self.attribute_factory(field_name);
+        debug_assert!(text.len() <= i32::MAX as usize);
+        let mut ts = self.normalize_with_ts(
+            field_name,
+            StringTokenStream::new(att, &filtered, text.len() as i32),
+        )?;
+
+        ts.reset()?;
+        if !ts.increment_token()? {
+            return Err(LuceneError::illegal_state(format!(
+                "expected 1 token but got 0 for analyzer and input \"{}\"",
+                text
+            )));
+        }
+        let term_att = ts.get_attribute_source_mut();
+        let term = match term_att.get_bytes_ref() {
+            Some(t) => BytesRef::deep_copy_of(&*t),
+            None => {
+                return Err(LuceneError::illegal_state(format!(
+                    "CharTermAttribute is missing for analyzer and input \"{}\"",
+                    text
+                )));
+            },
+        };
+        if ts.increment_token()? {
+            return Err(LuceneError::illegal_state(format!(
+                "expected 1 token but got more for analyzer and input \"{}\"",
+                text
+            )));
+        }
+        ts.end()?;
+        Ok(term)
+    }
+
     fn init_reader(&self, _filed_name: &str, reader: ReaderEnum) -> ReaderEnum {
         reader
+    }
+
+    fn init_reader_for_normalization(&self, _filed_name: &str, reader: ReaderEnum) -> ReaderEnum {
+        reader
+    }
+
+    fn attribute_factory(&self, _field_name: &str) -> Attributes {
+        Attributes::default()
+    }
+    fn get_position_increment_gap(&self, _field_name: &str) -> i32 {
+        0
+    }
+    fn get_offset_gap(&self, _field_name: &str) -> i32 {
+        1
     }
 }
 pub struct AnalyzerBase<TS, RS>
@@ -83,11 +182,28 @@ where
     reuse_strategy: RS,
     _phantom: PhantomData<TS>,
 }
+impl<TS> AnalyzerBase<TS, GlobalReuseStrategy<TS>>
+where
+    TS: TokenStream,
+{
+    fn new() -> Self {
+        Self {
+            reuse_strategy: GlobalReuseStrategy::default(),
+            _phantom: PhantomData,
+        }
+    }
+}
 impl<TS, RS> AnalyzerBase<TS, RS>
 where
     TS: TokenStream,
     RS: ReuseStrategy<TS>,
 {
+    fn new_with_rs(reuse_strategy: RS) -> Self {
+        Self {
+            reuse_strategy,
+            _phantom: PhantomData,
+        }
+    }
 }
 
 pub trait ReuseStrategy<TS>
@@ -109,6 +225,14 @@ where
     TS: TokenStream,
 {
     store_value: Option<StoredValue<TS>>,
+}
+impl<TS> Default for GlobalReuseStrategy<TS>
+where
+    TS: TokenStream,
+{
+    fn default() -> Self {
+        Self { store_value: None }
+    }
 }
 impl<TS> ReuseStrategy<TS> for GlobalReuseStrategy<TS>
 where
@@ -141,6 +265,7 @@ where
         }
     }
 }
+#[derive(Default)]
 pub struct PerFieldReuseStrategy<TS>
 where
     TS: TokenStream,
@@ -233,6 +358,13 @@ impl StringTokenStream {
         }
     }
 }
+
+impl Drop for StringTokenStream {
+    fn drop(&mut self) {
+        self.close().expect("should not fail");
+    }
+}
+
 impl TokenStream for StringTokenStream {
     fn increment_token(&mut self) -> Result<bool> {
         if self.used {

@@ -24,7 +24,10 @@ use crate::core::analysis::tokenizer::{Tokenizer, TokenizerBase};
 use crate::core::util::attribute_source::Attributes;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 
-pub struct CharTokenizer<S> {
+pub struct CharTokenizer<S>
+where
+    S: CharTokenizerBase,
+{
     offset: i32,
     buffer_index: i32,
     data_len: i32,
@@ -63,6 +66,15 @@ where
             tokenizer_base: TokenizerBase::new(),
             sub,
         })
+    }
+}
+
+impl<S> Drop for CharTokenizer<S>
+where
+    S: CharTokenizerBase,
+{
+    fn drop(&mut self) {
+        self.close().expect("should not fail");
     }
 }
 

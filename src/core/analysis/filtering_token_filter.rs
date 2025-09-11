@@ -21,7 +21,7 @@ use crate::core::util::error::lucene_error::{LuceneError, Result};
 
 pub struct FilteringTokenFilter<T, V>
 where
-    T: TokenStream,
+    T: TokenStream<AttributeSource = Attributes>,
     V: FilteringTokenFilterBase,
 {
     skipped_positions: i32,
@@ -30,7 +30,7 @@ where
 }
 impl<T, V> FilteringTokenFilter<T, V>
 where
-    T: TokenStream,
+    T: TokenStream<AttributeSource = Attributes>,
     V: FilteringTokenFilterBase,
 {
     pub fn new(input: T, sub: V) -> Self {
@@ -39,6 +39,16 @@ where
             base: TokenFilterBase::new(input),
             sub,
         }
+    }
+}
+
+impl<T, V> Drop for FilteringTokenFilter<T, V>
+where
+    T: TokenStream<AttributeSource = Attributes>,
+    V: FilteringTokenFilterBase,
+{
+    fn drop(&mut self) {
+        self.close().expect("should not fail");
     }
 }
 

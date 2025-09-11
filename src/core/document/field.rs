@@ -684,6 +684,12 @@ impl BinaryTokenStream {
     }
 }
 
+impl Drop for BinaryTokenStream {
+    fn drop(&mut self) {
+        self.close().expect("should not fail");
+    }
+}
+
 impl TokenStream for BinaryTokenStream {
     fn increment_token(&mut self) -> Result<bool> {
         if self.used {
@@ -740,6 +746,13 @@ impl StringTokenStream {
         self.value = Some(value);
     }
 }
+
+impl Drop for StringTokenStream {
+    fn drop(&mut self) {
+        self.close().expect("should not fail");
+    }
+}
+
 impl TokenStream for StringTokenStream {
     fn increment_token(&mut self) -> Result<bool> {
         if self.used {
