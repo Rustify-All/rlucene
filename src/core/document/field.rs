@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use std::borrow::Cow;
 use std::fmt;
 use std::fmt::{Debug, Display};
 use std::rc::Rc;
@@ -22,6 +23,11 @@ use std::sync::Arc;
 use crate::core::analysis::analyzer::Analyzer;
 use crate::core::analysis::dummy::dummy_token_stream::DummyTokenStream;
 use crate::core::analysis::reader::ReaderEnum;
+use crate::core::analysis::token_attributes::bytes_term_attribute::BytesTermAttribute;
+use crate::core::analysis::token_attributes::bytes_term_attribute_impl::BytesTermAttributeImpl;
+use crate::core::analysis::token_attributes::char_term_attribute::CharTermAttribute;
+use crate::core::analysis::token_attributes::term_to_bytes_ref_attribute::TermToBytesRefAttribute;
+use crate::core::analysis::token_stream::{TokenStream, default_attribute};
 use crate::core::document::field_type::FieldType;
 use crate::core::document::fields::TokenStreamEnum;
 use crate::core::document::invertable_field::InvertableType;
@@ -31,6 +37,8 @@ use crate::core::index::doc_values_type::DocValuesType;
 use crate::core::index::index_options::IndexOptions;
 use crate::core::index::indexable_field::IndexableField;
 use crate::core::index::indexable_field_type::IndexableFieldType;
+use crate::core::util::attribute_impl::AttributeImpl;
+use crate::core::util::attribute_source::{AttributeSource, Attributes};
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::number::Number;
 
@@ -654,6 +662,125 @@ pub enum FieldDataEnum {
     String(Rc<String>),
     Reader(ReaderEnum),
     TokenStream(TokenStreamEnum),
+}
+
+pub struct BinaryTokenAttributeSource {
+    bytes: BytesTermAttributeImpl,
+}
+
+impl BinaryTokenAttributeSource {
+    fn new() -> Self {
+        Self {
+            bytes: BytesTermAttributeImpl::new(),
+        }
+    }
+}
+
+impl AttributeSource for BinaryTokenAttributeSource {
+    fn get_bytes_ref(&mut self) -> Option<Cow<'_, BytesRef<Vec<u8>>>> {
+        self.bytes.get_bytes_ref()
+    }
+
+    fn end_attributes(&mut self) {
+        self.bytes.clear();
+    }
+}
+
+pub struct BinaryTokenStream {
+    used: bool,
+    value: Rc<BytesRef<Vec<u8>>>,
+    attr_source: BinaryTokenAttributeSource,
+}
+
+impl BinaryTokenStream {
+    pub fn new(value: Rc<BytesRef<Vec<u8>>>) -> Self {
+        Self {
+            used: false,
+            value,
+            attr_source: BinaryTokenAttributeSource::new(),
+        }
+    }
+}
+
+impl TokenStream for BinaryTokenStream {
+    type AttributeSource = BinaryTokenAttributeSource;
+
+    fn increment_token(&mut self) -> Result<bool> {
+        if self.used {
+            return Ok(false);
+        }
+        let value = BytesRef::deep_copy_of(self.value.as_ref());
+        self.attr_source.bytes.set_bytes_ref(value);
+        self.used = true;
+        Ok(true)
+    }
+
+    fn end(&mut self) -> Result<()> {
+        self.attr_source.end_attributes();
+        Ok(())
+    }
+
+    fn reset(&mut self) -> Result<()> {
+        self.used = false;
+        Ok(())
+    }
+
+    fn get_attribute_source(&self) -> &Self::AttributeSource {
+        &self.attr_source
+    }
+
+    fn get_attribute_source_mut(&mut self) -> &mut Self::AttributeSource {
+        &mut self.attr_source
+    }
+}
+
+pub struct StringTokenStream {
+    used: bool,
+    value: Rc<String>,
+    attr_source: Attributes,
+}
+
+impl StringTokenStream {
+    pub fn new(value: Rc<String>) -> Self {
+        Self {
+            used: false,
+            value,
+            attr_source: default_attribute(),
+        }
+    }
+}
+
+impl TokenStream for StringTokenStream {
+    type AttributeSource = Attributes;
+
+    fn increment_token(&mut self) -> Result<bool> {
+        if self.used {
+            return Ok(false);
+        }
+        self.attr_source.set_empty();
+        let chars: Vec<char> = self.value.chars().collect();
+        self.attr_source.copy_buffer(&chars, 0, chars.len());
+        self.used = true;
+        Ok(true)
+    }
+
+    fn end(&mut self) -> Result<()> {
+        self.attr_source.end_attributes();
+        Ok(())
+    }
+
+    fn reset(&mut self) -> Result<()> {
+        self.used = false;
+        Ok(())
+    }
+
+    fn get_attribute_source(&self) -> &Self::AttributeSource {
+        &self.attr_source
+    }
+
+    fn get_attribute_source_mut(&mut self) -> &mut Self::AttributeSource {
+        &mut self.attr_source
+    }
 }
 
 #[cfg(test)]
