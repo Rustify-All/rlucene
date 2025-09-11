@@ -27,6 +27,7 @@ use crate::core::util::error::lucene_error::Result;
 use crate::core::util::number::Number;
 use std::fmt::Display;
 use std::rc::Rc;
+use crate::core::document::field::{BinaryTokenStream, StringTokenStream};
 use crate::core::util::attribute_source::Attributes;
 
 /// Represents a single field for indexing. IndexWriter consumes
@@ -57,10 +58,10 @@ pub trait IndexableField: Display {
     /// TokenStream value for indexing the document. Should always return a
     /// non-null value if the field is to be indexed.
     type TokenStream: TokenStream;
-    fn token_stream<A>(
-        &self,
-        analyzer: &mut A,
-    ) -> Result<Option<Either2TokenStream<A::TokenStream, Self::TokenStream>>>
+    fn token_stream<'a, A>(
+        &mut self,
+        analyzer: &'a mut A,
+    ) -> Result<Option<Either2TokenStream<&'a mut A::TokenStream, &mut Self::TokenStream>>>
     where
         A: Analyzer;
     /// Non-null if this field has a binary value.

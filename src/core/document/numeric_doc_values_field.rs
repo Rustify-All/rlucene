@@ -84,7 +84,7 @@ impl IndexableField for NumericDocValuesField {
 
     type TokenStream = <Field as IndexableField>::TokenStream;
 
-    fn token_stream<A>(&self, analyzer: &mut A) -> Result<Option<Either2TokenStream<A::TokenStream, Self::TokenStream>>>
+    fn token_stream<'a, A>(&mut self, analyzer: &'a mut A) -> Result<Option<Either2TokenStream<&'a mut A::TokenStream, &mut Self::TokenStream>>>
     where
         A: Analyzer
     {

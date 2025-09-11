@@ -673,7 +673,7 @@ where
         self.terms_hash.start_document()?;
         self.start_stored_fields(doc_id, info, index_writer_config)?;
 
-        let fields: Vec<Fields> = document.into_iter().collect();
+        let mut fields: Vec<Fields> = document.into_iter().collect();
         // 1st pass over doc fields – verify that doc schema matches the index schema
         // build schema for each unique doc field
         let result = (|| {
@@ -726,7 +726,7 @@ where
             // 2nd pass over doc fields – index each field
             // also count the number of unique fields indexed with postings
             doc_field_idx = 0;
-            for field in &fields {
+            for field in &mut fields {
                 if self.process_field(doc_id, field, doc_field_idx, index_writer_config)? {
                     self.fields[indexed_field_count] = doc_field_idx;
                     indexed_field_count += 1;
@@ -882,7 +882,7 @@ where
     fn process_field(
         &mut self,
         doc_id: i32,
-        field: &impl IndexableField,
+        field: &mut impl IndexableField,
         per_field_index: i32,
         index_writer_config: &impl LiveIndexWriterConfig,
     ) -> Result<bool> {
@@ -901,7 +901,7 @@ where
                 pf.invert(doc_id, field, false, index_writer_config.get_analyzer())?;
             }
         }
-
+        let field_type = field.field_type();
         // Add stored fields
         if field_type.stored() {
             let stored_value = field
@@ -1368,7 +1368,7 @@ impl PerField {
     pub(crate) fn invert<A>(
         &mut self,
         doc_id: i32,
-        field: &impl IndexableField,
+        field: &mut impl IndexableField,
         first: bool,
         analyzer: &A,
     ) -> Result<()>
@@ -1406,7 +1406,7 @@ impl PerField {
     fn invert_token_stream<A>(
         &mut self,
         doc_id: i32,
-        field: &impl IndexableField,
+        field: &mut impl IndexableField,
         first: bool,
         analyzer: &mut A,
     ) -> Result<()>
@@ -2354,7 +2354,7 @@ where
 
     type TokenStream = <T as IndexableField>::TokenStream;
 
-    fn token_stream<A>(&self, analyzer: &mut A) -> Result<Option<Either2TokenStream<A::TokenStream, Self::TokenStream>>>
+    fn token_stream<'a, A>(&mut self, analyzer: &'a mut A) -> Result<Option<Either2TokenStream<&'a mut A::TokenStream, &mut Self::TokenStream>>>
     where
         A: Analyzer
     {

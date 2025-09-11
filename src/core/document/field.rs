@@ -490,15 +490,16 @@ impl IndexableField for Field {
 
     type TokenStream = Either2TokenStream<BinaryTokenStream, StringTokenStream>;
 
-    fn token_stream<A>(
-        &self,
-        analyzer: &mut A,
-    ) -> Result<Option<Either2TokenStream<A::TokenStream, Self::TokenStream>>>
+    fn token_stream<'a, A>(
+        &mut self,
+        analyzer: &'a mut A,
+    ) -> Result<Option<Either2TokenStream<&'a mut A::TokenStream, &mut Self::TokenStream>>>
     where
         A: Analyzer,
     {
         let v = analyzer.token_stream("","")?;
-        todo!()
+        let v2 = Either2TokenStream::B(self.token_stream.as_mut().unwrap());
+        Ok(Some(v2))
     }
 
     fn binary_value(&self) -> Result<Option<Rc<BytesRef<Vec<u8>>>>> {
