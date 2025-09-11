@@ -84,7 +84,7 @@ impl TokenStream for TokenizerBase {
     }
 
     fn set_reader(&mut self, input: ReaderEnum) -> Result<()> {
-        if !matches!(input, ReaderEnum::IllegalState(_)) {
+        if !matches!(self.input, ReaderEnum::IllegalState(_)) {
             return Err(LuceneError::illegal_state(
                 "TokenStream contract violation: close() call missing",
             ));
