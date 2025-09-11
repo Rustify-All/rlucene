@@ -18,7 +18,7 @@
 
 use crate::core::analysis::analyzer::Analyzer;
 use crate::core::analysis::reader::ReaderEnum;
-use crate::core::analysis::token_stream::{Either2TokenStream, TokenStream};
+use crate::core::analysis::token_stream::TokenStream;
 use crate::core::document::invertable_field::InvertableType;
 use crate::core::document::stored_value::StoredValue;
 use crate::core::index::BytesRef;
@@ -27,8 +27,6 @@ use crate::core::util::error::lucene_error::Result;
 use crate::core::util::number::Number;
 use std::fmt::Display;
 use std::rc::Rc;
-use crate::core::document::field::{BinaryTokenStream, StringTokenStream};
-use crate::core::util::attribute_source::Attributes;
 
 /// Represents a single field for indexing. IndexWriter consumes
 /// `Iterable<IndexableField>` as a document.
@@ -59,9 +57,9 @@ pub trait IndexableField: Display {
     /// non-null value if the field is to be indexed.
     type TokenStream: TokenStream;
     fn token_stream<'a, A>(
-        &mut self,
-        analyzer: &'a mut A,
-    ) -> Result<Option<Either2TokenStream<&'a mut A::TokenStream, &mut Self::TokenStream>>>
+        &'a mut self,
+        _analyzer: &A,
+    ) -> Result<Option<&'a mut Self::TokenStream>>
     where
         A: Analyzer;
     /// Non-null if this field has a binary value.

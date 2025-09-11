@@ -16,7 +16,7 @@
  */
 use std::cell::RefCell;
 use crate::core::analysis::analyzer::Analyzer;
-use crate::core::analysis::token_stream::{Either2TokenStream, TokenStream};
+use crate::core::analysis::token_stream::TokenStream;
 use crate::core::codecs::Codec;
 use crate::core::codecs::doc_values_format::DocValuesFormat;
 use crate::core::codecs::field_infos_format::FieldInfosFormat;
@@ -1408,7 +1408,7 @@ impl PerField {
         doc_id: i32,
         field: &mut impl IndexableField,
         first: bool,
-        analyzer: &mut A,
+        analyzer: &A,
     ) -> Result<()>
     where
         A: Analyzer,
@@ -1420,21 +1420,17 @@ impl PerField {
          * but rather a finally that takes note of the problem.
          */
 
-        // TODO
-        // let mut stream = field
-        //     .token_stream(analyzer, self.token_stream.take())?
-        //     .ok_or_else(|| LuceneError::illegal_state("token_stream is None".to_string()))?;
+        let field_name = field.name().to_string();
+        let terms_hash_per_field = self.terms_hash_per_field.as_mut().unwrap();
+        terms_hash_per_field.start(field, first)?;
 
-        let mut stream = field
+        let stream = field
             .token_stream(analyzer)?
             .ok_or_else(|| LuceneError::illegal_state("token_stream is None"))?;
 
         let mut succeeded = false;
         let result = (|| {
             stream.reset()?;
-
-            let terms_hash_per_field = self.terms_hash_per_field.as_mut().unwrap();
-            terms_hash_per_field.start(field, first)?;
 
             while stream.increment_token()? {
                 // If we hit an exception in stream.next below
@@ -1453,14 +1449,14 @@ impl PerField {
                     return if pos_incr == 0 {
                         Err(LuceneError::illegal_argument(format!(
                             "first position increment must be > 0 (got 0) for field '{}'",
-                            field.name()
+                            field_name
                         )))
                     } else if pos_incr < 0 {
                         // position increment must be > 0
                         Err(LuceneError::illegal_argument(format!(
                             "position increment must be > 0 (got {}) for field '{}'",
                             pos_incr,
-                            field.name()
+                            field_name
                         )))
                     } else {
                         Err(LuceneError::illegal_argument(format!(
@@ -1468,14 +1464,14 @@ impl PerField {
                             pos_incr,
                             invert_state.last_position,
                             invert_state.position,
-                            field.name()
+                            field_name
                         )))
                     };
                 } else if invert_state.position > MAX_POSITION {
                     return Err(LuceneError::illegal_argument(format!(
                         "position {} too large for field {}",
                         invert_state.position,
-                        field.name()
+                        field_name
                     )));
                 }
                 if pos_incr == 0 {
@@ -1500,7 +1496,7 @@ impl PerField {
                         start_offset,
                         end_offset,
                         invert_state.last_start_offset,
-                        field.name()
+                        field_name
                     )));
                 }
                 invert_state.last_start_offset = start_offset;
@@ -1512,7 +1508,7 @@ impl PerField {
                 invert_state.length = invert_state.length.checked_add(tf).ok_or_else(|| {
                     LuceneError::number_overflow(format!(
                         "too many tokens for field {}",
-                        field.name()
+                        field_name
                     ))
                 })?;
                 // If we hit an exception in here, we abort
@@ -2354,9 +2350,9 @@ where
 
     type TokenStream = <T as IndexableField>::TokenStream;
 
-    fn token_stream<'a, A>(&mut self, analyzer: &'a mut A) -> Result<Option<Either2TokenStream<&'a mut A::TokenStream, &mut Self::TokenStream>>>
+    fn token_stream<'a, A>(&'a mut self, analyzer: &A) -> Result<Option<&'a mut Self::TokenStream>>
     where
-        A: Analyzer
+        A: Analyzer,
     {
         self.delegate.token_stream(analyzer)
     }

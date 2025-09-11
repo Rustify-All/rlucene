@@ -491,15 +491,13 @@ impl IndexableField for Field {
     type TokenStream = Either2TokenStream<BinaryTokenStream, StringTokenStream>;
 
     fn token_stream<'a, A>(
-        &mut self,
-        analyzer: &'a mut A,
-    ) -> Result<Option<Either2TokenStream<&'a mut A::TokenStream, &mut Self::TokenStream>>>
+        &'a mut self,
+        _analyzer: &A,
+    ) -> Result<Option<&'a mut Self::TokenStream>>
     where
         A: Analyzer,
     {
-        let v = analyzer.token_stream("","")?;
-        let v2 = Either2TokenStream::B(self.token_stream.as_mut().unwrap());
-        Ok(Some(v2))
+        Ok(self.token_stream.as_mut())
     }
 
     fn binary_value(&self) -> Result<Option<Rc<BytesRef<Vec<u8>>>>> {
@@ -669,7 +667,7 @@ pub enum FieldDataEnum {
     TokenStream(TokenStreamEnum),
 }
 /// Creates a new TokenStream that returns a BytesRef as single token
-pub(crate) struct BinaryTokenStream {
+pub struct BinaryTokenStream {
     att: Attributes,
     used: bool,
     value: Option<BytesRef<Vec<u8>>>,
@@ -733,7 +731,7 @@ impl TokenStream for BinaryTokenStream {
     }
 }
 
-pub(crate) struct StringTokenStream {
+pub struct StringTokenStream {
     att: Attributes,
     used: bool,
     value: Option<String>,

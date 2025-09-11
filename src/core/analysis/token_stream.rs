@@ -126,3 +126,48 @@ where
         }
     }
 }
+
+impl<T> TokenStream for &mut T
+where
+    T: TokenStream + ?Sized,
+{
+    fn increment_token(&mut self) -> Result<bool> {
+        (**self).increment_token()
+    }
+
+    fn end(&mut self) -> Result<()> {
+        (**self).end()
+    }
+
+    fn default_end(&mut self) -> Result<()> {
+        (**self).default_end()
+    }
+
+    fn reset(&mut self) -> Result<()> {
+        (**self).reset()
+    }
+
+    fn default_reset(&mut self) -> Result<()> {
+        (**self).default_reset()
+    }
+
+    fn close(&mut self) -> Result<()> {
+        (**self).close()
+    }
+
+    fn get_attribute_source(&self) -> &Attributes {
+        (**self).get_attribute_source()
+    }
+
+    fn get_attribute_source_mut(&mut self) -> &mut Attributes {
+        (**self).get_attribute_source_mut()
+    }
+
+    fn set_reader(&mut self, input: ReaderEnum) -> Result<()> {
+        (**self).set_reader(input)
+    }
+
+    fn set_reader_test_point(&mut self) {
+        (**self).set_reader_test_point()
+    }
+}

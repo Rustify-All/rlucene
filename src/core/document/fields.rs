@@ -21,7 +21,6 @@ use std::sync::Arc;
 use crate::core::analysis::analyzer::Analyzer;
 use crate::core::analysis::dummy::dummy_token_stream::DummyTokenStream;
 use crate::core::analysis::reader::ReaderEnum;
-use crate::core::analysis::token_stream::Either2TokenStream;
 use crate::core::document::field::{BinaryTokenStream, Field, StringTokenStream};
 use crate::core::document::field_type::FieldType;
 use crate::core::document::invertable_field::InvertableType;
@@ -84,9 +83,9 @@ impl IndexableField for Fields {
 
     type TokenStream = <Field as IndexableField>::TokenStream;
 
-    fn token_stream<'a, A>(&mut self, analyzer: &'a mut A) -> Result<Option<Either2TokenStream<&'a mut A::TokenStream, &mut Self::TokenStream>>>
+    fn token_stream<'a, A>(&'a mut self, analyzer: &A) -> Result<Option<&'a mut Self::TokenStream>>
     where
-        A: Analyzer
+        A: Analyzer,
     {
         match self {
             Fields::Field(f) => f.token_stream(analyzer),
