@@ -23,46 +23,8 @@ use crate::core::analysis::token_stream::{TokenStream, default_attribute};
 use crate::core::analysis::tokenizer::{Tokenizer, TokenizerBase};
 use crate::core::util::attribute_source::Attributes;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
-/// An trait for simple, character-oriented tokenizers.
-pub trait CharTokenizer: Tokenizer {}
-/// Creates a new instance of `CharTokenizer` using a custom predicate, supplied as a method
-/// reference or lambda expression.
-/// The predicate should return `true` for all valid token characters.
-pub fn from_token_char_predicate(
-    token_char_predicate: fn(i32) -> bool,
-) -> Result<CharTokenizerImpl> {
-    from_token_char_predicate_with_attr(default_attribute(), token_char_predicate)
-}
 
-/// Creates a new instance of CharTokenizer with the supplied attribute factory using a custom predicate, supplied as method reference or lambda expression. The predicate should return true for all valid token characters.
-pub fn from_token_char_predicate_with_attr(
-    att: Attributes,
-    f: fn(i32) -> bool,
-) -> Result<CharTokenizerImpl> {
-    CharTokenizerImpl::new(att, f)
-}
-/// Creates a new instance of CharTokenizer using a custom predicate,
-/// supplied as method reference or lambda expression.
-/// The predicate should return true for all valid token separator characters.
-/// This method is provided for convenience to easily use predicates that are negated (they match the separator characters, not the token characters).
-pub fn from_separator_char_predicate(
-    separator_char_predicate: fn(i32) -> bool,
-) -> Result<CharTokenizerImpl> {
-    from_separator_char_predicate_with_attr(default_attribute(), separator_char_predicate)
-}
-/// Creates a new instance of CharTokenizer with the supplied attribute factory using a custom predicate,
-/// supplied as method reference or lambda expression.
-/// The predicate should return true for all valid token separator characters.
-pub fn from_separator_char_predicate_with_attr(
-    att: Attributes,
-    separator_char_predicate: fn(i32) -> bool,
-) -> Result<CharTokenizerImpl> {
-    from_token_char_predicate_with_attr(att, separator_char_predicate)
-}
-
-pub const DEFAULT_MAX_WORD_LEN: i32 = 255;
-const I_BUFFER_SIZE: i32 = 4096;
-pub struct CharTokenizerBase {
+pub struct CharTokenizer<S> {
     offset: i32,
     buffer_index: i32,
     data_len: i32,
@@ -71,22 +33,26 @@ pub struct CharTokenizerBase {
     io_buffer: CharacterBuffer,
     pub(crate) att: Attributes,
     pub(crate) tokenizer_base: TokenizerBase,
+    sub: S,
 }
-impl CharTokenizerBase {
-    pub fn new() -> Result<Self> {
-        Self::with_max_token_len(default_attribute(), DEFAULT_MAX_WORD_LEN)
+impl<S> CharTokenizer<S>
+where
+    S: CharTokenizerBase,
+{
+    pub fn new(sub: S) -> Result<Self> {
+        Self::with_max_token_len(default_attribute(), DEFAULT_MAX_WORD_LEN, sub)
     }
-    pub fn with_att(att: Attributes) -> Result<Self> {
-        Self::with_max_token_len(att, DEFAULT_MAX_WORD_LEN)
+    pub fn with_att(att: Attributes, sub: S) -> Result<Self> {
+        Self::with_max_token_len(att, DEFAULT_MAX_WORD_LEN, sub)
     }
-    pub fn with_max_token_len(att: Attributes, max_token_len: i32) -> Result<Self> {
+    pub fn with_max_token_len(att: Attributes, max_token_len: i32, sub: S) -> Result<Self> {
         if max_token_len > MAX_TOKEN_LENGTH_LIMIT || max_token_len == 0 {
             return Err(LuceneError::illegal_argument(format!(
                 "maxTokenLen must be greater than 0 and less than {}, passed: {}",
                 MAX_TOKEN_LENGTH_LIMIT, max_token_len
             )));
         }
-        Ok(CharTokenizerBase {
+        Ok(CharTokenizer {
             offset: 0,
             buffer_index: 0,
             data_len: 0,
@@ -95,12 +61,16 @@ impl CharTokenizerBase {
             io_buffer: CharacterUtils::new_character_buffer(I_BUFFER_SIZE as usize)?,
             att,
             tokenizer_base: TokenizerBase::new(),
+            sub,
         })
     }
-    pub(crate) fn increment_token_with<F>(&mut self, mut is_token_char: F) -> Result<bool>
-    where
-        F: FnMut(&char) -> bool,
-    {
+}
+
+impl<S> TokenStream for CharTokenizer<S>
+where
+    S: CharTokenizerBase,
+{
+    fn increment_token(&mut self) -> Result<bool> {
         // TODO: clear_attributes 未实现
         // self.clear_attributes();
         let mut length: usize = 0;
@@ -126,7 +96,7 @@ impl CharTokenizerBase {
             }
             let c = self.io_buffer.get_buffer()[self.buffer_index as usize];
             self.buffer_index += 1;
-            if is_token_char(&c) {
+            if self.sub.is_token_char(&c) {
                 if length == 0 {
                     // start of token
                     debug_assert_eq!(start, -1);
@@ -152,14 +122,7 @@ impl CharTokenizerBase {
         self.final_offset = self.correct_offset(end);
         self.att
             .set_offset(self.correct_offset(start), self.final_offset)?;
-
         Ok(true)
-    }
-}
-
-impl TokenStream for CharTokenizerBase {
-    fn increment_token(&mut self) -> Result<bool> {
-        unreachable!("should not be called")
     }
 
     fn end(&mut self) -> Result<()> {
@@ -193,7 +156,10 @@ impl TokenStream for CharTokenizerBase {
     }
 }
 
-impl Tokenizer for CharTokenizerBase {
+impl<S> Tokenizer for CharTokenizer<S>
+where
+    S: CharTokenizerBase,
+{
     fn get_tokenizer_base_mut(&mut self) -> &mut TokenizerBase {
         &mut self.tokenizer_base
     }
@@ -202,55 +168,64 @@ impl Tokenizer for CharTokenizerBase {
         &self.tokenizer_base
     }
 }
+/// An trait for simple, character-oriented tokenizers.
+pub trait CharTokenizerBase {
+    fn is_token_char(&self, c: &char) -> bool;
+}
+/// Creates a new instance of `CharTokenizer` using a custom predicate, supplied as a method
+/// reference or lambda expression.
+/// The predicate should return `true` for all valid token characters.
+pub fn from_token_char_predicate(
+    token_char_predicate: fn(i32) -> bool,
+) -> Result<CharTokenizer<CharTokenizerImpl>> {
+    from_token_char_predicate_with_attr(default_attribute(), token_char_predicate)
+}
+
+/// Creates a new instance of CharTokenizer with the supplied attribute factory using a custom predicate, supplied as method reference or lambda expression. The predicate should return true for all valid token characters.
+pub fn from_token_char_predicate_with_attr(
+    att: Attributes,
+    f: fn(i32) -> bool,
+) -> Result<CharTokenizer<CharTokenizerImpl>> {
+    CharTokenizerImpl::new(att, f)
+}
+/// Creates a new instance of CharTokenizer using a custom predicate,
+/// supplied as method reference or lambda expression.
+/// The predicate should return true for all valid token separator characters.
+/// This method is provided for convenience to easily use predicates that are negated (they match the separator characters, not the token characters).
+pub fn from_separator_char_predicate(
+    separator_char_predicate: fn(i32) -> bool,
+) -> Result<CharTokenizer<CharTokenizerImpl>> {
+    from_separator_char_predicate_with_attr(default_attribute(), separator_char_predicate)
+}
+/// Creates a new instance of CharTokenizer with the supplied attribute factory using a custom predicate,
+/// supplied as method reference or lambda expression.
+/// The predicate should return true for all valid token separator characters.
+pub fn from_separator_char_predicate_with_attr(
+    att: Attributes,
+    separator_char_predicate: fn(i32) -> bool,
+) -> Result<CharTokenizer<CharTokenizerImpl>> {
+    from_token_char_predicate_with_attr(att, separator_char_predicate)
+}
+
+pub const DEFAULT_MAX_WORD_LEN: i32 = 255;
+const I_BUFFER_SIZE: i32 = 4096;
 
 pub struct CharTokenizerImpl {
-    base: CharTokenizerBase,
     token_char_predicate: fn(i32) -> bool,
 }
 impl CharTokenizerImpl {
-    fn new(att: Attributes, token_char_predicate: fn(i32) -> bool) -> Result<Self> {
-        Ok(CharTokenizerImpl {
-            base: CharTokenizerBase::with_att(att)?,
+    fn new(
+        att: Attributes,
+        token_char_predicate: fn(i32) -> bool,
+    ) -> Result<CharTokenizer<CharTokenizerImpl>> {
+        let v = CharTokenizerImpl {
             token_char_predicate,
-        })
+        };
+        CharTokenizer::with_att(att, v)
     }
 }
-
-impl Tokenizer for CharTokenizerImpl {
-    fn get_tokenizer_base_mut(&mut self) -> &mut TokenizerBase {
-        &mut self.base.tokenizer_base
-    }
-
-    fn get_tokenizer_base(&self) -> &TokenizerBase {
-        &self.base.tokenizer_base
-    }
-}
-
-impl TokenStream for CharTokenizerImpl {
-    fn increment_token(&mut self) -> Result<bool> {
-        let pred = self.token_char_predicate;
-        self.base.increment_token_with(|c| pred(*c as i32))
-    }
-
-    fn end(&mut self) -> Result<()> {
-        self.base.end()
-    }
-
-    fn reset(&mut self) -> Result<()> {
-        self.base.reset()
-    }
-
-    fn close(&mut self) -> Result<()> {
-        self.base.close()
-    }
-
-    type AttributeSource = Attributes;
-
-    fn get_attribute_source(&self) -> &Self::AttributeSource {
-        &self.base.att
-    }
-
-    fn get_attribute_source_mut(&mut self) -> &mut Self::AttributeSource {
-        &mut self.base.att
+impl CharTokenizerBase for CharTokenizerImpl {
+    fn is_token_char(&self, c: &char) -> bool {
+        (self.token_char_predicate)(*c as i32)
     }
 }
