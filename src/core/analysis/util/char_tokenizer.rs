@@ -102,7 +102,7 @@ where
                     debug_assert_eq!(start, -1);
                     start = self.offset + self.buffer_index - 1;
                     end = start;
-                } else if length >= self.att.buffer().len() - 1 {
+                } else if length >= self.att.buffer_mut().len() - 1 {
                     self.att.resize_buffer(2 + length);
                 }
 
