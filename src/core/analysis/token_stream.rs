@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use crate::core::analysis::reader::ReaderEnum;
 use crate::core::analysis::token_attributes::packed_token_attribute_impl::PackedTokenAttributeImpl;
 use crate::core::util::attribute_source::{AttributeSource, Attributes};
 use crate::core::util::error::lucene_error::Result;
@@ -38,6 +39,10 @@ pub trait TokenStream {
     type AttributeSource: AttributeSource;
     fn get_attribute_source(&self) -> &Self::AttributeSource;
     fn get_attribute_source_mut(&mut self) -> &mut Self::AttributeSource;
+    fn set_reader(&mut self, _input: ReaderEnum) -> Result<()> {
+        Ok(())
+    }
+    fn set_reader_test_point(&mut self) {}
 }
 pub fn default_attribute() -> Attributes {
     Attributes::PackedToken(PackedTokenAttributeImpl::new())

@@ -18,6 +18,10 @@ use crate::core::analysis::analyzer::Analyzer;
 
 pub struct DummyAnalyzer;
 impl Analyzer for DummyAnalyzer {
+    fn create_components(&self) {
+        unreachable!("Dummy implementation: this method should never be called in real usage")
+    }
+
     fn get_position_increment_gap(&self, _field_name: &str) -> i32 {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }

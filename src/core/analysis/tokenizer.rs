@@ -22,27 +22,12 @@ use crate::core::util::error::lucene_error::{LuceneError, Result};
 pub trait Tokenizer: TokenStream {
     fn get_tokenizer_base_mut(&mut self) -> &mut TokenizerBase;
     fn get_tokenizer_base(&self) -> &TokenizerBase;
-
     /// Return the corrected offset.
     /// If input is a CharFilter this method calls CharFilter.correctOffset else returns currentOff.
     fn correct_offset(&self, current_off: i32) -> i32 {
         let base = self.get_tokenizer_base();
         base.input.correct_offset(current_off)
     }
-    /// Expert: Set a new reader on the Tokenizer.
-    /// Typically, an analyzer (in its tokenStream method) will use this to re-use a previously created tokenizer.
-    fn set_reader(&mut self, input: ReaderEnum) -> Result<()> {
-        let base = self.get_tokenizer_base_mut();
-        if !matches!(base.input, ReaderEnum::IllegalState(_)) {
-            return Err(LuceneError::illegal_state(
-                "TokenStream contract violation: close() call missing",
-            ));
-        }
-        base.input_pending = input;
-        self.set_reader_test_point();
-        Ok(())
-    }
-    fn set_reader_test_point(&mut self) {}
 }
 
 pub struct TokenizerBase {
@@ -96,6 +81,17 @@ impl TokenStream for TokenizerBase {
 
     fn get_attribute_source_mut(&mut self) -> &mut Self::AttributeSource {
         unreachable!("should not be called")
+    }
+
+    fn set_reader(&mut self, input: ReaderEnum) -> Result<()> {
+        if !matches!(input, ReaderEnum::IllegalState(_)) {
+            return Err(LuceneError::illegal_state(
+                "TokenStream contract violation: close() call missing",
+            ));
+        }
+        self.input_pending = input;
+        self.set_reader_test_point();
+        Ok(())
     }
 }
 #[derive(Debug, Clone, Default)]

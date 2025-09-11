@@ -18,12 +18,12 @@ use crate::core::analysis::reader::ReaderEnum;
 use crate::core::analysis::token_attributes::char_term_attribute::CharTermAttribute;
 use crate::core::analysis::token_attributes::offset_attribute::OffsetAttribute;
 use crate::core::analysis::token_stream::TokenStream;
-use crate::core::analysis::tokenizer::Tokenizer;
 use crate::core::util::attribute_source::Attributes;
-use crate::core::util::consumer::Consumer;
 use crate::core::util::error::lucene_error::Result;
 
 pub trait Analyzer {
+    fn create_components(&self);
+
     fn get_position_increment_gap(&self, _field_name: &str) -> i32 {
         0
     }
@@ -32,81 +32,27 @@ pub trait Analyzer {
     }
 }
 
-pub struct TokenStreamComponents<T, TS>
+pub struct TokenStreamComponents<TS>
 where
-    T: Tokenizer,
     TS: TokenStream,
 {
-    source: Option<ConsumerEnum<T>>,
-    sink: TS,
+    sink: Option<TS>,
 }
-impl<T, TS> TokenStreamComponents<T, TS>
+impl<TS> TokenStreamComponents<TS>
 where
-    T: Tokenizer,
     TS: TokenStream,
 {
-    pub fn new(source: Option<ConsumerEnum<T>>, sink: TS) -> Self {
-        Self { source, sink }
+    pub fn new(sink: TS) -> Self {
+        Self { sink: Some(sink) }
     }
-    pub fn with_tokenizer(tokenizer: Option<T>, sink: TS) -> Self {
-        let source = tokenizer.map(|t| ConsumerEnum::TokenizerConsumer(TokenizerConsumer::new(t)));
-        Self { source, sink }
+    fn set_reader(&mut self, reader: ReaderEnum) -> Result<()> {
+        self.sink.as_mut().unwrap().set_reader(reader)
     }
     pub fn get_token_stream(&mut self) -> &mut TS {
-        &mut self.sink
+        self.sink.as_mut().unwrap()
     }
-    pub fn get_reader(&self) -> &ConsumerEnum<T> {
-        self.source.as_ref().unwrap()
-    }
-}
-pub enum ConsumerEnum<T>
-where
-    T: Tokenizer,
-{
-    TokenizerConsumer(TokenizerConsumer<T>),
-}
-impl<T> Consumer for ConsumerEnum<T>
-where
-    T: Tokenizer,
-{
-    type V = ReaderEnum;
-
-    fn accept_mut(&mut self, item: Self::V) -> Result<()> {
-        match self {
-            ConsumerEnum::TokenizerConsumer(tc) => tc.accept_mut(item),
-        }
-    }
-
-    fn accept(&self, item: Self::V) -> Result<()> {
-        match self {
-            ConsumerEnum::TokenizerConsumer(tc) => tc.accept(item),
-        }
-    }
-}
-
-pub struct TokenizerConsumer<T>
-where
-    T: Tokenizer,
-{
-    pub tokenizer: T,
-}
-impl<T: Tokenizer> TokenizerConsumer<T> {
-    fn new(tokenizer: T) -> Self {
-        Self { tokenizer }
-    }
-}
-impl<T> Consumer for TokenizerConsumer<T>
-where
-    T: Tokenizer,
-{
-    type V = ReaderEnum;
-
-    fn accept_mut(&mut self, item: Self::V) -> Result<()> {
-        self.tokenizer.set_reader(item)
-    }
-
-    fn accept(&self, _item: Self::V) -> Result<()> {
-        unimplemented!("")
+    pub fn take_token_stream(&mut self) -> Option<TS> {
+        self.sink.take()
     }
 }
 
