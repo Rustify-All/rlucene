@@ -23,5 +23,5 @@ pub trait AttributeImpl: Attribute + Clone {
         self.clear()
     }
     type AttributeImpl: AttributeImpl;
-    fn copy_to(&mut self, other: &mut Self::AttributeImpl);
+    fn copy_to(&self, other: &mut Self::AttributeImpl);
 }

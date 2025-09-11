@@ -168,10 +168,10 @@ impl CharTermAttribute for CharTermAttributeImpl {
     }
 }
 impl TermToBytesRefAttribute for CharTermAttributeImpl {
-    fn get_bytes_ref(&mut self) -> Cow<'_, BytesRef<Vec<u8>>> {
+    fn get_bytes_ref(&mut self) -> Option<Cow<'_, BytesRef<Vec<u8>>>> {
         self.builder
             .copy_chars_with_chars(&self.term_buffer, 0, self.term_length);
-        Cow::Borrowed(&self.builder.bytes_ref)
+        Some(Cow::Borrowed(&self.builder.bytes_ref))
     }
 }
 
@@ -194,7 +194,7 @@ impl AttributeImpl for CharTermAttributeImpl {
 
     type AttributeImpl = CharTermAttributeImpl;
 
-    fn copy_to(&mut self, other: &mut Self::AttributeImpl) {
+    fn copy_to(&self, other: &mut Self::AttributeImpl) {
         other.copy_buffer(&self.term_buffer, 0, self.term_length);
     }
 }

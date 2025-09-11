@@ -237,7 +237,7 @@ impl AttributeImpl for PackedTokenAttributeImpl {
 
     type AttributeImpl = PackedTokenAttributeImpl;
 
-    fn copy_to(&mut self, to: &mut Self::AttributeImpl) {
+    fn copy_to(&self, to: &mut Self::AttributeImpl) {
         let len = self.base.length();
         let buf = self.base.buffer();
         to.base.copy_buffer(buf, 0, len);

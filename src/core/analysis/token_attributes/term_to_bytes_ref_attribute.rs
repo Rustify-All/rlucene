@@ -25,5 +25,5 @@ pub trait TermToBytesRefAttribute: Attribute {
     /// The implementation may return a new instance or keep the previous one.
     /// The returned reference stays valid only until the next call to
     /// `increment_token()`.
-    fn get_bytes_ref(&mut self) -> Cow<'_, BytesRef<Vec<u8>>>;
+    fn get_bytes_ref(&mut self) -> Option<Cow<'_, BytesRef<Vec<u8>>>>;
 }

@@ -24,7 +24,7 @@ pub struct DummyTermToBytesRefAttribute;
 impl Attribute for DummyTermToBytesRefAttribute {}
 
 impl TermToBytesRefAttribute for DummyTermToBytesRefAttribute {
-    fn get_bytes_ref(&mut self) -> Cow<'_, BytesRef<Vec<u8>>> {
+    fn get_bytes_ref(&mut self) -> Option<Cow<'_, BytesRef<Vec<u8>>>> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 }

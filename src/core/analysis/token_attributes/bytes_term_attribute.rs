@@ -14,18 +14,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-pub mod bytes_term_attribute;
-pub mod bytes_term_attribute_impl;
-pub mod char_term_attribute;
-pub mod char_term_attribute_impl;
-pub mod dummy;
-pub mod flags_attribute;
-mod keyword_attribute;
-pub mod offset_attribute;
-pub mod packed_token_attribute_impl;
-pub mod payload_attribute;
-pub mod position_increment_attribute;
-pub mod position_length_attribute;
-pub mod term_frequency_attribute;
-pub mod term_to_bytes_ref_attribute;
-pub mod type_attribute;
+use crate::core::analysis::token_attributes::term_to_bytes_ref_attribute::TermToBytesRefAttribute;
+use crate::core::index::BytesRef;
+/// This attribute can be used if you have the raw term bytes to be indexed.
+/// It can be used as replacement for CharTermAttribute,
+/// if binary terms should be indexed.
+pub trait BytesTermAttribute: TermToBytesRefAttribute {
+    /// Sets the BytesRef of the term
+    fn set_bytes_ref(&mut self, bytes: BytesRef<Vec<u8>>);
+}

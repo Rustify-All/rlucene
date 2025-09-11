@@ -196,7 +196,7 @@ impl AttributeSource for Attributes {
 
     fn get_bytes_ref(&mut self) -> Option<Cow<'_, BytesRef<Vec<u8>>>> {
         match self {
-            Attributes::PackedToken(attr) => Some(attr.base.get_bytes_ref()),
+            Attributes::PackedToken(attr) => attr.base.get_bytes_ref(),
         }
     }
 
