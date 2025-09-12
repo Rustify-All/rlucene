@@ -943,7 +943,7 @@ impl Operations {
     pub(crate) fn get_common_prefix(a: &Automaton) -> Result<String> {
         if Operations::has_dead_states_from_initial(a)? {
             return Err(LuceneError::illegal_argument(
-                "input automaton has dead states".to_string(),
+                "input automaton has dead states",
             ));
         }
 
@@ -1016,9 +1016,7 @@ impl Operations {
         let mut builder: BytesRefBuilder<Vec<u8>> = BytesRefBuilder::new();
         for ch in prefix.chars() {
             if ch as u32 > 255 {
-                return Err(LuceneError::illegal_state(
-                    "automaton is not binary".to_string(),
-                ));
+                return Err(LuceneError::illegal_state("automaton is not binary"));
             }
             builder.append_byte(ch as u8);
         }
@@ -1030,7 +1028,7 @@ impl Operations {
     pub(crate) fn get_singleton(a: &Automaton) -> Result<Option<IntsRef<Vec<i32>>>> {
         if !a.is_deterministic() {
             return Err(LuceneError::illegal_argument(
-                "input automaton must be deterministic".to_string(),
+                "input automaton must be deterministic",
             ));
         }
 
@@ -1255,9 +1253,7 @@ impl Operations {
                     pushed = true;
                     break;
                 } else if on_stack.contains(t.dest as usize) {
-                    return Err(LuceneError::illegal_argument(
-                        "input automaton has a cycle".to_string(),
-                    ));
+                    return Err(LuceneError::illegal_argument("input automaton has a cycle"));
                 }
             }
             // If we haven't pushed any new state onto the stack, we're done with this state

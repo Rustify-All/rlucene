@@ -25,7 +25,6 @@ use crate::core::codecs::points_format::PointsFormat;
 use crate::core::codecs::points_writer::PointsWriter;
 use crate::core::document::fields::Fields;
 use crate::core::document::invertable_field::InvertableType;
-use crate::core::document::stored_value::StoredValue;
 use crate::core::index::BytesRef;
 use crate::core::index::binary_doc_values_writer::{
     BinaryDocValuesWriter, BufferedBinaryDocValues,
@@ -1444,7 +1443,7 @@ impl PerField {
         //         let attribute_source = stream.get_attribute_source_mut();
         //         let invert_state = self.invert_state.as_mut().unwrap();
         //         let pos_incr = attribute_source.get_position_increment().ok_or_else(|| {
-        //             LuceneError::illegal_state("PositionIncrementAttribute is None".to_string())
+        //             LuceneError::illegal_state("PositionIncrementAttribute is None")
         //         })?;
         //         invert_state.position += pos_incr;
         //         if invert_state.position < invert_state.last_position {
@@ -1481,7 +1480,7 @@ impl PerField {
         //             .zip(attribute_source.end_offset())
         //             .ok_or_else(|| {
         //                 LuceneError::illegal_state(
-        //                     "missing start or end offset in attribute_source".to_string(),
+        //                     "missing start or end offset in attribute_source",
         //                 )
         //             })?;
         //         let start_offset = invert_state.offset + start;
@@ -1497,7 +1496,7 @@ impl PerField {
         //
         //         // update length
         //         let tf = attribute_source.get_term_frequency().ok_or_else(|| {
-        //             LuceneError::illegal_argument("term frequency is None".to_string())
+        //             LuceneError::illegal_argument("term frequency is None")
         //         })?;
         //         invert_state.length = invert_state.length.checked_add(tf).ok_or_else(|| {
         //             LuceneError::number_overflow(format!(
@@ -1519,7 +1518,7 @@ impl PerField {
         //         ) {
         //             let bytes_ref = attribute_source.get_bytes_ref().ok_or_else(|| {
         //                 LuceneError::illegal_state(
-        //                     "BytesRef is None in attribute_source".to_string(),
+        //                     "BytesRef is None in attribute_source",
         //                 )
         //             })?;
         //             let mut prefix = [0u8; 30];
@@ -1603,9 +1602,7 @@ impl PerField {
                 state.length = new_length;
             },
             None => {
-                return Err(LuceneError::number_overflow(
-                    "Field length overflowed".to_string(),
-                ));
+                return Err(LuceneError::number_overflow("Field length overflowed"));
             },
         }
         let mut attribute_source = EmptyAttributeSource;
@@ -2378,7 +2375,7 @@ where
         self.delegate.stored_value()
     }
 
-    fn take_stored_value(&self) -> Result<Option<StoredValue>> {
+    fn take_stored_value(&mut self) -> Option<FieldDataEnum> {
         self.delegate.take_stored_value()
     }
 

@@ -386,9 +386,7 @@ pub(crate) trait TermsHashPerFieldBase {
     /// But we still keep this method for consistent with the original Java code
     #[allow(dead_code)]
     fn new_postings_array(&mut self) -> Result<()> {
-        Err(LuceneError::not_implemented(
-            "should nerve called".to_string(),
-        ))
+        Err(LuceneError::not_implemented("should nerve called"))
     }
     /// Creates a new postings array of the specified size.
     /// # Note

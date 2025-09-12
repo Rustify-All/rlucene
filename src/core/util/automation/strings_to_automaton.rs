@@ -103,7 +103,7 @@ impl StringsToAutomaton {
     /// to a standard [`Automaton`] instance.
     fn complete_and_convert(&mut self) -> Result<Automaton> {
         if self.state_registry.is_none() {
-            return Err(LuceneError::illegal_state("".to_string()));
+            return Err(LuceneError::illegal_state(""));
         }
 
         {

@@ -439,14 +439,10 @@ impl AutomatonTestUtil {
     /// Complexity: quadratic in the number of states.
     pub(crate) fn subset_of(a1: &Automaton, a2: &Automaton) -> Result<bool> {
         if !a1.is_deterministic() {
-            return Err(LuceneError::illegal_argument(
-                "a1 must be deterministic".to_string(),
-            ));
+            return Err(LuceneError::illegal_argument("a1 must be deterministic"));
         }
         if !a2.is_deterministic() {
-            return Err(LuceneError::illegal_argument(
-                "a2 must be deterministic".to_string(),
-            ));
+            return Err(LuceneError::illegal_argument("a2 must be deterministic"));
         }
         assert!(!Operations::has_dead_states_from_initial(a1)?);
         assert!(!Operations::has_dead_states_from_initial(a2)?);

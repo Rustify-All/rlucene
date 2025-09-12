@@ -79,7 +79,7 @@ where
         );
         debug_assert!(!self.finished);
         if self.count >= self.num_values {
-            return Err(LuceneError::eof("Writing past end of stream".to_string()));
+            return Err(LuceneError::eof("Writing past end of stream"));
         }
         self.next_values[self.off as usize] = l;
         self.off += 1;

@@ -138,7 +138,7 @@ where
             Some(val) => self.byte_offset = val,
             None => {
                 return Err(LuceneError::number_overflow(
-                    "Overflow when calculating byte offset.".to_string(),
+                    "Overflow when calculating byte offset.",
                 ));
             },
         }

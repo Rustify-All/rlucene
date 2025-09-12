@@ -325,9 +325,9 @@ where
                 index_created_version,
                 *LATEST,
                 if min_supported_major_version == *MIN_SUPPORTED_MAJOR {
-                    "the current and previous major versions".to_string()
+                    "the current and previous major versions"
                 } else {
-                    format!("from version {min_supported_major_version} upwards")
+                    &format!("from version {min_supported_major_version} upwards")
                 }
             );
             return Err(LuceneError::index_format_too_old(format!(
@@ -808,7 +808,7 @@ where
     pub fn prepare_commit(&mut self, directory: &impl Directory) -> Result<()> {
         if self.pending_commit {
             return Err(LuceneError::illegal_state(
-                "prepare_commit was already called".to_string(),
+                "prepare_commit was already called",
             ));
         }
         directory.sync_metadata()?;
@@ -831,9 +831,7 @@ where
     /// Returns the committed `segments_N` filename.
     pub fn finish_commit(&mut self, directory: &impl Directory) -> Result<String> {
         if !self.pending_commit {
-            return Err(LuceneError::illegal_state(
-                "prepare_commit was not called".to_string(),
-            ));
+            return Err(LuceneError::illegal_state("prepare_commit was not called"));
         }
 
         let mut success_rename_and_sync = false;
@@ -844,16 +842,14 @@ where
                 "",
                 self.generation,
             )
-            .ok_or_else(|| {
-                LuceneError::illegal_state("Failed to generate source file name.".to_string())
-            })?;
+            .ok_or_else(|| LuceneError::illegal_state("Failed to generate source file name."))?;
             let dest = IndexFileNames::file_name_from_generation(
                 IndexFileNames::SEGMENTS,
                 "",
                 self.generation,
             )
             .ok_or_else(|| {
-                LuceneError::illegal_state("Failed to generate destination file name.".to_string())
+                LuceneError::illegal_state("Failed to generate destination file name.")
             })?;
             directory.rename(&src, &dest)?;
             directory.sync_metadata()?;
@@ -1135,7 +1131,7 @@ where
     {
         if !Arc::ptr_eq(&self.directory, &commit.get_directory()) {
             return Err(LuceneError::illegal_state(
-                "The specified commit does not match the specified Directory".to_string(),
+                "The specified commit does not match the specified Directory",
             ));
         }
         self.sub
@@ -1177,9 +1173,7 @@ where
                 let segment_file_name =
                     IndexFileNames::file_name_from_generation(IndexFileNames::SEGMENTS, "", r#gen)
                         .ok_or_else(|| {
-                            LuceneError::illegal_state(
-                                "Failed to generate segment file name.".to_string(),
-                            )
+                            LuceneError::illegal_state("Failed to generate segment file name.")
                         })?;
                 match self.sub.do_body(self.directory.clone(), &segment_file_name) {
                     Ok(result) => {
@@ -1206,9 +1200,7 @@ where
                 }
             } else {
                 return Err(exc.unwrap_or_else(|| {
-                    LuceneError::illegal_state(
-                        "Unexpected error during FindSegmentsFile::run".to_string(),
-                    )
+                    LuceneError::illegal_state("Unexpected error during FindSegmentsFile::run")
                 }));
             }
         }

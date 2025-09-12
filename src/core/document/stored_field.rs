@@ -24,7 +24,6 @@ use crate::core::analysis::token_stream::TokenStream;
 use crate::core::document::field::{Field, FieldBase, FieldDataEnum};
 use crate::core::document::field_type::FieldType;
 use crate::core::document::invertable_field::InvertableType;
-use crate::core::document::stored_value::StoredValue;
 use crate::core::index::BytesRef;
 use crate::core::index::indexable_field::IndexableField;
 use crate::core::util::error::lucene_error::Result;
@@ -269,7 +268,7 @@ impl IndexableField for StoredField {
         self.parent_field.stored_value()
     }
 
-    fn take_stored_value(&self) -> Result<Option<StoredValue>> {
+    fn take_stored_value(&mut self) -> Option<FieldDataEnum> {
         self.parent_field.take_stored_value()
     }
 

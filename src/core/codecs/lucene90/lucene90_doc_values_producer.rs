@@ -766,9 +766,7 @@ where
                 self.merging,
             )?,
             None => {
-                return Err(LuceneError::illegal_state(
-                    "addresses_meta is None".to_string(),
-                ))?;
+                return Err(LuceneError::illegal_state("addresses_meta is None"))?;
             },
         };
 
@@ -879,9 +877,7 @@ where
                                 DenseBinaryDocValuesBaseEnum::Dense1(base)
                             },
                             None => {
-                                return Err(LuceneError::illegal_state(
-                                    "addresses_meta is None".to_string(),
-                                ))?;
+                                return Err(LuceneError::illegal_state("addresses_meta is None"))?;
                             },
                         }
                     };
@@ -926,9 +922,7 @@ where
                                 self.merging,
                             )?,
                             None => {
-                                return Err(LuceneError::illegal_state(
-                                    "addresses_meta is None".to_string(),
-                                ))?;
+                                return Err(LuceneError::illegal_state("addresses_meta is None"))?;
                             },
                         };
                         SparseBinaryDocValuesBaseEnum::Sparse1(SparseBinaryDocValuesBaseImpl1 {
@@ -1022,7 +1016,7 @@ where
                                 )?,
                                 None => {
                                     return Err(LuceneError::illegal_state(
-                                        "addresses_meta is None".to_string(),
+                                        "addresses_meta is None",
                                     ))?;
                                 },
                             };
@@ -1587,9 +1581,7 @@ where
             Some(ref values) => {
                 Ok(self.mul * values.get_immutable(index & self.mask)? + self.delta)
             },
-            None => Err(LuceneError::illegal_state(
-                "values should not be None".to_string(),
-            )),
+            None => Err(LuceneError::illegal_state("values should not be None")),
         }
     }
 }
@@ -2600,7 +2592,7 @@ where
             Some(ref entry) => entry.clone(),
             None => {
                 return Err(LuceneError::illegal_state(
-                    "TermsDictEntry's terms_dict_entry is None".to_string(),
+                    "TermsDictEntry's terms_dict_entry is None",
                 ));
             },
         };
@@ -2664,7 +2656,7 @@ where
         match self.entry.terms_dict_entry {
             Some(ref entry) => Ok(entry.terms_dict_size),
             None => Err(LuceneError::illegal_state(
-                "TermsDictEntry's terms_dict_entry is None".to_string(),
+                "TermsDictEntry's terms_dict_entry is None",
             )),
         }
     }
@@ -2719,7 +2711,7 @@ where
             )?,
             None => {
                 return Err(LuceneError::illegal_state(
-                    "TermsDictEntry's terms_addresses_meta is None".to_string(),
+                    "TermsDictEntry's terms_addresses_meta is None",
                 ));
             },
         };
@@ -2741,7 +2733,7 @@ where
             )?,
             None => {
                 return Err(LuceneError::illegal_state(
-                    "TermsDictEntry's terms_index_addresses_meta is None".to_string(),
+                    "TermsDictEntry's terms_index_addresses_meta is None",
                 ));
             },
         };

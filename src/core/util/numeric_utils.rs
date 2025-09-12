@@ -129,7 +129,7 @@ impl NumericUtils {
             }
         }
         if borrow != 0 {
-            return Err(LuceneError::illegal_argument("a < b".to_string()));
+            return Err(LuceneError::illegal_argument("a < b"));
         }
         Ok(())
     }
@@ -257,7 +257,7 @@ impl NumericUtils {
         full_big_int_bytes[0] ^= 0x80;
         if offset + big_int_size > result.len() {
             return Err(LuceneError::illegal_argument(
-                "Index out of bounds in result array".to_string(),
+                "Index out of bounds in result array",
             ));
         }
         result.copy_from(&full_big_int_bytes, offset);
@@ -288,7 +288,7 @@ impl NumericUtils {
     ) -> Result<BigInt> {
         if offset + length > encoded.len() {
             return Err(LuceneError::illegal_argument(
-                "Index out of bounds in encoded array".to_string(),
+                "Index out of bounds in encoded array",
             ));
         }
         let mut big_int_bytes = encoded[offset..offset + length].to_vec();

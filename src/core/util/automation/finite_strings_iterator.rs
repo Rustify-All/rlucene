@@ -123,9 +123,7 @@ impl FiniteStringsIteratorBase for FiniteStringsIterator<'_> {
                 if self.a.get_num_transitions_with_state(to) != 0 && to != self.end_state {
                     // Now recurse: the destination of this transition has outgoing transitions:
                     if self.path_states.contains(to as usize) {
-                        return Err(LuceneError::illegal_argument(
-                            "automaton has cycles".to_string(),
-                        ));
+                        return Err(LuceneError::illegal_argument("automaton has cycles"));
                     }
                     self.path_states.insert(to as usize);
                     // Push node onto stack:

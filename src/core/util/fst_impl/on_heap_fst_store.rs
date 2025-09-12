@@ -87,7 +87,7 @@ impl FstReader for OnHeapFSTStore {
             ))
         } else {
             Err(LuceneError::illegal_state(
-                "OnHeapFSTStore has neither bytes_array nor data_output".to_string(),
+                "OnHeapFSTStore has neither bytes_array nor data_output",
             ))
         }
     }
@@ -101,9 +101,7 @@ impl FstReader for OnHeapFSTStore {
             debug_assert!(len <= i32::MAX as usize);
             out.write_bytes_range(bytes_array, 0, len as i32)?;
         } else {
-            return Err(LuceneError::illegal_state(
-                "OnHeapFSTStore is empty".to_string(),
-            ));
+            return Err(LuceneError::illegal_state("OnHeapFSTStore is empty"));
         }
         Ok(())
     }

@@ -40,9 +40,7 @@ impl MathUtil {
                 Ok((63 - x.leading_zeros()) as i32)
             };
         } else if base <= 1 {
-            return Err(LuceneError::illegal_argument(
-                "base must be > 1".to_string(),
-            ));
+            return Err(LuceneError::illegal_argument("base must be > 1"));
         }
 
         let mut ret = 0;

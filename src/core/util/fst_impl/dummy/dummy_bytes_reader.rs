@@ -26,19 +26,19 @@ pub struct DummyBytesReader;
 impl DataInput for DummyBytesReader {
     fn read_byte(&mut self) -> lucene_error::Result<u8> {
         Err(LuceneError::unsupported_operation(
-            "DummyBytesReader does not support reading bytes".to_string(),
+            "DummyBytesReader does not support reading bytes",
         ))
     }
 
     fn read_bytes(&mut self, _b: &mut [u8], _offset: i32, _len: i32) -> lucene_error::Result<()> {
         Err(LuceneError::unsupported_operation(
-            "DummyBytesReader does not support reading bytes".to_string(),
+            "DummyBytesReader does not support reading bytes",
         ))
     }
 
     fn skip_bytes(&mut self, _num_bytes: i64) -> lucene_error::Result<()> {
         Err(LuceneError::unsupported_operation(
-            "DummyBytesReader does not support skipping bytes".to_string(),
+            "DummyBytesReader does not support skipping bytes",
         ))
     }
 }

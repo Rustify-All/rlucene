@@ -342,7 +342,7 @@ impl TermVectorsConsumerPerField {
                         .zip(attribute_source.end_offset())
                         .ok_or_else(|| {
                             LuceneError::illegal_state(
-                                "missing start or end offset in attribute_source".to_string(),
+                                "missing start or end offset in attribute_source",
                             )
                         })?;
 

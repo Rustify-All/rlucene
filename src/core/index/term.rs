@@ -31,18 +31,30 @@ pub struct Term {
 impl Term {
     /// Constructs a `Term` with the given field and bytes.
     /// The provided `BytesRef` is copied when it is non-`None`.
-    pub fn new(fld: String, bytes: BytesRef<Vec<u8>>) -> Self {
-        Term { field: fld, bytes }
+    pub fn new<T>(fld: T, bytes: BytesRef<Vec<u8>>) -> Self
+    where
+        T: Into<String>,
+    {
+        Term {
+            field: fld.into(),
+            bytes,
+        }
     }
 
     /// Constructs a Term with the given field and the bytes from a builder.
-    pub fn from_bytes_ref_builder(fld: String, bytes_builder: BytesRefBuilder<Vec<u8>>) -> Self {
+    pub fn from_bytes_ref_builder<T>(fld: T, bytes_builder: BytesRefBuilder<Vec<u8>>) -> Self
+    where
+        T: Into<String>,
+    {
         Self::new(fld, bytes_builder.get_bytes_ref_copy())
     }
 
     /// Constructs a Term with the given field and text.
     /// That accepts a Term parameter.
-    pub fn from_text(fld: String, text: &str) -> Self {
+    pub fn from_text<T>(fld: T, text: &str) -> Self
+    where
+        T: Into<String>,
+    {
         Self::new(fld, BytesRef::from_string(text))
     }
 
@@ -51,7 +63,10 @@ impl Term {
     /// query.
     ///
     /// Fld field's name
-    pub fn from_empty(fld: String) -> Self {
+    pub fn from_empty<T>(fld: T) -> Self
+    where
+        T: Into<String>,
+    {
         Term::new(fld, BytesRef::default())
     }
     /// Returns the field of this term. The field indicates the part of a
@@ -139,10 +154,10 @@ mod tests {
     struct TestTerm;
     #[test]
     fn test_equals() {
-        let base = Term::from_text("same".to_string(), "same");
-        let same = Term::from_text("same".to_string(), "same");
-        let different_field = Term::from_text("different".to_string(), "same");
-        let different_text = Term::from_text("same".to_string(), "different");
+        let base = Term::from_text("same", "same");
+        let same = Term::from_text("same", "same");
+        let different_field = Term::from_text("different", "same");
+        let different_text = Term::from_text("same", "different");
         assert_eq!(base, base);
         assert_eq!(base, same);
         assert_ne!(base, different_field);

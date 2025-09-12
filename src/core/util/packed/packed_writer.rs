@@ -105,7 +105,7 @@ where
         );
         debug_assert!(!self.finished, "Cannot add values after finishing writing");
         if self.value_count != -1 && self.written >= self.value_count {
-            return Err(LuceneError::eof("Writing past end of stream".to_string()));
+            return Err(LuceneError::eof("Writing past end of stream"));
         }
         self.next_values[self.off as usize] = v;
         self.off += 1;

@@ -372,9 +372,7 @@ where
             // Dead end (target is after the last arc);
             // rollback to last fork then push
             if self.upto == 0 {
-                return Err(LuceneError::illegal_state(
-                    "upto should be greater than 0".to_string(),
-                ));
+                return Err(LuceneError::illegal_state("upto should be greater than 0"));
             }
             self.upto -= 1;
             while self.upto > 0 {
@@ -430,9 +428,7 @@ where
             Ok(None)
         } else if arc.is_last() {
             if self.upto == 0 {
-                return Err(LuceneError::illegal_state(
-                    "upto should be greater than 0".to_string(),
-                ));
+                return Err(LuceneError::illegal_state("upto should be greater than 0"));
             }
             self.upto -= 1;
             while self.upto > 0 {
@@ -660,9 +656,7 @@ where
         FB: FSTEnumBase<O, F>,
     {
         if self.upto == 0 {
-            return Err(LuceneError::illegal_state(
-                "upto should be greater than 0".to_string(),
-            ));
+            return Err(LuceneError::illegal_state("upto should be greater than 0"));
         }
         self.upto -= 1;
         while self.upto > 0 {

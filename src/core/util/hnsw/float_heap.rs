@@ -81,7 +81,7 @@ impl FloatHeap {
     /// Returns an error if the heap is empty.
     pub fn poll(&mut self) -> Result<f32> {
         if self.size == 0 {
-            return Err(LuceneError::illegal_state("The heap is empty".to_string()));
+            return Err(LuceneError::illegal_state("The heap is empty"));
         }
         let result = self.heap[1];
         self.heap[1] = self.heap[self.size];

@@ -59,7 +59,7 @@ where
                 MissingValueEnum::Double(value) => Some(value),
                 _ => {
                     return Err(LuceneError::illegal_state(
-                        "Missing value type mismatch for Double.".to_string(),
+                        "Missing value type mismatch for Double.",
                     ));
                 },
             }
@@ -151,7 +151,7 @@ where
                 MissingValueEnum::Int(value) => Some(value),
                 _ => {
                     return Err(LuceneError::illegal_state(
-                        "Missing value type mismatch for INT.".to_string(),
+                        "Missing value type mismatch for INT.",
                     ));
                 },
             }
@@ -243,7 +243,7 @@ where
                 MissingValueEnum::Long(value) => Some(value),
                 _ => {
                     return Err(LuceneError::illegal_state(
-                        "Missing value type mismatch for Long.".to_string(),
+                        "Missing value type mismatch for Long.",
                     ));
                 },
             }
@@ -340,7 +340,7 @@ where
                 MissingValueEnum::Float(value) => Some(value),
                 _ => {
                     return Err(LuceneError::illegal_state(
-                        "Missing value type mismatch for Float.".to_string(),
+                        "Missing value type mismatch for Float.",
                     ));
                 },
             }

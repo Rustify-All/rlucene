@@ -122,17 +122,20 @@ impl<D> DocValuesFieldUpdates<D>
 where
     D: DocValuesFieldUpdatesBase,
 {
-    pub(crate) fn new(
+    pub(crate) fn new<T>(
         max_doc: i32,
         del_gen: i64,
-        field: String,
+        field: T,
         doc_values_type: DocValuesType,
         sub_update: D,
-    ) -> Result<Self> {
+    ) -> Result<Self>
+    where
+        T: Into<String>,
+    {
         let bits_per_value = PackedInts::bits_required(max_doc as i64 - 1)? + SHIFT;
         let inner = DocValuesFieldInner::new(bits_per_value)?;
         Ok(Self {
-            field,
+            field: field.into(),
             doc_values_type,
             del_gen,
             max_doc,
@@ -187,9 +190,7 @@ where
     pub(crate) fn finish(&mut self) -> Result<()> {
         let mut inner = self.inner.lock();
         if inner.finished {
-            return Err(LuceneError::illegal_argument(
-                "already finished".to_string(),
-            ));
+            return Err(LuceneError::illegal_argument("already finished"));
         }
         inner.finished = true;
         let size = inner.size;
@@ -253,9 +254,7 @@ where
     fn add_internal(&mut self, doc: i32, has_value_mask: i64) -> Result<i32> {
         let mut inner = self.inner.lock();
         if inner.finished {
-            return Err(LuceneError::illegal_argument(
-                "already finished".to_string(),
-            ));
+            return Err(LuceneError::illegal_argument("already finished"));
         }
         let size = inner.size;
         debug_assert!(doc < self.max_doc, "doc must be less than max_doc");
@@ -263,7 +262,7 @@ where
         // remove that limitation
         if size == i32::MAX {
             return Err(LuceneError::illegal_state(
-                "cannot support more than Integer.MAX_VALUE doc/value entries".to_string(),
+                "cannot support more than Integer.MAX_VALUE doc/value entries",
             ));
         }
         // grow the structures to have room for more elements
@@ -297,7 +296,7 @@ where
     pub(crate) fn ensure_finished(&self) -> Result<()> {
         let inner = self.inner.lock();
         if !inner.finished {
-            return Err(LuceneError::illegal_state("call finish first".to_string()));
+            return Err(LuceneError::illegal_state("call finish first"));
         }
         Ok(())
     }
@@ -507,7 +506,7 @@ impl DocValuesFieldIterator for DocValuesFieldIteratorEnum {
     fn long_value(&mut self) -> Result<i64> {
         match self {
             DocValuesFieldIteratorEnum::AbstractBinary(_) => Err(LuceneError::illegal_state(
-                "long_value is not supported for binary doc values".to_string(),
+                "long_value is not supported for binary doc values",
             )),
             DocValuesFieldIteratorEnum::AbstractNumeric(it) => it.long_value(),
             DocValuesFieldIteratorEnum::SingleValue(it) => it.long_value(),
@@ -1247,37 +1246,17 @@ mod tests {
     fn test_merge_iterator() -> Result<()> {
         let mut random = random();
         let sub_update1 = NumericDocValuesFieldUpdates::new()?;
-        let mut updates1 = DocValuesFieldUpdates::new(
-            6,
-            0,
-            "test".to_string(),
-            sub_update1.sub_type(),
-            sub_update1,
-        )?;
+        let mut updates1 =
+            DocValuesFieldUpdates::new(6, 0, "test", sub_update1.sub_type(), sub_update1)?;
         let sub_update2 = NumericDocValuesFieldUpdates::new()?;
-        let mut updates2 = DocValuesFieldUpdates::new(
-            6,
-            1,
-            "test".to_string(),
-            sub_update2.sub_type(),
-            sub_update2,
-        )?;
+        let mut updates2 =
+            DocValuesFieldUpdates::new(6, 1, "test", sub_update2.sub_type(), sub_update2)?;
         let sub_update3 = NumericDocValuesFieldUpdates::new()?;
-        let mut updates3 = DocValuesFieldUpdates::new(
-            6,
-            2,
-            "test".to_string(),
-            sub_update3.sub_type(),
-            sub_update3,
-        )?;
+        let mut updates3 =
+            DocValuesFieldUpdates::new(6, 2, "test", sub_update3.sub_type(), sub_update3)?;
         let sub_update4 = NumericDocValuesFieldUpdates::new()?;
-        let mut updates4 = DocValuesFieldUpdates::new(
-            6,
-            3,
-            "test".to_string(),
-            sub_update4.sub_type(),
-            sub_update4,
-        )?;
+        let mut updates4 =
+            DocValuesFieldUpdates::new(6, 3, "test", sub_update4.sub_type(), sub_update4)?;
 
         updates1.add_value(0, 1)?;
         updates1.add_value(4, 0)?;
@@ -1340,13 +1319,8 @@ mod tests {
     #[test]
     fn test_update_and_reset_same_doc() -> Result<()> {
         let sub_update = NumericDocValuesFieldUpdates::new()?;
-        let mut updates = DocValuesFieldUpdates::new(
-            2,
-            0,
-            "test".to_string(),
-            sub_update.sub_type(),
-            sub_update,
-        )?;
+        let mut updates =
+            DocValuesFieldUpdates::new(2, 0, "test", sub_update.sub_type(), sub_update)?;
 
         updates.add_value(0, 1)?;
         updates.reset(0)?;
@@ -1362,13 +1336,8 @@ mod tests {
     #[test]
     fn test_update_and_reset_update_same_doc() -> Result<()> {
         let sub_update = NumericDocValuesFieldUpdates::new()?;
-        let mut updates = DocValuesFieldUpdates::new(
-            3,
-            0,
-            "test".to_string(),
-            sub_update.sub_type(),
-            sub_update,
-        )?;
+        let mut updates =
+            DocValuesFieldUpdates::new(3, 0, "test", sub_update.sub_type(), sub_update)?;
 
         updates.add_value(0, 1)?;
         updates.reset(0)?;
@@ -1388,13 +1357,8 @@ mod tests {
         let mut random = random();
 
         let sub_update = NumericDocValuesFieldUpdates::new()?;
-        let mut updates = DocValuesFieldUpdates::new(
-            10,
-            0,
-            "test".to_string(),
-            sub_update.sub_type(),
-            sub_update,
-        )?;
+        let mut updates =
+            DocValuesFieldUpdates::new(10, 0, "test", sub_update.sub_type(), sub_update)?;
 
         let num_updates = 10 + random.random_range(0..100);
         let mut values: [Option<i32>; 5] = [None; 5];
@@ -1457,7 +1421,7 @@ mod tests {
         let sub_update2 =
             SingleValueDocValuesFieldUpdates::new(sub_update1, max_doc, del_gen, sub_type)?;
         let mut update =
-            DocValuesFieldUpdates::new(max_doc, del_gen, "foo".to_string(), sub_type, sub_update2)?;
+            DocValuesFieldUpdates::new(max_doc, del_gen, "foo", sub_type, sub_update2)?;
 
         assert_eq!(value, update.sub_update.long_value()?);
 

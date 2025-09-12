@@ -127,11 +127,11 @@ impl PagedBytes {
     /// Commits final byte[], trimming it if necessary and if trim=true
     pub fn freeze(&mut self, trim: bool) -> Result<PagedBytesReader> {
         if self.frozen {
-            return Err(LuceneError::illegal_state("already frozen".to_string()));
+            return Err(LuceneError::illegal_state("already frozen"));
         }
         if self.did_skip_bytes {
             return Err(LuceneError::illegal_state(
-                "cannot freeze when copy(BytesRef, BytesRef) was used".to_string(),
+                "cannot freeze when copy(BytesRef, BytesRef) was used",
             ));
         }
 
@@ -444,7 +444,7 @@ impl DataOutput for PagedBytesDataOutput {
 pub fn get_data_input(paged_bytes: &PagedBytes) -> Result<PagedBytesDataInput> {
     if !paged_bytes.frozen {
         return Err(LuceneError::illegal_state(
-            "must call freeze() before get_data_input()".to_string(),
+            "must call freeze() before get_data_input()",
         ));
     }
 
@@ -456,7 +456,7 @@ pub fn get_data_input(paged_bytes: &PagedBytes) -> Result<PagedBytesDataInput> {
 pub fn get_data_output(paged_bytes: PagedBytes) -> Result<PagedBytesDataOutput> {
     if paged_bytes.frozen {
         return Err(LuceneError::illegal_state(
-            "cannot get DataOutput after freeze()".to_string(),
+            "cannot get DataOutput after freeze()",
         ));
     }
 

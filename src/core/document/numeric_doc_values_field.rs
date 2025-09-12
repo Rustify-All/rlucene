@@ -19,7 +19,6 @@ use crate::core::analysis::token_stream::TokenStream;
 use crate::core::document::field::{Field, FieldDataEnum};
 use crate::core::document::field_type::FieldType;
 use crate::core::document::invertable_field::InvertableType;
-use crate::core::document::stored_value::StoredValue;
 use crate::core::index::BytesRef;
 use crate::core::index::doc_values_skip_index_type::DocValuesSkipIndexType;
 use crate::core::index::doc_values_type::DocValuesType;
@@ -118,7 +117,7 @@ impl IndexableField for NumericDocValuesField {
         self.parent_field.stored_value()
     }
 
-    fn take_stored_value(&self) -> Result<Option<StoredValue>> {
+    fn take_stored_value(&mut self) -> Option<FieldDataEnum> {
         self.parent_field.take_stored_value()
     }
 

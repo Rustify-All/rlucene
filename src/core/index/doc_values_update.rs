@@ -37,13 +37,17 @@ pub struct DocValuesUpdate {
 }
 impl DocValuesUpdate {
     const RAW_SIZE_IN_BYTES: i32 = 0;
-    pub fn new(
+    pub fn new<T>(
         doc_values_type: DocValuesType,
         term: Term,
-        field: String,
+        field: T,
         doc_id_upto: i32,
         sub_update: DocValuesUpdateEnum,
-    ) -> Self {
+    ) -> Self
+    where
+        T: Into<String>,
+    {
+        let field = field.into();
         debug_assert!(doc_id_upto >= 0, "{doc_id_upto} must be >= 0");
         let has_value = sub_update.has_value();
         DocValuesUpdate {

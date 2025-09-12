@@ -20,7 +20,6 @@ use crate::core::analysis::reader::ReaderEnum;
 use crate::core::analysis::token_stream::TokenStream;
 use crate::core::document::field::FieldDataEnum;
 use crate::core::document::invertable_field::InvertableType;
-use crate::core::document::stored_value::StoredValue;
 use crate::core::index::BytesRef;
 use crate::core::index::indexable_field_type::IndexableFieldType;
 use crate::core::util::error::lucene_error::Result;
@@ -81,7 +80,7 @@ pub trait IndexableField: Display {
     /// Stored value. This method is called to populate stored fields and must
     /// return a non-null value if the field stored.
     fn stored_value(&self) -> Option<&FieldDataEnum>;
-    fn take_stored_value(&self) -> Result<Option<StoredValue>>;
+    fn take_stored_value(&mut self) -> Option<FieldDataEnum>;
 
     /// Describes how this field should be inverted. This must return a non-null
     /// value if the field indexes terms and postings.

@@ -127,7 +127,7 @@ impl FieldUpdatesBuffer {
         let numeric = initial_value
             .sub_update
             .get_numeric()
-            .ok_or_else(|| LuceneError::illegal_argument("Missing numeric value".to_string()))?;
+            .ok_or_else(|| LuceneError::illegal_argument("Missing numeric value"))?;
         let has_values = numeric.has_value();
         let (numeric_values, max_numeric, min_numeric) = if has_values {
             let value = numeric.get_value();
@@ -156,7 +156,7 @@ impl FieldUpdatesBuffer {
         let binary = initial_value
             .sub_update
             .get_binary()
-            .ok_or_else(|| LuceneError::illegal_argument("Missing binary value".to_string()))?;
+            .ok_or_else(|| LuceneError::illegal_argument("Missing binary value"))?;
         let has_values = binary.has_value();
         let value = if has_values {
             binary.get_value()
@@ -303,9 +303,7 @@ impl FieldUpdatesBuffer {
     }
     pub(crate) fn finish(&mut self) -> Result<()> {
         if self.finished {
-            return Err(LuceneError::illegal_state(
-                "Buffer was finished already".to_string(),
-            ));
+            return Err(LuceneError::illegal_state("Buffer was finished already"));
         }
         self.finished = true;
         let sorted_terms =
@@ -358,9 +356,7 @@ impl FieldUpdatesBuffer {
     }
     pub(crate) fn iterator(&self) -> Result<BufferedUpdateIterator<'_>> {
         if !self.finished {
-            return Err(LuceneError::illegal_state(
-                "Buffer was not finished".to_string(),
-            ));
+            return Err(LuceneError::illegal_state("Buffer was not finished"));
         }
         Ok(BufferedUpdateIterator::new(self))
     }
@@ -629,23 +625,19 @@ mod tests {
         let counter = Arc::new(Mutex::new(CounterEnum::new_counter(false)));
         let update = DocValuesUpdate::new(
             DocValuesType::Numeric,
-            Term::from_text("id".to_string(), "1"),
-            "age".to_string(),
+            Term::from_text("id", "1"),
+            "age",
             MAX_INT,
             DocValuesUpdateEnum::Numeric(NumericDocValuesUpdate::new(Option::from(6))),
         );
         let mut buffer = FieldUpdatesBuffer::from_numeric_update(counter.clone(), &update, 15)?;
-        buffer.add_update_with_long(&Term::from_text("id".to_string(), "10"), 6, 15)?;
+        buffer.add_update_with_long(&Term::from_text("id", "10"), 6, 15)?;
         assert!(buffer.has_single_value());
-        buffer.add_update_with_long(&Term::from_text("id".to_string(), "8"), 12, 15)?;
+        buffer.add_update_with_long(&Term::from_text("id", "8"), 12, 15)?;
         assert!(!buffer.has_single_value());
-        buffer.add_update_with_long(
-            &Term::from_text("some_other_field".to_string(), "8"),
-            13,
-            17,
-        )?;
+        buffer.add_update_with_long(&Term::from_text("some_other_field", "8"), 13, 17)?;
         assert!(!buffer.has_single_value());
-        buffer.add_update_with_long(&Term::from_text("id".to_string(), "8"), 12, 16)?;
+        buffer.add_update_with_long(&Term::from_text("id", "8"), 12, 16)?;
         assert!(!buffer.has_single_value());
         assert!(buffer.is_numeric());
         assert_eq!(buffer.get_max_numeric(), 13);
@@ -702,8 +694,8 @@ mod tests {
         )));
         let update = DocValuesUpdate::new(
             DocValuesType::Numeric,
-            Term::from_text("id".to_string(), "0"),
-            "enabled".to_string(),
+            Term::from_text("id", "0"),
+            "enabled",
             MAX_INT,
             sub_update,
         );
@@ -767,7 +759,7 @@ mod tests {
         let update = DocValuesUpdate::new(
             DocValuesType::Binary,
             Term::from_text("id".to_string(), "0"),
-            "enabled".to_string(),
+            "enabled",
             MAX_INT,
             sub_update,
         );
@@ -847,7 +839,7 @@ mod tests {
         let mut update = DocValuesUpdate::new(
             DocValuesType::Binary,
             Term::from_text(term_field.to_string(), &doc_id),
-            "enabled".to_string(),
+            "enabled",
             MAX_INT,
             sub_update,
         );

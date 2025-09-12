@@ -382,7 +382,7 @@ pub trait BaseFieldInfoFormatTestCase {
 
     fn create_field_info() -> FieldInfo {
         FieldInfo::new(
-            "field".to_string(),
+            "field",
             -1,
             false,
             false,

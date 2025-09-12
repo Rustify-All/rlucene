@@ -151,9 +151,7 @@ impl FreqProxTermsWriterPerField {
             .start_offset()
             .zip(attribute_source.end_offset())
             .ok_or_else(|| {
-                LuceneError::illegal_state(
-                    "missing start or end offset in attribute_source".to_string(),
-                )
+                LuceneError::illegal_state("missing start or end offset in attribute_source")
             })?;
 
         let start_offset = offset_accum + start;
@@ -247,7 +245,7 @@ impl FreqProxTermsWriterPerField {
             None => {
                 if bytes.is_none() {
                     return Err(LuceneError::illegal_state(
-                        "term bytes and attribute source bytes are both None".to_string(),
+                        "term bytes and attribute source bytes are both None",
                     ));
                 }
                 bytes.as_ref().unwrap()
@@ -478,9 +476,9 @@ impl TermsHashPerFieldBase for FreqProxTermsWriterPerField {
                     field_state.unique_term_count += 1;
                 } else {
                     let term_freqs = postings.term_freqs.as_mut().unwrap();
-                    term_freqs[term_id] = term_freqs[term_id].checked_add(tf).ok_or_else(|| {
-                        LuceneError::illegal_state("term frequency overflow".to_string())
-                    })?;
+                    term_freqs[term_id] = term_freqs[term_id]
+                        .checked_add(tf)
+                        .ok_or_else(|| LuceneError::illegal_state("term frequency overflow"))?;
 
                     field_state.max_term_frequency =
                         field_state.max_term_frequency.max(term_freqs[term_id]);

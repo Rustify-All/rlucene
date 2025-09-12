@@ -235,13 +235,13 @@ impl Automata {
     ) -> Result<Automaton> {
         if min.is_none() && !min_inclusive {
             return Err(LuceneError::illegal_argument(
-                "minInclusive must be true when min is None".to_string(),
+                "minInclusive must be true when min is None",
             ));
         }
 
         if max.is_none() && !max_inclusive {
             return Err(LuceneError::illegal_argument(
-                "maxInclusive must be true when max is None".to_string(),
+                "maxInclusive must be true when max is None",
             ));
         }
 
@@ -450,7 +450,7 @@ impl Automata {
 
         if min > max || (digits > 0 && y.len() as i32 > digits) {
             return Err(LuceneError::illegal_argument(
-                "invalid min/max/digits for make_decimal_interval".to_string(),
+                "invalid min/max/digits for make_decimal_interval",
             ));
         }
 

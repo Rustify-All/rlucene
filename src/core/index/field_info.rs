@@ -80,8 +80,8 @@ impl Default for Inner {
 impl FieldInfo {
     /// Sole constructor.
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        name: String,
+    pub fn new<T>(
+        name: T,
         number: i32,
         store_term_vector: bool,
         omit_norms: bool,
@@ -99,7 +99,10 @@ impl FieldInfo {
         vector_similarity_function: VectorSimilarityFunction,
         soft_deletes_field: bool,
         is_parent_field: bool,
-    ) -> Self {
+    ) -> Self
+    where
+        T: Into<String>,
+    {
         let doc_values_type = doc_values;
 
         let (store_term_vector, store_payloads, omit_norms) = if index_options != IndexOptions::None
@@ -115,7 +118,7 @@ impl FieldInfo {
         });
 
         FieldInfo {
-            name,
+            name: name.into(),
             number,
             doc_values_type,
             doc_values_skip_index,

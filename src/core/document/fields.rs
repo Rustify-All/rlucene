@@ -26,7 +26,6 @@ use crate::core::document::field_type::FieldType;
 use crate::core::document::invertable_field::InvertableType;
 use crate::core::document::numeric_doc_values_field::NumericDocValuesField;
 use crate::core::document::stored_field::StoredField;
-use crate::core::document::stored_value::StoredValue;
 use crate::core::document::string_field::StringField;
 use crate::core::document::text_field::TextField;
 use crate::core::index::BytesRef;
@@ -165,7 +164,7 @@ impl IndexableField for Fields {
         }
     }
 
-    fn take_stored_value(&self) -> Result<Option<StoredValue>> {
+    fn take_stored_value(&mut self) -> Option<FieldDataEnum> {
         match self {
             Fields::Field(f) => f.take_stored_value(),
             Fields::Text(f) => f.take_stored_value(),

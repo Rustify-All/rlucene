@@ -76,9 +76,7 @@ impl MonotonicBlockPackedReader {
             let bits_per_value = input.read_vint()?;
             sum_bpv += bits_per_value as i64;
             if bits_per_value > 64 {
-                return Err(LuceneError::corrupt_index(
-                    "Corrupted: bits_per_value > 64".to_string(),
-                ));
+                return Err(LuceneError::corrupt_index("Corrupted: bits_per_value > 64"));
             }
 
             if bits_per_value == 0 {

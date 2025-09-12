@@ -374,7 +374,7 @@ impl DocumentsWriterDeleteQueue {
 
         if self.any_changes(Some(&global_state)) {
             return Err(LuceneError::illegal_state(
-                "Can't close queue unless all changes are applied".to_string(),
+                "Can't close queue unless all changes are applied",
             ));
         }
         global_state.closed = true;
@@ -458,9 +458,7 @@ impl DocumentsWriterDeleteQueue {
     ) -> Result<DocumentsWriterDeleteQueue> {
         let mut global_state = self.inner.lock();
         if global_state.advanced {
-            return Err(LuceneError::illegal_state(
-                "queue was already advanced".to_string(),
-            ));
+            return Err(LuceneError::illegal_state("queue was already advanced"));
         }
         global_state.advanced = true;
 
@@ -827,7 +825,7 @@ impl Display for NodeEnum {
 pub(crate) trait NodeBase {
     fn apply(&self, _buffered_deletes: &mut MTBufferedUpdates, _doc_id_upto: i32) -> Result<()> {
         Err(LuceneError::illegal_argument(
-            "sentinel item must never be applied".to_string(),
+            "sentinel item must never be applied",
         ))
     }
 
@@ -889,7 +887,7 @@ mod tests {
         let mut last2 = 0;
         let mut unique_values = HashSet::new();
         for (j, &id) in ids.iter().enumerate() {
-            let term = Term::from_text("id".to_string(), &id.to_string());
+            let term = Term::from_text("id", &id.to_string());
             unique_values.insert(term.clone());
             queue.add_delete_term(Vec::from([term.clone()]))?;
             if random.random_range(0..20) == 0 || j == (size - 1) as usize {
@@ -946,7 +944,7 @@ mod tests {
         ids: &[i32],
     ) -> Result<()> {
         for i in start..=end {
-            let term = Term::from_text("id".to_string(), &ids[i as usize].to_string());
+            let term = Term::from_text("id", &ids[i as usize].to_string());
             assert_eq!(end, deletes.delete_terms.get(&term));
         }
         Ok(())
@@ -960,7 +958,7 @@ mod tests {
         assert!(!queue.any_changes(None));
         let size = 200 + random.random_range(0..500) * random_multiplier();
         for i in 0..size {
-            let term = Term::from_text("id".to_string(), &i.to_string());
+            let term = Term::from_text("id", &i.to_string());
             if random.random_range(0..10) == 0 {
                 queue
                     .add_delete_query(Vec::from([Arc::new(TermQuery::new(term.clone()).wrap())]))?;
@@ -987,7 +985,7 @@ mod tests {
         let mut queries_since_freeze = 0;
 
         for i in 0..size {
-            let term = Term::from_text("id".to_string(), &i.to_string());
+            let term = Term::from_text("id", &i.to_string());
             if random.random_range(0..10) == 0 {
                 queue.add_delete_query(vec![Arc::new(TermQuery::new(term.clone()).wrap())])?;
                 queries_since_freeze += 1;
@@ -1018,7 +1016,7 @@ mod tests {
         let handle = thread::spawn({
             let queue = queue.clone();
             move || {
-                let term = Term::from_text("foo".to_string(), "bar");
+                let term = Term::from_text("foo", "bar");
                 queue.lock().add_delete_term(vec![term]).unwrap();
             }
         });
@@ -1044,7 +1042,7 @@ mod tests {
         let size = 10000 + random.random_range(0..500) * random_multiplier();
         let ids: Vec<i32> = (0..size).map(|_| random.random()).collect();
         for id in &ids {
-            unique_values.insert(Term::from_text("id".to_string(), &id.to_string()));
+            unique_values.insert(Term::from_text("id", &id.to_string()));
         }
 
         let barrier = Arc::new(Barrier::new(1));
@@ -1108,12 +1106,12 @@ mod tests {
             if random.random_bool(0.5) {
                 queue.close()?; // double close
             }
-            let result = queue.add_delete_term(vec![Term::from_text("foo".to_string(), "bar")]);
+            let result = queue.add_delete_term(vec![Term::from_text("foo", "bar")]);
             assert!(matches!(result, Err(LuceneError::AlreadyClosed(_))));
             let result = queue.freeze_global_buffer(&mut None);
             assert!(matches!(result, Err(LuceneError::AlreadyClosed(_))));
             let result = queue.add_delete_query(vec![Arc::new(
-                TermQuery::new(Term::from_text("foo".to_string(), "bar")).wrap(),
+                TermQuery::new(Term::from_text("foo", "bar")).wrap(),
             )]);
             assert!(matches!(result, Err(LuceneError::AlreadyClosed(_))));
 
@@ -1122,8 +1120,8 @@ mod tests {
             )));
             let update = DocValuesUpdate::new(
                 DocValuesType::Binary,
-                Term::from_text("id".to_string(), "0"),
-                "enabled".to_string(),
+                Term::from_text("id", "0"),
+                "enabled",
                 MAX_INT,
                 sub_update,
             );
@@ -1135,7 +1133,7 @@ mod tests {
         }
         {
             let queue = DocumentsWriterDeleteQueue::new(get_default_info_stream());
-            queue.add_delete_term(vec![Term::from_text("foo".to_string(), "bar")])?;
+            queue.add_delete_term(vec![Term::from_text("foo", "bar")])?;
             let result = queue.close();
             assert!(matches!(result, Err(LuceneError::IllegalState(_))));
 
@@ -1180,7 +1178,7 @@ mod tests {
             self.barrier.wait();
             let mut i = 0;
             while i < self.ids.len() {
-                let term = Term::from_text("id".to_string(), &self.ids[i].to_string());
+                let term = Term::from_text("id", &self.ids[i].to_string());
                 let term_node = Arc::new(DocumentsWriterDeleteQueue::new_node_with_term(term));
                 self.queue
                     .add_with_slice(term_node.clone(), &mut self.slice)?;

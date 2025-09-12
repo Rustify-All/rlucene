@@ -195,7 +195,7 @@ impl DocValuesWriter for SortedDocValuesWriter {
     {
         if !self.is_sorted {
             return Err(LuceneError::illegal_state(
-                "must be finished before getting doc values".to_string(),
+                "must be finished before getting doc values",
             ));
         }
         dv_consumer.add_sorted_field(
@@ -217,7 +217,7 @@ impl DocValuesWriter for SortedDocValuesWriter {
     fn get_doc_values(&self) -> Result<Self::DocIdSetIterator> {
         if !self.is_sorted {
             return Err(LuceneError::illegal_state(
-                "must be finished before getting doc values".to_string(),
+                "must be finished before getting doc values",
             ));
         }
         Ok(BufferedSortedDocValues::new(

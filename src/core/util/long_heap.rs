@@ -111,7 +111,7 @@ impl LongHeap {
             self.down_heap(1);
             Ok(result)
         } else {
-            Err(LuceneError::illegal_state("The heap is empty".to_string()))
+            Err(LuceneError::illegal_state("The heap is empty"))
         }
     }
     /// Replaces the top of the heap with `new_top`.

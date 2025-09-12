@@ -91,9 +91,7 @@ impl FstReader for ReadWriteDataOutput {
             let buffer = self.byte_buffer.as_ref().unwrap().clone();
             Ok(Either2BytesReader::B(ReverseBytesReader::new(buffer)))
         } else {
-            Err(LuceneError::illegal_state(
-                "Only one buffer is some".to_string(),
-            ))
+            Err(LuceneError::illegal_state("Only one buffer is some"))
         }
     }
 

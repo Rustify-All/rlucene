@@ -316,7 +316,7 @@ where
                     Ok(Either2PostingsEnum::A(postings_enum))
                 },
                 _ => Err(LuceneError::illegal_state(
-                    "EitherTermsEnum::F expected EitherPostingsEnum::F for reuse".to_string(),
+                    "EitherTermsEnum::F expected EitherPostingsEnum::F for reuse",
                 )),
             },
             Either2TermsEnum::B(s) => match reuse {
@@ -329,7 +329,7 @@ where
                     Ok(Either2PostingsEnum::B(postings_enum))
                 },
                 _ => Err(LuceneError::illegal_state(
-                    "EitherTermsEnum::S expected EitherPostingsEnum::S for reuse".to_string(),
+                    "EitherTermsEnum::S expected EitherPostingsEnum::S for reuse",
                 )),
             },
         }
@@ -351,7 +351,7 @@ where
                     Ok(Either2PostingsEnum::A(postings_enum))
                 },
                 _ => Err(LuceneError::illegal_state(
-                    "EitherTermsEnum::F expected EitherPostingsEnum::F for reuse".to_string(),
+                    "EitherTermsEnum::F expected EitherPostingsEnum::F for reuse",
                 )),
             },
             Either2TermsEnum::B(s) => match reuse {
@@ -364,7 +364,7 @@ where
                     Ok(Either2PostingsEnum::B(postings_enum))
                 },
                 _ => Err(LuceneError::illegal_state(
-                    "EitherTermsEnum::S expected EitherPostingsEnum::S for reuse".to_string(),
+                    "EitherTermsEnum::S expected EitherPostingsEnum::S for reuse",
                 )),
             },
         }

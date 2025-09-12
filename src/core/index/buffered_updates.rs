@@ -434,7 +434,7 @@ where
             self.delete_terms.iter_mut().collect();
         delete_fields.sort_by(|a, b| a.0.cmp(b.0));
 
-        let mut scratch = Term::new("".to_string(), BytesRef::new());
+        let mut scratch = Term::new("", BytesRef::new());
         for (field, terms) in delete_fields {
             scratch.field = field.clone();
             terms.bytes_ref_hash.sort()?;
@@ -618,7 +618,7 @@ mod tests {
                 random.random_range(0..100000)
             };
             let value = format!("{}", random.random_range(0..100));
-            let term = Term::new("id".to_string(), BytesRef::from_string(&value));
+            let term = Term::new("id", BytesRef::from_string(&value));
             bu.add_query(
                 Arc::new(QueryEnum::Term(TermQuery::new(term.clone()))),
                 doc_id_upto,
@@ -633,7 +633,7 @@ mod tests {
                 random.random_range(0..100000)
             };
             let value = format!("{}", random.random_range(0..100));
-            let term = Term::new("id".to_string(), BytesRef::from_string(&value));
+            let term = Term::new("id", BytesRef::from_string(&value));
             bu.add_term(&term, doc_id_upto)?;
         }
 

@@ -137,7 +137,7 @@ impl<T> OptionTakeExt<T> for Option<T> {
     fn take_do_return<R>(&mut self, f: impl FnOnce(&mut T) -> Result<R>) -> Result<R> {
         let mut val = self
             .take()
-            .ok_or_else(|| LuceneError::illegal_state("Option was None".to_string()))?;
+            .ok_or_else(|| LuceneError::illegal_state("Option was None"))?;
         let res = f(&mut val);
         *self = Some(val);
         res

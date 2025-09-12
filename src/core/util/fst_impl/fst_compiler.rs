@@ -1021,13 +1021,13 @@ impl FstReader for NullFSTReader {
 
     fn get_reverse_bytes_reader(&self) -> Result<Self::FstBytesReader> {
         Err(LuceneError::unsupported_operation(
-            "FST was not constructed with getOnHeapReaderWriter()".to_string(),
+            "FST was not constructed with getOnHeapReaderWriter()",
         ))
     }
 
     fn write_to(&self, _out: &mut impl DataOutput) -> Result<()> {
         Err(LuceneError::unsupported_operation(
-            "FST was not constructed with getOnHeapReaderWriter()".to_string(),
+            "FST was not constructed with getOnHeapReaderWriter()",
         ))
     }
 }
@@ -1221,7 +1221,7 @@ where
 
     fn get_reverse_bytes_reader(&self) -> Result<Self::FstBytesReader> {
         match self {
-            DataOutputEnum::FromDir(_) => Err(LuceneError::unsupported_operation("".to_string())),
+            DataOutputEnum::FromDir(_) => Err(LuceneError::unsupported_operation("")),
             DataOutputEnum::ReadWriter(rw) => {
                 let reader = rw.get_reverse_bytes_reader()?;
                 Ok(reader)
@@ -1231,7 +1231,7 @@ where
 
     fn write_to(&self, out: &mut impl DataOutput) -> Result<()> {
         match self {
-            DataOutputEnum::FromDir(_) => Err(LuceneError::unsupported_operation("".to_string())),
+            DataOutputEnum::FromDir(_) => Err(LuceneError::unsupported_operation("")),
             DataOutputEnum::ReadWriter(rw) => rw.write_to(out),
         }
     }

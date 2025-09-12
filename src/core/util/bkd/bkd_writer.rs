@@ -360,14 +360,12 @@ where
         M: MutablePointTree,
     {
         if self.point_count != 0 {
-            return Err(LuceneError::illegal_state(
-                "cannot mix add and write_field".to_string(),
-            ));
+            return Err(LuceneError::illegal_state("cannot mix add and write_field"));
         }
 
         // Catch user silliness:
         if self.finished {
-            return Err(LuceneError::illegal_state("already finished".to_string()));
+            return Err(LuceneError::illegal_state("already finished"));
         }
 
         // Mark that we already finished:
@@ -563,7 +561,7 @@ where
         data_out: Rc<RefCell<<TrackingDirectoryWrapper<D> as Directory>::IndexOutput>>,
     ) -> Result<Option<IORunnable>> {
         if self.finished {
-            return Err(LuceneError::illegal_state("already finished".to_string()));
+            return Err(LuceneError::illegal_state("already finished"));
         }
 
         if self.point_count == 0 {
@@ -2082,14 +2080,12 @@ where
             )));
         }
         if bkd_writer.point_count != 0 {
-            return Err(LuceneError::illegal_state(
-                "cannot mix add and merge".to_string(),
-            ));
+            return Err(LuceneError::illegal_state("cannot mix add and merge"));
         }
 
         // Catch user silliness:
         if bkd_writer.finished {
-            return Err(LuceneError::illegal_state("already finished".to_string()));
+            return Err(LuceneError::illegal_state("already finished"));
         }
 
         // Mark that we already finished:

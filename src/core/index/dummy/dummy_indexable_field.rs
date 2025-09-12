@@ -19,7 +19,6 @@ use crate::core::analysis::reader::ReaderEnum;
 use crate::core::analysis::token_stream::TokenStream;
 use crate::core::document::field::FieldDataEnum;
 use crate::core::document::invertable_field::InvertableType;
-use crate::core::document::stored_value::StoredValue;
 use crate::core::index::BytesRef;
 use crate::core::index::dummy::dummy_indexable_field_type::DummyIndexableFieldType;
 use crate::core::index::indexable_field::IndexableField;
@@ -83,7 +82,7 @@ impl IndexableField for DummyIndexableField {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    fn take_stored_value(&self) -> Result<Option<StoredValue>> {
+    fn take_stored_value(&mut self) -> Option<FieldDataEnum> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 

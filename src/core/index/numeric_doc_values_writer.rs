@@ -143,7 +143,7 @@ impl DocValuesWriter for NumericDocValuesWriter {
     fn get_doc_values(&self) -> Result<Self::DocIdSetIterator> {
         if self.final_values.is_none() {
             return Err(LuceneError::illegal_state(
-                "must be finished before getting doc values".to_string(),
+                "must be finished before getting doc values",
             ));
         }
         Ok(BufferedNumericDocValues::new(

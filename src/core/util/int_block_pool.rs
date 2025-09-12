@@ -132,7 +132,7 @@ where
                 Ok(())
             },
             None => Err(LuceneError::number_overflow(
-                "Overflow when calculating byte offset.".to_string(),
+                "Overflow when calculating byte offset.",
             )),
         }
     }

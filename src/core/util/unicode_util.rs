@@ -98,9 +98,7 @@ impl UnicodeUtil {
         let mut i = pos + 1;
         while i < limit {
             if i >= utf8.len() {
-                return Err(LuceneError::illegal_argument(
-                    "UTF-8 sequence truncated".to_string(),
-                ));
+                return Err(LuceneError::illegal_argument("UTF-8 sequence truncated"));
             }
             v = (v << 6) | ((utf8[i] & 0b0011_1111) as i32);
             i += 1;

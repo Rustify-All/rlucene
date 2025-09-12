@@ -186,13 +186,11 @@ impl BKDRadixSelector {
     fn check_args(from: i64, to: i64, partition_point: i64) -> Result<()> {
         if partition_point < from {
             return Err(LuceneError::illegal_argument(
-                "partitionPoint must be >= from".to_string(),
+                "partitionPoint must be >= from",
             ));
         }
         if partition_point >= to {
-            return Err(LuceneError::illegal_argument(
-                "partitionPoint must be < to".to_string(),
-            ));
+            return Err(LuceneError::illegal_argument("partitionPoint must be < to"));
         }
         Ok(())
     }
@@ -613,7 +611,7 @@ impl BKDRadixSelector {
                 Ok(partition)
             },
             _ => Err(LuceneError::unreachable(
-                "Point writer is not a heap writer".to_string(),
+                "Point writer is not a heap writer",
             )),
         }
     }
@@ -656,9 +654,7 @@ impl BKDRadixSelector {
         temp_dir: &D,
     ) -> Result<PointWriterEnum<D::IndexOutput>> {
         if delta >= i32::MAX as i64 {
-            return Err(LuceneError::number_overflow(
-                "Delta is too large".to_string(),
-            ));
+            return Err(LuceneError::number_overflow("Delta is too large"));
         }
         if delta <= self.get_max_points_sort_in_heap(left, right) as i64 {
             Ok(PointWriterEnum::Heap(HeapPointWriter::new(

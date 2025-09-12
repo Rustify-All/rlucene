@@ -1442,7 +1442,7 @@ impl IntersectVisitor for IntersectVisitorMock3 {
                     prev.copy_from(&packed_value[..len], 0);
                 } else {
                     return Err(LuceneError::illegal_state(
-                        "Points are not in optimal order".to_string(),
+                        "Points are not in optimal order",
                     ));
                 }
             }

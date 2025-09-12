@@ -16,7 +16,6 @@
  */
 use std::fmt;
 use std::fmt::{Display, Formatter};
-use std::string::ToString;
 
 use crate::core::store::{DataInput, DataOutput};
 use crate::core::util::accountable::Accountable;
@@ -394,7 +393,7 @@ impl PackedInts {
             Some(result) => {
                 if result < size {
                     return Err(LuceneError::illegal_argument(
-                        "size is too large for this block size".to_string(),
+                        "size is too large for this block size",
                     ));
                 }
                 debug_assert!(num_blocks <= i32::MAX as i64);
