@@ -16,8 +16,9 @@
  */
 // TODO: how to handle versioning here...?
 
+use crate::core::analysis::analyzer::Analyzer;
 use crate::core::analysis::reader::ReaderEnum;
-use crate::core::analysis::token_stream::TokenStream;
+use crate::core::analysis::token_stream::{Either2TokenStream, InnerTokenStreams, TokenStream};
 use crate::core::document::field::FieldDataEnum;
 use crate::core::document::invertable_field::InvertableType;
 use crate::core::index::BytesRef;
@@ -55,17 +56,17 @@ pub trait IndexableField: Display {
     /// TokenStream value for indexing the document. Should always return a
     /// non-null value if the field is to be indexed.
     type TokenStream: TokenStream;
-    fn token_stream<'a, TS>(
+    fn token_stream<'a>(
         &'a mut self,
-        token_stream: &'a TS,
-    ) -> Result<Option<&mut Self::TokenStream>>
-    where
-        TS: TokenStream;
+        token_stream: &'a mut InnerTokenStreams,
+    ) -> Result<Option<Either2TokenStream<&'a mut InnerTokenStreams, &'a mut Self::TokenStream>>>;
     /// Non-null if this field has a binary value.
     fn binary_value(&self) -> Result<Option<&BytesRef<Vec<u8>>>>;
+    fn take_binary_value(&mut self) -> Result<BytesRef<Vec<u8>>>;
 
     /// Non-null if this field has a string value.
     fn string_value(&self) -> Result<Option<Cow<'_, String>>>;
+    fn take_string_value(&mut self) -> Result<String>;
     /// Non-null if this field has a string value.
     fn get_char_sequence_value(&self) -> Result<Option<Cow<'_, String>>> {
         self.string_value()
@@ -89,6 +90,10 @@ pub trait IndexableField: Display {
     fn is_reserved(&self) -> bool {
         false
     }
+    // Rust Lucene Only
+    fn init_token_stream<A>(&mut self, analyzer: &A) -> Result<()>
+    where
+        A: Analyzer;
 }
 
 #[cfg(test)]

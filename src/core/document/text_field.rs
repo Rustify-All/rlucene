@@ -14,11 +14,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use std::borrow::Cow;
-use std::fmt;
-
+use crate::core::analysis::analyzer::Analyzer;
 use crate::core::analysis::reader::ReaderEnum;
-use crate::core::analysis::token_stream::TokenStream;
+use crate::core::analysis::token_stream::{Either2TokenStream, InnerTokenStreams};
 use crate::core::document::field::{Field, FieldBase, FieldDataEnum, Store};
 use crate::core::document::field_type::FieldType;
 use crate::core::document::fields::TokenStreamEnum;
@@ -27,6 +25,8 @@ use crate::core::index::BytesRef;
 use crate::core::index::indexable_field::IndexableField;
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::number::Number;
+use std::borrow::Cow;
+use std::fmt;
 
 pub mod text {
 
@@ -133,12 +133,10 @@ impl IndexableField for TextField {
 
     type TokenStream = <Field as IndexableField>::TokenStream;
 
-    fn token_stream<'a, TS>(
+    fn token_stream<'a>(
         &'a mut self,
-        token_stream: &'a TS,
-    ) -> Result<Option<&mut Self::TokenStream>>
-    where
-        TS: TokenStream,
+        token_stream: &'a mut InnerTokenStreams,
+    ) -> Result<Option<Either2TokenStream<&'a mut InnerTokenStreams, &'a mut Self::TokenStream>>>
     {
         self.parent_field.token_stream(token_stream)
     }
@@ -147,8 +145,16 @@ impl IndexableField for TextField {
         self.parent_field.binary_value()
     }
 
+    fn take_binary_value(&mut self) -> Result<BytesRef<Vec<u8>>> {
+        self.parent_field.take_binary_value()
+    }
+
     fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
         self.parent_field.string_value()
+    }
+
+    fn take_string_value(&mut self) -> Result<String> {
+        self.parent_field.take_string_value()
     }
 
     fn get_char_sequence_value(&self) -> Result<Option<Cow<'_, String>>> {
@@ -173,6 +179,13 @@ impl IndexableField for TextField {
 
     fn invertable_type(&self) -> &InvertableType {
         todo!()
+    }
+
+    fn init_token_stream<A>(&mut self, analyzer: &A) -> Result<()>
+    where
+        A: Analyzer,
+    {
+        self.parent_field.init_token_stream(analyzer)
     }
 }
 

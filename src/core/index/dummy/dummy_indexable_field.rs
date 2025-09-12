@@ -14,9 +14,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use crate::core::analysis::analyzer::Analyzer;
 use crate::core::analysis::dummy::dummy_token_stream::DummyTokenStream;
 use crate::core::analysis::reader::ReaderEnum;
-use crate::core::analysis::token_stream::TokenStream;
+use crate::core::analysis::token_stream::{Either2TokenStream, InnerTokenStreams};
 use crate::core::document::field::FieldDataEnum;
 use crate::core::document::invertable_field::InvertableType;
 use crate::core::index::BytesRef;
@@ -48,12 +49,10 @@ impl IndexableField for DummyIndexableField {
 
     type TokenStream = DummyTokenStream;
 
-    fn token_stream<'a, TS>(
+    fn token_stream<'a>(
         &'a mut self,
-        token_stream: &'a TS,
-    ) -> Result<Option<&mut Self::TokenStream>>
-    where
-        TS: TokenStream,
+        _token_stream: &'a mut InnerTokenStreams,
+    ) -> Result<Option<Either2TokenStream<&'a mut InnerTokenStreams, &'a mut Self::TokenStream>>>
     {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
@@ -62,7 +61,15 @@ impl IndexableField for DummyIndexableField {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
+    fn take_binary_value(&mut self) -> Result<BytesRef<Vec<u8>>> {
+        unreachable!("Dummy implementation: this method should never be called in real usage")
+    }
+
     fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
+        unreachable!("Dummy implementation: this method should never be called in real usage")
+    }
+
+    fn take_string_value(&mut self) -> Result<String> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
@@ -91,6 +98,13 @@ impl IndexableField for DummyIndexableField {
     }
 
     fn is_reserved(&self) -> bool {
+        unreachable!("Dummy implementation: this method should never be called in real usage")
+    }
+
+    fn init_token_stream<A>(&mut self, _analyzer: &A) -> Result<()>
+    where
+        A: Analyzer,
+    {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 }

@@ -14,12 +14,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use crate::core::analysis::analyzer::Analyzer;
 use crate::core::analysis::reader::ReaderEnum;
 use crate::core::analysis::token_attributes::bytes_term_attribute::BytesTermAttribute;
 use crate::core::analysis::token_attributes::bytes_term_attribute_impl::BytesTermAttributeImpl;
 use crate::core::analysis::token_attributes::char_term_attribute::CharTermAttribute;
 use crate::core::analysis::token_attributes::offset_attribute::OffsetAttribute;
-use crate::core::analysis::token_stream::{EitherTokenStream, TokenStream};
+use crate::core::analysis::token_stream::{Either2TokenStream, InnerTokenStreams, TokenStream};
 use crate::core::document::field_type::FieldType;
 use crate::core::document::fields::TokenStreamEnum;
 use crate::core::document::invertable_field::InvertableType;
@@ -74,7 +75,7 @@ pub struct Field {
     name: String,
     /// Field's value.
     pub(crate) fields_data: FieldDataEnum,
-    token_stream: Option<EitherTokenStream<BinaryTokenStream, StringTokenStream>>,
+    ts: Option<Either2TokenStream<BinaryTokenStream, StringTokenStream>>,
 }
 impl Field {
     /// Expert: creates a field with no initial value. This is intended to be
@@ -95,7 +96,7 @@ impl Field {
             indexable_field_type,
             name: name.into(),
             fields_data,
-            token_stream: None,
+            ts: None,
         }
     }
     /// Creates a field with a `Reader` value.
@@ -130,7 +131,7 @@ impl Field {
             indexable_field_type,
             name: name.into(),
             fields_data: FieldDataEnum::Reader(reader),
-            token_stream: None,
+            ts: None,
         })
     }
     /// Creates a field with a `TokenStream` value.
@@ -167,7 +168,7 @@ impl Field {
             indexable_field_type,
             name: name.into(),
             fields_data: FieldDataEnum::TokenStream(token_stream),
-            token_stream: None,
+            ts: None,
         })
     }
     /// Creates a field with a binary value.
@@ -269,7 +270,7 @@ impl Field {
             indexable_field_type,
             name: name.into(),
             fields_data: FieldDataEnum::Binary(bytes),
-            token_stream: None,
+            ts: None,
         })
     }
     /// Creates a field with a `String` value.
@@ -300,7 +301,7 @@ impl Field {
             indexable_field_type,
             name: name.into(),
             fields_data: FieldDataEnum::String(value.into()),
-            token_stream: None,
+            ts: None,
         })
     }
     /// Returns the `TokenStream` for this field to be used when indexing, or
@@ -494,16 +495,45 @@ impl IndexableField for Field {
         &self.indexable_field_type
     }
 
-    type TokenStream = EitherTokenStream<BinaryTokenStream, StringTokenStream>;
+    type TokenStream = Either2TokenStream<BinaryTokenStream, StringTokenStream>;
 
-    fn token_stream<'a, TS>(
+    fn token_stream<'a>(
         &'a mut self,
-        token_stream: &'a TS,
-    ) -> Result<Option<&mut Self::TokenStream>>
-    where
-        TS: TokenStream,
+        token_stream: &'a mut InnerTokenStreams,
+    ) -> Result<Option<Either2TokenStream<&'a mut InnerTokenStreams, &'a mut Self::TokenStream>>>
     {
-        todo!()
+        if *self.field_type().index_options() == IndexOptions::None {
+            return Ok(None);
+        }
+        if !self.field_type().tokenized() {
+            if self.string_value()?.is_some() {
+                let string_value = self.take_string_value()?;
+                if self.ts.is_none() {
+                    self.ts = Some(Either2TokenStream::B(StringTokenStream::new()))
+                }
+                match self.ts.as_mut().unwrap() {
+                    Either2TokenStream::B(v) => v.set_value(string_value),
+                    Either2TokenStream::A(_) => {
+                        return Err(LuceneError::illegal_argument("should not be here"));
+                    },
+                }
+                return Ok(Some(Either2TokenStream::B(self.ts.as_mut().unwrap())));
+            }
+            if self.binary_value()?.is_some() {
+                let binary_value = self.take_binary_value()?;
+                if self.ts.is_none() {
+                    self.ts = Some(Either2TokenStream::A(BinaryTokenStream::new()))
+                }
+                match self.ts.as_mut().unwrap() {
+                    Either2TokenStream::A(v) => v.set_value(binary_value),
+                    Either2TokenStream::B(_) => {
+                        return Err(LuceneError::illegal_argument("should not be here"));
+                    },
+                }
+                return Ok(Some(Either2TokenStream::B(self.ts.as_mut().unwrap())));
+            }
+        }
+        Ok(Some(Either2TokenStream::A(token_stream)))
     }
 
     fn binary_value(&self) -> Result<Option<&BytesRef<Vec<u8>>>> {
@@ -511,6 +541,14 @@ impl IndexableField for Field {
             Ok(Some(bytes))
         } else {
             Ok(None)
+        }
+    }
+
+    fn take_binary_value(&mut self) -> Result<BytesRef<Vec<u8>>> {
+        if let FieldDataEnum::Binary(bytes) = &mut self.fields_data {
+            Ok(std::mem::take(bytes))
+        } else {
+            Err(LuceneError::illegal_argument("should not be here"))
         }
     }
 
@@ -524,6 +562,15 @@ impl IndexableField for Field {
             FieldDataEnum::String(s) => Ok(Some(Cow::Borrowed(s))),
             FieldDataEnum::Number(n) => Ok(Some(Cow::Owned(n.as_string()))),
             _ => Ok(None),
+        }
+    }
+
+    fn take_string_value(&mut self) -> Result<String> {
+        let v = std::mem::replace(&mut self.fields_data, FieldDataEnum::Dummy("".to_string()));
+        match v {
+            FieldDataEnum::String(s) => Ok(s),
+            FieldDataEnum::Number(n) => Ok(n.as_string()),
+            _ => Err(LuceneError::illegal_argument("should not be here")),
         }
     }
 
@@ -566,6 +613,23 @@ impl IndexableField for Field {
 
     fn invertable_type(&self) -> &InvertableType {
         &InvertableType::TokenStream
+    }
+
+    fn init_token_stream<A>(&mut self, analyzer: &A) -> Result<()>
+    where
+        A: Analyzer,
+    {
+        let field_type = self.field_type();
+        if *field_type.index_options() == IndexOptions::None {
+            return Ok(());
+        }
+        if field_type.tokenized() {
+            // TODO: 这里只考虑String value, readerValue跟tokenStreamValue暂时不考虑
+            if let Some(v) = self.string_value()? {
+                analyzer.token_stream(self.name(), v.as_ref())?;
+            }
+        }
+        Ok(())
     }
 }
 impl FieldBase for Field {}
@@ -658,10 +722,19 @@ pub enum FieldDataEnum {
     String(String),
     Reader(ReaderEnum),
     TokenStream(TokenStreamEnum),
+    // used to std::mem::replace(FieldDataEnum)
+    Dummy(String),
 }
 impl Display for FieldDataEnum {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        todo!()
+        match self {
+            FieldDataEnum::Number(n) => write!(f, "{}", n),
+            FieldDataEnum::Binary(b) => write!(f, "{}", b),
+            FieldDataEnum::String(s) => write!(f, "{}", s),
+            FieldDataEnum::Reader(r) => write!(f, "{:?}", r),
+            FieldDataEnum::TokenStream(t) => write!(f, "{:?}", t),
+            FieldDataEnum::Dummy(s) => write!(f, "{}", s),
+        }
     }
 }
 /// Creates a new TokenStream that returns a BytesRef as single token

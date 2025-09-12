@@ -14,13 +14,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use std::borrow::Cow;
-use std::fmt::{Display, Formatter};
-use std::sync::Arc;
-
+use crate::core::analysis::analyzer::Analyzer;
 use crate::core::analysis::dummy::dummy_token_stream::DummyTokenStream;
 use crate::core::analysis::reader::ReaderEnum;
-use crate::core::analysis::token_stream::TokenStream;
+use crate::core::analysis::token_stream::{Either2TokenStream, InnerTokenStreams};
 use crate::core::document::field::{Field, FieldDataEnum};
 use crate::core::document::field_type::FieldType;
 use crate::core::document::invertable_field::InvertableType;
@@ -33,6 +30,9 @@ use crate::core::index::indexable_field::IndexableField;
 use crate::core::index::indexing_chain::ReservedField;
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::number::Number;
+use std::borrow::Cow;
+use std::fmt::{Display, Formatter};
+use std::sync::Arc;
 
 pub enum Fields {
     Field(Field),
@@ -81,12 +81,10 @@ impl IndexableField for Fields {
     }
 
     type TokenStream = <Field as IndexableField>::TokenStream;
-    fn token_stream<'a, TS>(
+    fn token_stream<'a>(
         &'a mut self,
-        token_stream: &'a TS,
-    ) -> Result<Option<&mut Self::TokenStream>>
-    where
-        TS: TokenStream,
+        token_stream: &'a mut InnerTokenStreams,
+    ) -> Result<Option<Either2TokenStream<&'a mut InnerTokenStreams, &'a mut Self::TokenStream>>>
     {
         match self {
             Fields::Field(f) => f.token_stream(token_stream),
@@ -109,6 +107,17 @@ impl IndexableField for Fields {
         }
     }
 
+    fn take_binary_value(&mut self) -> Result<BytesRef<Vec<u8>>> {
+        match self {
+            Fields::Field(f) => f.take_binary_value(),
+            Fields::Text(f) => f.take_binary_value(),
+            Fields::String(f) => f.take_binary_value(),
+            Fields::Stored(f) => f.take_binary_value(),
+            Fields::NumericDocValues(f) => f.take_binary_value(),
+            Fields::Reverse(f) => f.take_binary_value(),
+        }
+    }
+
     fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
         match self {
             Fields::Field(f) => f.string_value(),
@@ -117,6 +126,17 @@ impl IndexableField for Fields {
             Fields::Stored(f) => f.string_value(),
             Fields::NumericDocValues(f) => f.string_value(),
             Fields::Reverse(f) => f.string_value(),
+        }
+    }
+
+    fn take_string_value(&mut self) -> Result<String> {
+        match self {
+            Fields::Field(f) => f.take_string_value(),
+            Fields::Text(f) => f.take_string_value(),
+            Fields::String(f) => f.take_string_value(),
+            Fields::Stored(f) => f.take_string_value(),
+            Fields::NumericDocValues(f) => f.take_string_value(),
+            Fields::Reverse(f) => f.take_string_value(),
         }
     }
 
@@ -183,6 +203,20 @@ impl IndexableField for Fields {
             Fields::Stored(f) => f.invertable_type(),
             Fields::NumericDocValues(f) => f.invertable_type(),
             Fields::Reverse(f) => f.invertable_type(),
+        }
+    }
+
+    fn init_token_stream<A>(&mut self, analyzer: &A) -> Result<()>
+    where
+        A: Analyzer,
+    {
+        match self {
+            Fields::Field(f) => f.init_token_stream(analyzer),
+            Fields::Text(f) => f.init_token_stream(analyzer),
+            Fields::String(f) => f.init_token_stream(analyzer),
+            Fields::Stored(f) => f.init_token_stream(analyzer),
+            Fields::NumericDocValues(f) => f.init_token_stream(analyzer),
+            Fields::Reverse(f) => f.init_token_stream(analyzer),
         }
     }
 }

@@ -14,8 +14,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use crate::core::analysis::analyzer::Analyzer;
 use crate::core::analysis::reader::ReaderEnum;
-use crate::core::analysis::token_stream::TokenStream;
+use crate::core::analysis::token_stream::{Either2TokenStream, InnerTokenStreams};
 use crate::core::document::field::{Field, FieldDataEnum};
 use crate::core::document::field_type::FieldType;
 use crate::core::document::invertable_field::InvertableType;
@@ -87,12 +88,10 @@ impl IndexableField for NumericDocValuesField {
 
     type TokenStream = <Field as IndexableField>::TokenStream;
 
-    fn token_stream<'a, TS>(
+    fn token_stream<'a>(
         &'a mut self,
-        token_stream: &'a TS,
-    ) -> Result<Option<&mut Self::TokenStream>>
-    where
-        TS: TokenStream,
+        token_stream: &'a mut InnerTokenStreams,
+    ) -> Result<Option<Either2TokenStream<&'a mut InnerTokenStreams, &'a mut Self::TokenStream>>>
     {
         self.parent_field.token_stream(token_stream)
     }
@@ -101,8 +100,16 @@ impl IndexableField for NumericDocValuesField {
         self.parent_field.binary_value()
     }
 
+    fn take_binary_value(&mut self) -> Result<BytesRef<Vec<u8>>> {
+        self.parent_field.take_binary_value()
+    }
+
     fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
         self.parent_field.string_value()
+    }
+
+    fn take_string_value(&mut self) -> Result<String> {
+        self.parent_field.take_string_value()
     }
 
     fn reader_value(&self) -> Result<Option<ReaderEnum>> {
@@ -123,5 +130,12 @@ impl IndexableField for NumericDocValuesField {
 
     fn invertable_type(&self) -> &InvertableType {
         self.parent_field.invertable_type()
+    }
+
+    fn init_token_stream<A>(&mut self, analyzer: &A) -> Result<()>
+    where
+        A: Analyzer,
+    {
+        self.parent_field.init_token_stream(analyzer)
     }
 }

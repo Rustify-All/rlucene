@@ -111,6 +111,7 @@ macro_rules! either_token_stream {
     };
 }
 either_token_stream!(pub EitherTokenStream { Whitespace: A, Dummy: B });
+either_token_stream!(pub Either2TokenStream { A: A, B: B });
 
 pub type InnerTokenStreams = EitherTokenStream<WhitespaceAnalyzerTS, DummyTokenStream>;
 
