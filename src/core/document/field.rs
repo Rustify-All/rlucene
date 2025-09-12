@@ -499,7 +499,7 @@ impl IndexableField for Field {
 
     fn token_stream<'a>(
         &'a mut self,
-        token_stream: &'a mut InnerTokenStreams,
+        token_stream: Option<&'a mut InnerTokenStreams>,
     ) -> Result<Option<Either2TokenStream<&'a mut InnerTokenStreams, &'a mut Self::TokenStream>>>
     {
         if *self.field_type().index_options() == IndexOptions::None {
@@ -533,7 +533,13 @@ impl IndexableField for Field {
                 return Ok(Some(Either2TokenStream::B(self.ts.as_mut().unwrap())));
             }
         }
-        Ok(Some(Either2TokenStream::A(token_stream)))
+        if let Some(token_stream) = token_stream {
+            Ok(Some(Either2TokenStream::A(token_stream)))
+        } else {
+            Err(LuceneError::illegal_state(
+                "not init Analyzer's token stream in IndexableField::init_token_stream()?",
+            ))
+        }
     }
 
     fn binary_value(&self) -> Result<Option<&BytesRef<Vec<u8>>>> {

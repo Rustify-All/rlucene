@@ -1444,10 +1444,13 @@ impl PerField {
         REUSE_STRATEGY.with(|reuse_strategy| {
             (|| -> Result<()> {
                 let mut reuse_strategy = reuse_strategy.borrow_mut();
-        let rs =  reuse_strategy.as_mut().unwrap();
-                let mut ts_ref = rs.get_reusable_components(&field_name)?;
-                debug_assert!(ts_ref.is_some());
-                let ts = ts_ref.as_mut().unwrap().get_token_stream();
+                let ts = match reuse_strategy.as_mut() {
+                    Some(rs) => rs
+                        .get_reusable_components(&field_name)?
+                        .map(|ts_ref| ts_ref.get_token_stream()),
+                    None => None,
+                };
+
         let mut stream = field
             .token_stream(ts)?
             .ok_or_else(|| LuceneError::illegal_state("token_stream is None"))?;
@@ -2359,7 +2362,7 @@ where
 
     fn token_stream<'a>(
         &'a mut self,
-        token_stream: &'a mut InnerTokenStreams,
+        token_stream: Option<&'a mut InnerTokenStreams>,
     ) -> Result<Option<Either2TokenStream<&'a mut InnerTokenStreams, &'a mut Self::TokenStream>>>
     {
         self.delegate.token_stream(token_stream)

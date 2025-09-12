@@ -161,7 +161,7 @@ impl IndexableField for StringField {
 
     fn token_stream<'a>(
         &'a mut self,
-        token_stream: &'a mut InnerTokenStreams,
+        token_stream: Option<&'a mut InnerTokenStreams>,
     ) -> Result<Option<Either2TokenStream<&'a mut InnerTokenStreams, &'a mut Self::TokenStream>>>
     {
         self.parent_field.token_stream(token_stream)

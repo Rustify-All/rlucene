@@ -51,7 +51,7 @@ impl IndexableField for DummyIndexableField {
 
     fn token_stream<'a>(
         &'a mut self,
-        _token_stream: &'a mut InnerTokenStreams,
+        _token_stream: Option<&'a mut InnerTokenStreams>,
     ) -> Result<Option<Either2TokenStream<&'a mut InnerTokenStreams, &'a mut Self::TokenStream>>>
     {
         unreachable!("Dummy implementation: this method should never be called in real usage")
