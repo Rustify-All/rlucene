@@ -14,7 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::core::analysis::analyzer::Analyzer;
 use crate::core::analysis::reader::ReaderEnum;
 use crate::core::analysis::token_stream::TokenStream;
 use crate::core::document::field::{Field, FieldDataEnum};
@@ -28,8 +27,8 @@ use crate::core::index::indexable_field::IndexableField;
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::number::Number;
 use once_cell::sync::Lazy;
+use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
-use std::rc::Rc;
 
 static TYPE: Lazy<FieldType> = Lazy::new(|| {
     let mut ft = FieldType::new();
@@ -49,12 +48,17 @@ pub struct NumericDocValuesField {
     parent_field: Field,
 }
 impl NumericDocValuesField {
-    pub fn new(name: &str, value: i64) -> Self {
+    pub fn new<T>(name: T, value: i64) -> Self
+    where
+        T: Into<String>,
+    {
         Self::with_type(name, value, TYPE.clone())
     }
-    pub fn with_type(name: &str, value: i64, file_type: FieldType) -> Self {
-        let mut parent_field = Field::new(name, file_type);
-        parent_field.fields_data = Option::from(FieldDataEnum::Number(Number::I64(value)));
+    pub fn with_type<T>(name: T, value: i64, file_type: FieldType) -> Self
+    where
+        T: Into<String>,
+    {
+        let parent_field = Field::new(name, file_type, FieldDataEnum::Number(Number::I64(value)));
         Self { parent_field }
     }
 }
@@ -94,11 +98,11 @@ impl IndexableField for NumericDocValuesField {
         self.parent_field.token_stream(token_stream)
     }
 
-    fn binary_value(&self) -> Result<Option<Rc<BytesRef<Vec<u8>>>>> {
+    fn binary_value(&self) -> Result<Option<&BytesRef<Vec<u8>>>> {
         self.parent_field.binary_value()
     }
 
-    fn string_value(&self) -> Result<Option<Rc<String>>> {
+    fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
         self.parent_field.string_value()
     }
 
@@ -110,8 +114,12 @@ impl IndexableField for NumericDocValuesField {
         self.parent_field.numeric_value()
     }
 
-    fn stored_value(&self) -> Result<Option<StoredValue>> {
+    fn stored_value(&self) -> Option<&FieldDataEnum> {
         self.parent_field.stored_value()
+    }
+
+    fn take_stored_value(&self) -> Result<Option<StoredValue>> {
+        self.parent_field.take_stored_value()
     }
 
     fn invertable_type(&self) -> &InvertableType {

@@ -14,15 +14,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
-use std::rc::Rc;
 use std::sync::Arc;
 
-use crate::core::analysis::analyzer::Analyzer;
 use crate::core::analysis::dummy::dummy_token_stream::DummyTokenStream;
 use crate::core::analysis::reader::ReaderEnum;
 use crate::core::analysis::token_stream::TokenStream;
-use crate::core::document::field::Field;
+use crate::core::document::field::{Field, FieldDataEnum};
 use crate::core::document::field_type::FieldType;
 use crate::core::document::invertable_field::InvertableType;
 use crate::core::document::numeric_doc_values_field::NumericDocValuesField;
@@ -100,7 +99,7 @@ impl IndexableField for Fields {
         }
     }
 
-    fn binary_value(&self) -> Result<Option<Rc<BytesRef<Vec<u8>>>>> {
+    fn binary_value(&self) -> Result<Option<&BytesRef<Vec<u8>>>> {
         match self {
             Fields::Field(f) => f.binary_value(),
             Fields::Text(f) => f.binary_value(),
@@ -111,7 +110,7 @@ impl IndexableField for Fields {
         }
     }
 
-    fn string_value(&self) -> Result<Option<Rc<String>>> {
+    fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
         match self {
             Fields::Field(f) => f.string_value(),
             Fields::Text(f) => f.string_value(),
@@ -122,7 +121,7 @@ impl IndexableField for Fields {
         }
     }
 
-    fn get_char_sequence_value(&self) -> Result<Option<Rc<String>>> {
+    fn get_char_sequence_value(&self) -> Result<Option<Cow<'_, String>>> {
         match self {
             Fields::Field(f) => f.get_char_sequence_value(),
             Fields::Text(f) => f.get_char_sequence_value(),
@@ -155,7 +154,7 @@ impl IndexableField for Fields {
         }
     }
 
-    fn stored_value(&self) -> Result<Option<StoredValue>> {
+    fn stored_value(&self) -> Option<&FieldDataEnum> {
         match self {
             Fields::Field(f) => f.stored_value(),
             Fields::Text(f) => f.stored_value(),
@@ -163,6 +162,17 @@ impl IndexableField for Fields {
             Fields::Stored(f) => f.stored_value(),
             Fields::NumericDocValues(f) => f.stored_value(),
             Fields::Reverse(f) => f.stored_value(),
+        }
+    }
+
+    fn take_stored_value(&self) -> Result<Option<StoredValue>> {
+        match self {
+            Fields::Field(f) => f.take_stored_value(),
+            Fields::Text(f) => f.take_stored_value(),
+            Fields::String(f) => f.take_stored_value(),
+            Fields::Stored(f) => f.take_stored_value(),
+            Fields::NumericDocValues(f) => f.take_stored_value(),
+            Fields::Reverse(f) => f.take_stored_value(),
         }
     }
 

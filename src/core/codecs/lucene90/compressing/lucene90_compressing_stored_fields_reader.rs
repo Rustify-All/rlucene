@@ -305,7 +305,7 @@ where
             },
             STRING => {
                 let s = input.read_string()?;
-                visitor.string_field(info, &s, writer)?;
+                visitor.string_field(info, s, writer)?;
             },
             NUMERIC_INT => {
                 let v = input.read_zint()?;

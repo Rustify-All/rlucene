@@ -14,11 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use std::fmt;
-use std::fmt::{Debug, Display};
-use std::rc::Rc;
-use std::sync::Arc;
-
 use crate::core::analysis::reader::ReaderEnum;
 use crate::core::analysis::token_attributes::bytes_term_attribute::BytesTermAttribute;
 use crate::core::analysis::token_attributes::bytes_term_attribute_impl::BytesTermAttributeImpl;
@@ -37,6 +32,10 @@ use crate::core::index::indexable_field_type::IndexableFieldType;
 use crate::core::util::attribute_source::{AttributeSource, Attributes};
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::number::Number;
+use std::borrow::Cow;
+use std::fmt;
+use std::fmt::{Debug, Display};
+use std::sync::Arc;
 
 /// Expert: directly creates a field for a document. Most users should use one
 /// of the convenience SubStruct:
@@ -75,7 +74,7 @@ pub struct Field {
     /// Field's name.
     name: String,
     /// Field's value.
-    pub(crate) fields_data: Option<FieldDataEnum>,
+    pub(crate) fields_data: FieldDataEnum,
     token_stream: Option<EitherTokenStream<BinaryTokenStream, StringTokenStream>>,
 }
 impl Field {
@@ -89,11 +88,14 @@ impl Field {
     ///
     /// # Errors
     /// - Returns an error if either the `name` or `field_type` is `None`.
-    pub fn new(name: &str, indexable_field_type: FieldType) -> Self {
+    pub fn new<T>(name: T, indexable_field_type: FieldType, fields_data: FieldDataEnum) -> Self
+    where
+        T: Into<String>,
+    {
         Self {
             indexable_field_type,
-            name: name.to_string(),
-            fields_data: None,
+            name: name.into(),
+            fields_data,
             token_stream: None,
         }
     }
@@ -107,11 +109,14 @@ impl Field {
     /// # Errors
     /// - Returns an error if the field's type is `stored()`, or if
     ///   `tokenized()` is `false`.
-    pub fn with_reader(
-        name: &str,
+    pub fn with_reader<T>(
+        name: T,
         reader: ReaderEnum,
         indexable_field_type: FieldType,
-    ) -> Result<Self> {
+    ) -> Result<Self>
+    where
+        T: Into<String>,
+    {
         if indexable_field_type.stored() {
             return Err(LuceneError::illegal_argument(
                 "fields with a Reader value cannot be stored",
@@ -124,8 +129,8 @@ impl Field {
         }
         Ok(Field {
             indexable_field_type,
-            name: name.to_string(),
-            fields_data: Some(FieldDataEnum::Reader(reader)),
+            name: name.into(),
+            fields_data: FieldDataEnum::Reader(reader),
             token_stream: None,
         })
     }
@@ -139,11 +144,14 @@ impl Field {
     /// # Errors
     /// - Returns an error if the field's type is `stored()`, `tokenized()` is
     ///   `false`, or `indexed()` is `false`.
-    pub fn with_token_stream(
-        name: &str,
+    pub fn with_token_stream<T>(
+        name: T,
         token_stream: TokenStreamEnum,
         indexable_field_type: FieldType,
-    ) -> Result<Self> {
+    ) -> Result<Self>
+    where
+        T: Into<String>,
+    {
         if !indexable_field_type.tokenized()
             || indexable_field_type.index_options() == &IndexOptions::None
         {
@@ -158,8 +166,8 @@ impl Field {
         }
         Ok(Field {
             indexable_field_type,
-            name: name.to_string(),
-            fields_data: Some(FieldDataEnum::TokenStream(token_stream)),
+            name: name.into(),
+            fields_data: FieldDataEnum::TokenStream(token_stream),
             token_stream: None,
         })
     }
@@ -176,11 +184,10 @@ impl Field {
     ///
     /// # Errors
     /// - Returns an error if the field's type is `indexed()`.
-    pub fn with_binary(
-        name: &str,
-        value: Vec<u8>,
-        indexable_field_type: FieldType,
-    ) -> Result<Self> {
+    pub fn with_binary<T>(name: T, value: Vec<u8>, indexable_field_type: FieldType) -> Result<Self>
+    where
+        T: Into<String>,
+    {
         let len = value.len();
         Self::with_binary_range(name, value, 0, len, indexable_field_type)
     }
@@ -199,14 +206,17 @@ impl Field {
     ///
     /// # Errors
     /// - Returns an error if the field's type is `indexed()`.
-    pub fn with_binary_range(
-        name: &str,
+    pub fn with_binary_range<T>(
+        name: T,
         value: Vec<u8>,
         offset: usize,
         length: usize,
         indexable_field_type: FieldType,
-    ) -> Result<Self> {
-        let value = Rc::new(BytesRef::from_slice(value, offset, length));
+    ) -> Result<Self>
+    where
+        T: Into<String>,
+    {
+        let value = BytesRef::from_slice(value, offset, length);
         Self::with_bytes_ref(name, value, indexable_field_type)
     }
     /// Creates a field with a binary value.
@@ -222,11 +232,14 @@ impl Field {
     ///
     /// # Errors
     /// - Returns an error if the field's type is `indexed()`.
-    pub fn with_bytes_ref(
-        name: &str,
-        bytes: Rc<BytesRef<Vec<u8>>>,
+    pub fn with_bytes_ref<T>(
+        name: T,
+        bytes: BytesRef<Vec<u8>>,
         indexable_field_type: FieldType,
-    ) -> Result<Self> {
+    ) -> Result<Self>
+    where
+        T: Into<String>,
+    {
         if indexable_field_type
             .index_options()
             .cmp(&IndexOptions::DocsAndFreqsAndPositionsAndOffsets)
@@ -255,8 +268,8 @@ impl Field {
         }
         Ok(Field {
             indexable_field_type,
-            name: name.to_string(),
-            fields_data: Some(FieldDataEnum::Binary(bytes)),
+            name: name.into(),
+            fields_data: FieldDataEnum::Binary(bytes),
             token_stream: None,
         })
     }
@@ -272,11 +285,11 @@ impl Field {
     ///   `stored()`.
     /// - Returns an error if `indexed()` is `false` but `store_term_vectors()`
     ///   is `true`.
-    pub fn with_string(
-        name: &str,
-        value: Rc<String>,
-        indexable_field_type: FieldType,
-    ) -> Result<Self> {
+    pub fn with_string<T1, T2>(name: T1, value: T2, indexable_field_type: FieldType) -> Result<Self>
+    where
+        T1: Into<String>,
+        T2: Into<String>,
+    {
         if !indexable_field_type.stored()
             && indexable_field_type.index_options() == &IndexOptions::None
         {
@@ -286,8 +299,8 @@ impl Field {
         }
         Ok(Field {
             indexable_field_type,
-            name: name.to_string(),
-            fields_data: Some(FieldDataEnum::String(value)),
+            name: name.into(),
+            fields_data: FieldDataEnum::String(value.into()),
             token_stream: None,
         })
     }
@@ -295,14 +308,8 @@ impl Field {
     /// `None` if not set. If `None`, the `Reader` value or `String` value
     /// is analyzed to produce the indexed tokens.
     pub fn token_stream_value(&self) -> Result<Option<TokenStreamEnum>> {
-        if let Some(token_stream) = &self.fields_data {
-            match token_stream {
-                FieldDataEnum::TokenStream(token_stream) => Ok(Option::from(token_stream.clone())),
-                _ => Ok(None),
-            }
-        } else {
-            Ok(None)
-        }
+        // TODO: 这里要移除所有权
+        todo!()
     }
     /// Expert: changes the value of this field. This can be used during
     /// indexing to re-use a single `Field` instance to improve indexing
@@ -313,9 +320,12 @@ impl Field {
     /// # Note
     /// Each `Field` instance should only be used once within a single
     /// `Document` instance. See [ImproveIndexingSpeed](http://wiki.apache.org/lucene-java/ImproveIndexingSpeed) for details.
-    pub fn set_string_value(&mut self, value: Rc<String>) -> Result<()> {
+    pub fn set_string_value<T>(&mut self, value: T) -> Result<()>
+    where
+        T: Into<String>,
+    {
         match &self.fields_data {
-            Some(FieldDataEnum::String(_)) => {},
+            FieldDataEnum::String(_) => {},
             _ => {
                 return Err(LuceneError::illegal_argument(format!(
                     "cannot change value type from {:?} to String",
@@ -323,15 +333,14 @@ impl Field {
                 )));
             },
         }
-
-        self.fields_data = Some(FieldDataEnum::String(value));
+        self.fields_data = FieldDataEnum::String(value.into());
         Ok(())
     }
     /// Expert: changes the value of this field. See
     /// [`set_string_value`](Field::set_string_value).
     pub fn set_reader_value(&mut self, value: ReaderEnum) -> Result<()> {
         match &self.fields_data {
-            Some(FieldDataEnum::Reader(_)) => {},
+            FieldDataEnum::Reader(_) => {},
             _ => {
                 return Err(LuceneError::illegal_argument(format!(
                     "cannot change value type from {:?} to Reader",
@@ -340,20 +349,20 @@ impl Field {
             },
         }
 
-        self.fields_data = Some(FieldDataEnum::Reader(value));
+        self.fields_data = FieldDataEnum::Reader(value);
         Ok(())
     }
     pub fn set_vec_value(&mut self, value: Vec<u8>) -> Result<()> {
-        self.set_bytes_value(Rc::new(BytesRef::from_bytes(value)))
+        self.set_bytes_value(BytesRef::from_bytes(value))
     }
     /// Expert: changes the value of this field. See
     /// [`set_string_value`](Field::set_string_value).
     ///
     /// NOTE: the provided [`BytesRef`] is not copied, so be sure not to change
     /// it until you're done with this field.
-    pub fn set_bytes_value(&mut self, value: Rc<BytesRef<Vec<u8>>>) -> Result<()> {
+    pub fn set_bytes_value(&mut self, value: BytesRef<Vec<u8>>) -> Result<()> {
         match &self.fields_data {
-            Some(FieldDataEnum::Binary(_)) => {},
+            FieldDataEnum::Binary(_) => {},
             _ => {
                 return Err(LuceneError::illegal_argument(format!(
                     "cannot change value type from {:?} to BytesRef",
@@ -361,14 +370,14 @@ impl Field {
                 )));
             },
         }
-        self.fields_data = Some(FieldDataEnum::Binary(value));
+        self.fields_data = FieldDataEnum::Binary(value);
         Ok(())
     }
     /// Expert: changes the value of this field. See
     /// [`set_string_value`](Field::set_string_value).
     pub fn set_byte_value(&mut self, value: u8) -> Result<()> {
         match &self.fields_data {
-            Some(FieldDataEnum::Number(Number::U8(_))) => {},
+            FieldDataEnum::Number(Number::U8(_)) => {},
             _ => {
                 return Err(LuceneError::illegal_argument(format!(
                     "cannot change value type from {:?} to Byte",
@@ -376,14 +385,14 @@ impl Field {
                 )));
             },
         }
-        self.fields_data = Some(FieldDataEnum::Number(Number::U8(value)));
+        self.fields_data = FieldDataEnum::Number(Number::U8(value));
         Ok(())
     }
     /// Expert: changes the value of this field. See
     /// [`set_string_value`](Field::set_string_value).
     pub fn set_short_value(&mut self, value: i16) -> Result<()> {
         match &self.fields_data {
-            Some(FieldDataEnum::Number(Number::I16(_))) => {},
+            FieldDataEnum::Number(Number::I16(_)) => {},
             _ => {
                 return Err(LuceneError::illegal_argument(format!(
                     "cannot change value type from {:?} to Short",
@@ -391,14 +400,14 @@ impl Field {
                 )));
             },
         }
-        self.fields_data = Some(FieldDataEnum::Number(Number::I16(value)));
+        self.fields_data = FieldDataEnum::Number(Number::I16(value));
         Ok(())
     }
     /// Expert: changes the value of this field. See
     /// [`set_string_value`](Field::set_string_value).
     pub fn set_int_value(&mut self, value: i32) -> Result<()> {
         match &self.fields_data {
-            Some(FieldDataEnum::Number(Number::I32(_))) => {},
+            FieldDataEnum::Number(Number::I32(_)) => {},
             _ => {
                 return Err(LuceneError::illegal_argument(format!(
                     "cannot change value type from {:?} to Integer",
@@ -407,14 +416,14 @@ impl Field {
             },
         }
 
-        self.fields_data = Some(FieldDataEnum::Number(Number::I32(value)));
+        self.fields_data = FieldDataEnum::Number(Number::I32(value));
         Ok(())
     }
     /// Expert: changes the value of this field. See
     /// [`set_string_value`](Field::set_string_value).
     pub fn set_long_value(&mut self, value: i64) -> Result<()> {
         match &self.fields_data {
-            Some(FieldDataEnum::Number(Number::I64(_))) => {},
+            FieldDataEnum::Number(Number::I64(_)) => {},
             _ => {
                 return Err(LuceneError::illegal_argument(format!(
                     "cannot change value type from {:?} to Long",
@@ -423,14 +432,14 @@ impl Field {
             },
         }
 
-        self.fields_data = Some(FieldDataEnum::Number(Number::I64(value)));
+        self.fields_data = FieldDataEnum::Number(Number::I64(value));
         Ok(())
     }
     /// Expert: changes the value of this field. See
     /// [`set_string_value`](Field::set_string_value).
     pub fn set_float_value(&mut self, value: f32) -> Result<()> {
         match &self.fields_data {
-            Some(FieldDataEnum::Number(Number::F32(_))) => {},
+            FieldDataEnum::Number(Number::F32(_)) => {},
             _ => {
                 return Err(LuceneError::illegal_argument(format!(
                     "cannot change value type from {:?} to Float",
@@ -439,14 +448,14 @@ impl Field {
             },
         }
 
-        self.fields_data = Some(FieldDataEnum::Number(Number::F32(value)));
+        self.fields_data = FieldDataEnum::Number(Number::F32(value));
         Ok(())
     }
     /// Expert: changes the value of this field. See
     /// [`set_string_value`](Field::set_string_value).
     pub fn set_double_value(&mut self, value: f64) -> Result<()> {
         match &self.fields_data {
-            Some(FieldDataEnum::Number(Number::F64(_))) => {},
+            FieldDataEnum::Number(Number::F64(_)) => {},
             _ => {
                 return Err(LuceneError::illegal_argument(format!(
                     "cannot change value type from {:?} to Double",
@@ -455,13 +464,13 @@ impl Field {
             },
         }
 
-        self.fields_data = Some(FieldDataEnum::Number(Number::F64(value)));
+        self.fields_data = FieldDataEnum::Number(Number::F64(value));
         Ok(())
     }
     /// Expert: sets the token stream to be used for indexing.
     pub fn set_token_stream(&mut self, token_stream: TokenStreamEnum) -> Result<()> {
         match &self.fields_data {
-            Some(FieldDataEnum::TokenStream(_)) => {},
+            FieldDataEnum::TokenStream(_) => {},
             _ => {
                 return Err(LuceneError::illegal_argument(format!(
                     "cannot change value type from {:?} to TokenStream",
@@ -470,7 +479,7 @@ impl Field {
             },
         }
 
-        self.fields_data = Some(FieldDataEnum::TokenStream(token_stream));
+        self.fields_data = FieldDataEnum::TokenStream(token_stream);
         Ok(())
     }
 }
@@ -498,9 +507,9 @@ impl IndexableField for Field {
         todo!()
     }
 
-    fn binary_value(&self) -> Result<Option<Rc<BytesRef<Vec<u8>>>>> {
-        if let Some(FieldDataEnum::Binary(bytes)) = &self.fields_data {
-            Ok(Some(bytes.clone()))
+    fn binary_value(&self) -> Result<Option<&BytesRef<Vec<u8>>>> {
+        if let FieldDataEnum::Binary(bytes) = &self.fields_data {
+            Ok(Some(bytes))
         } else {
             Ok(None)
         }
@@ -511,19 +520,17 @@ impl IndexableField for Field {
     ///
     /// Exactly one of `string_value()`, `reader_value()`, or `binary_value()`
     /// must be set.
-    fn string_value(&self) -> Result<Option<Rc<String>>> {
-        if let Some(FieldDataEnum::String(s)) = &self.fields_data {
-            Ok(Some(s.clone()))
-        } else if let Some(FieldDataEnum::Number(val)) = &self.fields_data {
-            Ok(Some(Rc::from(val.as_string())))
-        } else {
-            Ok(None)
+    fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
+        match &self.fields_data {
+            FieldDataEnum::String(s) => Ok(Some(Cow::Borrowed(s))),
+            FieldDataEnum::Number(n) => Ok(Some(Cow::Owned(n.as_string()))),
+            _ => Ok(None),
         }
     }
 
-    fn get_char_sequence_value(&self) -> Result<Option<Rc<String>>> {
-        if let Some(FieldDataEnum::String(s)) = &self.fields_data {
-            Ok(Some(s.clone()))
+    fn get_char_sequence_value(&self) -> Result<Option<Cow<'_, String>>> {
+        if let FieldDataEnum::String(s) = &self.fields_data {
+            Ok(Some(Cow::Borrowed(s)))
         } else {
             self.string_value()
         }
@@ -539,35 +546,23 @@ impl IndexableField for Field {
     }
 
     fn numeric_value(&self) -> Result<Option<Number>> {
-        if let Some(FieldDataEnum::Number(n)) = &self.fields_data {
+        if let FieldDataEnum::Number(n) = &self.fields_data {
             Ok(Some(*n))
         } else {
             Ok(None)
         }
     }
 
-    fn stored_value(&self) -> Result<Option<StoredValue>> {
+    fn stored_value(&self) -> Option<&FieldDataEnum> {
         if !self.indexable_field_type.stored() {
-            return Ok(None);
+            return None;
         }
 
-        if self.fields_data.is_none() {
-            return Err(LuceneError::illegal_argument("fieldsData is unset"));
-        }
-        match &self.fields_data {
-            Some(FieldDataEnum::Number(val)) => match val {
-                Number::U8(_) | Number::I16(_) => {
-                    Err(LuceneError::illegal_state("Cannot store value of type"))
-                },
-                Number::I32(val) => Ok(Some(StoredValue::Integer(*val))),
-                Number::I64(val) => Ok(Some(StoredValue::Long(*val))),
-                Number::F32(val) => Ok(Some(StoredValue::Float(*val))),
-                Number::F64(val) => Ok(Some(StoredValue::Double(*val))),
-            },
-            Some(FieldDataEnum::Binary(val)) => Ok(Some(StoredValue::Binary(val.clone()))),
-            Some(FieldDataEnum::String(val)) => Ok(Some(StoredValue::String(val.clone()))),
-            _ => Err(LuceneError::illegal_state("Cannot store value of type ")),
-        }
+        Some(&self.fields_data)
+    }
+
+    fn take_stored_value(&self) -> Result<Option<StoredValue>> {
+        todo!()
     }
 
     fn invertable_type(&self) -> &InvertableType {
@@ -579,16 +574,14 @@ impl Display for Field {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}<{}:", self.indexable_field_type, self.name)?;
 
-        if let Some(ref fields_data) = self.fields_data {
-            write!(f, "{fields_data:?}")?;
-        }
+        write!(f, "{}", self.fields_data)?;
 
         write!(f, ">")
     }
 }
 
 pub trait FieldBase {
-    fn set_bytes_value(&mut self, _value: Rc<BytesRef<Vec<u8>>>) -> Result<()> {
+    fn set_bytes_value(&mut self, _value: BytesRef<Vec<u8>>) -> Result<()> {
         Err(LuceneError::not_implemented(
             "set_bytes_value is not implemented",
         ))
@@ -628,7 +621,10 @@ pub trait FieldBase {
             "set_token_stream is not implemented",
         ))
     }
-    fn set_string_value(&mut self, _value: &str) -> Result<()> {
+    fn set_string_value<T>(&mut self, _value: T) -> Result<()>
+    where
+        T: Into<String>,
+    {
         Err(LuceneError::not_implemented(
             "set_string_value is not implemented",
         ))
@@ -659,10 +655,15 @@ impl From<Store> for bool {
 #[derive(Debug, Clone)]
 pub enum FieldDataEnum {
     Number(Number),
-    Binary(Rc<BytesRef<Vec<u8>>>),
-    String(Rc<String>),
+    Binary(BytesRef<Vec<u8>>),
+    String(String),
     Reader(ReaderEnum),
     TokenStream(TokenStreamEnum),
+}
+impl Display for FieldDataEnum {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        todo!()
+    }
 }
 /// Creates a new TokenStream that returns a BytesRef as single token
 pub struct BinaryTokenStream {
@@ -794,7 +795,7 @@ impl TokenStream for StringTokenStream {
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
+
     use std::sync::Arc;
 
     use crate::core::analysis::dummy::dummy_token_stream::DummyTokenStream;
@@ -1050,11 +1051,11 @@ mod tests {
         f.set_byte_value(10)
     }
     fn try_set_bytes_value<F: FieldBase>(f: &mut F) -> Result<()> {
-        f.set_bytes_value(Rc::new(BytesRef::from_bytes(vec![5, 5])))
+        f.set_bytes_value(BytesRef::from_bytes(vec![5, 5]))
     }
 
     fn try_set_bytes_ref_value<F: FieldBase>(f: &mut F) -> Result<()> {
-        f.set_bytes_value(Rc::new(BytesRef::from_string("bogus")))
+        f.set_bytes_value(BytesRef::from_string("bogus"))
     }
 
     fn try_set_double_value<F: FieldBase>(f: &mut F) -> Result<()> {
@@ -1095,7 +1096,7 @@ mod tests {
     #[test]
     fn test_disabled_field() -> Result<()> {
         let ft = FieldType::new();
-        let result = Field::with_string("foo", Rc::new("".to_string()), ft);
+        let result = Field::with_string("foo", "", ft);
         assert!(matches!(result, Err(LuceneError::IllegalArgument(_))));
         Ok(())
     }
@@ -1104,7 +1105,7 @@ mod tests {
         let mut ft = FieldType::new();
         ft.set_tokenized(true)?;
         ft.set_index_options(IndexOptions::Docs)?;
-        let result = Field::with_bytes_ref("foo", Rc::new(BytesRef::new()), ft);
+        let result = Field::with_bytes_ref("foo", BytesRef::new(), ft);
         assert!(matches!(result, Err(LuceneError::IllegalArgument(_))));
         Ok(())
     }
@@ -1113,7 +1114,7 @@ mod tests {
         let mut ft = FieldType::new();
         ft.set_tokenized(false)?;
         ft.set_index_options(IndexOptions::DocsAndFreqsAndPositionsAndOffsets)?;
-        let result = Field::with_bytes_ref("foo", Rc::new(BytesRef::new()), ft);
+        let result = Field::with_bytes_ref("foo", BytesRef::new(), ft);
         assert!(matches!(result, Err(LuceneError::IllegalArgument(_))));
         Ok(())
     }
@@ -1124,7 +1125,7 @@ mod tests {
         ft.set_store_term_vectors(true)?;
         ft.set_store_term_vector_offsets(true)?;
         ft.set_store_term_vector_offsets(true)?;
-        let result = Field::with_bytes_ref("foo", Rc::new(BytesRef::new()), ft);
+        let result = Field::with_bytes_ref("foo", BytesRef::new(), ft);
         assert!(matches!(result, Err(LuceneError::IllegalArgument(_))));
         Ok(())
     }

@@ -17,6 +17,7 @@
 use crate::core::analysis::dummy::dummy_token_stream::DummyTokenStream;
 use crate::core::analysis::reader::ReaderEnum;
 use crate::core::analysis::token_stream::TokenStream;
+use crate::core::document::field::FieldDataEnum;
 use crate::core::document::invertable_field::InvertableType;
 use crate::core::document::stored_value::StoredValue;
 use crate::core::index::BytesRef;
@@ -24,8 +25,8 @@ use crate::core::index::dummy::dummy_indexable_field_type::DummyIndexableFieldTy
 use crate::core::index::indexable_field::IndexableField;
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::number::Number;
+use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
-use std::rc::Rc;
 
 pub struct DummyIndexableField;
 
@@ -58,15 +59,15 @@ impl IndexableField for DummyIndexableField {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    fn binary_value(&self) -> Result<Option<Rc<BytesRef<Vec<u8>>>>> {
+    fn binary_value(&self) -> Result<Option<&BytesRef<Vec<u8>>>> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    fn string_value(&self) -> Result<Option<Rc<String>>> {
+    fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    fn get_char_sequence_value(&self) -> Result<Option<Rc<String>>> {
+    fn get_char_sequence_value(&self) -> Result<Option<Cow<'_, String>>> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
@@ -78,7 +79,11 @@ impl IndexableField for DummyIndexableField {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    fn stored_value(&self) -> Result<Option<StoredValue>> {
+    fn stored_value(&self) -> Option<&FieldDataEnum> {
+        unreachable!("Dummy implementation: this method should never be called in real usage")
+    }
+
+    fn take_stored_value(&self) -> Result<Option<StoredValue>> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 

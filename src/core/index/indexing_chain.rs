@@ -25,7 +25,7 @@ use crate::core::codecs::points_format::PointsFormat;
 use crate::core::codecs::points_writer::PointsWriter;
 use crate::core::document::fields::Fields;
 use crate::core::document::invertable_field::InvertableType;
-use crate::core::document::stored_value::{StoredValue, StoredValueType};
+use crate::core::document::stored_value::StoredValue;
 use crate::core::index::BytesRef;
 use crate::core::index::binary_doc_values_writer::{
     BinaryDocValuesWriter, BufferedBinaryDocValues,
@@ -49,8 +49,10 @@ use crate::core::index::index_options::IndexOptions;
 use crate::core::index::index_reader::IndexReader;
 use crate::core::index::index_sorter::Either2DocComparator;
 use crate::core::index::index_sorter::{DocComparator, IndexSorter};
+use std::borrow::Cow;
 
 use crate::core::analysis::reader::ReaderEnum;
+use crate::core::document::field::FieldDataEnum;
 use crate::core::index::index_writer::{MAX_STORED_STRING_LENGTH, MAX_TERM_LENGTH};
 use crate::core::index::indexable_field::IndexableField;
 use crate::core::index::indexable_field_type::IndexableFieldType;
@@ -116,6 +118,7 @@ use std::fmt::{Display, Formatter};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
+
 /// Default general purpose indexing chain, which handles indexing all types of fields.
 pub(crate) struct IndexingChain<D>
 where
@@ -904,19 +907,19 @@ where
         // Add stored fields
         if field_type.stored() {
             let stored_value = field
-                .stored_value()?
+                .stored_value()
                 .ok_or_else(|| LuceneError::illegal_argument("Cannot store a null value"))?;
-            if stored_value.get_type() == StoredValueType::String
-                && stored_value.get_string_value()?.len() > MAX_STORED_STRING_LENGTH as usize
+            if let FieldDataEnum::String(s) = &stored_value
+                && s.len() > MAX_STORED_STRING_LENGTH as usize
             {
                 return Err(LuceneError::illegal_argument(format!(
                     "stored field \"{}\" is too large ({} characters) to store",
                     field.name(),
-                    stored_value.get_string_value()?.len()
+                    s.len()
                 )));
-            }
+            };
             self.stored_fields_consumer
-                .write_field(pf.field_info.as_ref().unwrap(), &stored_value)
+                .write_field(pf.field_info.as_ref().unwrap(), stored_value)
                 .inspect_err(|_| {
                     self.has_hit_aborting_exception = true;
                 })?;
@@ -1139,7 +1142,7 @@ where
                         fp.field_info.as_ref().unwrap().name
                     ))
                 })?;
-                writer.add_value(doc_id, &bytes)?;
+                writer.add_value(doc_id, bytes)?;
             },
             Some(DocValuesWriterEnum::Sorted(writer)) => {
                 debug_assert_eq!(dv_type, DocValuesType::Sorted);
@@ -1149,7 +1152,7 @@ where
                         fp.field_info.as_ref().unwrap().name
                     ))
                 })?;
-                writer.add_value(doc_id, &bytes)?;
+                writer.add_value(doc_id, bytes)?;
             },
             Some(DocValuesWriterEnum::SortedNumeric(writer)) => {
                 debug_assert_eq!(dv_type, DocValuesType::SortedNumeric);
@@ -1184,7 +1187,7 @@ where
                         fp.field_info.as_ref().unwrap().name
                     ))
                 })?;
-                writer.add_value(doc_id, &bytes)?;
+                writer.add_value(doc_id, bytes)?;
             },
             None => {
                 return Err(LuceneError::illegal_state(format!(
@@ -1607,7 +1610,7 @@ impl PerField {
         }
         let mut attribute_source = EmptyAttributeSource;
         if let Err(e) = terms_hash_per_field.add_with_bytes_ref(
-            Some(&binary_value),
+            Some(binary_value),
             doc_id,
             state,
             &mut attribute_source,
@@ -2351,15 +2354,15 @@ where
         self.delegate.token_stream(token_stream)
     }
 
-    fn binary_value(&self) -> Result<Option<Rc<BytesRef<Vec<u8>>>>> {
+    fn binary_value(&self) -> Result<Option<&BytesRef<Vec<u8>>>> {
         self.delegate.binary_value()
     }
 
-    fn string_value(&self) -> Result<Option<Rc<String>>> {
+    fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
         self.delegate.string_value()
     }
 
-    fn get_char_sequence_value(&self) -> Result<Option<Rc<String>>> {
+    fn get_char_sequence_value(&self) -> Result<Option<Cow<'_, String>>> {
         self.delegate.get_char_sequence_value()
     }
 
@@ -2371,8 +2374,12 @@ where
         self.delegate.numeric_value()
     }
 
-    fn stored_value(&self) -> Result<Option<StoredValue>> {
+    fn stored_value(&self) -> Option<&FieldDataEnum> {
         self.delegate.stored_value()
+    }
+
+    fn take_stored_value(&self) -> Result<Option<StoredValue>> {
+        self.delegate.take_stored_value()
     }
 
     fn invertable_type(&self) -> &InvertableType {

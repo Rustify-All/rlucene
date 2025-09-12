@@ -18,14 +18,15 @@
 
 use crate::core::analysis::reader::ReaderEnum;
 use crate::core::analysis::token_stream::TokenStream;
+use crate::core::document::field::FieldDataEnum;
 use crate::core::document::invertable_field::InvertableType;
 use crate::core::document::stored_value::StoredValue;
 use crate::core::index::BytesRef;
 use crate::core::index::indexable_field_type::IndexableFieldType;
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::number::Number;
+use std::borrow::Cow;
 use std::fmt::Display;
-use std::rc::Rc;
 
 /// Represents a single field for indexing. IndexWriter consumes
 /// `Iterable<IndexableField>` as a document.
@@ -62,12 +63,12 @@ pub trait IndexableField: Display {
     where
         TS: TokenStream;
     /// Non-null if this field has a binary value.
-    fn binary_value(&self) -> Result<Option<Rc<BytesRef<Vec<u8>>>>>;
+    fn binary_value(&self) -> Result<Option<&BytesRef<Vec<u8>>>>;
 
     /// Non-null if this field has a string value.
-    fn string_value(&self) -> Result<Option<Rc<String>>>;
+    fn string_value(&self) -> Result<Option<Cow<'_, String>>>;
     /// Non-null if this field has a string value.
-    fn get_char_sequence_value(&self) -> Result<Option<Rc<String>>> {
+    fn get_char_sequence_value(&self) -> Result<Option<Cow<'_, String>>> {
         self.string_value()
     }
 
@@ -79,7 +80,8 @@ pub trait IndexableField: Display {
 
     /// Stored value. This method is called to populate stored fields and must
     /// return a non-null value if the field stored.
-    fn stored_value(&self) -> Result<Option<StoredValue>>;
+    fn stored_value(&self) -> Option<&FieldDataEnum>;
+    fn take_stored_value(&self) -> Result<Option<StoredValue>>;
 
     /// Describes how this field should be inverted. This must return a non-null
     /// value if the field indexes terms and postings.

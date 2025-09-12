@@ -171,10 +171,10 @@ impl StoredFieldVisitor for CopyVisitor {
     fn string_field(
         &mut self,
         field_info: Arc<FieldInfo>,
-        value: &str,
+        value: String,
         writer: &mut impl StoredFieldsWriter,
     ) -> Result<()> {
-        writer.write_field_str(&field_info, value)
+        writer.write_field_str(&field_info, &value)
     }
 
     fn int_field(

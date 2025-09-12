@@ -14,10 +14,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use std::borrow::Cow;
 use std::fmt;
-use std::rc::Rc;
 
-use crate::core::analysis::analyzer::Analyzer;
 use crate::core::analysis::reader::ReaderEnum;
 use crate::core::analysis::token_stream::TokenStream;
 use crate::core::document::field::{Field, FieldBase, FieldDataEnum};
@@ -36,10 +35,13 @@ pub struct DoublePoint {
     parent_field: Field,
 }
 impl DoublePoint {
-    pub fn new(name: &str, point: &[f64]) -> Result<DoublePoint> {
+    pub fn new<T>(name: T, point: &[f64]) -> Result<DoublePoint>
+    where
+        T: Into<String>,
+    {
         let packed = Self::pack(point)?;
         let len = packed.len();
-        let value = Rc::new(BytesRef::from_slice(packed, 0, len));
+        let value = BytesRef::from_slice(packed, 0, len);
         debug_assert!(len <= i32::MAX as usize);
         let field_type = Self::get_type(point.len() as i32)?;
         let parent_field = Field::with_bytes_ref(name, value, field_type)?;
@@ -64,9 +66,9 @@ impl DoublePoint {
         }
         let packed = Self::pack(point)?;
         let len = packed.len();
-        let value = Rc::new(BytesRef::from_slice(packed, 0, len));
+        let value = BytesRef::from_slice(packed, 0, len);
         debug_assert!(len <= i32::MAX as usize);
-        self.parent_field.fields_data = Option::from(FieldDataEnum::Binary(value));
+        self.parent_field.fields_data = FieldDataEnum::Binary(value);
         Ok(())
     }
     fn pack(point: &[f64]) -> Result<Vec<u8>> {
@@ -123,11 +125,11 @@ impl IndexableField for DoublePoint {
         self.parent_field.token_stream(token_stream)
     }
 
-    fn binary_value(&self) -> Result<Option<Rc<BytesRef<Vec<u8>>>>> {
+    fn binary_value(&self) -> Result<Option<&BytesRef<Vec<u8>>>> {
         self.parent_field.binary_value()
     }
 
-    fn string_value(&self) -> Result<Option<Rc<String>>> {
+    fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
         self.parent_field.string_value()
     }
 
@@ -144,7 +146,7 @@ impl IndexableField for DoublePoint {
             )));
         }
         match &self.parent_field.fields_data {
-            Some(FieldDataEnum::Binary(bytes)) => {
+            FieldDataEnum::Binary(bytes) => {
                 debug_assert!(bytes.length == BitUtil::DOUBLE_BYTES);
                 let value = Self::decode_dimension(&bytes.bytes, bytes.offset);
                 Ok(Some(Number::F64(value)))
@@ -156,8 +158,12 @@ impl IndexableField for DoublePoint {
         }
     }
 
-    fn stored_value(&self) -> Result<Option<StoredValue>> {
-        todo!()
+    fn stored_value(&self) -> Option<&FieldDataEnum> {
+        self.parent_field.stored_value()
+    }
+
+    fn take_stored_value(&self) -> Result<Option<StoredValue>> {
+        self.parent_field.take_stored_value()
     }
 
     fn invertable_type(&self) -> &InvertableType {
@@ -169,7 +175,7 @@ impl fmt::Display for DoublePoint {
         write!(f, "DoublePoint <{}:", self.parent_field.name())?;
 
         match &self.parent_field.fields_data {
-            Some(FieldDataEnum::Binary(bytes)) => {
+            FieldDataEnum::Binary(bytes) => {
                 let dim_count = self.parent_field.field_type().point_dimension_count();
                 for dim in 0..dim_count {
                     if dim > 0 {

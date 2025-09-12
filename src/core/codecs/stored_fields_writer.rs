@@ -267,10 +267,10 @@ impl StoredFieldVisitor for MergeVisitor {
     fn string_field(
         &mut self,
         field_info: Arc<FieldInfo>,
-        value: &str,
+        value: String,
         writer: &mut impl StoredFieldsWriter,
     ) -> Result<()> {
-        writer.write_field_str(self.remap(field_info)?.as_ref(), value)
+        writer.write_field_str(self.remap(field_info)?.as_ref(), &value)
     }
 
     fn int_field(

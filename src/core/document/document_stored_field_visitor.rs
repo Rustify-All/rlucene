@@ -87,7 +87,7 @@ impl StoredFieldVisitor for DocumentStoredFieldVisitor<'_> {
     fn string_field(
         &mut self,
         field_info: Arc<FieldInfo>,
-        value: &str,
+        value: String,
         _writer: &mut impl StoredFieldsWriter,
     ) -> Result<()> {
         let mut ft = FieldType::from_ref(&*text::TYPE_STORED)?;

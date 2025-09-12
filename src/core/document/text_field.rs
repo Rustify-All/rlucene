@@ -14,13 +14,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use std::borrow::Cow;
 use std::fmt;
-use std::rc::Rc;
 
-use crate::core::analysis::analyzer::Analyzer;
 use crate::core::analysis::reader::ReaderEnum;
 use crate::core::analysis::token_stream::TokenStream;
-use crate::core::document::field::{Field, FieldBase, Store};
+use crate::core::document::field::{Field, FieldBase, FieldDataEnum, Store};
 use crate::core::document::field_type::FieldType;
 use crate::core::document::fields::TokenStreamEnum;
 use crate::core::document::invertable_field::InvertableType;
@@ -66,7 +65,6 @@ pub mod text {
 /// a document's text.
 pub struct TextField {
     parent_field: Field,
-    stored_value: Option<StoredValue>,
 }
 
 impl TextField {
@@ -75,12 +73,12 @@ impl TextField {
     /// # Parameters
     /// - `name`: Field name.
     /// - `reader`: `ReaderEnum` value.
-    pub fn with_reader(name: &str, reader: ReaderEnum) -> Result<Self> {
+    pub fn with_reader<T>(name: T, reader: ReaderEnum) -> Result<Self>
+    where
+        T: Into<String>,
+    {
         let parent_field = Field::with_reader(name, reader, text::TYPE_NOT_STORED.clone())?;
-        Ok(Self {
-            parent_field,
-            stored_value: None,
-        })
+        Ok(Self { parent_field })
     }
     /// Creates a new `TextField` with a string value.
     ///
@@ -88,45 +86,38 @@ impl TextField {
     /// - `name`: Field name.
     /// - `value`: String value.
     /// - `store`: `Store::Yes` if the content should also be stored.
-    pub fn with_string(name: &str, value: &str, store: Store) -> Result<Self> {
+    pub fn with_string<T>(name: T, value: T, store: Store) -> Result<Self>
+    where
+        T: Into<String>,
+    {
         let store = store.into();
-        let value_str = Rc::new(value.to_string());
         let field_type = if store {
             text::TYPE_STORED.clone()
         } else {
             text::TYPE_NOT_STORED.clone()
         };
-        let parent_field = Field::with_string(name, value_str.clone(), field_type.clone())?;
-        let stored_value = if store {
-            Some(StoredValue::new_string(value_str))
-        } else {
-            None
-        };
-        Ok(Self {
-            parent_field,
-            stored_value,
-        })
+        let parent_field = Field::with_string(name, value, field_type.clone())?;
+        Ok(Self { parent_field })
     }
     /// Creates a new un-stored `TextField` with a `TokenStreamEnum` value.
     ///
     /// # Parameters
     /// - `name`: Field name.
     /// - `stream`: `TokenStream` value.
-    pub fn with_token_stream(name: &str, stream: TokenStreamEnum) -> Result<Self> {
+    pub fn with_token_stream<T>(name: T, stream: TokenStreamEnum) -> Result<Self>
+    where
+        T: Into<String>,
+    {
         let parent_field = Field::with_token_stream(name, stream, text::TYPE_NOT_STORED.clone())?;
-        Ok(Self {
-            parent_field,
-            stored_value: None,
-        })
+        Ok(Self { parent_field })
     }
 }
 impl FieldBase for TextField {
-    fn set_string_value(&mut self, value: &str) -> Result<()> {
-        let value_str = Rc::new(value.to_string());
-        self.parent_field.set_string_value(value_str.clone())?;
-        if let Some(ref mut sv) = self.stored_value {
-            sv.set_string_value(value_str)?;
-        }
+    fn set_string_value<T>(&mut self, value: T) -> Result<()>
+    where
+        T: Into<String>,
+    {
+        self.parent_field.set_string_value(value)?;
         Ok(())
     }
 }
@@ -153,15 +144,15 @@ impl IndexableField for TextField {
         self.parent_field.token_stream(token_stream)
     }
 
-    fn binary_value(&self) -> Result<Option<Rc<BytesRef<Vec<u8>>>>> {
+    fn binary_value(&self) -> Result<Option<&BytesRef<Vec<u8>>>> {
         self.parent_field.binary_value()
     }
 
-    fn string_value(&self) -> Result<Option<Rc<String>>> {
+    fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
         self.parent_field.string_value()
     }
 
-    fn get_char_sequence_value(&self) -> Result<Option<Rc<String>>> {
+    fn get_char_sequence_value(&self) -> Result<Option<Cow<'_, String>>> {
         self.parent_field.get_char_sequence_value()
     }
 
@@ -173,8 +164,12 @@ impl IndexableField for TextField {
         self.parent_field.numeric_value()
     }
 
-    fn stored_value(&self) -> Result<Option<StoredValue>> {
-        Ok(self.stored_value.clone())
+    fn stored_value(&self) -> Option<&FieldDataEnum> {
+        self.parent_field.stored_value()
+    }
+
+    fn take_stored_value(&self) -> Result<Option<StoredValue>> {
+        self.parent_field.take_stored_value()
     }
 
     fn invertable_type(&self) -> &InvertableType {

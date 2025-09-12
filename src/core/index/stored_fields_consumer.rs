@@ -17,7 +17,7 @@
 use crate::core::codecs::Codec;
 use crate::core::codecs::stored_fields_format::StoredFieldsFormat;
 use crate::core::codecs::stored_fields_writer::{StoredFieldsWriter, StoredFieldsWriterEnum};
-use crate::core::document::stored_value::{StoredValue, StoredValueType};
+use crate::core::document::field::FieldDataEnum;
 use crate::core::index::field_info::FieldInfo;
 use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::segment_write_state::SegmentWriteState;
@@ -25,7 +25,8 @@ use crate::core::index::sorter::DocMap;
 use crate::core::index::sorting_stored_fields_consumer::SortingStoredFieldsConsumer;
 use crate::core::store::IOContext;
 use crate::core::store::directory::Directory;
-use crate::core::util::error::lucene_error::Result;
+use crate::core::util::error::lucene_error::{LuceneError, Result};
+use crate::core::util::number::Number;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -121,17 +122,29 @@ where
         Ok(())
     }
 
-    pub(crate) fn write_field(&mut self, info: &FieldInfo, value: &StoredValue) -> Result<()> {
-        let writer = self.writer.as_mut().expect("writer must be initialized");
-
-        match value.get_type() {
-            StoredValueType::Integer => writer.write_field_i32(info, value.get_int_value()?),
-            StoredValueType::Long => writer.write_field_i64(info, value.get_long_value()?),
-            StoredValueType::Float => writer.write_field_f32(info, value.get_float_value()?),
-            StoredValueType::Double => writer.write_field_f64(info, value.get_double_value()?),
-            StoredValueType::Binary => writer.write_field_bytes(info, value.get_binary_value()?),
-            StoredValueType::String => writer.write_field_str(info, value.get_string_value()?),
+    pub(crate) fn write_field(&mut self, info: &FieldInfo, value: &FieldDataEnum) -> Result<()> {
+        match self.writer {
+            Some(ref mut writer) => match value {
+                FieldDataEnum::Binary(bytes) => {
+                    writer.write_field_bytes(info, bytes)?;
+                },
+                FieldDataEnum::String(s) => {
+                    writer.write_field_str(info, s)?;
+                },
+                FieldDataEnum::Number(num) => {
+                    match num {
+                        Number::I32(n) => writer.write_field_i32(info, *n),
+                        Number::I64(n) => writer.write_field_i64(info, *n),
+                        Number::F32(n) => writer.write_field_f32(info, *n),
+                        Number::F64(n) => writer.write_field_f64(info, *n),
+                        _ => return Err(LuceneError::illegal_argument("unsupported number type")),
+                    }
+                }?,
+                _ => return Err(LuceneError::illegal_argument("unsupported field type")),
+            },
+            None => return Err(LuceneError::illegal_argument("writer must be initialized")),
         }
+        Ok(())
     }
 
     pub(crate) fn finish_document(&mut self) -> Result<()> {

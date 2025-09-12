@@ -14,15 +14,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
-use std::rc::Rc;
 
 use once_cell::sync::Lazy;
 
-use crate::core::analysis::analyzer::Analyzer;
 use crate::core::analysis::reader::ReaderEnum;
 use crate::core::analysis::token_stream::TokenStream;
-use crate::core::document::field::{Field, FieldBase, Store};
+use crate::core::document::field::{Field, FieldBase, FieldDataEnum, Store};
 use crate::core::document::field_type::FieldType;
 use crate::core::document::invertable_field::InvertableType;
 use crate::core::document::stored_value::StoredValue;
@@ -65,8 +64,7 @@ static TYPE_STORED: Lazy<FieldType> = Lazy::new(|| {
 /// separately to the document.
 pub struct StringField {
     parent_field: Field,
-    binary_value: Rc<BytesRef<Vec<u8>>>,
-    stored_value: Option<StoredValue>,
+    binary_value: Option<BytesRef<Vec<u8>>>,
 }
 
 impl StringField {
@@ -77,25 +75,24 @@ impl StringField {
     /// - `name`: Field name.
     /// - `value`: String value.
     /// - `stored`: `Store::Yes` if the content should also be stored.
-    pub fn with_string(name: &str, value: &str, store: Store) -> Result<Self> {
+    pub fn with_string<T1, T2>(name: T1, value: T2, store: Store) -> Result<Self>
+    where
+        T1: Into<String>,
+        T2: Into<String>,
+    {
         let store = store.into();
         let field_type = if store {
             TYPE_STORED.clone()
         } else {
             TYPE_NOT_STORED.clone()
         };
-        let value_str = Rc::new(value.to_string());
-        let parent_field = Field::with_string(name, value_str.clone(), field_type)?;
-        let binary_value = Rc::new(BytesRef::from_string(value));
-        let stored_value = if store {
-            None
-        } else {
-            Option::from(StoredValue::new_string(value_str))
-        };
+        let value_str: String = value.into();
+        let binary_value = Some(BytesRef::from_string(&value_str));
+        let parent_field = Field::with_string(name, value_str, field_type)?;
+
         Ok(Self {
             parent_field,
             binary_value,
-            stored_value,
         })
     }
     /// Creates a new binary `StringField`, indexing the provided binary
@@ -107,45 +104,36 @@ impl StringField {
     ///   must not be modified until the document(s) holding it have been
     ///   indexed.
     /// - `stored`: `Store::Yes` if the content should also be stored.
-    pub fn with_bytes_ref(name: &str, value: Rc<BytesRef<Vec<u8>>>, store: Store) -> Result<Self> {
+    pub fn with_bytes_ref(name: String, value: BytesRef<Vec<u8>>, store: Store) -> Result<Self> {
         let store = store.into();
         let field_type = if store {
             TYPE_STORED.clone()
         } else {
             TYPE_NOT_STORED.clone()
         };
-        let parent_field = Field::with_bytes_ref(name, value.clone(), field_type)?;
-        let stored_value = if store {
-            None
-        } else {
-            Option::from(StoredValue::new_binary(value.clone()))
-        };
+        let parent_field = Field::with_bytes_ref(name, value, field_type)?;
         Ok(Self {
             parent_field,
-            binary_value: value,
-            stored_value,
+            binary_value: None,
         })
     }
 }
 
 impl FieldBase for StringField {
-    fn set_bytes_value(&mut self, value: Rc<BytesRef<Vec<u8>>>) -> Result<()> {
-        self.parent_field.set_bytes_value(value.clone())?;
-        if let Some(ref mut stored_value) = self.stored_value {
-            stored_value.set_binary_value(value.clone())?;
-        }
-        self.binary_value = value;
+    fn set_bytes_value(&mut self, value: BytesRef<Vec<u8>>) -> Result<()> {
+        debug_assert!(self.binary_value.is_none());
+        self.parent_field.set_bytes_value(value)?;
         Ok(())
     }
 
-    fn set_string_value(&mut self, value: &str) -> Result<()> {
-        let value_str = Rc::new(value.to_string());
-        self.parent_field.set_string_value(value_str.clone())?;
-        if let Some(ref mut stored_value) = self.stored_value {
-            stored_value.set_string_value(value_str.clone())?;
-        }
-        // TODO: could we avoid clone here?
-        self.binary_value = Rc::new(BytesRef::from_string(value));
+    fn set_string_value<T>(&mut self, value: T) -> Result<()>
+    where
+        T: Into<String>,
+    {
+        debug_assert!(self.binary_value.is_some());
+        let v = value.into();
+        self.binary_value = Some(BytesRef::from_string(&v));
+        self.parent_field.set_string_value(v)?;
         Ok(())
     }
 }
@@ -178,11 +166,11 @@ impl IndexableField for StringField {
     {
         self.parent_field.token_stream(token_stream)
     }
-    fn binary_value(&self) -> Result<Option<Rc<BytesRef<Vec<u8>>>>> {
-        Ok(Some(self.binary_value.clone()))
+    fn binary_value(&self) -> Result<Option<&BytesRef<Vec<u8>>>> {
+        Ok(self.binary_value.as_ref())
     }
 
-    fn string_value(&self) -> Result<Option<Rc<String>>> {
+    fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
         self.parent_field.string_value()
     }
 
@@ -194,8 +182,12 @@ impl IndexableField for StringField {
         self.parent_field.numeric_value()
     }
 
-    fn stored_value(&self) -> Result<Option<StoredValue>> {
-        Ok(self.stored_value.clone())
+    fn stored_value(&self) -> Option<&FieldDataEnum> {
+        self.parent_field.stored_value()
+    }
+
+    fn take_stored_value(&self) -> Result<Option<StoredValue>> {
+        self.parent_field.take_stored_value()
     }
 
     fn invertable_type(&self) -> &InvertableType {

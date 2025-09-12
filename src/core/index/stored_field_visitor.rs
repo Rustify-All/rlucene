@@ -62,7 +62,7 @@ pub trait StoredFieldVisitor {
     fn string_field(
         &mut self,
         _field_info: Arc<FieldInfo>,
-        _value: &str,
+        _value: String,
         _writer: &mut impl StoredFieldsWriter,
     ) -> Result<()> {
         Ok(())
