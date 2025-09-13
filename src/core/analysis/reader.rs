@@ -99,3 +99,25 @@ impl Reader for ReaderEnum {
         }
     }
 }
+
+impl<'a> From<&'a str> for ReaderEnum {
+    fn from(text: &'a str) -> Self {
+        let mut reader = ReusableStringReader::new();
+        reader.set_value(text);
+        ReaderEnum::ReusedString(reader)
+    }
+}
+
+impl From<&String> for ReaderEnum {
+    fn from(text: &String) -> Self {
+        ReaderEnum::from(text.as_str())
+    }
+}
+
+impl From<String> for ReaderEnum {
+    fn from(text: String) -> Self {
+        let mut reader = ReusableStringReader::new();
+        reader.set_value(&text);
+        ReaderEnum::ReusedString(reader)
+    }
+}

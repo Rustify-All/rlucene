@@ -50,9 +50,12 @@ pub trait Analyzer {
         }
         slot.as_mut().unwrap()
     }
-    fn token_stream_with_reader(&self, field_name: &str, reader: ReaderEnum) -> Result<()> {
-        let r = self.init_reader(field_name, reader);
-        REUSE_STRATEGY.with(|reuse_strategy| {
+    fn token_stream<R>(&self, field_name: &str, input: R) -> Result<()>
+    where
+        R: Into<ReaderEnum>,
+    {
+        let reader = self.init_reader(field_name, input.into());
+        REUSE_STRATEGY.with(move |reuse_strategy| {
             (|| -> Result<()> {
                 let mut reuse_strategy = reuse_strategy.borrow_mut();
                 let reuse_strategy = self.ensure_reuse_strategy(&mut reuse_strategy);
@@ -65,32 +68,7 @@ pub trait Analyzer {
                 }
 
                 let components = components.as_mut().unwrap();
-                components.set_reader(r)?;
-                Ok(())
-            })()
-        })?;
-        Ok(())
-    }
-    fn token_stream(&self, field_name: &str, text: &str) -> Result<()> {
-        // We don’t reuse ReusableStringReader here like Java Lucene does.
-        let mut str_reader = ReusableStringReader::new();
-        str_reader.set_value(text);
-        let r = self.init_reader(field_name, ReaderEnum::ReusedString(str_reader));
-
-        REUSE_STRATEGY.with(|reuse_strategy| {
-            (|| -> Result<()> {
-                let mut reuse_strategy = reuse_strategy.borrow_mut();
-                let reuse_strategy = self.ensure_reuse_strategy(&mut reuse_strategy);
-
-                let mut components = reuse_strategy.get_reusable_components(field_name)?;
-                if components.is_none() {
-                    let v = self.create_components(field_name)?;
-                    reuse_strategy.set_reusable_components(field_name, v)?;
-                    components = reuse_strategy.get_reusable_components(field_name)?;
-                }
-
-                let components = components.as_mut().unwrap();
-                components.set_reader(r)?;
+                components.set_reader(reader)?;
                 Ok(())
             })()
         })?;
