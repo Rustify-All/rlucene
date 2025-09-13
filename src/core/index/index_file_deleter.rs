@@ -154,9 +154,7 @@ where
                                 .info_stream
                                 .message("IFD", &format!("init: load commit \"{file}\""));
                         }
-                        let sis = SegmentInfos::read_commit(directory_orig.clone(), &file)?
-                            .into_segment_infos()
-                            .unwrap();
+                        let sis = SegmentInfos::read_commit(directory_orig.clone(), &file)?;
                         let commit_point = CommitPoint::new(directory_orig.clone(), &sis)?;
                         index_file_deleter.commits.push(commit_point);
                         let index = index_file_deleter.commits.len();
@@ -187,14 +185,11 @@ where
             // try now to explicitly open this commit point:
             let file = current_segments_file.unwrap();
             let sis = SegmentInfos::read_commit(directory_orig.clone(), &file);
-            let sis = match sis {
-                Ok(sis) => sis.into_segment_infos().unwrap(),
-                Err(e) => {
-                    return Err(LuceneError::corrupt_index(format!(
-                        "unable to read current segments_N file {file},(resource={e})",
-                    )));
-                },
-            };
+            let sis = sis.map_err(|e| {
+                LuceneError::corrupt_index(format!(
+                    "unable to read current segments_N file {file},(resource={e})"
+                ))
+            })?;
             if index_file_deleter.info_stream.enabled("IFD") {
                 index_file_deleter.info_stream.message(
                     "IFD",

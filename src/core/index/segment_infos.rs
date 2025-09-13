@@ -237,7 +237,7 @@ where
     ///
     /// - Returns `LuceneError::CorruptIndex` if the index is corrupt.
     /// - Returns `LuceneError` for any low-level IO error.
-    pub fn read_commit(directory: Arc<D>, segment_file_name: &str) -> Result<SegmentsFileEnum<D>> {
+    pub fn read_commit(directory: Arc<D>, segment_file_name: &str) -> Result<SegmentInfos<D>> {
         Self::read_commit_with_file_min_version(directory, segment_file_name, *MIN_SUPPORTED_MAJOR)
     }
 
@@ -253,7 +253,7 @@ where
         directory: Arc<D>,
         segment_file_name: &str,
         min_supported_major_version: i32,
-    ) -> Result<SegmentsFileEnum<D>> {
+    ) -> Result<SegmentInfos<D>> {
         let generation = generation_from_segments_file_name(segment_file_name)?;
         let mut input;
         {
@@ -273,7 +273,7 @@ where
             generation,
             min_supported_major_version,
         ) {
-            Ok(commit) => Ok(SegmentsFileEnum::Segment(commit)),
+            Ok(commit) => Ok(commit),
             Err(e) => Err(LuceneError::corrupt_index(format!(
                 "Unexpected file read error while reading index: {e:?}"
             ))),
@@ -546,7 +546,7 @@ where
     }
     /// Find the latest commit (`segments_N` file) and load all
     /// `SegmentCommitInfo`s.
-    pub fn read_latest_commit(directory: Arc<D>) -> Result<SegmentsFileEnum<D>> {
+    pub fn read_latest_commit(directory: Arc<D>) -> Result<SegmentInfos<D>> {
         Self::read_latest_commit_with_min_version(directory, *MIN_SUPPORTED_MAJOR)
     }
 
@@ -555,11 +555,11 @@ where
     pub fn read_latest_commit_with_min_version(
         directory: Arc<D>,
         min_supported_major_version: i32,
-    ) -> Result<SegmentsFileEnum<D>> {
-        let sub = FindSegmentsFileImpl {
+    ) -> Result<SegmentInfos<D>> {
+        let find_segments_file = FindSegmentsFileImpl {
+            dir: directory.clone(),
             min_supported_major_version,
         };
-        let find_segments_file = FindSegmentsFile::new(directory.clone(), sub);
         find_segments_file.run()
     }
 
@@ -1139,35 +1139,30 @@ where
     }
 }
 
-pub struct FindSegmentsFile<D, F>
-where
-    D: Directory,
-    F: FindSegmentsFileBase,
-{
-    directory: Arc<D>,
-    sub: F,
-}
-impl<D, F> FindSegmentsFile<D, F>
-where
-    D: Directory,
-    F: FindSegmentsFileBase,
-{
-    pub fn new(directory: Arc<D>, sub: F) -> Self {
-        FindSegmentsFile { directory, sub }
-    }
-    pub fn run_with_commit<IC>(&self, commit: &IC) -> Result<SegmentsFileEnum<D>>
-    where
-        IC: IndexCommit<Directory = D>,
-    {
-        if !Arc::ptr_eq(&self.directory, &commit.get_directory()) {
-            return Err(LuceneError::illegal_state(
-                "The specified commit does not match the specified Directory",
-            ));
+pub trait FindSegmentsFile {
+    type V;
+    type D: Directory;
+    fn get_directory_point(&self) -> Arc<Self::D>;
+    /// Run doBody on the provided commit.
+    fn run_with_commit<IC>(
+        &self,
+        commit: Option<&impl IndexCommit<Directory = Self::D>>,
+    ) -> Result<Self::V> {
+        if commit.is_some() {
+            if !Arc::ptr_eq(
+                &self.get_directory_point(),
+                &commit.as_ref().unwrap().get_directory(),
+            ) {
+                return Err(LuceneError::illegal_state(
+                    "The specified commit does not match the specified Directory",
+                ));
+            }
+            return self.do_body(commit.as_ref().unwrap().get_segments_file_name());
         }
-        self.sub
-            .do_body(self.directory.clone(), commit.get_segments_file_name())
+        self.run()
     }
-    pub fn run(&self) -> Result<SegmentsFileEnum<D>> {
+    /// Locate the most recent segments file and run doBody on it.
+    fn run(&self) -> Result<Self::V> {
         let mut last_gen: i64;
         let mut r#gen: i64 = -1;
         let mut exc: Option<LuceneError> = None;
@@ -1181,10 +1176,11 @@ where
         // which generation we are trying to load.  If we
         // don't, then the original error is real and we throw
         // it.
+        let directory = self.get_directory_point();
         loop {
             last_gen = r#gen;
-            let mut files = self.directory.list_all()?;
-            let mut files2 = self.directory.list_all()?;
+            let mut files = directory.list_all()?;
+            let mut files2 = directory.list_all()?;
             files.sort();
             files2.sort();
             if files != files2 {
@@ -1197,7 +1193,7 @@ where
             if r#gen == -1 {
                 return Err(LuceneError::index_not_found(format!(
                     "No segments* file found in the {}: files: {:?}",
-                    self.directory, files
+                    directory, files
                 )));
             } else if r#gen > last_gen {
                 let segment_file_name =
@@ -1205,7 +1201,7 @@ where
                         .ok_or_else(|| {
                             LuceneError::illegal_state("Failed to generate segment file name.")
                         })?;
-                match self.sub.do_body(self.directory.clone(), &segment_file_name) {
+                match self.do_body(&segment_file_name) {
                     Ok(result) => {
                         if get_info_stream()?.is_some() {
                             message(&format!("success on {segment_file_name}")).unwrap_or_default();
@@ -1235,41 +1231,32 @@ where
             }
         }
     }
-}
-pub trait FindSegmentsFileBase {
-    fn do_body<D>(&self, directory: Arc<D>, segment_file_name: &str) -> Result<SegmentsFileEnum<D>>
-    where
-        D: Directory;
+    /// Sub struct must implement this.
+    /// The assumption is an error will be thrown if something goes wrong during the processing that could have been caused by a writer committing.
+    fn do_body(&self, segment_file_name: &str) -> Result<Self::V>;
 }
 
-// TODO： important 不需要这个枚举吧？
-pub enum SegmentsFileEnum<D>
+pub struct FindSegmentsFileImpl<D>
 where
     D: Directory,
 {
-    Segment(SegmentInfos<D>),
-}
-impl<D> SegmentsFileEnum<D>
-where
-    D: Directory,
-{
-    pub fn into_segment_infos(self) -> Option<SegmentInfos<D>> {
-        match self {
-            SegmentsFileEnum::Segment(si) => Some(si),
-        }
-    }
-}
-
-pub struct FindSegmentsFileImpl {
+    pub(crate) dir: Arc<D>,
     pub(crate) min_supported_major_version: i32,
 }
-impl FindSegmentsFileBase for FindSegmentsFileImpl {
-    fn do_body<D>(&self, directory: Arc<D>, segment_file_name: &str) -> Result<SegmentsFileEnum<D>>
-    where
-        D: Directory,
-    {
+impl<D> FindSegmentsFile for FindSegmentsFileImpl<D>
+where
+    D: Directory,
+{
+    type V = SegmentInfos<D>;
+    type D = D;
+
+    fn get_directory_point(&self) -> Arc<Self::D> {
+        self.dir.clone()
+    }
+
+    fn do_body(&self, segment_file_name: &str) -> Result<Self::V> {
         SegmentInfos::read_commit_with_file_min_version(
-            directory,
+            self.dir.clone(),
             segment_file_name,
             self.min_supported_major_version,
         )
@@ -1440,9 +1427,7 @@ mod tests {
         let directory = Arc::new(new_directory(&mut random)?);
         let mut sis = SegmentInfos::new(LATEST.major)?;
         sis.commit(directory.as_ref())?;
-        let result = SegmentInfos::read_latest_commit(directory.clone())?.into_segment_infos();
-        assert!(result.is_some());
-        sis = result.unwrap();
+        sis = SegmentInfos::read_latest_commit(directory.clone())?;
         assert!(sis.get_min_segment_lucene_version().is_none());
         let result = sis.get_commit_lucene_version();
         assert!(result.is_some());
@@ -1481,9 +1466,7 @@ mod tests {
         sis.add(commit_info)?;
         sis.commit(directory.as_ref())?;
 
-        let result = SegmentInfos::read_latest_commit(directory.clone())?.into_segment_infos();
-        assert!(result.is_some());
-        sis = result.unwrap();
+        sis = SegmentInfos::read_latest_commit(directory.clone())?;
         assert_eq!(
             *sis.get_min_segment_lucene_version().unwrap(),
             (*LUCENE_11_0_0).clone()
@@ -1554,9 +1537,7 @@ mod tests {
         let commit_info_id_1 = *sis.info(&id_1).unwrap().get_id().unwrap();
 
         // Read back the latest commit
-        let result = SegmentInfos::read_latest_commit(directory.clone())?.into_segment_infos();
-        assert!(result.is_some());
-        sis = result.unwrap();
+        sis = SegmentInfos::read_latest_commit(directory.clone())?;
 
         // Verify results
         assert_eq!(
