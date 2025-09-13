@@ -1152,20 +1152,14 @@ pub trait FindSegmentsFile {
     /// Run doBody on the provided commit.
     fn run_with_commit<IC>(
         &self,
-        commit: Option<&impl IndexCommit<Directory = Self::D>>,
+        commit: &impl IndexCommit<Directory = Self::D>,
     ) -> Result<Self::V> {
-        if commit.is_some() {
-            if !Arc::ptr_eq(
-                &self.get_directory_point(),
-                &commit.as_ref().unwrap().get_directory(),
-            ) {
-                return Err(LuceneError::illegal_state(
-                    "The specified commit does not match the specified Directory",
-                ));
-            }
-            return self.do_body(commit.as_ref().unwrap().get_segments_file_name());
+        if !Arc::ptr_eq(&self.get_directory_point(), &commit.get_directory()) {
+            return Err(LuceneError::illegal_state(
+                "The specified commit does not match the specified Directory",
+            ));
         }
-        self.run()
+        self.do_body(commit.get_segments_file_name())
     }
     /// Locate the most recent segments file and run doBody on it.
     fn run(&self) -> Result<Self::V> {
