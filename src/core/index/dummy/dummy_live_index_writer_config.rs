@@ -17,7 +17,9 @@
 use crate::core::analysis::dummy::dummy_analyzer::DummyAnalyzer;
 use crate::core::codecs::lucene101_codec::Lucene101Codec;
 use crate::core::index::dummy::dummy_flush_policy::DummyFlushPolicy;
+use crate::core::index::dummy::dummy_index_commit::DummyIndexCommit;
 use crate::core::index::dummy::dummy_merge_policy::DummyMergePolicy;
+use crate::core::index::index_writer_config::OpenMode;
 use crate::core::index::keep_only_last_commit_deletion_policy::KeepOnlyLastCommitDeletionPolicy;
 use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
 use crate::core::index::sort::Sort;
@@ -125,6 +127,24 @@ impl LiveIndexWriterConfig for DummyLiveIndexWriterConfig {
     }
 
     fn get_commit_on_close(&self) -> bool {
-        true
+        unreachable!("Dummy implementation: this method should never be called in real usage")
+    }
+
+    fn get_open_mode(&self) -> &OpenMode {
+        unreachable!("Dummy implementation: this method should never be called in real usage")
+    }
+
+    type IndexCommit = DummyIndexCommit;
+
+    fn get_index_commit(&mut self) -> Option<Self::IndexCommit> {
+        unreachable!("Dummy implementation: this method should never be called in real usage")
+    }
+
+    fn get_index_created_version_major(&self) -> i32 {
+        unreachable!("Dummy implementation: this method should never be called in real usage")
+    }
+
+    fn get_reader_pooling(&self) -> bool {
+        unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 }

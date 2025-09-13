@@ -45,13 +45,12 @@ where
     directory_orig: Arc<D>,
     // wrapped with additional checks
     directory: Arc<LockValidatingDirectoryWrapper<D>>,
-    // increments every time a change is completed
-    change_count: AtomicI64,
     // last changeCount that was committed
     last_commit_change_count: AtomicI64,
     pending_seq_no: AtomicI64,
     pending_commit_change_count: AtomicI64,
-    global_field_number_map: Arc<FieldNumbers>,
+    // TODO: IMPORTANT 必须要用Mutext封装吗
+    global_field_number_map: Arc<Mutex<FieldNumbers>>,
     doc_writer: DocumentsWriter<D, L, FlushNotificationsImpl>,
     event_queue: Arc<EventQueue>,
     write_doc_values_lock: ReentrantMutex<()>,
@@ -75,7 +74,8 @@ where
     buffered_updates_stream: Rc<BufferedUpdatesStream>,
     merge_finished_gen: AtomicI64,
     config: Arc<L>,
-    pending_num_docs: AtomicI64,
+    // TODO: IMPORTANT 等调整了DWPT的构造方式 就不要使用Arc封装了
+    pending_num_docs: Arc<AtomicI64>,
     soft_deletes_enabled: bool,
     info_stream: InfoStreamMT,
     inner: Mutex<Inner<D, L>>,
@@ -93,6 +93,8 @@ where
     deleter: IndexFileDeleter<D, L::IndexDeletionPolicy>,
     // list of segmentInfo we will fallback to if the commit fails
     rollback_segments: Vec<SegmentCommitInfo<D>>,
+    // increments every time a change is completed
+    change_count: i64,
 }
 
 pub struct CommitInner<D>
@@ -110,6 +112,207 @@ where
     L: LiveIndexWriterConfig,
     B: IndexWriterBase,
 {
+    pub fn new(d: Arc<D>, mut conf: L, sub: B) -> Result<Self> {
+        let enable_test_points = sub.is_enable_test_points();
+        let info_stream = conf.get_info_stream();
+        let soft_deletes_enabled = conf.get_soft_deletes_field().is_some();
+
+        // obtain the write.lock. If the user configured a timeout,
+        // we wrap with a sleeper and this might take some time.
+        let write_lock = d.obtain_lock(WRITE_LOCK_NAME)?;
+
+        let directory_orig = d.clone();
+        let directory = Arc::new(LockValidatingDirectoryWrapper::new(d.clone(), write_lock));
+
+        let mode = conf.get_open_mode();
+        let (index_exists, create) = match mode {
+            OpenMode::Create => {
+                let exists = directory_reader_util::index_exists(&*directory)?;
+                (exists, true)
+            },
+            OpenMode::Append => (true, false),
+            OpenMode::CreateOrAppend => {
+                let exists = directory_reader_util::index_exists(&*directory)?;
+                (exists, !exists)
+            },
+        };
+
+        // If index is too old, reading the segments will throw
+        // IndexFormatTooOldException.
+
+        let files = directory.list_all()?;
+
+        // Set up our initial SegmentInfos:
+        let commit = conf.get_index_commit();
+        let reader = commit.as_ref().map(|c| c.get_reader());
+        let mut change_count = 0;
+        // TODO: IMPORTANT 这里的SegmentInfos 这里不需要初始哈
+        let mut segment_infos = SegmentInfos::new(1)?;
+        if create {
+            if commit.is_some() {
+                // We cannot both open from a commit point and create:
+                return match conf.get_open_mode() {
+                    OpenMode::Create => Err(LuceneError::illegal_argument(
+                        "cannot use IndexWriterConfig.setIndexCommit() with OpenMode.CREATE",
+                    )),
+                    _ => Err(LuceneError::illegal_argument(
+                        "cannot use IndexWriterConfig.setIndexCommit() when index has no commit",
+                    )),
+                };
+            }
+
+            // Try to read first. This is to allow create
+            // against an index that's currently open for
+            // searching. In this case we write the next
+            // segments_N file with no segments:
+            let mut sis: SegmentInfos<D> =
+                SegmentInfos::new(conf.get_index_created_version_major())?;
+
+            if index_exists {
+                let previous = SegmentInfos::read_latest_commit(directory.clone())?;
+                sis.update_generation_version_and_counter(&previous);
+            }
+
+            segment_infos = sis;
+            let rollback_segments = segment_infos.create_backup_segment_infos();
+
+            // Record that we have a change (zero out all segments) pending:
+            Self::changed(&mut change_count, &mut segment_infos);
+        }
+
+        let commit_user_data = segment_infos.get_user_data().clone();
+        let pending_num_docs = Arc::new(AtomicI64::new(segment_infos.total_max_doc()?));
+
+        // start with previous field numbers, but new FieldInfos
+        // NOTE: this is correct even for an NRT reader because we'll pull FieldInfos
+        // even for the un-committed segments:
+        let global_field_number_map = Self::get_field_number_map(&conf, &segment_infos)?;
+
+        let fields = global_field_number_map.get_field_names();
+        if !create
+            && conf.get_parent_field().is_some()
+            && !fields.is_empty()
+            && !fields.contains(conf.get_parent_field().unwrap())
+        {
+            return Err(LuceneError::illegal_argument(
+                "can't add a parent field to an already existing index without a parent field",
+            ));
+        }
+
+        Self::validate_index_sort(&conf, &segment_infos)?;
+
+        let buffered_updates_stream = Arc::new(BufferedUpdatesStream::new(info_stream.clone()));
+
+        let event_queue = Arc::new(EventQueue::new());
+        let global_field_number_map = Arc::new(Mutex::new(global_field_number_map));
+        let conf = Arc::new(conf);
+        let doc_writer = DocumentsWriter::new(
+            FlushNotificationsImpl::new(event_queue.clone()),
+            segment_infos.get_index_created_version_major(),
+            pending_num_docs.clone(),
+            enable_test_points,
+            conf.clone(),
+            directory_orig.clone(),
+            directory.clone(),
+            global_field_number_map.clone(),
+        )?;
+
+        // let mut reader_pool = ReaderPool::new(
+        //     directory.clone(),
+        //     directory_orig.clone(),
+        //     global_field_number_map.clone(),
+        //     info_stream.clone(),
+        //     conf.get_soft_deletes_field(),
+        //     LongSupplierImpl::new(buffered_updates_stream.clone()),
+        //     None,
+        // );
+        //
+        // if conf.get_reader_pooling() {
+        //     reader_pool.enable_reader_pooling();
+        // }
+
+        todo!()
+    }
+
+    /// Confirms that the incoming index sort (if any) matches the existing index sort (if any).
+    fn validate_index_sort(config: &L, segment_infos: &SegmentInfos<D>) -> Result<()> {
+        if let Some(index_sort) = config.get_index_sort() {
+            for info in segment_infos.iter() {
+                let segment_index_sort = info.info.get_index_sort();
+
+                if segment_index_sort.is_none()
+                    || !Self::is_congruent_sort(&index_sort, segment_index_sort.as_ref().unwrap())
+                {
+                    return Err(LuceneError::illegal_argument(format!(
+                        "cannot change previous indexSort={} (from segment={}) to new indexSort={}",
+                        segment_index_sort.as_ref().unwrap(),
+                        info,
+                        index_sort
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+    /// Returns `true` if indexSort is a prefix of otherSort.
+    pub(crate) fn is_congruent_sort(index_sort: &Sort, other_sort: &Sort) -> bool {
+        let fields1 = index_sort.get_sort();
+        let fields2 = other_sort.get_sort();
+
+        if fields1.len() > fields2.len() {
+            return false;
+        }
+
+        fields1 == &fields2[..fields1.len()]
+    }
+    // reads latest field infos for the commit
+    // this is used on IW init and addIndexes(Dir) to create/update the global field map.
+    // TODO: fix tests abusing this method!
+    fn read_field_infos(si: &SegmentCommitInfo<D>) -> Result<FieldInfos> {
+        let codec = get_default_code();
+        let reader = codec.field_infos_format();
+
+        if si.has_field_updates() {
+            // there are updates, we read latest (always outside of CFS)
+            let segment_suffix = BigInt::from(si.get_field_infos_gen()).to_str_radix(36);
+            reader.read(
+                si.info.dir.as_ref(),
+                &si.info,
+                &segment_suffix,
+                &IOContext::read_once_io_context()?,
+            )
+        } else if si.info.get_use_compound_file() {
+            // cfs
+            let mut cfs = codec
+                .compound_format()
+                .get_compound_reader(si.info.dir.as_ref(), &si.info)?;
+            let fis = reader.read(&mut cfs, &si.info, "", &IOContext::read_once_io_context()?)?;
+            Ok(fis)
+        } else {
+            // no cfs
+            reader.read(
+                si.info.dir.as_ref(),
+                &si.info,
+                "",
+                &IOContext::read_once_io_context()?,
+            )
+        }
+    }
+    /// Loads or returns the already loaded the global field number map for this [`SegmentInfos`].
+    /// If this [`SegmentInfos`] has no global field number map the returned instance is empty
+    fn get_field_number_map(config: &L, segment_infos: &SegmentInfos<D>) -> Result<FieldNumbers> {
+        let mut map =
+            FieldNumbers::new(config.get_soft_deletes_field(), config.get_parent_field())?;
+        for info in segment_infos.iter() {
+            let fis = Self::read_field_infos(info)?;
+            for fi in fis.iter() {
+                map.add_or_get(fi)?;
+            }
+        }
+
+        Ok(map)
+    }
+
     fn shut_down(&self) -> Result<()> {
         if self.commit_lock.lock().pending_commit.is_some() {
             return Err(LuceneError::illegal_state(
@@ -351,7 +554,7 @@ where
     /// Return an unmodifiable set of all field names as visible from this IndexWriter, across all segments of the index.
     pub fn get_field_names(&self) -> HashSet<String> {
         // FieldNumbers#getFieldNames() returns an unmodifiableSet
-        self.global_field_number_map.get_field_names()
+        self.global_field_number_map.lock().get_field_names()
     }
 
     #[cfg(test)]
@@ -410,7 +613,7 @@ where
         // is written on close. Otherwise we could close, re-open,
         // and re-return the same segment name which can cause
         // problems at least with ConcurrentMergeScheduler.
-        self.change_count.fetch_add(1, Ordering::AcqRel);
+        inner.change_count += 1;
         inner.segment_infos.changed();
 
         let counter = inner.segment_infos.counter;
@@ -455,7 +658,7 @@ where
     }
 
     fn checkpoint(&self, inner: &mut Inner<D, L>) -> Result<()> {
-        self.changed();
+        Self::changed(&mut inner.change_count, &mut inner.segment_infos);
         let (deleter, segment_infos) = {
             let v = &mut *inner;
             (&mut v.deleter, &v.segment_infos)
@@ -466,7 +669,7 @@ where
     /// Checkpoints with IndexFileDeleter, so it's aware of new files, and increments changeCount,
     /// so on close/commit we will write a new segments file, but does NOT bump segmentInfos.version.
     fn check_point_no_sis(&self, inner: &mut Inner<D, L>) -> Result<()> {
-        self.change_count.fetch_add(1, Ordering::SeqCst);
+        inner.change_count += 1;
         let (deleter, segment_infos) = {
             let v = &mut *inner;
             (&mut v.deleter, &v.segment_infos)
@@ -476,10 +679,9 @@ where
     }
 
     /// Called internally if any index state has changed.
-    fn changed(&self) {
-        let mut inner = self.inner.lock();
-        self.change_count.fetch_add(1, Ordering::SeqCst);
-        inner.segment_infos.changed();
+    fn changed(change_count: &mut i64, segment_infos: &mut SegmentInfos<D>) {
+        *change_count += 1;
+        segment_infos.changed()
     }
     fn publish_frozen_updates(&self, packet: FrozenBufferedUpdates) -> Result<i64> {
         let _guard = self.inner.lock();
@@ -717,14 +919,12 @@ where
                 {
                     let mut inner = self.inner.lock();
                     self.write_reader_pool(true, &mut *inner)?;
-                    if self.change_count.load(Ordering::Acquire)
-                        != self.last_commit_change_count.load(Ordering::Acquire)
-                    {
+                    if inner.change_count != self.last_commit_change_count.load(Ordering::Acquire) {
                         // There are changes to commit, so we will write a new segments_N in startCommit.
                         // The act of committing is itself an NRT-visible change (an NRT reader that was
                         // just opened before this should see it on reopen) so we increment changeCount
                         // and segments version so a future NRT reopen will see the change:
-                        self.change_count.fetch_add(1, Ordering::AcqRel);
+                        inner.change_count += 1;
                         inner.segment_infos.changed();
                     }
                     if let Some(commit_ud) = &self.commit_user_data {
@@ -740,7 +940,7 @@ where
                     // TODO: IMPORTANT 这里的clone实现没有写对
                     to_commit = Some(inner.segment_infos.try_clone()?);
                     self.pending_commit_change_count
-                        .store(self.change_count.load(Ordering::Acquire), Ordering::SeqCst);
+                        .store(inner.change_count, Ordering::Release);
                     // This protects the segmentInfos we are now going
                     // to commit.  This is important in case, eg, while
                     // we are trying to sync all referenced files, a
@@ -932,7 +1132,7 @@ where
 
                             if rld.write_field_updates(
                                 self.directory.clone(),
-                                &self.global_field_number_map,
+                                &self.global_field_number_map.lock(),
                                 self.buffered_updates_stream.get_completed_del_gen(),
                                 self.info_stream.as_ref(),
                                 info,
@@ -1266,12 +1466,11 @@ where
 
             {
                 let mut inner = self.inner.lock();
-                let change_count = self.change_count.load(Ordering::SeqCst);
                 let last_commit_change_count = self.last_commit_change_count.load(Ordering::SeqCst);
-                if last_commit_change_count > change_count {
+                if last_commit_change_count > inner.change_count {
                     return Err(LuceneError::illegal_state(format!(
                         "lastCommitChangeCount={} , changeCount={}",
-                        last_commit_change_count, change_count
+                        last_commit_change_count, inner.change_count
                     )));
                 }
 
@@ -2081,9 +2280,17 @@ enum InfoFrom {
 pub trait IndexWriterBase {
     /// A hook for extending classes to execute operations after pending added and deleted documents have been flushed to the Directory
     /// but before the change is committed (new segments_N file written).
-    fn do_after_flush(&self) -> Result<()>;
+    fn do_after_flush(&self) -> Result<()> {
+        Ok(())
+    }
     /// A hook for extending classes to execute operations before pending added and deleted documents are flushed to the Directory.
-    fn do_before_flush(&self) -> Result<()>;
+    fn do_before_flush(&self) -> Result<()> {
+        Ok(())
+    }
+
+    fn is_enable_test_points(&self) -> bool {
+        false
+    }
 }
 pub(crate) type TragicException = Arc<Mutex<Option<LuceneError>>>;
 
@@ -2160,7 +2367,12 @@ impl FlushNotifications for FlushNotificationsImpl {
 }
 
 pub(crate) struct LongSupplierImpl {
-    stream: Rc<BufferedUpdatesStream>,
+    stream: Arc<BufferedUpdatesStream>,
+}
+impl LongSupplierImpl {
+    pub fn new(stream: Arc<BufferedUpdatesStream>) -> Self {
+        Self { stream }
+    }
 }
 impl LongSupplier for LongSupplierImpl {
     fn get_as_long(&self) -> i64 {
@@ -2168,19 +2380,23 @@ impl LongSupplier for LongSupplierImpl {
     }
 }
 
-use crate::core::codecs::{Codec, CompoundFormat, LATEST_CODEC};
+use crate::core::codecs::field_infos_format::FieldInfosFormat;
+use crate::core::codecs::{Codec, CompoundFormat, LATEST_CODEC, get_default_code};
 use crate::core::document::fields::Fields;
 use crate::core::index::IndexFileNames;
+use crate::core::index::directory_reader::directory_reader_util;
 use crate::core::index::doc_values_type::DocValuesType;
 use crate::core::index::documents_writer_delete_queue::{DocumentsWriterDeleteQueue, Node};
 use crate::core::index::documents_writer_flush_queue::FlushTicket;
 use crate::core::index::field_infos::{FieldInfos, FieldNumbers};
-use crate::core::index::index_writer_config::DISABLE_AUTO_FLUSH;
+use crate::core::index::index_commit::IndexCommit;
+use crate::core::index::index_writer_config::{DISABLE_AUTO_FLUSH, OpenMode};
 use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
 use crate::core::index::merge_trigger::MergeTrigger;
 use crate::core::index::reader_pool::ReaderPool;
 use crate::core::index::readers_and_updates::ReadersAndUpdates;
 use crate::core::index::segment_commit_info::SegmentCommitInfo;
+use crate::core::index::sort::Sort;
 use crate::core::index::sorter::DocMapImpl;
 use crate::core::index::term::Term;
 use crate::core::search::query::QueryEnum;
@@ -2308,7 +2524,11 @@ where
 }
 
 pub(crate) struct EventQueue {}
+
 impl EventQueue {
+    fn new() -> Self {
+        Self {}
+    }
     fn acquire(&self) -> Result<()> {
         todo!()
     }

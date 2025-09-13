@@ -17,7 +17,9 @@
 use crate::core::analysis::analyzer::Analyzer;
 use crate::core::codecs::Codec;
 use crate::core::index::flush_policy::FlushPolicy;
+use crate::core::index::index_commit::IndexCommit;
 use crate::core::index::index_deletion_policy::IndexDeletionPolicy;
+use crate::core::index::index_writer_config::OpenMode;
 use crate::core::index::merge_policy::MergePolicy;
 use crate::core::index::sort::Sort;
 use crate::core::search::similarities_impl::similarities::Similarity;
@@ -64,4 +66,13 @@ pub trait LiveIndexWriterConfig {
     fn get_max_full_flush_merge_wait_millis(&self) -> i64;
 
     fn get_commit_on_close(&self) -> bool;
+
+    fn get_open_mode(&self) -> &OpenMode;
+
+    type IndexCommit: IndexCommit;
+    fn get_index_commit(&mut self) -> Option<Self::IndexCommit>;
+
+    fn get_index_created_version_major(&self) -> i32;
+
+    fn get_reader_pooling(&self) -> bool;
 }

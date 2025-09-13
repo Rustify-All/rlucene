@@ -119,7 +119,7 @@ where
     FN: FlushNotifications,
 {
     #[allow(clippy::too_many_arguments)]
-    fn new(
+    pub(crate) fn new(
         flush_notifications: FN,
         index_created_version_major: i32,
         pending_num_docs: Arc<AtomicI64>,

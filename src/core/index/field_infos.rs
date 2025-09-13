@@ -384,10 +384,16 @@ pub(crate) struct FieldNumbers {
 }
 
 impl FieldNumbers {
-    pub(crate) fn new(
-        soft_deletes_field_name: Option<String>,
-        parent_field_name: Option<String>,
-    ) -> Result<Self> {
+    pub(crate) fn new<S, P>(
+        soft_deletes_field_name: Option<S>,
+        parent_field_name: Option<P>,
+    ) -> Result<Self>
+    where
+        S: Into<String>,
+        P: Into<String>,
+    {
+        let soft_deletes_field_name = soft_deletes_field_name.map(Into::into);
+        let parent_field_name = parent_field_name.map(Into::into);
         if let (Some(soft), Some(parent)) = (&soft_deletes_field_name, &parent_field_name)
             && soft == parent
         {
@@ -418,13 +424,13 @@ impl FieldNumbers {
     /// does not exist yet it tries to add it with the given preferred field
     /// number assigned if possible otherwise the first unassigned field
     /// number is used as the field number.
-    pub(crate) fn add_or_get(&mut self, fi: Arc<FieldInfo>) -> Result<i32> {
+    pub(crate) fn add_or_get(&mut self, fi: &FieldInfo) -> Result<i32> {
         let field_name = fi.get_name();
         self.verify_soft_deleted_field_name(field_name, fi.is_soft_deletes_field())?;
         self.verify_parent_field_name(field_name, fi.is_parent_field())?;
         let number = match self.field_properties.get(field_name) {
             Some(field_properties) => {
-                self.verify_same_schema(&fi)?;
+                self.verify_same_schema(fi)?;
                 field_properties.number
             },
             None => {
@@ -648,7 +654,7 @@ impl FieldNumbers {
                         .as_ref()
                         .is_some_and(|s| s == field_name),
                 );
-                self.add_or_get(Arc::new(fi))?;
+                self.add_or_get(&fi)?;
             }
         } else {
             // verify that field is doc values only field with the give doc
@@ -819,7 +825,7 @@ pub mod build {
 
             self.assert_not_finished();
 
-            let field_number = self.global_field_numbers.lock().add_or_get(fi.clone())?;
+            let field_number = self.global_field_numbers.lock().add_or_get(&fi)?;
             let attributes = fi.inner.lock().attributes.clone();
             let fi_new = Arc::new(FieldInfo::new(
                 fi.name.clone(),
@@ -873,8 +879,6 @@ mod tests {
 
     use std::collections::HashMap;
 
-    use std::sync::Arc;
-
     #[allow(dead_code)] // for quick search
     struct TestFieldInfos;
     #[test]
@@ -904,10 +908,7 @@ mod tests {
     }
     #[test]
     fn test_field_numbers_auto_increment() -> Result<()> {
-        let mut field_numbers = FieldNumbers::new(
-            Some("softDeletes".to_string()),
-            Some("parentDoc".to_string()),
-        )?;
+        let mut field_numbers = FieldNumbers::new(Some("softDeletes"), Some("parentDoc"))?;
         for i in 0..10 {
             let fi = FieldInfo::new(
                 format!("field{}", i),
@@ -929,9 +930,9 @@ mod tests {
                 false,
                 false,
             );
-            field_numbers.add_or_get(Arc::new(fi))?;
+            field_numbers.add_or_get(&fi)?;
         }
-        let idx = field_numbers.add_or_get(Arc::new(FieldInfo::new(
+        let idx = field_numbers.add_or_get(&FieldInfo::new(
             "EleventhField".to_string(),
             -1,
             false,
@@ -950,11 +951,11 @@ mod tests {
             VectorSimilarityFunction::Euclidean,
             false,
             false,
-        )))?;
+        ))?;
         assert_eq!(10, idx, "Field numbers 0 through 9 were allocated");
 
         field_numbers.clear()?;
-        let idx = field_numbers.add_or_get(Arc::new(FieldInfo::new(
+        let idx = field_numbers.add_or_get(&FieldInfo::new(
             "PostClearField".to_string(),
             -1,
             false,
@@ -973,7 +974,7 @@ mod tests {
             VectorSimilarityFunction::Euclidean,
             false,
             false,
-        )))?;
+        ))?;
         assert_eq!(0, idx, "Field numbers should reset after clear()");
         Ok(())
     }

@@ -764,14 +764,20 @@ where
         self.last_generation
     }
     /// Carry over generation numbers from another `SegmentInfos`.
-    pub fn update_generation(&mut self, other: &SegmentInfos<D>) {
+    pub fn update_generation<D1>(&mut self, other: &SegmentInfos<D1>)
+    where
+        D1: Directory,
+    {
         self.last_generation = other.last_generation;
         self.generation = other.generation;
     }
 
     /// Carry over generation numbers, and version/counter, from another
     /// `SegmentInfos`.
-    pub fn update_generation_version_and_counter(&mut self, other: &SegmentInfos<D>) {
+    pub fn update_generation_version_and_counter<D1>(&mut self, other: &SegmentInfos<D1>)
+    where
+        D1: Directory,
+    {
         self.update_generation(other);
         self.version = other.version;
         self.counter = other.counter;

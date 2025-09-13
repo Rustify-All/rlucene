@@ -298,7 +298,10 @@ mod tests {
                 Arc::new(DocumentsWriterDeleteQueue::new(Arc::new(
                     InfoStreamEnum::NoOutput(NoOutput),
                 ))),
-                Builder::new(Arc::new(Mutex::new(FieldNumbers::new(None, None)?))),
+                Builder::new(Arc::new(Mutex::new(FieldNumbers::new(
+                    Some("padding1"),
+                    Some("padding2"),
+                )?))),
                 Arc::new(AtomicI64::new(0)),
                 false,
             )

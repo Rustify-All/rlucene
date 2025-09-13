@@ -55,10 +55,14 @@ pub(crate) struct FieldInfosBuilderImpl {
     builder: Builder,
 }
 impl FieldInfosBuilderImpl {
-    pub fn new(
-        soft_deletes_field_name: Option<String>,
-        parent_field_name: Option<String>,
-    ) -> Result<Self> {
+    pub fn new<S, P>(
+        soft_deletes_field_name: Option<S>,
+        parent_field_name: Option<P>,
+    ) -> Result<Self>
+    where
+        S: Into<String>,
+        P: Into<String>,
+    {
         let field_number = FieldNumbers::new(soft_deletes_field_name, parent_field_name)?;
         Ok(FieldInfosBuilderImpl {
             builder: Builder::new(Arc::new(Mutex::new(field_number))),

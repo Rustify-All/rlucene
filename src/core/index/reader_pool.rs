@@ -79,21 +79,24 @@ impl<D> ReaderPool<D>
 where
     D: Directory,
 {
-    pub(crate) fn new(
+    pub(crate) fn new<S>(
         directory: Arc<LockValidatingDirectoryWrapper<D>>,
         original_directory: Arc<D>,
         field_numbers: Arc<FieldNumbers>,
         info_stream: InfoStreamMT,
-        soft_deletes_field: Option<String>,
+        soft_deletes_field: Option<S>,
         completed_del_gen_supplier: LongSupplierImpl,
-        _reader: StandardDirectoryReader,
-    ) -> Self {
+        _reader: Option<StandardDirectoryReader>,
+    ) -> Self
+    where
+        S: Into<String>,
+    {
         Self {
             directory,
             original_directory,
             field_numbers,
             info_stream,
-            soft_deletes_field,
+            soft_deletes_field: soft_deletes_field.map(Into::into),
             pool_readers: AtomicBool::new(false),
             inner: Mutex::new(Inner {
                 reader_map: HashMap::new(),
