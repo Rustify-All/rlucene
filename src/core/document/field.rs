@@ -507,7 +507,9 @@ impl IndexableField for Field {
         }
         if !self.field_type().tokenized() {
             if self.string_value()?.is_some() {
-                let string_value = self.take_string_value()?.unwrap();
+                let string_value = self
+                    .take_string_value()?
+                    .ok_or_else(|| LuceneError::illegal_state("Expected string value to be present, but it was None"))?;
                 if self.ts.is_none() {
                     self.ts = Some(Either2TokenStream::B(StringTokenStream::new()))
                 }
