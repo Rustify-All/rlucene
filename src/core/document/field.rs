@@ -522,7 +522,9 @@ impl IndexableField for Field {
                 return Ok(Some(Either2TokenStream::B(self.ts.as_mut().unwrap())));
             }
             if self.binary_value()?.is_some() {
-                let binary_value = self.take_binary_value()?.unwrap();
+                let binary_value = self
+                    .take_binary_value()?
+                    .ok_or_else(|| LuceneError::illegal_state("Expected binary value to be present after is_some() check"))?;
                 if self.ts.is_none() {
                     self.ts = Some(Either2TokenStream::A(BinaryTokenStream::new()))
                 }
