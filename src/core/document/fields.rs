@@ -107,7 +107,7 @@ impl IndexableField for Fields {
         }
     }
 
-    fn take_binary_value(&mut self) -> Result<BytesRef<Vec<u8>>> {
+    fn take_binary_value(&mut self) -> Result<Option<BytesRef<Vec<u8>>>> {
         match self {
             Fields::Field(f) => f.take_binary_value(),
             Fields::Text(f) => f.take_binary_value(),
@@ -129,7 +129,7 @@ impl IndexableField for Fields {
         }
     }
 
-    fn take_string_value(&mut self) -> Result<String> {
+    fn take_string_value(&mut self) -> Result<Option<String>> {
         match self {
             Fields::Field(f) => f.take_string_value(),
             Fields::Text(f) => f.take_string_value(),
@@ -151,14 +151,14 @@ impl IndexableField for Fields {
         }
     }
 
-    fn reader_value(&self) -> Result<Option<ReaderEnum>> {
+    fn take_reader_value(&mut self) -> Result<Option<ReaderEnum>> {
         match self {
-            Fields::Field(f) => f.reader_value(),
-            Fields::Text(f) => f.reader_value(),
-            Fields::String(f) => f.reader_value(),
-            Fields::Stored(f) => f.reader_value(),
-            Fields::NumericDocValues(f) => f.reader_value(),
-            Fields::Reverse(f) => f.reader_value(),
+            Fields::Field(f) => f.take_reader_value(),
+            Fields::Text(f) => f.take_reader_value(),
+            Fields::String(f) => f.take_reader_value(),
+            Fields::Stored(f) => f.take_reader_value(),
+            Fields::NumericDocValues(f) => f.take_reader_value(),
+            Fields::Reverse(f) => f.take_reader_value(),
         }
     }
 

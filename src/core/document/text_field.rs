@@ -145,7 +145,7 @@ impl IndexableField for TextField {
         self.parent_field.binary_value()
     }
 
-    fn take_binary_value(&mut self) -> Result<BytesRef<Vec<u8>>> {
+    fn take_binary_value(&mut self) -> Result<Option<BytesRef<Vec<u8>>>> {
         self.parent_field.take_binary_value()
     }
 
@@ -153,7 +153,7 @@ impl IndexableField for TextField {
         self.parent_field.string_value()
     }
 
-    fn take_string_value(&mut self) -> Result<String> {
+    fn take_string_value(&mut self) -> Result<Option<String>> {
         self.parent_field.take_string_value()
     }
 
@@ -161,8 +161,8 @@ impl IndexableField for TextField {
         self.parent_field.get_char_sequence_value()
     }
 
-    fn reader_value(&self) -> Result<Option<ReaderEnum>> {
-        self.parent_field.reader_value()
+    fn take_reader_value(&mut self) -> Result<Option<ReaderEnum>> {
+        self.parent_field.take_reader_value()
     }
 
     fn numeric_value(&self) -> Result<Option<Number>> {

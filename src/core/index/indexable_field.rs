@@ -62,18 +62,18 @@ pub trait IndexableField: Display {
     ) -> Result<Option<Either2TokenStream<&'a mut InnerTokenStreams, &'a mut Self::TokenStream>>>;
     /// Non-null if this field has a binary value.
     fn binary_value(&self) -> Result<Option<&BytesRef<Vec<u8>>>>;
-    fn take_binary_value(&mut self) -> Result<BytesRef<Vec<u8>>>;
+    fn take_binary_value(&mut self) -> Result<Option<BytesRef<Vec<u8>>>>;
 
     /// Non-null if this field has a string value.
     fn string_value(&self) -> Result<Option<Cow<'_, String>>>;
-    fn take_string_value(&mut self) -> Result<String>;
+    fn take_string_value(&mut self) -> Result<Option<String>>;
     /// Non-null if this field has a string value.
     fn get_char_sequence_value(&self) -> Result<Option<Cow<'_, String>>> {
         self.string_value()
     }
 
     /// Non-null if this field has a Reader value.
-    fn reader_value(&self) -> Result<Option<ReaderEnum>>;
+    fn take_reader_value(&mut self) -> Result<Option<ReaderEnum>>;
 
     /// Non-null if this field has a numeric value.
     fn numeric_value(&self) -> Result<Option<Number>>;

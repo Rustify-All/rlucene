@@ -61,7 +61,7 @@ impl IndexableField for DummyIndexableField {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    fn take_binary_value(&mut self) -> Result<BytesRef<Vec<u8>>> {
+    fn take_binary_value(&mut self) -> Result<Option<BytesRef<Vec<u8>>>> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
@@ -69,7 +69,7 @@ impl IndexableField for DummyIndexableField {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    fn take_string_value(&mut self) -> Result<String> {
+    fn take_string_value(&mut self) -> Result<Option<String>> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
@@ -77,7 +77,7 @@ impl IndexableField for DummyIndexableField {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    fn reader_value(&self) -> Result<Option<ReaderEnum>> {
+    fn take_reader_value(&mut self) -> Result<Option<ReaderEnum>> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 

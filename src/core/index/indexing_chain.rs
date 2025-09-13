@@ -2372,7 +2372,7 @@ where
         self.delegate.binary_value()
     }
 
-    fn take_binary_value(&mut self) -> Result<BytesRef<Vec<u8>>> {
+    fn take_binary_value(&mut self) -> Result<Option<BytesRef<Vec<u8>>>> {
         self.delegate.take_binary_value()
     }
 
@@ -2380,7 +2380,7 @@ where
         self.delegate.string_value()
     }
 
-    fn take_string_value(&mut self) -> Result<String> {
+    fn take_string_value(&mut self) -> Result<Option<String>> {
         self.delegate.take_string_value()
     }
 
@@ -2388,8 +2388,8 @@ where
         self.delegate.get_char_sequence_value()
     }
 
-    fn reader_value(&self) -> Result<Option<ReaderEnum>> {
-        self.delegate.reader_value()
+    fn take_reader_value(&mut self) -> Result<Option<ReaderEnum>> {
+        self.delegate.take_reader_value()
     }
 
     fn numeric_value(&self) -> Result<Option<Number>> {

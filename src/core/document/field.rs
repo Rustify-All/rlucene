@@ -507,7 +507,7 @@ impl IndexableField for Field {
         }
         if !self.field_type().tokenized() {
             if self.string_value()?.is_some() {
-                let string_value = self.take_string_value()?;
+                let string_value = self.take_string_value()?.unwrap();
                 if self.ts.is_none() {
                     self.ts = Some(Either2TokenStream::B(StringTokenStream::new()))
                 }
@@ -520,7 +520,7 @@ impl IndexableField for Field {
                 return Ok(Some(Either2TokenStream::B(self.ts.as_mut().unwrap())));
             }
             if self.binary_value()?.is_some() {
-                let binary_value = self.take_binary_value()?;
+                let binary_value = self.take_binary_value()?.unwrap();
                 if self.ts.is_none() {
                     self.ts = Some(Either2TokenStream::A(BinaryTokenStream::new()))
                 }
@@ -550,11 +550,16 @@ impl IndexableField for Field {
         }
     }
 
-    fn take_binary_value(&mut self) -> Result<BytesRef<Vec<u8>>> {
-        if let FieldDataEnum::Binary(bytes) = &mut self.fields_data {
-            Ok(std::mem::take(bytes))
+    fn take_binary_value(&mut self) -> Result<Option<BytesRef<Vec<u8>>>> {
+        if !matches!(self.fields_data, FieldDataEnum::Binary(_)) {
+            return Ok(None);
+        }
+        if let FieldDataEnum::Binary(binary) =
+            std::mem::replace(&mut self.fields_data, FieldDataEnum::Dummy(String::new()))
+        {
+            Ok(Some(binary))
         } else {
-            Err(LuceneError::illegal_argument("should not be here"))
+            Ok(None)
         }
     }
 
@@ -571,12 +576,16 @@ impl IndexableField for Field {
         }
     }
 
-    fn take_string_value(&mut self) -> Result<String> {
-        let v = std::mem::replace(&mut self.fields_data, FieldDataEnum::Dummy("".to_string()));
-        match v {
-            FieldDataEnum::String(s) => Ok(s),
-            FieldDataEnum::Number(n) => Ok(n.as_string()),
-            _ => Err(LuceneError::illegal_argument("should not be here")),
+    fn take_string_value(&mut self) -> Result<Option<String>> {
+        if !matches!(self.fields_data, FieldDataEnum::String(_))
+            && !matches!(self.fields_data, FieldDataEnum::Number(_))
+        {
+            return Ok(None);
+        }
+        match std::mem::replace(&mut self.fields_data, FieldDataEnum::Dummy(String::new())) {
+            FieldDataEnum::String(s) => Ok(Some(s)),
+            FieldDataEnum::Number(n) => Ok(Some(n.as_string())),
+            _ => Ok(None),
         }
     }
 
@@ -593,8 +602,17 @@ impl IndexableField for Field {
     ///
     /// Exactly one of `string_value()`, `reader_value()`, or `binary_value()`
     /// must be set.
-    fn reader_value(&self) -> Result<Option<ReaderEnum>> {
-        todo!()
+    fn take_reader_value(&mut self) -> Result<Option<ReaderEnum>> {
+        if !matches!(self.fields_data, FieldDataEnum::Reader(_)) {
+            return Ok(None);
+        }
+        if let FieldDataEnum::Reader(reader) =
+            std::mem::replace(&mut self.fields_data, FieldDataEnum::Dummy(String::new()))
+        {
+            Ok(Some(reader))
+        } else {
+            Ok(None)
+        }
     }
 
     fn numeric_value(&self) -> Result<Option<Number>> {
@@ -630,7 +648,10 @@ impl IndexableField for Field {
             return Ok(());
         }
         if field_type.tokenized() {
-            // TODO: 这里只考虑String value, readerValue跟tokenStreamValue暂时不考虑
+            // TODO: 这里只考虑String value, tokenStreamValue暂时不考虑
+            if let Some(reader) = self.take_reader_value()? {
+                analyzer.token_stream(self.name(), reader)?;
+            }
             if let Some(v) = self.string_value()? {
                 analyzer.token_stream(self.name(), v.as_ref())?;
             }

@@ -173,9 +173,9 @@ impl IndexableField for StringField {
         }
     }
 
-    fn take_binary_value(&mut self) -> Result<BytesRef<Vec<u8>>> {
+    fn take_binary_value(&mut self) -> Result<Option<BytesRef<Vec<u8>>>> {
         match &mut self.binary_value {
-            Some(b) => Ok(std::mem::take(b)),
+            Some(b) => Ok(Some(std::mem::take(b))),
             None => self.parent_field.take_binary_value(),
         }
     }
@@ -184,12 +184,12 @@ impl IndexableField for StringField {
         self.parent_field.string_value()
     }
 
-    fn take_string_value(&mut self) -> Result<String> {
+    fn take_string_value(&mut self) -> Result<Option<String>> {
         self.parent_field.take_string_value()
     }
 
-    fn reader_value(&self) -> Result<Option<ReaderEnum>> {
-        self.parent_field.reader_value()
+    fn take_reader_value(&mut self) -> Result<Option<ReaderEnum>> {
+        self.parent_field.take_reader_value()
     }
 
     fn numeric_value(&self) -> Result<Option<Number>> {
