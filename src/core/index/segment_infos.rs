@@ -1032,7 +1032,6 @@ where
     pub fn iter(&self) -> impl Iterator<Item = &SegmentCommitInfo<D>> {
         self.segments.values()
     }
-
     /// Returns all contained segments as a non-mutable reference to the
     /// internal vector.
     pub fn as_list(&self) -> impl Iterator<Item = &SegmentCommitInfo<D>> {

@@ -57,7 +57,6 @@ where
     // used by forceMerge to note those needing merging
     segments_to_merge: HashMap<SegmentCommitInfo<D>, bool>,
     merge_max_num_segments: i32,
-    write_lock: Option<D::Lock>,
 
     closed: AtomicBool,
     closing: AtomicBool,
@@ -71,7 +70,7 @@ where
     flush_count: AtomicI32,
     flush_deletes_count: AtomicI32,
     reader_pool: ReaderPool<D>,
-    buffered_updates_stream: Rc<BufferedUpdatesStream>,
+    buffered_updates_stream: Arc<BufferedUpdatesStream>,
     merge_finished_gen: AtomicI64,
     config: Arc<L>,
     // TODO: IMPORTANT 等调整了DWPT的构造方式 就不要使用Arc封装了
@@ -119,118 +118,207 @@ where
         // obtain the write.lock. If the user configured a timeout,
         // we wrap with a sleeper and this might take some time.
         let write_lock = d.obtain_lock(WRITE_LOCK_NAME)?;
+        let result = (|| {
+            let directory_orig = d.clone();
+            let directory = Arc::new(LockValidatingDirectoryWrapper::new(d.clone(), write_lock));
 
-        let directory_orig = d.clone();
-        let directory = Arc::new(LockValidatingDirectoryWrapper::new(d.clone(), write_lock));
+            let mode = conf.get_open_mode();
+            let (index_exists, create) = match mode {
+                OpenMode::Create => {
+                    let exists = directory_reader_util::index_exists(&*directory)?;
+                    (exists, true)
+                },
+                OpenMode::Append => (true, false),
+                OpenMode::CreateOrAppend => {
+                    let exists = directory_reader_util::index_exists(&*directory)?;
+                    (exists, !exists)
+                },
+            };
 
-        let mode = conf.get_open_mode();
-        let (index_exists, create) = match mode {
-            OpenMode::Create => {
-                let exists = directory_reader_util::index_exists(&*directory)?;
-                (exists, true)
-            },
-            OpenMode::Append => (true, false),
-            OpenMode::CreateOrAppend => {
-                let exists = directory_reader_util::index_exists(&*directory)?;
-                (exists, !exists)
-            },
-        };
+            // If index is too old, reading the segments will throw
+            // IndexFormatTooOldException.
 
-        // If index is too old, reading the segments will throw
-        // IndexFormatTooOldException.
+            let files = directory.list_all()?;
 
-        let files = directory.list_all()?;
+            // Set up our initial SegmentInfos:
+            let commit = conf.get_index_commit();
+            let reader = commit.as_ref().map(|c| c.get_reader());
+            let mut change_count = 0;
+            // TODO: IMPORTANT 这里的SegmentInfos 这里不需要初始哈
+            let mut segment_infos = SegmentInfos::new(1)?;
+            let is_reader_some = reader.is_some();
+            let did_message_state = false;
+            let rollback_segments = Vec::new();
+            if create {
+                if commit.is_some() {
+                    // We cannot both open from a commit point and create:
+                    return match conf.get_open_mode() {
+                        OpenMode::Create => Err(LuceneError::illegal_argument(
+                            "cannot use IndexWriterConfig.setIndexCommit() with OpenMode.CREATE",
+                        )),
+                        _ => Err(LuceneError::illegal_argument(
+                            "cannot use IndexWriterConfig.setIndexCommit() when index has no commit",
+                        )),
+                    };
+                }
 
-        // Set up our initial SegmentInfos:
-        let commit = conf.get_index_commit();
-        let reader = commit.as_ref().map(|c| c.get_reader());
-        let mut change_count = 0;
-        // TODO: IMPORTANT 这里的SegmentInfos 这里不需要初始哈
-        let mut segment_infos = SegmentInfos::new(1)?;
-        if create {
-            if commit.is_some() {
-                // We cannot both open from a commit point and create:
-                return match conf.get_open_mode() {
-                    OpenMode::Create => Err(LuceneError::illegal_argument(
-                        "cannot use IndexWriterConfig.setIndexCommit() with OpenMode.CREATE",
-                    )),
-                    _ => Err(LuceneError::illegal_argument(
-                        "cannot use IndexWriterConfig.setIndexCommit() when index has no commit",
-                    )),
-                };
+                // Try to read first. This is to allow create
+                // against an index that's currently open for
+                // searching. In this case we write the next
+                // segments_N file with no segments:
+                let mut sis: SegmentInfos<D> =
+                    SegmentInfos::new(conf.get_index_created_version_major())?;
+
+                if index_exists {
+                    let previous = SegmentInfos::read_latest_commit(directory.clone())?;
+                    sis.update_generation_version_and_counter(&previous);
+                }
+
+                segment_infos = sis;
+                let rollback_segments = segment_infos.create_backup_segment_infos();
+
+                // Record that we have a change (zero out all segments) pending:
+                Self::changed(&mut change_count, &mut segment_infos);
             }
 
-            // Try to read first. This is to allow create
-            // against an index that's currently open for
-            // searching. In this case we write the next
-            // segments_N file with no segments:
-            let mut sis: SegmentInfos<D> =
-                SegmentInfos::new(conf.get_index_created_version_major())?;
+            let commit_user_data = segment_infos.get_user_data().clone();
+            let pending_num_docs = Arc::new(AtomicI64::new(segment_infos.total_max_doc()?));
 
-            if index_exists {
-                let previous = SegmentInfos::read_latest_commit(directory.clone())?;
-                sis.update_generation_version_and_counter(&previous);
+            // start with previous field numbers, but new FieldInfos
+            // NOTE: this is correct even for an NRT reader because we'll pull FieldInfos
+            // even for the un-committed segments:
+            let global_field_number_map = Self::get_field_number_map(&conf, &segment_infos)?;
+
+            let fields = global_field_number_map.get_field_names();
+            if !create
+                && conf.get_parent_field().is_some()
+                && !fields.is_empty()
+                && !fields.contains(conf.get_parent_field().unwrap())
+            {
+                return Err(LuceneError::illegal_argument(
+                    "can't add a parent field to an already existing index without a parent field",
+                ));
             }
 
-            segment_infos = sis;
-            let rollback_segments = segment_infos.create_backup_segment_infos();
+            Self::validate_index_sort(&conf, &segment_infos)?;
 
-            // Record that we have a change (zero out all segments) pending:
-            Self::changed(&mut change_count, &mut segment_infos);
+            let buffered_updates_stream = Arc::new(BufferedUpdatesStream::new(info_stream.clone()));
+
+            let event_queue = Arc::new(EventQueue::new());
+            let global_field_number_map = Arc::new(Mutex::new(global_field_number_map));
+            let conf = Arc::new(conf);
+            let doc_writer = DocumentsWriter::new(
+                FlushNotificationsImpl::new(event_queue.clone()),
+                segment_infos.get_index_created_version_major(),
+                pending_num_docs.clone(),
+                enable_test_points,
+                conf.clone(),
+                directory_orig.clone(),
+                directory.clone(),
+                global_field_number_map.clone(),
+            )?;
+
+            let reader_pool = ReaderPool::new(
+                directory.clone(),
+                directory_orig.clone(),
+                info_stream.clone(),
+                conf.get_soft_deletes_field(),
+                LongSupplierImpl::new(buffered_updates_stream.clone()),
+                None,
+                conf.get_index_created_version_major(),
+            );
+
+            if conf.get_reader_pooling() {
+                reader_pool.enable_reader_pooling();
+            }
+            let deleter = IndexFileDeleter::new(
+                files.clone(),
+                directory_orig.clone(),
+                directory.clone(),
+                conf.get_index_deletion_policy(),
+                &mut segment_infos,
+                info_stream.clone(),
+                index_exists,
+                is_reader_some,
+            )?;
+            // We incRef all files when we return an NRT reader from IW,
+            // so all files must exist even in the NRT case:
+            debug_assert!(create || Self::files_exist(&segment_infos, &deleter)?);
+
+            if deleter.starting_commit_deleted {
+                // Deletion policy deleted the "head" commit point.
+                // We have to mark ourself as changed so that if we
+                // are closed w/o any further changes we write a new
+                // segments_N file.
+                Self::changed(&mut change_count, &mut segment_infos);
+            }
+
+            if is_reader_some {
+                // We always assume we are carrying over incoming changes when opening from reader:
+                segment_infos.changed();
+                Self::changed(&mut change_count, &mut segment_infos);
+            }
+
+            if info_stream.enabled("IW") {
+                info_stream.message(
+                    "IW",
+                    &format!("init: create={} reader={:?}", create, is_reader_some),
+                );
+            }
+            let mut iw = Self {
+                enable_test_points,
+                tragedy: Arc::new(Mutex::new(None)),
+                directory_orig,
+                directory,
+                last_commit_change_count: AtomicI64::new(change_count),
+                pending_seq_no: AtomicI64::new(0),
+                pending_commit_change_count: AtomicI64::new(0),
+                global_field_number_map,
+                doc_writer,
+                event_queue,
+                write_doc_values_lock: ReentrantMutex::new(()),
+                segments_to_merge: HashMap::new(),
+                merge_max_num_segments: 0,
+                closed: AtomicBool::new(false),
+                closing: AtomicBool::new(false),
+                maybe_merge: AtomicBool::new(false),
+                commit_user_data: Some(commit_user_data),
+                merging_segments: HashSet::new(),
+                merge_gen: 0,
+                did_message_state,
+                flush_count: AtomicI32::new(0),
+                flush_deletes_count: AtomicI32::new(0),
+                reader_pool,
+                buffered_updates_stream,
+                merge_finished_gen: AtomicI64::new(0),
+                config: conf,
+                pending_num_docs,
+                soft_deletes_enabled,
+                info_stream: info_stream.clone(),
+                inner: Mutex::new(Inner {
+                    segment_infos,
+                    deleter,
+                    rollback_segments,
+                    change_count,
+                }),
+                pausing: Condvar::new(),
+                sub: Some(sub),
+                commit_lock: Mutex::new(CommitInner {
+                    pending_commit: None,
+                    files_to_commit: None,
+                    start_commit_time: Instant::now(),
+                }),
+                full_flush_lock: Mutex::new(()),
+            };
+            iw.message_state()?;
+            Ok(iw)
+        })();
+        if result.is_err() && info_stream.enabled("IW") {
+            let msg = "init: hit exception on init; releasing write lock";
+
+            info_stream.message("IW", msg);
         }
-
-        let commit_user_data = segment_infos.get_user_data().clone();
-        let pending_num_docs = Arc::new(AtomicI64::new(segment_infos.total_max_doc()?));
-
-        // start with previous field numbers, but new FieldInfos
-        // NOTE: this is correct even for an NRT reader because we'll pull FieldInfos
-        // even for the un-committed segments:
-        let global_field_number_map = Self::get_field_number_map(&conf, &segment_infos)?;
-
-        let fields = global_field_number_map.get_field_names();
-        if !create
-            && conf.get_parent_field().is_some()
-            && !fields.is_empty()
-            && !fields.contains(conf.get_parent_field().unwrap())
-        {
-            return Err(LuceneError::illegal_argument(
-                "can't add a parent field to an already existing index without a parent field",
-            ));
-        }
-
-        Self::validate_index_sort(&conf, &segment_infos)?;
-
-        let buffered_updates_stream = Arc::new(BufferedUpdatesStream::new(info_stream.clone()));
-
-        let event_queue = Arc::new(EventQueue::new());
-        let global_field_number_map = Arc::new(Mutex::new(global_field_number_map));
-        let conf = Arc::new(conf);
-        let doc_writer = DocumentsWriter::new(
-            FlushNotificationsImpl::new(event_queue.clone()),
-            segment_infos.get_index_created_version_major(),
-            pending_num_docs.clone(),
-            enable_test_points,
-            conf.clone(),
-            directory_orig.clone(),
-            directory.clone(),
-            global_field_number_map.clone(),
-        )?;
-
-        // let mut reader_pool = ReaderPool::new(
-        //     directory.clone(),
-        //     directory_orig.clone(),
-        //     global_field_number_map.clone(),
-        //     info_stream.clone(),
-        //     conf.get_soft_deletes_field(),
-        //     LongSupplierImpl::new(buffered_updates_stream.clone()),
-        //     None,
-        // );
-        //
-        // if conf.get_reader_pooling() {
-        //     reader_pool.enable_reader_pooling();
-        // }
-
-        todo!()
+        result
     }
 
     /// Confirms that the incoming index sort (if any) matches the existing index sort (if any).
@@ -310,6 +398,22 @@ where
         }
 
         Ok(map)
+    }
+    fn message_state(&mut self) -> Result<()> {
+        if self.info_stream.enabled("IW") && !self.did_message_state {
+            self.did_message_state = true;
+
+            let msg = format!(
+                "\ndir={}\nindex={}\nversion={}\n{}",
+                self.directory_orig,
+                self.seg_string()?,
+                *LATEST,
+                self.config
+            );
+
+            self.info_stream.message("IW", &msg);
+        }
+        Ok(())
     }
 
     fn shut_down(&self) -> Result<()> {
@@ -741,30 +845,20 @@ where
             };
 
             if self.info_stream.enabled("IW") {
-                // TODO
-                // let segs = self.seg_string(&new_segment);
-                // self.info_stream.message(
-                //     "IW",
-                //     &format!(
-                //         "publish sets newSegment delGen={} seg={}",
-                //         next_gen, segs
-                //     ),
-                // );
+                let segs = self.seg_string_from_info(&new_segment)?;
+                self.info_stream.message(
+                    "IW",
+                    &format!("publish sets newSegment delGen={} seg={}", next_gen, segs),
+                );
             }
             new_segment.set_buffered_deletes_gen(next_gen)?;
             let new_segment_id = new_segment.info.get_id_str();
             inner.segment_infos.add(new_segment)?;
-            let index_created_version_major = inner.segment_infos.get_index_created_version_major();
             published = true;
             self.checkpoint(&mut *inner)?;
             let new_segment = inner.segment_infos.info(&new_segment_id).unwrap();
             if packet_any {
-                let _ = self.get_pooled_instance(
-                    new_segment,
-                    true,
-                    index_created_version_major,
-                    sort_map,
-                )?;
+                let _ = self.get_pooled_instance(new_segment, true, sort_map)?;
             }
             // this is a corner case where documents delete them-self with soft deletes. This is used to
             // build delete tombstones etc. in this case we haven't seen any updates to the DV in this
@@ -790,8 +884,7 @@ where
             // accurate numbers
             // for the soft delete right after we flushed to disk.
             if has_initial_soft_deleted || is_fully_hard_deleted {
-                let rld =
-                    self.get_pooled_instance(new_segment, true, index_created_version_major, None)?;
+                let rld = self.get_pooled_instance(new_segment, true, None)?;
                 let result: Result<()> = (|| {
                     match rld {
                         None => {
@@ -862,10 +955,11 @@ where
 
         self.do_ensure_open(false)?;
         if self.info_stream.enabled("IW") {
-            // TODO
-            // self.info_stream.message("IW", "prepareCommit: flush");
-            // self.info_stream
-            //     .message("IW", &format!("  index before flush {}", self.seg_string(inner)));
+            self.info_stream.message("IW", "prepareCommit: flush");
+            self.info_stream.message(
+                "IW",
+                &format!("  index before flush {}", self.seg_string()?),
+            );
         }
 
         if let Some(t) = &*self.tragedy.lock() {
@@ -1051,12 +1145,9 @@ where
         }
         // now do some best effort to check if a segment is fully deleted
         let mut to_drop = Vec::new();
-        let index_created_version_major = inner.segment_infos.get_index_created_version_major();
 
         for info in inner.segment_infos.segments.values() {
-            if let Some(rld) =
-                self.reader_pool
-                    .get(info, false, index_created_version_major, None)?
+            if let Some(rld) = self.reader_pool.get(info, false, None)?
                 && rld.is_fully_deleted(info)?
             {
                 to_drop.push(info.info.get_id_str());
@@ -1120,19 +1211,13 @@ where
                             // this rld concurrently
                             // which wins and then if readerPooling is off this rld will be dropped.
                             let mut inner = self.inner.lock();
-                            let index_created_version_major =
-                                inner.segment_infos.get_index_created_version_major();
                             let info = match inner.segment_infos.info_mut(&rld.info_id) {
                                 Some(info) => info,
                                 None => Err(LuceneError::illegal_state(
                                     "could not find segment info from IndexWriter#segment_infos",
                                 ))?,
                             };
-                            if self
-                                .reader_pool
-                                .get(info, false, index_created_version_major, None)?
-                                .is_none()
-                            {
+                            if self.reader_pool.get(info, false, None)?.is_none() {
                                 continue;
                             }
 
@@ -1169,6 +1254,22 @@ where
             drop(_guard)
         }
         Ok(())
+    }
+    pub fn num_deleted_docs(&self, info: &SegmentCommitInfo<D>) -> Result<i32> {
+        self.do_ensure_open(false)?;
+        self.validate(info)?;
+        if let Some(rld) = self.get_pooled_instance(info, false, None)? {
+            Ok(rld.get_del_count(info)) // get the full count from here since SCI might change concurrently
+        } else {
+            let del_count = info.get_del_count_with_soft_deletes(self.soft_deletes_enabled);
+            debug_assert!(
+                del_count <= info.info.max_doc()?,
+                "delCount: {} maxDoc: {}",
+                del_count,
+                info.info.max_doc()?
+            );
+            Ok(del_count)
+        }
     }
 
     pub(crate) fn do_ensure_open(&self, fail_if_closing: bool) -> Result<()> {
@@ -1409,6 +1510,43 @@ where
         let v = self.doc_writer.get_num_docs();
         Ok(v)
     }
+    /// Returns a string description of all segments, for debugging.
+    fn seg_string(&self) -> Result<String> {
+        let inner = self.inner.lock();
+        self.seg_string_from_infos(inner.segment_infos.iter())
+    }
+
+    fn seg_string_from_infos<'a, I>(&self, infos: I) -> Result<String>
+    where
+        I: IntoIterator<Item = &'a SegmentCommitInfo<D>>,
+        D: 'a,
+    {
+        let mut result = String::new();
+        let mut first = true;
+        for info in infos {
+            match self.seg_string_from_info(info) {
+                Ok(s) => {
+                    if !first {
+                        result.push(' ');
+                    }
+                    result.push_str(&s);
+                    first = false;
+                },
+                Err(e) => {
+                    return Err(e);
+                },
+            }
+        }
+        Ok(result)
+    }
+    /// Returns a string description of the specified segment, for debugging.
+    fn seg_string_from_info(&self, info: &SegmentCommitInfo<D>) -> Result<String> {
+        // numDeletedDocs(info) - info.getDelCount(softDeletesEnabled)
+        let num_deleted = self.num_deleted_docs(info)?
+            - info.get_del_count_with_soft_deletes(self.soft_deletes_enabled);
+        Ok(info.to_string_with_pending_del_count(num_deleted))
+    }
+
     fn do_wait(&self, guard: &mut MutexGuard<Inner<D>>) {
         // NOTE: the callers of this method should in theory
         // be able to do simply wait(), but, as a defense
@@ -1419,7 +1557,10 @@ where
         // wait at most 1s
         self.pausing.wait_for(guard, Duration::from_millis(1000));
     }
-    pub(crate) fn files_exist(&self, to_sync: &SegmentInfos<D>, inner: &Inner<D>) -> Result<bool> {
+    pub(crate) fn files_exist(
+        to_sync: &SegmentInfos<D>,
+        deleter: &IndexFileDeleter<D>,
+    ) -> Result<bool> {
         let files = to_sync.files(false)?;
 
         for file_name in &files {
@@ -1429,7 +1570,7 @@ where
             // file referenced by the current head
             // segmentInfos:
             debug_assert!(
-                inner.deleter.exists(file_name),
+                deleter.exists(file_name),
                 "IndexFileDeleter doesn't know about file {}",
                 file_name
             );
@@ -1499,7 +1640,10 @@ where
                     //     &format!("startCommit index={} changeCount={}", segs, change_count),
                     // );
                 }
-                debug_assert!(self.files_exist(to_sync.as_ref().unwrap(), &inner)?);
+                debug_assert!(Self::files_exist(
+                    to_sync.as_ref().unwrap(),
+                    &inner.deleter
+                )?);
             }
 
             self.test_point("midStartCommit");
@@ -1869,12 +2013,10 @@ where
         &self,
         info: &SegmentCommitInfo<D>,
         create: bool,
-        index_created_version_major: i32,
         sort_map: Option<Rc<DocMapImpl>>,
     ) -> Result<Option<Rc<ReadersAndUpdates<D>>>> {
         self.do_ensure_open(false)?;
-        self.reader_pool
-            .get(info, create, index_created_version_major, sort_map)
+        self.reader_pool.get(info, create, sort_map)
     }
     /// Translates a frozen packet of delete term/query, or doc values updates, into their actual
     /// doc IDs in the index, and applies the change. This is a heavy operation and is done concurrently
@@ -2227,7 +2369,6 @@ where
         let mut seg_states = Vec::new();
 
         let result: Result<()> = (|| {
-            let index_created_version_major = inner.segment_infos.get_index_created_version_major();
             let infos = match info_from {
                 None => inner.segment_infos.segments.keys().collect(),
                 Some(it) => vec![it],
@@ -2236,7 +2377,7 @@ where
                 let info = inner.segment_infos.info(info_id).unwrap();
                 if info.get_buffered_deletes_gen() <= del_gen && !already_seen.contains(info_id) {
                     let rld = self
-                        .get_pooled_instance(info, true, index_created_version_major, None)?
+                        .get_pooled_instance(info, true, None)?
                         .expect("should always be Some");
                     let seg_state = SegmentState::new(rld, info);
                     seg_states.push(seg_state);
@@ -2266,6 +2407,14 @@ where
         }
 
         Ok(seg_states)
+    }
+    fn validate(&self, info: &SegmentCommitInfo<D>) -> Result<()> {
+        if !Arc::ptr_eq(&info.info.dir, &self.directory_orig) {
+            return Err(LuceneError::illegal_argument(
+                "SegmentCommitInfo must be from the same directory",
+            ));
+        }
+        Ok(())
     }
 }
 impl<D, L, B> Display for IndexWriter<D, L, B>

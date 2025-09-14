@@ -74,7 +74,7 @@ where
     directory: Arc<LockValidatingDirectoryWrapper<D>>,
 
     /// Whether the starting commit was deleted.
-    starting_commit_deleted: bool,
+    pub(crate) starting_commit_deleted: bool,
 
     verbose_ref_counts: bool,
     file_deleter: FileDeleter<D, MessengerImpl>,
@@ -91,7 +91,7 @@ where
         directory_orig: Arc<D>,
         directory: Arc<LockValidatingDirectoryWrapper<D>>,
         policy: &P,
-        mut segment_infos: SegmentInfos<D>,
+        segment_infos: &mut SegmentInfos<D>,
         info_stream: InfoStreamMT,
         initial_index_exists: bool,
         is_reader_init: bool,
@@ -207,7 +207,7 @@ where
         if is_reader_init {
             // Incoming SegmentInfos may have NRT changes not yet visible in the latest commit, so we have
             // to protect its files from deletion too:
-            index_file_deleter.checkpoint(&segment_infos, false, policy)?;
+            index_file_deleter.checkpoint(segment_infos, false, policy)?;
         }
 
         // keep commits sorted by generation
@@ -218,13 +218,13 @@ where
         if !pending.is_empty() {
             let relevant_files = relevant_files.chain(pending.iter());
             inflate_gens(
-                &mut segment_infos,
+                segment_infos,
                 relevant_files,
                 &index_file_deleter.info_stream,
             )?;
         } else {
             inflate_gens(
-                &mut segment_infos,
+                segment_infos,
                 relevant_files,
                 &index_file_deleter.info_stream,
             )?;
@@ -251,7 +251,7 @@ where
         policy.on_init(&mut index_file_deleter.commits)?;
         // Always protect the incoming segmentInfos since
         // sometime it may not be the most recent commit
-        index_file_deleter.checkpoint(&segment_infos, false, policy)?;
+        index_file_deleter.checkpoint(segment_infos, false, policy)?;
 
         index_file_deleter.starting_commit_deleted = match current_commit_point {
             Some(index) => index_file_deleter.commits.get(index).unwrap().is_deleted(),

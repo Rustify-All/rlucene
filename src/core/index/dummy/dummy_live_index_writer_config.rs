@@ -25,6 +25,7 @@ use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
 use crate::core::index::sort::Sort;
 use crate::core::search::dummy::dummy_similarity::DummySimilarity;
 use crate::core::util::info_stream::{InfoStreamEnum, InfoStreamMT, NoOutput};
+use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 pub struct DummyLiveIndexWriterConfig {
@@ -49,6 +50,13 @@ impl DummyLiveIndexWriterConfig {
         }
     }
 }
+
+impl Display for DummyLiveIndexWriterConfig {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        unreachable!("Dummy implementation: this method should never be called in real usage")
+    }
+}
+
 impl LiveIndexWriterConfig for DummyLiveIndexWriterConfig {
     type Analyzer = DummyAnalyzer;
 

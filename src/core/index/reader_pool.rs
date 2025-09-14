@@ -65,6 +65,7 @@ where
     pool_readers: AtomicBool,
     inner: Mutex<Inner<D>>,
     completed_del_gen_supplier: LongSupplierImpl,
+    index_created_version_major: i32,
 }
 pub(crate) struct Inner<D>
 where
@@ -85,6 +86,7 @@ where
         soft_deletes_field: Option<S>,
         completed_del_gen_supplier: LongSupplierImpl,
         _reader: Option<StandardDirectoryReader>,
+        index_created_version_major: i32,
     ) -> Self
     where
         S: Into<String>,
@@ -100,6 +102,7 @@ where
                 closed: AtomicBool::new(false),
             }),
             completed_del_gen_supplier,
+            index_created_version_major,
         }
     }
     /// Asserts this info still exists in IW's segment infos
@@ -285,12 +288,11 @@ where
     pub(crate) fn write_doc_values_updates_for_merge(
         &self,
         infos: &mut [SegmentCommitInfo<D>],
-        index_created_version_major: i32,
         global_field_number: &FieldNumbers,
     ) -> Result<bool> {
         let mut any = false;
         for info in infos {
-            if let Some(rld) = self.get(info, false, index_created_version_major, None)? {
+            if let Some(rld) = self.get(info, false, None)? {
                 any |= rld.write_field_updates(
                     self.directory.clone(),
                     global_field_number,
@@ -415,7 +417,6 @@ where
         &self,
         info: &SegmentCommitInfo<D>,
         create: bool,
-        index_created_version_major: i32,
         sort_map: Option<Rc<DocMapImpl>>,
     ) -> Result<Option<Rc<ReadersAndUpdates<D>>>> {
         let mut inner = self.inner.lock();
@@ -451,7 +452,7 @@ where
                 return Ok(None);
             }
             let mut v = ReadersAndUpdates::new(
-                index_created_version_major,
+                self.index_created_version_major,
                 self.new_pending_deletes(info)?,
             );
             v.sort_map = sort_map;

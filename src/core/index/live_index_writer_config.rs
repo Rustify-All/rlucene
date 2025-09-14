@@ -24,9 +24,10 @@ use crate::core::index::merge_policy::MergePolicy;
 use crate::core::index::sort::Sort;
 use crate::core::search::similarities_impl::similarities::Similarity;
 use crate::core::util::info_stream::InfoStreamMT;
+use std::fmt::Display;
 use std::sync::Arc;
 
-pub trait LiveIndexWriterConfig {
+pub trait LiveIndexWriterConfig: Display {
     type Analyzer: Analyzer;
     fn get_analyzer(&self) -> &Self::Analyzer;
 
