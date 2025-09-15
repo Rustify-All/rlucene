@@ -80,14 +80,14 @@ pub trait FlushPolicy {
         );
         // the dwpt which needs to be flushed eventually
         let max_ram_using_writer = control.find_largest_non_pending_writer();
-        debug_assert!(self.asser_message(
+        debug_assert!(self.assert_message(
             "set largest ram consuming thread pending on lower watermark",
             &control.info_stream
         ));
         max_ram_using_writer
     }
 
-    fn asser_message(&self, s: &str, info_stream: &InfoStreamEnum) -> bool {
+    fn assert_message(&self, s: &str, info_stream: &InfoStreamEnum) -> bool {
         if info_stream.enabled("FP") {
             info_stream.message("FP", s);
         }
