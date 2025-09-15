@@ -142,7 +142,7 @@ impl FlushPolicy for FlushByRamOrCountsPolicy {
             && pt.get_num_docs_in_ram() >= index_writer_config.get_max_buffered_docs()
         {
             // Flush this state by num docs
-            control.set_flush_pending(pt, None)?;
+            control.set_flush_pending(pt, Some(inner))?;
             return Ok(());
         }
 
