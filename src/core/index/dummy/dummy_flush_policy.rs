@@ -28,7 +28,7 @@ impl FlushPolicy for DummyFlushPolicy {
     fn on_change<D, L>(
         &self,
         _control: &DocumentsWriterFlushControl<D, L>,
-        _inner: &Inner<D>,
+        _inner: &mut Inner<D>,
         _per_thread: Option<&MutexGuard<'_, DocumentsWriterPerThread<D>>>,
         _delete_queue: &DocumentsWriterDeleteQueue,
     ) -> Result<()>

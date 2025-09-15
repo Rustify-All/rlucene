@@ -296,7 +296,7 @@ where
             } else {
                 inner.active_bytes += delta;
                 self.update_peaks(delta, &mut inner);
-                flush_policy.on_change(self, &inner, Some(per_thread), delete_queue)?;
+                flush_policy.on_change(self, &mut inner, Some(per_thread), delete_queue)?;
                 if !per_thread.is_flush_pending()
                     && per_thread.ram_bytes_used()? > inner.hard_max_bytes_per_dwpt
                 {
@@ -417,7 +417,7 @@ where
     /// The [`DocumentsWriterPerThread`] must have indexed at least on Document and must not be already pending.
     pub fn set_flush_pending(
         &self,
-        per_thread: &MutexGuard<'_, DocumentsWriterPerThread<D>>,
+        per_thread: &DocumentsWriterPerThread<D>,
         inner: Option<&mut Inner<D>>,
     ) -> Result<()> {
         let inner = match inner {
@@ -559,8 +559,8 @@ where
     where
         FP: FlushPolicy,
     {
-        let inner = self.inner.lock();
-        flush_policy.on_change(self, &inner, None, delete_queue)?;
+        let mut inner = self.inner.lock();
+        flush_policy.on_change(self, &mut inner, None, delete_queue)?;
         Ok(())
     }
 
@@ -813,6 +813,45 @@ where
     /// Returns `true` iff stalled.
     pub fn any_stalled_threads(&self) -> bool {
         self.stall_control.any_stalled_threads()
+    }
+    pub(crate) fn find_largest_non_pending_writer(&self) -> Option<Arc<DwptWrapper<D>>> {
+        let mut max_ram_using_writer: Option<Arc<DwptWrapper<D>>> = None;
+        // Note: should be initialized to -1 since some DWPTs might return 0 if their RAM usage has not
+        // been committed yet.
+        let mut max_ram_so_far: i64 = -1;
+        let mut count = 0;
+
+        for (_id, next) in self.per_thread_pool.iterator(None) {
+            if !next.state.is_flush_pending() && next.state.get_num_docs_in_ram() > 0 {
+                let next_ram = next.state.get_last_committed_bytes_used();
+
+                if self.info_stream.enabled("FP") {
+                    self.info_stream.message(
+                        "FP",
+                        &format!(
+                            "thread state has {} bytes; docInRAM={}",
+                            next_ram,
+                            next.state.get_num_docs_in_ram()
+                        ),
+                    );
+                }
+
+                count += 1;
+                if next_ram > max_ram_so_far {
+                    max_ram_so_far = next_ram;
+                    max_ram_using_writer = Some(Arc::clone(&next));
+                }
+            }
+        }
+
+        if self.info_stream.enabled("FP") {
+            self.info_stream.message(
+                "FP",
+                &format!("{} in-use non-flushing threads states", count),
+            );
+        }
+
+        max_ram_using_writer
     }
 
     pub(crate) fn get_peak_active_bytes(&self) -> i64 {

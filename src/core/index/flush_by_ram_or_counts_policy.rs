@@ -24,6 +24,16 @@ use crate::core::store::directory::Directory;
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::info_stream::InfoStream;
 use parking_lot::MutexGuard;
+/// Default [`FlushPolicy`] implementation that flushes new segments based on RAM usage and
+/// document count, depending on the `IndexWriter`'s [`IndexWriterConfig`](crate::core::index::index_writer_config::IndexWriterConfig).
+/// It also applies pending deletes based on the number of buffered delete terms.
+///
+/// All [`IndexWriterConfig`](crate::core::index::index_writer_config::IndexWriterConfig) settings are used to mark [`DocumentsWriterPerThread`] as
+/// flush-pending during indexing with respect to their live updates.
+///
+/// If [`IndexWriterConfig::set_ram_buffer_size_mb`](crate::core::index::index_writer_config::IndexWriterConfig::set_ram_buffer_size_mb) is enabled, the largest RAM-consuming
+/// [`DocumentsWriterPerThread`] will be marked as pending **iff** the global active RAM consumption
+/// is `>=` the configured max RAM buffer.
 pub struct FlushByRamOrCountsPolicy;
 
 impl FlushByRamOrCountsPolicy {
@@ -57,7 +67,7 @@ impl FlushByRamOrCountsPolicy {
         control: &DocumentsWriterFlushControl<D, L>,
         per_thread: &DocumentsWriterPerThread<D>,
         delete_queue: &DocumentsWriterDeleteQueue,
-        inner: &Inner<D>,
+        inner: &mut Inner<D>,
     ) -> Result<()>
     where
         D: Directory,
@@ -75,18 +85,26 @@ impl FlushByRamOrCountsPolicy {
             );
         }
 
-        self.mark_largest_writer_pending(control, per_thread);
+        self.mark_largest_writer_pending(control, per_thread, inner)?;
         Ok(())
     }
     /// Marks the most ram consuming active [`DocumentsWriterPerThread`] flush pending
     pub(crate) fn mark_largest_writer_pending<D, L>(
         &self,
-        _control: &DocumentsWriterFlushControl<D, L>,
-        _per_thread: &DocumentsWriterPerThread<D>,
-    ) where
+        control: &DocumentsWriterFlushControl<D, L>,
+        per_thread: &DocumentsWriterPerThread<D>,
+        inner: &mut Inner<D>,
+    ) -> Result<()>
+    where
         D: Directory,
         L: LiveIndexWriterConfig,
     {
+        let largest_non_pendingwriter =
+            self.find_largest_non_pending_writer_for_thread(control, per_thread);
+        if let Some(largest_non_pendingwriter) = largest_non_pendingwriter {
+            control.set_flush_pending(&*largest_non_pendingwriter.dwpt.lock(), Some(inner))?;
+        }
+        Ok(())
     }
     /// Returns `true` if this [`FlushPolicy`](crate::core::index::flush_policy::FlushPolicy) flushes on
     /// [`LiveIndexWriterConfig::get_max_buffered_docs`], otherwise `false`.
@@ -110,7 +128,7 @@ impl FlushPolicy for FlushByRamOrCountsPolicy {
     fn on_change<D, L>(
         &self,
         control: &DocumentsWriterFlushControl<D, L>,
-        inner: &Inner<D>,
+        inner: &mut Inner<D>,
         per_thread: Option<&MutexGuard<'_, DocumentsWriterPerThread<D>>>,
         delete_queue: &DocumentsWriterDeleteQueue,
     ) -> Result<()>
