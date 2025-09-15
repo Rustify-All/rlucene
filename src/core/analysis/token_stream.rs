@@ -45,6 +45,15 @@ pub trait TokenStream {
     }
     fn set_reader_test_point(&mut self) {}
 }
+pub struct TokenStreamBase {
+    pub(crate) att: Attributes,
+}
+impl TokenStreamBase {
+    pub fn new(att: Attributes) -> Self {
+        Self { att }
+    }
+}
+
 pub fn default_attribute() -> Attributes {
     Attributes::PackedToken(PackedTokenAttributeImpl::new())
 }

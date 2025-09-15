@@ -174,7 +174,8 @@ impl TermVectorsConsumerPerField {
             .expect("postings_array must be Some");
         match postings_array_enum {
             PostingsArrayEnum::TermVectors(postings) => {
-                for &term_id in term_ids {
+                for i in 0..num_postings {
+                    let term_id = term_ids[i as usize];
                     let freq = postings.freqs[term_id as usize];
                     self.term_byte_pool.fill_bytes_ref(
                         &mut term_vectors_consumer.flush_term,
@@ -203,6 +204,7 @@ impl TermVectorsConsumerPerField {
 
         self.reset();
         self.field_info.set_store_term_vectors()?;
+        // TODO: IMPORTANT 这里为啥要赋值
         term_vectors_consumer.vector_slice_reader_off = off_reader;
         term_vectors_consumer.vector_slice_reader_pos = pos_reader;
         Ok(())

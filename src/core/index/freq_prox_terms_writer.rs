@@ -82,7 +82,7 @@ where
         next_terms_hash.base.term_byte_pool = Some(base.byte_pool.clone());
 
         Self {
-            next_terms_hash: None,
+            next_terms_hash: Some(next_terms_hash),
             base,
         }
     }

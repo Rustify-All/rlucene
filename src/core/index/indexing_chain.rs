@@ -984,7 +984,7 @@ where
             );
             pf.next = self.field_hash[hash_pos];
             self.doc_fields.push(Some(pf));
-            per_field_index = self.doc_fields.len() as i32;
+            per_field_index = self.doc_fields.len() as i32 - 1;
             self.field_hash[hash_pos] = per_field_index;
             self.total_field_count += 1;
 
@@ -1436,8 +1436,6 @@ impl PerField {
          */
 
         let field_name = field.name().to_string();
-        let terms_hash_per_field = self.terms_hash_per_field.as_mut().unwrap();
-        terms_hash_per_field.start(field, first)?;
 
         // try init Analyzer's TokenStream
         field.init_token_stream(analyzer)?;
@@ -1451,6 +1449,8 @@ impl PerField {
                     None => None,
                 };
 
+         let terms_hash_per_field = self.terms_hash_per_field.as_mut().unwrap();
+                terms_hash_per_field.start(field, first)?;
         let mut stream = field
             .token_stream(ts)?
             .ok_or_else(|| LuceneError::illegal_state("token_stream is None"))?;
@@ -1531,6 +1531,7 @@ impl PerField {
                 // corrupt and should not be flushed to a
                 // new segment:
                 if let Err(e) = terms_hash_per_field.add_with_bytes_ref(
+                    // TODO: 这里没有传递ByteRef
                     None,
                     doc_id,
                     self.invert_state.as_mut().unwrap(),
@@ -1563,6 +1564,7 @@ impl PerField {
                 .as_ref()
                 .unwrap();
             invert_state.offset += stream.get_attribute_source().end_offset().as_ref().unwrap();
+            stream.close()?;
             Ok(())
         })();
 

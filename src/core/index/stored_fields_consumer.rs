@@ -113,8 +113,9 @@ where
                     }
                 }
                 self.last_doc += 1;
-                if let Some(writer) = &mut self.writer {
-                    writer.start_document()?;
+                match self.writer {
+                    None => return Err(LuceneError::illegal_state("writer must be initialized")),
+                    Some(ref mut v) => v.start_document()?,
                 }
             },
         }

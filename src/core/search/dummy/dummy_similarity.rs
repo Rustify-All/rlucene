@@ -38,7 +38,7 @@ impl Similarity for DummySimilarity {
         &self,
         _state: &FieldInvertState,
     ) -> crate::core::util::error::lucene_error::Result<i64> {
-        unreachable!("Dummy implementation: this method should never be called in real usage")
+        Ok(1)
     }
 
     type SimScorer = DummySimScorer;

@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 use crate::core::analysis::character_utils::{CharacterBuffer, CharacterUtils};
-use crate::core::analysis::reader::Reader;
+use crate::core::analysis::reader::{Reader, ReaderEnum};
 use crate::core::analysis::standard::standard_tokenizer::MAX_TOKEN_LENGTH_LIMIT;
 use crate::core::analysis::token_attributes::char_term_attribute::CharTermAttribute;
 use crate::core::analysis::token_attributes::offset_attribute::OffsetAttribute;
@@ -34,7 +34,6 @@ where
     final_offset: i32,
     max_token_len: i32,
     io_buffer: CharacterBuffer,
-    pub(crate) att: Attributes,
     pub(crate) tokenizer_base: TokenizerBase,
     sub: S,
 }
@@ -62,8 +61,7 @@ where
             final_offset: 0,
             max_token_len,
             io_buffer: CharacterUtils::new_character_buffer(I_BUFFER_SIZE as usize)?,
-            att,
-            tokenizer_base: TokenizerBase::new(),
+            tokenizer_base: TokenizerBase::new(att),
             sub,
         })
     }
@@ -83,10 +81,10 @@ where
     S: CharTokenizerBase,
 {
     fn increment_token(&mut self) -> Result<bool> {
-        self.att.clear_attributes();
+        self.tokenizer_base.token_stream_base.att.clear_attributes();
         let mut length: usize = 0;
-        let mut start: i32 = 0;
-        let mut end: i32 = 0;
+        let mut start: i32 = -1;
+        let mut end: i32 = -1;
         loop {
             if self.buffer_index >= self.data_len {
                 self.offset += self.data_len;
@@ -113,11 +111,15 @@ where
                     debug_assert_eq!(start, -1);
                     start = self.offset + self.buffer_index - 1;
                     end = start;
-                } else if length >= self.att.buffer_mut().len() - 1 {
-                    self.att.resize_buffer(2 + length);
+                } else if length >= self.tokenizer_base.token_stream_base.att.buffer_mut().len() - 1
+                {
+                    self.tokenizer_base
+                        .token_stream_base
+                        .att
+                        .resize_buffer(2 + length);
                 }
 
-                self.att.buffer_mut()[length] = c;
+                self.tokenizer_base.token_stream_base.att.buffer_mut()[length] = c;
                 length += 1;
                 end += 1;
 
@@ -128,10 +130,15 @@ where
                 break;
             }
         }
-        self.att.set_length(length)?;
+        self.tokenizer_base
+            .token_stream_base
+            .att
+            .set_length(length)?;
         debug_assert_ne!(start, -1);
         self.final_offset = self.correct_offset(end);
-        self.att
+        self.tokenizer_base
+            .token_stream_base
+            .att
             .set_offset(self.correct_offset(start), self.final_offset)?;
         Ok(true)
     }
@@ -139,7 +146,10 @@ where
     fn end(&mut self) -> Result<()> {
         self.tokenizer_base.end()?;
         // set final offset
-        self.att.set_offset(self.final_offset, self.final_offset)
+        self.tokenizer_base
+            .token_stream_base
+            .att
+            .set_offset(self.final_offset, self.final_offset)
     }
 
     fn reset(&mut self) -> Result<()> {
@@ -153,15 +163,19 @@ where
     }
 
     fn close(&mut self) -> Result<()> {
-        self.tokenizer_base.input.close()
+        self.tokenizer_base.close()
     }
 
     fn get_attribute_source(&self) -> &Attributes {
-        &self.att
+        self.tokenizer_base.get_attribute_source()
     }
 
     fn get_attribute_source_mut(&mut self) -> &mut Attributes {
-        &mut self.att
+        self.tokenizer_base.get_attribute_source_mut()
+    }
+
+    fn set_reader(&mut self, input: ReaderEnum) -> Result<()> {
+        self.tokenizer_base.set_reader(input)
     }
 }
 

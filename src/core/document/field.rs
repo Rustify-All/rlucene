@@ -20,7 +20,9 @@ use crate::core::analysis::token_attributes::bytes_term_attribute::BytesTermAttr
 use crate::core::analysis::token_attributes::bytes_term_attribute_impl::BytesTermAttributeImpl;
 use crate::core::analysis::token_attributes::char_term_attribute::CharTermAttribute;
 use crate::core::analysis::token_attributes::offset_attribute::OffsetAttribute;
-use crate::core::analysis::token_stream::{Either2TokenStream, InnerTokenStreams, TokenStream};
+use crate::core::analysis::token_stream::{
+    Either2TokenStream, InnerTokenStreams, TokenStream, TokenStreamBase,
+};
 use crate::core::document::field_type::FieldType;
 use crate::core::document::fields::TokenStreamEnum;
 use crate::core::document::invertable_field::InvertableType;
@@ -75,6 +77,7 @@ pub struct Field {
     name: String,
     /// Field's value.
     pub(crate) fields_data: FieldDataEnum,
+    // TODO: IMPORTANT 在这里定义没有无法实现复用
     ts: Option<Either2TokenStream<BinaryTokenStream, StringTokenStream>>,
 }
 impl Field {
@@ -838,18 +841,20 @@ impl Display for FieldDataEnum {
 }
 /// Creates a new TokenStream that returns a BytesRef as single token
 pub struct BinaryTokenStream {
-    att: Attributes,
     used: bool,
     value: Option<BytesRef<Vec<u8>>>,
+    token_stream_base: TokenStreamBase,
 }
 
 impl BinaryTokenStream {
     /// Creates a new TokenStream that returns a BytesRef as single token.
     pub(crate) fn new() -> Self {
         Self {
-            att: Attributes::BytesTerm(BytesTermAttributeImpl::new()),
             used: false,
             value: None,
+            token_stream_base: TokenStreamBase::new(Attributes::BytesTerm(
+                BytesTermAttributeImpl::new(),
+            )),
         }
     }
 
@@ -870,9 +875,9 @@ impl TokenStream for BinaryTokenStream {
         if self.used {
             return Ok(false);
         }
-        self.att.clear_attributes();
+        self.token_stream_base.att.clear_attributes();
         let value = self.value.take();
-        BytesTermAttribute::set_bytes_ref(&mut self.att, value);
+        BytesTermAttribute::set_bytes_ref(&mut self.token_stream_base.att, value);
         self.used = true;
         Ok(true)
     }
@@ -892,26 +897,26 @@ impl TokenStream for BinaryTokenStream {
     }
 
     fn get_attribute_source(&self) -> &Attributes {
-        &self.att
+        &self.token_stream_base.att
     }
 
     fn get_attribute_source_mut(&mut self) -> &mut Attributes {
-        &mut self.att
+        &mut self.token_stream_base.att
     }
 }
 
 pub struct StringTokenStream {
-    att: Attributes,
     used: bool,
     value: Option<String>,
+    token_stream_base: TokenStreamBase,
 }
 impl StringTokenStream {
     /// Creates a new TokenStream that returns a String as single token.
     pub(crate) fn new() -> Self {
         Self {
-            att: Attributes::default(),
             used: false,
             value: None,
+            token_stream_base: TokenStreamBase::new(Attributes::default()),
         }
     }
     pub(crate) fn set_value(&mut self, value: String) {
@@ -930,11 +935,13 @@ impl TokenStream for StringTokenStream {
         if self.used {
             return Ok(true);
         }
-        self.att.clear_attributes();
+        self.token_stream_base.att.clear_attributes();
         let value = self.value.as_ref().unwrap();
-        self.att.append_str(Some(value));
+        self.token_stream_base.att.append_str(Some(value));
         debug_assert!(value.len() <= i32::MAX as usize);
-        self.att.set_offset(0, value.len() as i32)?;
+        self.token_stream_base
+            .att
+            .set_offset(0, value.len() as i32)?;
         self.used = true;
         Ok(true)
     }
@@ -942,7 +949,9 @@ impl TokenStream for StringTokenStream {
     fn end(&mut self) -> Result<()> {
         self.default_end()?;
         let final_offset = self.value.as_ref().unwrap().len() as i32;
-        self.att.set_offset(final_offset, final_offset)
+        self.token_stream_base
+            .att
+            .set_offset(final_offset, final_offset)
     }
 
     fn reset(&mut self) -> Result<()> {
@@ -956,11 +965,11 @@ impl TokenStream for StringTokenStream {
     }
 
     fn get_attribute_source(&self) -> &Attributes {
-        &self.att
+        &self.token_stream_base.att
     }
 
     fn get_attribute_source_mut(&mut self) -> &mut Attributes {
-        &mut self.att
+        &mut self.token_stream_base.att
     }
 }
 

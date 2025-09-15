@@ -357,7 +357,7 @@ where
                     Some(parent) => {
                         let doc_wrapper = DocWrapper::new(doc, parent.clone());
                         self.reserve_one_doc()?;
-                        num_docs_in_ram.store(1, Ordering::SeqCst);
+                        num_docs_in_ram.fetch_add(1, Ordering::SeqCst);
                         self.state.num_docs_in_ram.fetch_add(1, Ordering::SeqCst);
                         self.indexing_chain.process_document(
                             self.state.num_docs_in_ram.load(SeqCst) - 1,
@@ -376,7 +376,7 @@ where
                             ));
                         } else {
                             self.reserve_one_doc()?;
-                            num_docs_in_ram.store(1, Ordering::SeqCst);
+                            num_docs_in_ram.fetch_add(1, Ordering::SeqCst);
                             self.state.num_docs_in_ram.fetch_add(1, Ordering::SeqCst);
                             self.indexing_chain.process_document(
                                 self.state.num_docs_in_ram.load(SeqCst) - 1,

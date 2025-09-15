@@ -223,13 +223,17 @@ where
     TS: TokenStream,
 {
     store_value: Option<TokenStreamComponents<TS>>,
+    first: bool,
 }
 impl<TS> Default for GlobalReuseStrategy<TS>
 where
     TS: TokenStream,
 {
     fn default() -> Self {
-        Self { store_value: None }
+        Self {
+            store_value: None,
+            first: true,
+        }
     }
 }
 impl<TS> ReuseStrategy<TS> for GlobalReuseStrategy<TS>
@@ -251,6 +255,11 @@ where
         _field_name: &str,
         components: TokenStreamComponents<TS>,
     ) -> Result<()> {
+        if self.first {
+            self.first = false;
+            self.store_value = Some(components);
+            return Ok(());
+        }
         match self.store_value {
             Some(ref mut v) => {
                 *v = components;

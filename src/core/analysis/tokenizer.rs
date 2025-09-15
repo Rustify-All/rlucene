@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 use crate::core::analysis::reader::{Reader, ReaderEnum};
-use crate::core::analysis::token_stream::TokenStream;
+use crate::core::analysis::token_stream::{TokenStream, TokenStreamBase};
 use crate::core::util::attribute_source::Attributes;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 /// A `Tokenizer` is a `TokenStream` whose input is a `Reader`.
@@ -35,22 +35,15 @@ pub struct TokenizerBase {
     pub(crate) input: ReaderEnum,
     /// Pending reader: not actually assigned to input until reset()
     pub(crate) input_pending: ReaderEnum,
+    pub(crate) token_stream_base: TokenStreamBase,
 }
-impl Default for TokenizerBase {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl TokenizerBase {
-    pub fn new() -> Self {
+    pub fn new(att: Attributes) -> Self {
         Self {
             input_pending: ReaderEnum::IllegalState(IllegalStateReader),
             input: ReaderEnum::IllegalState(IllegalStateReader),
+            token_stream_base: TokenStreamBase::new(att),
         }
-    }
-    pub fn set_reader(&mut self, input: ReaderEnum) {
-        self.input_pending = input;
     }
 }
 
@@ -81,11 +74,11 @@ impl TokenStream for TokenizerBase {
     }
 
     fn get_attribute_source(&self) -> &Attributes {
-        unreachable!("should not be called")
+        &self.token_stream_base.att
     }
 
     fn get_attribute_source_mut(&mut self) -> &mut Attributes {
-        unreachable!("should not be called")
+        &mut self.token_stream_base.att
     }
 
     fn set_reader(&mut self, input: ReaderEnum) -> Result<()> {
