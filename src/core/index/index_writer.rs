@@ -2773,10 +2773,23 @@ impl Permits {
     fn release(&self) {
         self.avail.fetch_add(1, Ordering::Release);
     }
+    fn acquire_all(&self) {
+        loop {
+            let cur = self.avail.load(Ordering::Acquire);
+            if cur == Self::MAX {
+                let res =
+                    self.avail
+                        .compare_exchange(Self::MAX, 0, Ordering::AcqRel, Ordering::Acquire);
+                if res.is_ok() {
+                    break;
+                }
+            }
+            std::thread::yield_now();
+        }
+    }
     fn release_all(&self) {
         self.avail.store(Self::MAX, Ordering::Release);
     }
-
     fn available(&self) -> usize {
         self.avail.load(Ordering::Relaxed)
     }
@@ -2861,11 +2874,7 @@ impl EventQueue {
             return Ok(());
         }
         // now we acquire all the permits to ensure we are the only one processing the queue
-        for _ in 0..Permits::MAX {
-            if !self.permits.try_acquire() {
-                break;
-            }
-        }
+        self.permits.acquire_all();
 
         let result = self.process_events_internal(writer);
         self.permits.release_all();
