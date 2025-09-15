@@ -23,6 +23,8 @@ parking_lot = "0.12.4"
 bit-set = "0.8.0"
 rand_chacha = "0.9.0"
 os_info = "3.12.0"
+crossbeam= "0.8.4"
+
 
 [dev-dependencies]
 rand_xoshiro = "0.7.0"

@@ -101,6 +101,22 @@ where
     files_to_commit: Option<Vec<String>>,
     start_commit_time: Instant,
 }
+impl<D, L, B> Drop for IndexWriter<D, L, B>
+where
+    D: Directory,
+    L: LiveIndexWriterConfig,
+    B: IndexWriterBase,
+{
+    fn drop(&mut self) {
+        // TODO 其他close需要用到IndexWriter的字段都需要在这里处理
+        match self.event_queue.close(self) {
+            Ok(_) => {},
+            Err(e) => {
+                eprintln!("IndexWriter drop: event_queue close error: {}", e);
+            },
+        }
+    }
+}
 
 impl<D, L, B> IndexWriter<D, L, B>
 where
@@ -1897,7 +1913,7 @@ where
 
     fn process_events(&self, trigger_merge: bool) -> Result<()> {
         if self.tragedy.lock().is_none() {
-            self.event_queue.process_events()?;
+            self.event_queue.process_events(self)?;
         }
 
         if trigger_merge {
@@ -2617,10 +2633,11 @@ use crate::core::util::info_stream::{InfoStream, InfoStreamMT};
 use crate::core::util::io_consumer::IOConsumer;
 use crate::core::util::unicode_util::UnicodeUtil;
 use crate::core::util::{BYTE_BLOCK_SIZE, LATEST};
+use crossbeam::queue::SegQueue;
 use num_bigint::BigInt;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 /// Maximum number of documents. In Java Lucene, We subtract 128 to ensure
@@ -2729,27 +2746,131 @@ where
 
     Ok(())
 }
+struct Permits {
+    avail: AtomicUsize,
+}
+impl Permits {
+    const MAX: usize = i32::MAX as usize;
 
-pub(crate) struct EventQueue {}
+    fn new() -> Self {
+        Self {
+            avail: AtomicUsize::new(Self::MAX),
+        }
+    }
+    fn try_acquire(&self) -> bool {
+        let mut cur = self.avail.load(Ordering::Acquire);
+        while cur > 0 {
+            match self
+                .avail
+                .compare_exchange(cur, cur - 1, Ordering::AcqRel, Ordering::Acquire)
+            {
+                Ok(_) => return true,
+                Err(actual) => cur = actual,
+            }
+        }
+        false
+    }
+    fn release(&self) {
+        self.avail.fetch_add(1, Ordering::Release);
+    }
+    fn release_all(&self) {
+        self.avail.store(Self::MAX, Ordering::Release);
+    }
+
+    fn available(&self) -> usize {
+        self.avail.load(Ordering::Relaxed)
+    }
+}
+pub(crate) struct EventQueue {
+    closed: AtomicBool,
+    permits: Permits,
+    queue: SegQueue<EventEnum>,
+    guard: Mutex<()>,
+}
 
 impl EventQueue {
     fn new() -> Self {
-        Self {}
+        Self {
+            closed: AtomicBool::new(false),
+            permits: Permits::new(),
+            queue: SegQueue::new(),
+            guard: Mutex::new(()),
+        }
     }
     fn acquire(&self) -> Result<()> {
-        todo!()
+        if !self.permits.try_acquire() {
+            return Err(LuceneError::already_closed("queue is closed"));
+        }
+        if self.closed.load(Ordering::Acquire) {
+            self.permits.release();
+            return Err(LuceneError::already_closed("queue is closed"));
+        }
+        Ok(())
     }
-    fn add(&self, _event: EventEnum) -> Result<()> {
-        todo!()
+    fn add(&self, event: EventEnum) -> Result<()> {
+        self.acquire()?;
+        self.queue.push(event);
+        self.permits.release();
+        Ok(())
     }
-    fn process_events(&self) -> Result<()> {
-        todo!()
+    fn process_events<D, L, B>(&self, writer: &IndexWriter<D, L, B>) -> Result<()>
+    where
+        D: Directory,
+        L: LiveIndexWriterConfig,
+        B: IndexWriterBase,
+    {
+        self.acquire()?;
+        let result = self.process_events_internal(writer);
+        self.permits.release();
+        result
     }
-    fn process_events_internal(&self) -> Result<()> {
-        todo!()
+    fn process_events_internal<D, L, B>(&self, writer: &IndexWriter<D, L, B>) -> Result<()>
+    where
+        D: Directory,
+        L: LiveIndexWriterConfig,
+        B: IndexWriterBase,
+    {
+        debug_assert!(
+            (Permits::MAX - self.permits.available()) > 0,
+            "must acquire a permit before processing events"
+        );
+
+        while let Some(mut event) = self.queue.pop() {
+            event.process(writer)?
+        }
+        Ok(())
     }
-    fn close(&self) -> Result<()> {
-        todo!()
+    fn close<D, L, B>(&self, writer: &IndexWriter<D, L, B>) -> Result<()>
+    where
+        D: Directory,
+        L: LiveIndexWriterConfig,
+        B: IndexWriterBase,
+    {
+        let _guard = self.guard.lock();
+        debug_assert!(
+            !self.closed.load(Ordering::Acquire),
+            "we should never close this twice"
+        );
+
+        self.closed.store(true, Ordering::Release);
+
+        if writer.get_tragic_exception().lock().is_some() {
+            while self.queue.pop().is_some() {
+                // we are already handling a tragic exception let's drop it all on the floor and return
+            }
+            return Ok(());
+        }
+        // now we acquire all the permits to ensure we are the only one processing the queue
+        for _ in 0..Permits::MAX {
+            if !self.permits.try_acquire() {
+                break;
+            }
+        }
+
+        let result = self.process_events_internal(writer);
+        self.permits.release_all();
+        drop(_guard);
+        result
     }
 }
 
