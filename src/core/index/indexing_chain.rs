@@ -737,28 +737,22 @@ where
             }
             Ok(())
         })();
-        match result {
-            Ok(()) => {
-                debug_assert!(!self.has_hit_aborting_exception);
-                // Finish each indexed field name seen in the document:
-                for i in 0..indexed_field_count {
-                    let idx = self.fields[i];
-                    let pf = self.doc_fields[idx as usize].as_mut().unwrap();
-                    pf.finish(
-                        doc_id,
-                        self.terms_hash.next_terms_hash.as_mut().unwrap(),
-                        index_writer_config.get_similarity(),
-                    )?;
-                }
-                self.finish_stored_fields()?;
-                self.terms_hash
-                    .finish_document(doc_id, index_writer_config.get_codec(), info)?;
-            },
-            Err(e) => {
-                return Err(e);
-            },
+        if !self.has_hit_aborting_exception {
+            // Finish each indexed field name seen in the document:
+            for i in 0..indexed_field_count {
+                let idx = self.fields[i];
+                let pf = self.doc_fields[idx as usize].as_mut().unwrap();
+                pf.finish(
+                    doc_id,
+                    &mut self.terms_hash.next_terms_hash,
+                    index_writer_config.get_similarity(),
+                )?;
+            }
+            self.finish_stored_fields()?;
+            self.terms_hash
+                .finish_document(doc_id, index_writer_config.get_codec(), info)?;
         }
-        Ok(())
+        result
     }
     fn oversize_doc_fields(&mut self) {
         let required = self.doc_fields.len() + 1;
@@ -1333,11 +1327,7 @@ impl PerField {
         }
 
         if fi.has_term_vectors() {
-            terms_hash
-                .next_terms_hash
-                .as_mut()
-                .unwrap()
-                .set_has_vectors();
+            terms_hash.next_terms_hash.set_has_vectors();
         }
         Ok(())
     }
@@ -1532,7 +1522,7 @@ impl PerField {
                 // corrupt and should not be flushed to a
                 // new segment:
                 if let Err(e) = terms_hash_per_field.add_with_bytes_ref(
-                    // TODO: 这里没有传递ByteRef
+                    // use attribute_source's bytes_ref
                     None,
                     doc_id,
                     self.invert_state.as_mut().unwrap(),

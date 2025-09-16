@@ -52,8 +52,8 @@ where
     // Scratch term used by TermVectorsConsumerPerField.finishDocument.
     pub(crate) flush_term: BytesRef<Vec<u8>>,
     // Used by TermVectorsConsumerPerField when serializing the term vectors.
-    pub(crate) vector_slice_reader_pos: Option<ByteSliceReader>,
-    pub(crate) vector_slice_reader_off: Option<ByteSliceReader>,
+    pub(crate) vector_slice_reader_pos: ByteSliceReader,
+    pub(crate) vector_slice_reader_off: ByteSliceReader,
     has_vectors: bool,
     num_vector_fields: i32,
     pub(crate) last_doc_id: i32,
@@ -94,8 +94,8 @@ where
             directory,
             writer: None,
             flush_term: BytesRef::default(),
-            vector_slice_reader_pos: Some(ByteSliceReader::new()),
-            vector_slice_reader_off: Some(ByteSliceReader::new()),
+            vector_slice_reader_pos: ByteSliceReader::new(),
+            vector_slice_reader_off: ByteSliceReader::new(),
             has_vectors: false,
             num_vector_fields: 0,
             last_doc_id: 0,

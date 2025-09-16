@@ -62,30 +62,26 @@ pub trait TermVectorsWriter: Accountable {
     fn add_prox(
         &mut self,
         num_prox: usize,
-        positions: &mut Option<impl DataInput>,
-        offsets: &mut Option<impl DataInput>,
+        positions: &mut Option<&mut impl DataInput>,
+        offsets: &mut Option<&mut impl DataInput>,
     ) -> Result<()>;
 
     fn default_add_prox(
         &mut self,
         num_prox: usize,
-        positions: &mut Option<impl DataInput>,
-        offsets: &mut Option<impl DataInput>,
+        positions: &mut Option<&mut impl DataInput>,
+        offsets: &mut Option<&mut impl DataInput>,
     ) -> Result<()> {
         let mut position = 0;
         let mut last_offset = 0;
         let mut payload: Option<BytesRefBuilder<Vec<u8>>> = None;
 
         for _ in 0..num_prox {
-            let (start_offset, end_offset);
-            let this_payload;
-
-            if let Some(pos_input) = positions.as_mut() {
+            let this_payload = if let Some(pos_input) = positions.as_mut() {
                 let code = pos_input.read_vint()?;
                 position += (code as u32 >> 1) as i32;
 
                 if code & 1 != 0 {
-                    // This position has a payload
                     let payload_len = pos_input.read_vint()? as usize;
 
                     if payload.is_none() {
@@ -95,23 +91,24 @@ pub trait TermVectorsWriter: Accountable {
                     builder.grow_no_copy(payload_len);
                     pos_input.read_bytes(&mut builder.bytes_ref.bytes, 0, payload_len as i32)?;
                     builder.set_length(payload_len);
-                    this_payload = Some(builder.get_bytes_ref());
+                    Some(builder.get_bytes_ref())
                 } else {
-                    this_payload = None;
+                    None
                 }
             } else {
                 position = -1;
-                this_payload = None;
-            }
+                None
+            };
 
-            if let Some(off_input) = offsets.as_mut() {
-                start_offset = last_offset + off_input.read_vint()?;
-                end_offset = start_offset + off_input.read_vint()?;
-                last_offset = end_offset;
+            // --- offsets ---
+            let (start_offset, end_offset) = if let Some(off_input) = offsets.as_mut() {
+                let start = last_offset + off_input.read_vint()?;
+                let end = start + off_input.read_vint()?;
+                last_offset = end;
+                (start, end)
             } else {
-                start_offset = -1;
-                end_offset = -1;
-            }
+                (-1, -1)
+            };
 
             self.add_position(position, start_offset, end_offset, this_payload)?;
         }
@@ -213,8 +210,8 @@ where
     fn add_prox(
         &mut self,
         num_prox: usize,
-        positions: &mut Option<impl DataInput>,
-        offsets: &mut Option<impl DataInput>,
+        positions: &mut Option<&mut impl DataInput>,
+        offsets: &mut Option<&mut impl DataInput>,
     ) -> Result<()> {
         match self {
             TermVectorsWriterEnum::Lucene90(writer) => {
@@ -226,8 +223,8 @@ where
     fn default_add_prox(
         &mut self,
         num_prox: usize,
-        positions: &mut Option<impl DataInput>,
-        offsets: &mut Option<impl DataInput>,
+        positions: &mut Option<&mut impl DataInput>,
+        offsets: &mut Option<&mut impl DataInput>,
     ) -> Result<()> {
         match self {
             TermVectorsWriterEnum::Lucene90(writer) => {

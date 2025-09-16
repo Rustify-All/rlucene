@@ -37,6 +37,7 @@ use crate::core::util::packed::{PackedImpl, PackedInts, Writer};
 use crate::core::util::{SliceCopyOps, StringHelper};
 use once_cell::sync::Lazy;
 use std::collections::{HashSet, VecDeque};
+use std::ops::DerefMut;
 
 pub(crate) static FLAGS_BITS: Lazy<i32> =
     Lazy::new(|| bits_required((POSITIONS | OFFSETS | PAYLOADS) as i64).unwrap());
@@ -861,8 +862,8 @@ where
     fn add_prox(
         &mut self,
         num_prox: usize,
-        positions: &mut Option<impl DataInput>,
-        offsets: &mut Option<impl DataInput>,
+        positions: &mut Option<&mut impl DataInput>,
+        offsets: &mut Option<&mut impl DataInput>,
     ) -> Result<()> {
         let cur_field = match self.pending_docs[self.cur_doc]
             .fields
@@ -902,7 +903,7 @@ where
                             let payload_len = positions.read_vint()?;
                             self.payload_lengths_buf[pay_start + i] = payload_len;
                             self.payload_bytes
-                                .copy_bytes(positions, payload_len as i64)?;
+                                .copy_bytes(positions.deref_mut(), payload_len as i64)?;
                         } else {
                             self.payload_lengths_buf[pay_start + i] = 0;
                         }

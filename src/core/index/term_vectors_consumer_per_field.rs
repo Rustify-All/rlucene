@@ -107,7 +107,7 @@ impl TermVectorsConsumerPerField {
             do_vector_offsets: false,
             do_vector_payloads: false,
             term_byte_pool: BytesRefBlockPool::from_byte_block_pool(
-                terms_hash.base.term_byte_pool.as_mut().unwrap().clone(),
+                terms_hash.base.term_byte_pool.as_ref().unwrap().clone(),
             ),
             has_payloads: false,
             field_name,
@@ -130,7 +130,11 @@ impl TermVectorsConsumerPerField {
         let num_postings = self.base.get_num_terms();
         debug_assert!(num_postings >= 0);
 
-        let tv = term_vectors_consumer.writer.as_mut().unwrap();
+        let (tv, pos_reader, off_reader) = (
+            term_vectors_consumer.writer.as_mut().unwrap(),
+            &mut term_vectors_consumer.vector_slice_reader_pos,
+            &mut term_vectors_consumer.vector_slice_reader_off,
+        );
 
         self.base.sort_terms()?;
         let term_ids = self.base.get_sorted_term_ids();
@@ -144,22 +148,12 @@ impl TermVectorsConsumerPerField {
         )?;
 
         let mut pos_reader = if self.do_vector_positions {
-            Some(
-                term_vectors_consumer
-                    .vector_slice_reader_pos
-                    .take()
-                    .unwrap(),
-            )
+            Some(pos_reader)
         } else {
             None
         };
         let mut off_reader = if self.do_vector_offsets {
-            Some(
-                term_vectors_consumer
-                    .vector_slice_reader_off
-                    .take()
-                    .unwrap(),
-            )
+            Some(off_reader)
         } else {
             None
         };
@@ -204,9 +198,6 @@ impl TermVectorsConsumerPerField {
 
         self.reset();
         self.field_info.set_store_term_vectors()?;
-        // TODO: IMPORTANT 这里为啥要赋值
-        term_vectors_consumer.vector_slice_reader_off = off_reader;
-        term_vectors_consumer.vector_slice_reader_pos = pos_reader;
         Ok(())
     }
     pub(crate) fn reset(&mut self) {

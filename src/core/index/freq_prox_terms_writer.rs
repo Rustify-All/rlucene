@@ -66,7 +66,7 @@ pub(crate) struct FreqProxTermsWriter<D>
 where
     D: Directory,
 {
-    pub(crate) next_terms_hash: Option<TermVectorsConsumer<D>>,
+    pub(crate) next_terms_hash: TermVectorsConsumer<D>,
     pub(crate) base: TermsHash,
 }
 impl<D> FreqProxTermsWriter<D>
@@ -84,7 +84,7 @@ where
         next_terms_hash.base.term_byte_pool = Some(base.byte_pool.clone());
 
         Self {
-            next_terms_hash: Some(next_terms_hash),
+            next_terms_hash,
             base,
         }
     }
@@ -136,7 +136,7 @@ where
 
     pub(crate) fn abort(&mut self) -> Result<()> {
         self.base.reset();
-        self.next_terms_hash.as_mut().unwrap().abort()
+        self.next_terms_hash.abort()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -155,9 +155,7 @@ where
         DM: DocMap,
         D1: Directory,
     {
-        if let Some(term_vector_consumer) = self.next_terms_hash.as_mut() {
-            term_vector_consumer.flush(state, &sort_map, codec, info)?;
-        }
+        self.next_terms_hash.flush(state, &sort_map, codec, info)?;
         if !state.field_infos.has_postings() {
             return Ok(());
         }
@@ -199,26 +197,15 @@ where
     where
         D1: Directory,
     {
-        if self.next_terms_hash.is_some() {
-            self.next_terms_hash
-                .as_mut()
-                .unwrap()
-                .finish_document(doc_id, codec, info)?;
-        }
+        self.next_terms_hash.finish_document(doc_id, codec, info)?;
         Ok(())
     }
     pub(crate) fn start_document(&mut self) -> Result<()> {
-        if self.next_terms_hash.is_some() {
-            self.next_terms_hash.as_mut().unwrap().start_document()?;
-        }
+        self.next_terms_hash.start_document()?;
         Ok(())
     }
     pub(crate) fn add_field(&mut self, field_info: Arc<FieldInfo>) -> FreqProxTermsWriterPerField {
-        let next_per_field = self
-            .next_terms_hash
-            .as_mut()
-            .unwrap()
-            .add_field(field_info.clone());
+        let next_per_field = self.next_terms_hash.add_field(field_info.clone());
         FreqProxTermsWriterPerField::new(self, field_info, Some(next_per_field))
     }
 }

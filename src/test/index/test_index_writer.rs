@@ -73,11 +73,11 @@ where
         format!("aaa {}", index).into(),
         &STORED_TEXT_TYPE,
     )?);
-    doc.add(new_field(
-        "id",
-        index.to_string().into(),
-        &STORED_TEXT_TYPE,
-    )?);
+    // doc.add(new_field(
+    //     "id",
+    //     index.to_string().into(),
+    //     &STORED_TEXT_TYPE,
+    // )?);
 
     match writer.add_document(doc) {
         Ok(_) => Ok(()),
