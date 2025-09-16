@@ -23,7 +23,7 @@ use crate::core::index::indexable_field::IndexableField;
 use crate::core::index::parallel_postings_array::{
     ParallelPostingsArray, PostingsArrayBase, PostingsArrayEnum,
 };
-use crate::core::index::term_vectors_consumer::TermVectorsConsumer;
+use crate::core::index::term_vectors_consumer::{PerFieldMeta, TermVectorsConsumer};
 use crate::core::index::term_vectors_consumer_per_field::TermVectorsConsumerPerField;
 #[cfg(test)]
 use crate::core::index::terms_hash_per_field::tests::TermsHashPerFieldMock;
@@ -201,18 +201,18 @@ impl FreqProxTermsWriterPerField {
 
         Ok(freq)
     }
-    pub(crate) fn get_next_per_field(&mut self) -> TermVectorsConsumerPerField {
-        self.next_per_field.take().unwrap()
-    }
-    pub(crate) fn finish<D>(&mut self, term_vectors_consumer: &mut TermVectorsConsumer<D>)
-    where
+    pub(crate) fn finish<D>(
+        &mut self,
+        term_vectors_consumer: &mut TermVectorsConsumer<D>,
+        meta: PerFieldMeta,
+    ) where
         D: Directory,
     {
         if self.next_per_field.is_some() {
             self.next_per_field
-                .take()
+                .as_mut()
                 .unwrap()
-                .finish(term_vectors_consumer);
+                .finish(term_vectors_consumer, meta);
         }
         if self.saw_payloads {
             self.field_info

@@ -144,7 +144,7 @@ impl LiveIndexWriterConfig for DummyLiveIndexWriterConfig {
 
     fn set_max_full_flush_merge_wait_millis(
         &mut self,
-        max_full_flush_merge_wait_millis: i64,
+        _max_full_flush_merge_wait_millis: i64,
     ) -> &mut Self {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }

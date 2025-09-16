@@ -492,13 +492,7 @@ impl DocumentsWriterDeleteQueue {
         global_state.advanced
     }
 }
-impl Drop for DocumentsWriterDeleteQueue {
-    fn drop(&mut self) {
-        if let Err(_e) = self.close() {
-            // TODO:
-        }
-    }
-}
+
 impl Display for DocumentsWriterDeleteQueue {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "DWDP: [ generation: {} ]", self.generation)

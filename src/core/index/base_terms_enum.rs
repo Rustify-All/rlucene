@@ -51,7 +51,14 @@ where
     }
 }
 
-impl<S> BytesRefIterator for BaseTermsEnum<S> where S: TermsEnum {}
+impl<S> BytesRefIterator for BaseTermsEnum<S>
+where
+    S: TermsEnum,
+{
+    fn next(&mut self) -> Result<Option<Cow<'_, BytesRef<Vec<u8>>>>> {
+        self.sub.next()
+    }
+}
 
 impl<S> TermsEnum for BaseTermsEnum<S>
 where

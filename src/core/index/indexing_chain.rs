@@ -82,7 +82,7 @@ use crate::core::index::sorter::{DocMap, DocMapImpl, Sorter};
 use crate::core::index::sorting_stored_fields_consumer::SortingStoredFieldsConsumer;
 use crate::core::index::sorting_term_vectors_consumer::SortingTermVectorsConsumer;
 use crate::core::index::stored_fields_consumer::StoredFieldsConsumer;
-use crate::core::index::term_vectors_consumer::TermVectorsConsumer;
+use crate::core::index::term_vectors_consumer::{PerFieldMeta, TermVectorsConsumer};
 use crate::core::index::vector_encoding::VectorEncoding;
 use crate::core::index::vector_similarity_function::VectorSimilarityFunction;
 use crate::core::search::similarities_impl::similarities::Similarity;
@@ -749,8 +749,12 @@ where
                 )?;
             }
             self.finish_stored_fields()?;
-            self.terms_hash
-                .finish_document(doc_id, index_writer_config.get_codec(), info)?;
+            self.terms_hash.finish_document(
+                doc_id,
+                index_writer_config.get_codec(),
+                info,
+                &mut self.doc_fields,
+            )?;
         }
         result
     }
@@ -979,6 +983,7 @@ where
             );
             pf.next = self.field_hash[hash_pos];
             per_field_index = self.doc_fields.len() as i32;
+            pf.idx_in_doc_field = per_field_index;
             self.doc_fields.push(Some(pf));
             self.field_hash[hash_pos] = per_field_index;
             self.total_field_count += 1;
@@ -1267,6 +1272,7 @@ pub(crate) struct PerField {
     pub(crate) norms: Option<NormValuesWriter>,
     pub(crate) token_stream: Option<<Fields as IndexableField>::TokenStream>,
     pub(crate) first: bool,
+    pub(crate) idx_in_doc_field: i32,
 }
 impl PerField {
     pub(crate) fn new(
@@ -1290,6 +1296,7 @@ impl PerField {
             norms: None,
             token_stream: None,
             first: false,
+            idx_in_doc_field: -1,
         }
     }
     pub(crate) fn reset(&mut self, doc_id: i32) {
@@ -1361,10 +1368,14 @@ impl PerField {
             };
             self.norms.as_mut().unwrap().add_value(doc_id, norm_value)?;
         }
+        let meta = PerFieldMeta {
+            idx: self.idx_in_doc_field,
+            field_name: self.field_name.clone(),
+        };
         self.terms_hash_per_field
             .as_mut()
             .unwrap()
-            .finish(term_vectors_consumer);
+            .finish(term_vectors_consumer, meta);
         Ok(())
     }
     /// Inverts one field for one document; first is true if this is the first time we are seeing

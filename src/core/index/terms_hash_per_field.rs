@@ -272,8 +272,7 @@ impl TermsHashPerField {
         self.bytes_hash.size()
     }
     pub(crate) fn reset(&mut self) {
-        self.bytes_hash.clear();
-        self.bytes_hash.ids.clear();
+        self.bytes_hash.clear_with_reset_pool(false);
     }
 
     pub(crate) fn reinit_hash(&mut self) {

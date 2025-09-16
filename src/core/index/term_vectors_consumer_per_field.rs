@@ -23,7 +23,7 @@ use crate::core::index::indexable_field_type::IndexableFieldType;
 use crate::core::index::parallel_postings_array::{
     ParallelPostingsArray, PostingsArrayBase, PostingsArrayEnum,
 };
-use crate::core::index::term_vectors_consumer::TermVectorsConsumer;
+use crate::core::index::term_vectors_consumer::{PerFieldMeta, TermVectorsConsumer};
 use crate::core::index::terms_hash_per_field::{
     PostingsArrayWrapper, TermsHashPerField, TermsHashPerFieldBase, TermsHashPerFieldType,
 };
@@ -34,7 +34,6 @@ use crate::core::util::bit_util::BitUtil;
 use crate::core::util::bytes_ref_block_pool::BytesRefBlockPool;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::{ByteBlockPoolLock, CounterEnumLock};
-use std::cmp::Ordering;
 use std::sync::Arc;
 
 pub(crate) struct TermVectorsConsumerPerField {
@@ -48,21 +47,7 @@ pub(crate) struct TermVectorsConsumerPerField {
     field_name: String,
     base: TermsHashPerField,
 }
-impl Default for TermVectorsConsumerPerField {
-    fn default() -> Self {
-        TermVectorsConsumerPerField {
-            field_info: Arc::new(FieldInfo::default()),
-            do_vectors: false,
-            do_vector_positions: false,
-            do_vector_offsets: false,
-            do_vector_payloads: false,
-            term_byte_pool: BytesRefBlockPool::default(),
-            has_payloads: false,
-            field_name: String::new(),
-            base: TermsHashPerField::default(),
-        }
-    }
-}
+
 impl Clone for TermVectorsConsumerPerField {
     // for padding
     fn clone(&self) -> Self {
@@ -420,34 +405,17 @@ impl TermVectorsConsumerPerField {
 
         Ok(freq)
     }
-    pub(crate) fn finish<D>(self, term_vectors_consumer: &mut TermVectorsConsumer<D>)
-    where
+    pub(crate) fn finish<D>(
+        &self,
+        term_vectors_consumer: &mut TermVectorsConsumer<D>,
+        meta: PerFieldMeta,
+    ) where
         D: Directory,
     {
         if !self.do_vectors || self.base.get_num_terms() == 0 {
             return;
         }
-        term_vectors_consumer.add_field_to_flush(self)
-    }
-}
-
-impl Eq for TermVectorsConsumerPerField {}
-
-impl PartialEq<Self> for TermVectorsConsumerPerField {
-    fn eq(&self, _other: &Self) -> bool {
-        todo!()
-    }
-}
-
-impl PartialOrd<Self> for TermVectorsConsumerPerField {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for TermVectorsConsumerPerField {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.field_name.cmp(&other.field_name)
+        term_vectors_consumer.add_field_to_flush(meta);
     }
 }
 impl TermsHashPerFieldBase for TermVectorsConsumerPerField {

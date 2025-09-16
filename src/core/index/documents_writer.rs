@@ -533,8 +533,7 @@ where
                     // In the case of a failure make sure we are making progress and
                     // apply all the deletes since the segment flush failed since the flush
                     // ticket could hold global deletes see FlushTicket#canPublish()
-                    let flush_ticket = &mut self.ticket_queue.inner.lock().queue[ticket_idx];
-                    self.ticket_queue.mark_ticket_failed(flush_ticket);
+                    self.ticket_queue.mark_ticket_failed(ticket_idx);
                 }
                 result?;
                 //Now we are done and try to flush the ticket queue if the head of the
@@ -673,37 +672,39 @@ where
         });
 
         let mut anything_flushed = false;
-        anything_flushed |= self.maybe_flush(writer)?;
-        // If a concurrent flush is still in flight wait for it
-        self.flush_control.wait_for_flush();
-        if !anything_flushed && flushing_delete_queue.any_changes(None) {
-            {
-                if self.info_stream.enabled("DW") {
-                    let v = thread::current();
-                    let name = v.name().unwrap_or("<unnamed>");
-                    self.info_stream
-                        .message("DW", &format!("{name}: flush naked frozen global deletes"));
+        let result: Result<()> = (|| {
+            anything_flushed |= self.maybe_flush(writer)?;
+            // If a concurrent flush is still in flight wait for it
+            self.flush_control.wait_for_flush();
+            if !anything_flushed && flushing_delete_queue.any_changes(None) {
+                {
+                    if self.info_stream.enabled("DW") {
+                        let v = thread::current();
+                        let name = v.name().unwrap_or("<unnamed>");
+                        self.info_stream
+                            .message("DW", &format!("{name}: flush naked frozen global deletes"));
+                    }
                 }
-            }
 
-            debug_assert!(self.assert_ticket_queue_modification(&flushing_delete_queue));
-            let supplier = SupplierImpl::new(flushing_delete_queue.clone());
-            self.ticket_queue.add_ticket(supplier)?;
-        }
-        // we can't assert that we don't have any tickets in the queue since we might add a
-        // DocumentsWriterDeleteQueue
-        // concurrently if we have very small ram buffers this happens quite frequently
-        debug_assert!(!flushing_delete_queue.any_changes(None));
-        {
-            let inner = self.inner.lock();
-            debug_assert!(Arc::ptr_eq(
-                &flushing_delete_queue,
-                inner.current_full_flush_del_queue.as_ref().unwrap()
-            ));
-            // all DWPT have been processed and this queue has been fully flushed to the
-            // ticket-queue
-            flushing_delete_queue.close()?;
-        }
+                debug_assert!(self.assert_ticket_queue_modification(&flushing_delete_queue));
+                let supplier = SupplierImpl::new(flushing_delete_queue.clone());
+                self.ticket_queue.add_ticket(supplier)?;
+            }
+            // we can't assert that we don't have any tickets in the queue since we might add a
+            // DocumentsWriterDeleteQueue
+            // concurrently if we have very small ram buffers this happens quite frequently
+            debug_assert!(!flushing_delete_queue.any_changes(None));
+            Ok(())
+        })();
+        let inner = self.inner.lock();
+        debug_assert!(Arc::ptr_eq(
+            &flushing_delete_queue,
+            inner.current_full_flush_del_queue.as_ref().unwrap()
+        ));
+        // all DWPT have been processed and this queue has been fully flushed to the
+        // ticket-queue
+        flushing_delete_queue.close()?;
+        result?;
         Ok(if anything_flushed { -seq_no } else { seq_no })
     }
     pub(crate) fn finish_full_flush(&self, success: bool) -> Result<()> {

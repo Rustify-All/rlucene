@@ -30,6 +30,7 @@ use crate::core::index::freq_prox_fields::FreqProxFields;
 use crate::core::index::freq_prox_terms_writer_per_field::FreqProxTermsWriterPerField;
 use crate::core::index::frozen_buffered_updates::{TermDocsIterator, TermsProviderImpl1};
 use crate::core::index::index_options::IndexOptions;
+use crate::core::index::indexing_chain::PerField;
 use crate::core::index::postings_enum::PostingsEnum;
 use crate::core::index::postings_enum::{Either2PostingsEnum, FREQS, feature_requested};
 use crate::core::index::segment_info::SegmentInfo;
@@ -193,11 +194,13 @@ where
         doc_id: i32,
         codec: &impl Codec,
         info: &SegmentInfo<D1>,
+        per_fields: &mut [Option<PerField>],
     ) -> Result<()>
     where
         D1: Directory,
     {
-        self.next_terms_hash.finish_document(doc_id, codec, info)?;
+        self.next_terms_hash
+            .finish_document(doc_id, codec, info, per_fields)?;
         Ok(())
     }
     pub(crate) fn start_document(&mut self) -> Result<()> {

@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 use crate::core::analysis::character_utils::{CharacterBuffer, CharacterUtils};
-use crate::core::analysis::reader::{Reader, ReaderEnum};
+use crate::core::analysis::reader::ReaderEnum;
 use crate::core::analysis::standard::standard_tokenizer::MAX_TOKEN_LENGTH_LIMIT;
 use crate::core::analysis::token_attributes::char_term_attribute::CharTermAttribute;
 use crate::core::analysis::token_attributes::offset_attribute::OffsetAttribute;

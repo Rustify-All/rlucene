@@ -20,6 +20,7 @@ use crate::core::codecs::term_vectors_writer::{TermVectorsWriter, TermVectorsWri
 use crate::core::index::BytesRef;
 use crate::core::index::byte_slice_reader::ByteSliceReader;
 use crate::core::index::field_info::FieldInfo;
+use crate::core::index::indexing_chain::PerField;
 use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::segment_write_state::SegmentWriteState;
 use crate::core::index::sorter::DocMap;
@@ -41,6 +42,7 @@ use crate::core::util::int_block_pool::AllocatorIntEnum;
 use crate::core::util::int_block_pool::DirectAllocatorI32;
 use crate::core::util::{Counter, CounterEnum, CounterEnumLock};
 use parking_lot::Mutex;
+use std::cmp::Ordering;
 use std::sync::Arc;
 
 pub(crate) struct TermVectorsConsumer<D>
@@ -57,9 +59,39 @@ where
     has_vectors: bool,
     num_vector_fields: i32,
     pub(crate) last_doc_id: i32,
-    per_fields: Vec<TermVectorsConsumerPerField>,
+    per_fields_idxs: Vec<PerFieldMeta>,
     sub: Option<SortingTermVectorsConsumer<D>>,
     pub(crate) base: TermsHash,
+}
+
+/// Parameter `idx` is the index of the [`PerField`] where the [`TermVectorsConsumerPerField`] resides.
+/// [`PerField`] itself is located in the [`IndexingChain`](crate::core::index::indexing_chain::IndexingChain)'s `doc_fields` array.
+///
+/// Parameter `field_name` is the field name.
+#[derive(Clone, Default)]
+pub(crate) struct PerFieldMeta {
+    pub(crate) idx: i32,
+    pub(crate) field_name: String,
+}
+
+impl Eq for PerFieldMeta {}
+
+impl PartialEq<Self> for PerFieldMeta {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+
+impl PartialOrd<Self> for PerFieldMeta {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for PerFieldMeta {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.field_name.cmp(&other.field_name)
+    }
 }
 
 #[cfg(test)]
@@ -88,7 +120,7 @@ where
             Arc::new(Mutex::new(CounterEnum::new_counter(false))),
         );
 
-        let per_fields = vec![TermVectorsConsumerPerField::default(); 1];
+        let per_fields = vec![PerFieldMeta::default(); 1];
 
         TermVectorsConsumer {
             directory,
@@ -99,13 +131,13 @@ where
             has_vectors: false,
             num_vector_fields: 0,
             last_doc_id: 0,
-            per_fields,
+            per_fields_idxs: per_fields,
             base,
             sub,
         }
     }
     fn reset_fields(&mut self) {
-        self.per_fields.clear();
+        self.per_fields_idxs.clear();
         self.num_vector_fields = 0;
     }
     fn fill(&mut self, doc_id: i32) -> Result<()> {
@@ -131,6 +163,7 @@ where
         doc_id: i32,
         codec: &impl Codec,
         info: &SegmentInfo<D1>,
+        per_fields: &mut [Option<PerField>],
     ) -> Result<()>
     where
         D1: Directory,
@@ -139,7 +172,7 @@ where
             return Ok(());
         }
 
-        ArrayUtil::intro_sort_with_range(&mut self.per_fields, 0, self.num_vector_fields)?;
+        ArrayUtil::intro_sort_with_range(&mut self.per_fields_idxs, 0, self.num_vector_fields)?;
 
         self.init_term_vectors_writer(codec, info)?;
         self.fill(doc_id)?;
@@ -160,10 +193,16 @@ where
                     .start_document(self.num_vector_fields)?;
             },
         }
-
-        let mut per_fields = std::mem::take(&mut self.per_fields);
-        for per_field in per_fields.iter_mut().take(self.num_vector_fields as usize) {
-            per_field.finish_document(self)?;
+        let idxs = std::mem::take(&mut self.per_fields_idxs);
+        for per_field_idx in idxs.into_iter().take(self.num_vector_fields as usize) {
+            let v = per_fields[per_field_idx.idx as usize].as_mut().unwrap();
+            v.terms_hash_per_field
+                .as_mut()
+                .unwrap()
+                .next_per_field
+                .as_mut()
+                .unwrap()
+                .finish_document(self)?;
         }
 
         match self.sub {
@@ -192,13 +231,14 @@ where
     pub(crate) fn add_field(&mut self, field_info: Arc<FieldInfo>) -> TermVectorsConsumerPerField {
         TermVectorsConsumerPerField::new(self, field_info)
     }
-    pub(crate) fn add_field_to_flush(&mut self, field_to_flush: TermVectorsConsumerPerField) {
+    pub(crate) fn add_field_to_flush(&mut self, meta: PerFieldMeta) {
         let num_vector_fields = self.num_vector_fields as usize;
-        if num_vector_fields == self.per_fields.len() {
+        if num_vector_fields == self.per_fields_idxs.len() {
             let new_size = ArrayUtil::oversize(num_vector_fields + 1, 0);
-            ArrayUtil::grow_with_len(&mut self.per_fields, new_size);
+            ArrayUtil::grow_with_len(&mut self.per_fields_idxs, new_size);
         }
-        self.per_fields[num_vector_fields] = field_to_flush;
+
+        self.per_fields_idxs[num_vector_fields] = meta;
         self.num_vector_fields += 1;
     }
     pub(crate) fn flush<DM, D1>(

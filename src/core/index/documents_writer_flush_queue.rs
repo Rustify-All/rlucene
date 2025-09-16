@@ -92,8 +92,9 @@ where
         // is passed to the flush ticket
         inner.queue[ticket_index].set_segment(segment)
     }
-    pub(crate) fn mark_ticket_failed(&self, ticket: &mut FlushTicket<D>) {
-        let _guard = self.inner.lock();
+    pub(crate) fn mark_ticket_failed(&self, ticket_idx: usize) {
+        let mut inner = self.inner.lock();
+        let ticket = &mut inner.queue[ticket_idx];
         // to free the queue we mark tickets as failed just to clean up the queue.
         ticket.set_failed();
     }
