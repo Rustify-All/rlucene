@@ -69,8 +69,10 @@ pub mod lucene_test_case_util {
     use once_cell::sync::Lazy;
     use parking_lot::Mutex;
     use rand::prelude::StdRng;
-    use rand::{Rng, SeedableRng};
+    use rand::{Rng, RngCore, SeedableRng};
+    use std::cell::RefCell;
     use std::collections::HashMap;
+    use std::rc::Rc;
     use tempfile::TempDir;
 
     static FIELD_TO_TYPE: Lazy<Mutex<HashMap<String, FieldType>>> =
@@ -485,6 +487,36 @@ pub mod lucene_test_case_util {
         Ok(it)
     }
 
+    thread_local! {
+        static THREAD_LOCAL_RANDOM: RefCell<Option<Rc<RefCell<StdRng>>>> =
+            const { RefCell::new(None) };
+    }
+
+    #[derive(Clone)]
+    pub(crate) struct TestRng {
+        inner: Rc<RefCell<StdRng>>,
+    }
+
+    impl TestRng {
+        fn new(inner: Rc<RefCell<StdRng>>) -> Self {
+            Self { inner }
+        }
+    }
+
+    impl RngCore for TestRng {
+        fn next_u32(&mut self) -> u32 {
+            self.inner.borrow_mut().next_u32()
+        }
+
+        fn next_u64(&mut self) -> u64 {
+            self.inner.borrow_mut().next_u64()
+        }
+
+        fn fill_bytes(&mut self, dest: &mut [u8]) {
+            self.inner.borrow_mut().fill_bytes(dest);
+        }
+    }
+
     /// Retrieves the seed from the environment variable "tests.seed".
     /// If the environment variable is not set or cannot be parsed as a `u64`,
     /// it generates a random seed and logs the result.
@@ -506,8 +538,16 @@ pub mod lucene_test_case_util {
         seed
     }
 
-    pub(crate) fn random() -> StdRng {
-        StdRng::seed_from_u64(get_seed_from_env())
+    pub(crate) fn random() -> TestRng {
+        let shared = THREAD_LOCAL_RANDOM.with(|cell| {
+            let mut slot = cell.borrow_mut();
+            slot.get_or_insert_with(|| {
+                Rc::new(RefCell::new(StdRng::seed_from_u64(get_seed_from_env())))
+            })
+            .clone()
+        });
+
+        TestRng::new(shared)
     }
 
     pub(crate) fn random_from_seed(seed: u64) -> StdRng {

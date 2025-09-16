@@ -394,7 +394,7 @@ mod tests {
         AutomatonTestUtil, RandomAcceptedStrings,
     };
     use crate::test::util::lucene_test_case::lucene_test_case_util::{
-        at_least, new_bytes_ref_from_string, random,
+        TestRng, at_least, new_bytes_ref_from_string, random,
     };
     use crate::test::util::test_util::TestUtil;
     #[allow(dead_code)] // for quick search
@@ -629,7 +629,7 @@ mod tests {
 
             let mut ints = IntsRefBuilder::new();
             Util::get_ints_ref(
-                &new_bytes_ref_from_string::<rand::prelude::StdRng, Vec<u8>>(&mut random, &s)?,
+                &new_bytes_ref_from_string::<TestRng, Vec<u8>>(&mut random, &s)?,
                 &mut ints,
             );
             let mut set = HashSet::new();
