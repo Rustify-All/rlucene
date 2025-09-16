@@ -586,6 +586,21 @@ where
         let _ = CodecUtil::checksum_entire_file(&self.data);
         Ok(())
     }
+
+    fn get_merge_instance(&self) -> Result<Option<Self>>
+    where
+        Self: Sized,
+    {
+        Ok(Some(Self {
+            norms: self.norms.clone(),
+            max_doc: self.max_doc,
+            data: self.data.try_clone()?,
+            merging: true,
+            disi_inputs: HashMap::new().into(),
+            disi_jump_tables: HashMap::new().into(),
+            data_inputs: HashMap::new().into(),
+        }))
+    }
 }
 
 #[derive(Clone)]

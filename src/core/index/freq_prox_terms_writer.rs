@@ -14,8 +14,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::core::codecs::Codec;
+use crate::core::codecs::fields_consumer::FieldsConsumer;
 use crate::core::codecs::norms_producer::NormsProducer;
+use crate::core::codecs::postings_format::PostingsFormat;
+use crate::core::codecs::{Codec, get_default_code};
 use crate::core::index::BytesRef;
 use crate::core::index::automaton_terms_enum::AutomatonTermsEnum;
 use crate::core::index::buffered_updates::MTBufferedUpdates;
@@ -143,7 +145,7 @@ where
         fields_to_flush: HashMap<String, FreqProxTermsWriterPerField>,
         state: &mut SegmentWriteState<D>,
         sort_map: Option<Arc<DM>>,
-        _norms: &mut N,
+        norms: Option<N>,
         codec: &impl Codec,
         info: &SegmentInfo<D1>,
         seg_updates: Option<&mut MTBufferedUpdates>,
@@ -170,18 +172,21 @@ where
         }
         // Sort by field name
         CollectionUtil::intro_sort(&mut all_fields)?;
-        let fields = FreqProxFields::new(all_fields);
+        let mut fields = FreqProxFields::new(all_fields);
         self.apply_deletes(state, &fields, info, seg_updates)?;
 
+        let mut consumer = get_default_code()
+            .postings_format()
+            .fields_consumer(state, info)?;
         if let Some(doc_map) = &sort_map {
-            #[allow(unused)]
-            let filter_fields = FilterFieldsImpl::new(
+            let mut filter_fields = FilterFieldsImpl::new(
                 FilterFields::new(fields),
                 state.field_infos.clone(),
                 doc_map.clone(),
             );
+            consumer.write(&mut filter_fields, &norms)?;
         } else {
-            todo!()
+            consumer.write(&mut fields, &norms)?;
         }
         Ok(())
     }

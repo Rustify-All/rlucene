@@ -39,7 +39,7 @@ use once_cell::sync::Lazy;
 use std::collections::{HashSet, VecDeque};
 
 pub(crate) static FLAGS_BITS: Lazy<i32> =
-    Lazy::new(|| PackedInts::bits_required((POSITIONS | OFFSETS | PAYLOADS) as i64).unwrap());
+    Lazy::new(|| bits_required((POSITIONS | OFFSETS | PAYLOADS) as i64).unwrap());
 /// [`TermVectorsWriter`] for [`Lucene90CompressingTermVectorsFormat`](crate::core::codecs::lucene90::compressing::lucene90_compressing_term_vectors_format::Lucene90CompressingTermVectorsFormat).
 pub struct Lucene90CompressingTermVectorsWriter<D>
 where

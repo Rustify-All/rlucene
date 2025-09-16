@@ -275,14 +275,14 @@ where
         let inner = self.inner.lock();
         inner.delete_queue.get_max_completed_seq_no()
     }
-    fn any_changes(&self) -> bool {
+    fn any_changes(&self, inner: Option<&Inner>) -> bool {
         // changes are either in a DWPT or in the deleteQueue.
         // yet if we currently flush deletes and / or dwpt there
         // could be a window where all changes are in the ticket queue
         // before they are published to the IW. ie we need to check if the
         // ticket queue has any tickets.
         let num_docs = self.num_docs_in_ram.load(Ordering::SeqCst) != 0;
-        let deletions = self.any_deletions();
+        let deletions = self.any_deletions(inner);
         let tickets = self.ticket_queue.has_tickets();
         let pending_full = self
             .pending_changes_in_current_full_flush
@@ -301,12 +301,20 @@ where
 
         any
     }
-    pub(crate) fn get_buffered_delete_terms_size(&self) -> Result<i32> {
-        let delete_queue = self.inner.lock().delete_queue.clone();
+    pub(crate) fn get_buffered_delete_terms_size(&self, inner: Option<&Inner>) -> Result<i32> {
+        let inner = match inner {
+            Some(inner) => inner,
+            None => &self.inner.lock(),
+        };
+        let delete_queue = inner.delete_queue.clone();
         delete_queue.get_buffered_updates_terms_size()
     }
-    pub(crate) fn any_deletions(&self) -> bool {
-        let delete_queue = self.inner.lock().delete_queue.clone();
+    pub(crate) fn any_deletions(&self, inner: Option<&Inner>) -> bool {
+        let inner = match inner {
+            Some(inner) => inner,
+            None => &self.inner.lock(),
+        };
+        let delete_queue = inner.delete_queue.clone();
         delete_queue.any_changes(None)
     }
     fn close(&self) {
@@ -447,17 +455,15 @@ where
             assert!(!flushing_dwpt.state.has_flushed());
 
             let res: Result<_> = (|| {
-                {
+                debug_assert!({
                     let current_full_flush_del_queue =
                         self.inner.lock().current_full_flush_del_queue.clone();
-                    debug_assert!(
-                        current_full_flush_del_queue.is_none()
-                            || Arc::ptr_eq(
-                                &flushing_dwpt.state.delete_queue,
-                                current_full_flush_del_queue.as_ref().unwrap()
-                            )
-                    );
-                }
+                    current_full_flush_del_queue.is_none()
+                        || Arc::ptr_eq(
+                            &flushing_dwpt.state.delete_queue,
+                            current_full_flush_del_queue.as_ref().unwrap(),
+                        )
+                });
 
                 // Since with DWPT the flush process is concurrent and several DWPT
                 // could flush at the same time we must maintain the order of the
@@ -602,8 +608,15 @@ where
         debug_assert!(self.num_docs_in_ram.load(Ordering::SeqCst) >= 0);
     }
 
-    fn set_flushing_delete_queue(&self, session: Option<Arc<DocumentsWriterDeleteQueue>>) -> bool {
-        let mut inner = self.inner.lock();
+    fn set_flushing_delete_queue(
+        &self,
+        session: Option<Arc<DocumentsWriterDeleteQueue>>,
+        inner: Option<&mut Inner>,
+    ) -> bool {
+        let inner = match inner {
+            Some(inner) => inner,
+            None => &mut *self.inner.lock(),
+        };
         debug_assert!(
             inner
                 .current_full_flush_del_queue
@@ -636,33 +649,27 @@ where
     where
         B: IndexWriterBase,
     {
-        {
-            if self.info_stream.enabled("DW") {
-                self.info_stream.message("DW", "startFullFlush");
-            }
+        if self.info_stream.enabled("DW") {
+            self.info_stream.message("DW", "startFullFlush");
         }
-
         let (flushing_delete_queue, seq_no) = {
-            let inner = self.inner.lock();
-            let pending = self.any_changes();
+            let mut inner = self.inner.lock();
+            let pending = self.any_changes(Some(&inner));
             self.pending_changes_in_current_full_flush
                 .store(pending, Ordering::SeqCst);
             let fq = inner.delete_queue.clone();
             // Cutover to a new delete queue.  This must be synced on the flush control
             // otherwise a new DWPT could sneak into the loop with an already flushing
             // delete queue
-            let sn = self.flush_control.mark_for_full_flush(self)?;
-            debug_assert!(self.set_flushing_delete_queue(Some(Arc::clone(&fq))));
+            let sn = self.flush_control.mark_for_full_flush(self, &mut inner)?;
+            debug_assert!(self.set_flushing_delete_queue(Some(Arc::clone(&fq)), Some(&mut inner)));
             (fq, sn)
         };
         debug_assert!({
-            let current_full_flush_del_queue =
-                self.inner.lock().current_full_flush_del_queue.clone();
+            let inner = self.inner.lock();
+            let current_full_flush_del_queue = inner.current_full_flush_del_queue.clone();
             current_full_flush_del_queue.is_some()
-                && !Arc::ptr_eq(
-                    &flushing_delete_queue,
-                    &current_full_flush_del_queue.unwrap(),
-                )
+                && !Arc::ptr_eq(&inner.delete_queue, &current_full_flush_del_queue.unwrap())
         });
 
         let mut anything_flushed = false;
@@ -707,7 +714,7 @@ where
                 &format!("{thread_name} finishFullFlush success={success}"),
             );
         }
-        debug_assert!(self.set_flushing_delete_queue(None));
+        debug_assert!(self.set_flushing_delete_queue(None, None));
 
         {
             let delete_queue = &self.inner.lock().delete_queue;
@@ -831,7 +838,7 @@ where
 {
     fn get(&mut self) -> Result<Option<FlushTicket<D>>> {
         let frozen_buffered_updates = self.dwpt.prepare_flush()?;
-        Ok(Some(FlushTicket::new(Some(frozen_buffered_updates), false)))
+        Ok(Some(FlushTicket::new(frozen_buffered_updates, true)))
     }
 }
 

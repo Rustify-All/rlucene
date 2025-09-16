@@ -377,7 +377,7 @@ where
         } else {
             None
         };
-        let mut norms_merge_instance = match norms {
+        let norms_merge_instance = match norms {
             // Use the merge instance in order to reuse the same IndexInput for all terms
             Some(norms) => match norms.get_merge_instance()? {
                 Some(norms_merge_instance) => Some(norms_merge_instance),
@@ -388,12 +388,11 @@ where
 
         // flush postings + vectors
         let t0 = Instant::now();
-        // TODO: IMPORTANT这里有问题 norms_merge_instance 可能为None
         self.terms_hash.flush(
             fields_to_flush,
             state,
             sort_map.clone(),
-            norms_merge_instance.as_mut().unwrap(),
+            norms_merge_instance,
             index_writer_config.get_codec(),
             segment_info,
             seg_updates,
@@ -527,7 +526,7 @@ where
                         dv_consumer.as_mut().unwrap(),
                         segment_info,
                     )?;
-                } else if *field_info.get_doc_values_type() == DocValuesType::None {
+                } else if *field_info.get_doc_values_type() != DocValuesType::None {
                     return Err(LuceneError::illegal_state(format!(
                         "segment= {segment_info}: fieldInfos has docValues but did not wrote them "
                     )));
@@ -537,9 +536,11 @@ where
             }
         }
         if !state.field_infos.has_doc_values() {
-            return Err(LuceneError::illegal_state(format!(
-                "segment= {segment_info}: fieldInfos has no docValues but wrote them "
-            )));
+            if dv_consumer.is_some() {
+                return Err(LuceneError::illegal_state(format!(
+                    "segment= {segment_info}: fieldInfos has no docValues but wrote them "
+                )));
+            }
         } else if dv_consumer.is_none() {
             return Err(LuceneError::illegal_state(format!(
                 "segment= {segment_info}: fieldInfos has docValues but did not wrote them "

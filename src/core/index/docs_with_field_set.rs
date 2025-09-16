@@ -61,15 +61,12 @@ impl DocsWithFieldSet {
                 self.last_doc_id, doc_id
             )));
         }
-        if self.set.is_some() || self.set_iter.is_some() {
-            if self.set_iter.is_some() {
-                self.finish = false;
-                let fixed_set = match Arc::try_unwrap(self.set_iter.take().unwrap()) {
-                    Ok(value) => value,
-                    Err(_) => return Err(LuceneError::illegal_state("Rc count should be 1")),
-                };
-                self.set = Some(fixed_set);
-            }
+        if self.finish {
+            return Err(LuceneError::illegal_state(
+                "DocsWithFieldSet must not be changed after finish() is called".to_string(),
+            ));
+        }
+        if self.set.is_some() {
             let set = self.set.as_mut().unwrap();
             set.ensure_capacity(doc_id);
             set.set(doc_id);
@@ -87,13 +84,6 @@ impl DocsWithFieldSet {
     pub fn cardinality(&self) -> i32 {
         self.cardinality
     }
-
-    pub fn finish(&mut self) {
-        self.finish = true;
-        if self.set_iter.is_none() {
-            self.set_iter = Some(Arc::new(self.set.take().unwrap()));
-        }
-    }
 }
 
 impl Accountable for DocsWithFieldSet {
@@ -109,13 +99,13 @@ impl DocIdSet for DocsWithFieldSet {
     type DocIdSetIterator = DocsWithFieldSetDISI;
 
     fn iterator(&self) -> Result<Option<Self::DocIdSetIterator>> {
-        if self.set.is_some() || self.set_iter.is_some() {
-            if !self.finish {
-                return Err(LuceneError::illegal_state(
-                    "DocsWithFieldSet must be call finish() before creating an iterator"
-                        .to_string(),
-                ));
-            }
+        if !self.finish {
+            return Err(LuceneError::illegal_state(
+                "DocsWithFieldSet must be call finish() before creating an iterator",
+            ));
+        }
+        if self.set_iter.is_some() {
+            debug_assert!(self.set.is_none());
             debug_assert!(self.cardinality > 0);
             Ok(Some(Either2DocIdSetIterator::B(BitSetIterator::new(
                 self.set_iter.as_ref().unwrap().clone(),
@@ -132,6 +122,14 @@ impl DocIdSet for DocsWithFieldSet {
 
     fn bits(&self) -> Option<Rc<Self::BitType>> {
         None
+    }
+
+    fn finish(&mut self) {
+        self.finish = true;
+        // not all documents are contiguous
+        if self.set.is_some() {
+            self.set_iter = Some(Arc::new(self.set.take().unwrap()));
+        }
     }
 }
 
@@ -154,28 +152,47 @@ mod tests {
     struct TestDocsWithFieldSet {}
     #[test]
     fn test_dense() -> Result<()> {
+        let mut random = random();
         let mut set = DocsWithFieldSet::new();
-        let mut it = set.iterator()?.unwrap();
-        assert_eq!(it.next_doc()?, NO_MORE_DOCS);
+        let mut it;
 
-        let _ = set.add(0);
-        it = set.iterator()?.unwrap();
-        assert_eq!(0, it.next_doc()?);
-        assert_eq!(it.next_doc()?, NO_MORE_DOCS);
+        match random.random_range(0..3) {
+            0 => {
+                set.finish();
+                let mut it = set.iterator()?.unwrap();
+                assert_eq!(it.next_doc()?, NO_MORE_DOCS);
+                Ok(())
+            },
+            1 => {
+                set.add(0)?;
+                set.finish();
+                it = set.iterator()?.unwrap();
+                assert_eq!(0, it.next_doc()?);
+                assert_eq!(it.next_doc()?, NO_MORE_DOCS);
+                Ok(())
+            },
+            _ => {
+                set.add(0)?;
 
-        //TODO
-        // let ram_bytes_used = set.ram_bytes_used();
-        for i in 0..1000 {
-            let _ = set.add(i);
+                // TODO: 可以在这里获取内存使用情况
+                // let ram_bytes_used = set.ram_bytes_used();
+
+                for i in 1..1000 {
+                    set.add(i)?;
+                }
+                set.finish();
+
+                // TODO: 之后可以加断言
+                // assert_eq!(ram_bytes_used, set.ram_bytes_used());
+
+                it = set.iterator()?.unwrap();
+                for i in 0..1000 {
+                    assert_eq!(i, it.next_doc()?);
+                }
+                assert_eq!(NO_MORE_DOCS, it.next_doc()?);
+                Ok(())
+            },
         }
-        //TODO:
-        // assert_eq!(ram_bytes_used, set.ram_bytes_used());
-        it = set.iterator()?.unwrap();
-        for i in 0..1000 {
-            assert_eq!(i, it.next_doc()?);
-        }
-        assert_eq!(NO_MORE_DOCS, it.next_doc()?);
-        Ok(())
     }
 
     #[test]
@@ -184,19 +201,22 @@ mod tests {
         let mut set = DocsWithFieldSet::new();
         let doc = random.random_range(0..10000);
         let _ = set.add(doc);
-        set.finish();
-        {
+        if random.random_bool(0.5) {
+            set.finish();
+            {
+                let mut it = set.iterator()?.unwrap();
+                assert_eq!(doc, it.next_doc()?);
+                assert_eq!(it.next_doc()?, NO_MORE_DOCS);
+            }
+        } else {
+            let doc2 = doc + TestUtil::next_int(&mut random, 1, 100);
+            set.add(doc2)?;
+            set.finish();
             let mut it = set.iterator()?.unwrap();
             assert_eq!(doc, it.next_doc()?);
+            assert_eq!(doc2, it.next_doc()?);
             assert_eq!(it.next_doc()?, NO_MORE_DOCS);
         }
-        let doc2 = doc + TestUtil::next_int(&mut random, 1, 100);
-        let _ = set.add(doc2);
-        set.finish();
-        let mut it = set.iterator()?.unwrap();
-        assert_eq!(doc, it.next_doc()?);
-        assert_eq!(doc2, it.next_doc()?);
-        assert_eq!(it.next_doc()?, NO_MORE_DOCS);
         Ok(())
     }
 
@@ -207,9 +227,9 @@ mod tests {
         let next_doc = dense_count + random.random_range(1..10000);
         let mut set = DocsWithFieldSet::new();
         for i in 0..dense_count {
-            let _ = set.add(i);
+            set.add(i)?;
         }
-        let _ = set.add(next_doc);
+        set.add(next_doc)?;
         set.finish();
         let mut it = set.iterator()?.unwrap();
         for i in 0..dense_count {

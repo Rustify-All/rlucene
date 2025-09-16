@@ -52,6 +52,11 @@ pub trait DocIdSet: Accountable {
     /// which return themselves if used as a [`DocIdSet`].
     type BitType: Bits;
     fn bits(&self) -> Option<Rc<Self::BitType>>;
+
+    /// Some implementations require calling the finish method before invoking iterator.
+    /// # See
+    /// [`DocsWithFieldSet`](crate::core::index::docs_with_field_set::DocsWithFieldSet)
+    fn finish(&mut self) {}
 }
 
 /// A [`DocIdSet`] that matches all document IDs up to a specified document

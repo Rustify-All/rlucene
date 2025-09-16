@@ -322,11 +322,15 @@ impl Lucene101PostingsFormat {
 }
 
 impl PostingsFormat for Lucene101PostingsFormat {
-    fn fields_consumer<D: Directory>(
+    fn fields_consumer<D1, D2>(
         &self,
-        state: &SegmentWriteState<D>,
-        segment_info: &SegmentInfo<D>,
-    ) -> Result<FieldsConsumerEnum<D::IndexOutput>> {
+        state: &SegmentWriteState<D1>,
+        segment_info: &SegmentInfo<D2>,
+    ) -> Result<FieldsConsumerEnum<D1::IndexOutput>>
+    where
+        D1: Directory,
+        D2: Directory,
+    {
         let posting_writer =
             PushPostingsWriterBase::new(Lucene101PostingsWriter::new(state, segment_info)?);
         let ret = FieldsConsumerEnum::Lucene90(Lucene90BlockTreeTermsWriter::new(

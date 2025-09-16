@@ -24,11 +24,14 @@ use crate::core::util::error::lucene_error::Result;
 /// Encodes/decodes terms, postings, and proximity data.
 pub trait PostingsFormat {
     /// Writes a new segment
-    fn fields_consumer<D: Directory>(
+    fn fields_consumer<D1, D2>(
         &self,
-        state: &SegmentWriteState<D>,
-        segment_info: &SegmentInfo<D>,
-    ) -> Result<FieldsConsumerEnum<D::IndexOutput>>;
+        state: &SegmentWriteState<D1>,
+        segment_info: &SegmentInfo<D2>,
+    ) -> Result<FieldsConsumerEnum<D1::IndexOutput>>
+    where
+        D1: Directory,
+        D2: Directory;
     /// Reads a segment. **NOTE**: by the time this call returns, it must hold open any files it will need
     /// to use; else, those files may be deleted. Additionally, required files may be deleted during
     /// the execution of this call before there is a chance to open them. Under these circumstances an

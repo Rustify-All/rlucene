@@ -120,9 +120,13 @@ impl<O> Lucene101PostingsWriter<O>
 where
     O: IndexOutput,
 {
-    pub fn new<D>(state: &SegmentWriteState<D>, segment_info: &SegmentInfo<D>) -> Result<Self>
+    pub fn new<D1, D2>(
+        state: &SegmentWriteState<D1>,
+        segment_info: &SegmentInfo<D2>,
+    ) -> Result<Self>
     where
-        D: Directory<IndexOutput = O>,
+        D1: Directory<IndexOutput = O>,
+        D2: Directory,
     {
         let meta_file = IndexFileNames::segment_file_name(
             &segment_info.name,
@@ -455,12 +459,16 @@ impl<O> PostingsWriterBase for Lucene101PostingsWriter<O>
 where
     O: IndexOutput,
 {
-    fn init<D: Directory>(
+    fn init<D1, D2>(
         &mut self,
         terms_out: &mut impl IndexOutput,
-        state: &SegmentWriteState<D>,
-        segment_info: &SegmentInfo<D>,
-    ) -> Result<()> {
+        state: &SegmentWriteState<D1>,
+        segment_info: &SegmentInfo<D2>,
+    ) -> Result<()>
+    where
+        D1: Directory,
+        D2: Directory,
+    {
         CodecUtil::write_index_header(
             terms_out,
             Lucene101PostingsFormat::TERMS_CODEC,
@@ -477,7 +485,7 @@ where
         _term: &BytesRef<Vec<u8>>,
         _terms_enum: &mut impl TermsEnum<PostingsEnum = PE>,
         _docs_seen: &mut FixedBitSet,
-        _norms: &mut N,
+        _norms: &Option<N>,
         _postings_enum: Option<PE>,
     ) -> Result<(Option<PE>, Option<BlockTermStateEnum>)> {
         Err(LuceneError::not_implemented(""))

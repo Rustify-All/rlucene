@@ -41,12 +41,15 @@ use std::sync::Arc;
 pub trait PostingsWriterBase {
     /// Called once after startup, before any terms have been added.
     /// Implementations typically write a header to the provided `termsOut`.
-    fn init<D: Directory>(
+    fn init<D1, D2>(
         &mut self,
         terms_out: &mut impl IndexOutput,
-        state: &SegmentWriteState<D>,
-        segment_info: &SegmentInfo<D>,
-    ) -> Result<()>;
+        state: &SegmentWriteState<D1>,
+        segment_info: &SegmentInfo<D2>,
+    ) -> Result<()>
+    where
+        D1: Directory,
+        D2: Directory;
 
     /// Write all postings for one term; use the provided [`TermsEnum`] to pull
     /// a [`PostingsEnum`]. This
@@ -60,7 +63,7 @@ pub trait PostingsWriterBase {
         _term: &BytesRef<Vec<u8>>,
         _terms_enum: &mut impl TermsEnum<PostingsEnum = PE>,
         _docs_seen: &mut FixedBitSet,
-        _norms: &mut N,
+        _norms: &Option<N>,
         _postings_enum: Option<PE>,
     ) -> Result<(Option<PE>, Option<BlockTermStateEnum>)> {
         unimplemented!()

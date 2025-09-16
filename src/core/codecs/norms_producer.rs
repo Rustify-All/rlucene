@@ -92,4 +92,19 @@ where
             NormsProducerEnum::Lucene90(producer) => producer.check_integrity(),
         }
     }
+
+    fn get_merge_instance(&self) -> Result<Option<Self>>
+    where
+        Self: Sized,
+    {
+        match self {
+            NormsProducerEnum::Lucene90(producer) => {
+                if let Some(merge_instance) = producer.get_merge_instance()? {
+                    Ok(Some(NormsProducerEnum::Lucene90(merge_instance)))
+                } else {
+                    Ok(None)
+                }
+            },
+        }
+    }
 }

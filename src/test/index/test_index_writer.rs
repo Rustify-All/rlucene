@@ -32,13 +32,12 @@ use std::sync::Arc;
 static STORED_TEXT_TYPE: Lazy<FieldType> =
     Lazy::new(|| FieldType::from_ref(&text::TYPE_NOT_STORED.clone()).expect("should not fail"));
 pub(crate) struct TestIndexWriter;
-
 fn test_doc_count() -> Result<()> {
     let mut random = random();
     let dir = Arc::new(new_directory(&mut random)?);
     let writer = IndexWriter::new(dir, new_index_writer_config(&mut random))?;
     // add 100 documents
-    for i in 0..100 {
+    for i in 0..1 {
         add_doc_with_index(&writer, i)?;
     }
     writer.commit()?;

@@ -176,10 +176,8 @@ where
             Ordering::SeqCst,
         );
 
-        {
-            if self.info_stream.enabled("DWPT") {
-                self.info_stream.message("DWPT", "now abort");
-            }
+        if self.info_stream.enabled("DWPT") {
+            self.info_stream.message("DWPT", "now abort");
         }
 
         let abort_result = (|| {
@@ -188,10 +186,8 @@ where
         })();
         self.pending_updates.clear();
 
-        {
-            if self.info_stream.enabled("DWPT") {
-                self.info_stream.message("DWPT", "done abort");
-            }
+        if self.info_stream.enabled("DWPT") {
+            self.info_stream.message("DWPT", "done abort");
         }
         abort_result
     }
@@ -331,22 +327,20 @@ where
             "DWPT has hit aborting exception but is still indexing"
         );
 
-        {
-            if self.info_stream.enabled("DWPT") {
-                self.info_stream.message(
-                    "DWPT",
-                    &format!(
-                        "{} update delTerm={} docID={} seg={} ",
-                        thread::current().name().unwrap_or(""),
-                        match delete_node {
-                            Some(ref node) => node.to_string(),
-                            None => "none".to_string(),
-                        },
-                        self.state.num_docs_in_ram.load(SeqCst),
-                        self.segment_info.name
-                    ),
-                );
-            }
+        if self.info_stream.enabled("DWPT") {
+            self.info_stream.message(
+                "DWPT",
+                &format!(
+                    "{} update delTerm={} docID={} seg={} ",
+                    thread::current().name().unwrap_or(""),
+                    match delete_node {
+                        Some(ref node) => node.to_string(),
+                        None => "none".to_string(),
+                    },
+                    self.state.num_docs_in_ram.load(SeqCst),
+                    self.segment_info.name
+                ),
+            );
         }
 
         let docs_in_ram_before = self.state.num_docs_in_ram.load(SeqCst);
@@ -485,7 +479,7 @@ where
         self.state.get_num_docs_in_ram()
     }
     /// Prepares this DWPT for flushing. This method will freeze and return the [`DocumentsWriterDeleteQueue`]’s global buffer and apply all pending deletes to this DWPT.
-    pub(crate) fn prepare_flush(&mut self) -> Result<FrozenBufferedUpdates> {
+    pub(crate) fn prepare_flush(&mut self) -> Result<Option<FrozenBufferedUpdates>> {
         debug_assert!(self.state.num_docs_in_ram.load(SeqCst) > 0);
 
         let global_updates = self
@@ -502,10 +496,7 @@ where
             debug_assert!(delete_slice.is_empty());
             delete_slice.reset();
         }
-        match global_updates {
-            Some(global_updates) => Ok(global_updates),
-            None => Err(LuceneError::illegal_state("global_updates is None"))?,
-        }
+        Ok(global_updates)
     }
     ///  Flush all pending docs to a new segment
     pub(crate) fn flush<FN, L, B>(
@@ -574,17 +565,15 @@ where
 
                 let t0 = std::time::Instant::now();
 
-                {
-                    if self.info_stream.enabled("DWPT") {
-                        self.info_stream.message(
-                            "DWPT",
-                            &format!(
-                                "flush postings as segment {} numDocs={}",
-                                self.segment_info.name,
-                                self.state.num_docs_in_ram.load(SeqCst)
-                            ),
-                        );
-                    }
+                if self.info_stream.enabled("DWPT") {
+                    self.info_stream.message(
+                        "DWPT",
+                        &format!(
+                            "flush postings as segment {} numDocs={}",
+                            self.segment_info.name,
+                            self.state.num_docs_in_ram.load(SeqCst)
+                        ),
+                    );
                 }
                 let mut soft_deleted_docs =
                     if let Some(field) = index_writer_config.get_soft_deletes_field() {

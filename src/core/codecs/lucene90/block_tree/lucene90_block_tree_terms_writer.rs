@@ -231,15 +231,16 @@ where
     /// Create a new writer. The number of items (terms or sub-blocks) per block will aim to be between
     /// `min_items_per_block` and `max_items_per_block`, though in some cases the blocks may be smaller than the
     /// min.
-    pub fn new<D>(
-        state: &SegmentWriteState<D>,
+    pub fn new<D1, D2>(
+        state: &SegmentWriteState<D1>,
         postings_writer: PW,
         min_items_in_block: i32,
         max_items_in_block: i32,
-        segment_info: &SegmentInfo<D>,
+        segment_info: &SegmentInfo<D2>,
     ) -> Result<Self>
     where
-        D: Directory<IndexOutput = O>,
+        D1: Directory<IndexOutput = O>,
+        D2: Directory,
     {
         Self::with_version(
             state,
@@ -251,16 +252,17 @@ where
         )
     }
     /// Expert constructor that allows configuring the version, used for bw tests
-    pub fn with_version<D>(
-        state: &SegmentWriteState<D>,
+    pub fn with_version<D1, D2>(
+        state: &SegmentWriteState<D1>,
         mut postings_writer: PW,
         min_items_in_block: i32,
         max_items_in_block: i32,
         version: i32,
-        segment_info: &SegmentInfo<D>,
+        segment_info: &SegmentInfo<D2>,
     ) -> Result<Self>
     where
-        D: Directory<IndexOutput = O>,
+        D1: Directory<IndexOutput = O>,
+        D2: Directory,
     {
         Self::validate_settings(min_items_in_block, max_items_in_block)?;
 
@@ -357,7 +359,7 @@ where
     O: IndexOutput,
     PW: PostingsWriterBase,
 {
-    fn write<F, N>(&mut self, fields: &mut F, norms: &mut N) -> Result<()>
+    fn write<F, N>(&mut self, fields: &mut F, norms: &Option<N>) -> Result<()>
     where
         F: Fields,
         PW: PostingsWriterBase,
@@ -426,6 +428,20 @@ where
             .write_long(self.terms_out.get_file_pointer())?;
         CodecUtil::write_footer(&mut self.meta_out)?;
         Ok(())
+    }
+}
+impl<O, PW> Drop for Lucene90BlockTreeTermsWriter<O, PW>
+where
+    O: IndexOutput,
+    PW: PostingsWriterBase,
+{
+    fn drop(&mut self) {
+        match self.close() {
+            Ok(_) => {},
+            Err(e) => {
+                eprintln!("Error closing Lucene90BlockTreeTermsWriter: {}", e);
+            },
+        }
     }
 }
 trait PendingEntry {
@@ -1125,7 +1141,7 @@ where
         &mut self,
         text: BytesRef<Vec<u8>>,
         terms_enum: &mut impl TermsEnum<PostingsEnum = PE>,
-        norms: &mut N,
+        norms: &Option<N>,
         postings_enum: Option<PE>,
     ) -> Result<Option<PE>> {
         let (reuse, state_opt) = self.postings_writer.write_term(

@@ -97,12 +97,16 @@ impl<S> PostingsWriterBase for PushPostingsWriterBase<S>
 where
     S: PushPostingsWriterBaseAbstract + PostingsWriterBase,
 {
-    fn init<D: Directory>(
+    fn init<D1, D2>(
         &mut self,
         terms_out: &mut impl IndexOutput,
-        state: &SegmentWriteState<D>,
-        segment_info: &SegmentInfo<D>,
-    ) -> Result<()> {
+        state: &SegmentWriteState<D1>,
+        segment_info: &SegmentInfo<D2>,
+    ) -> Result<()>
+    where
+        D1: Directory,
+        D2: Directory,
+    {
         self.sub.init(terms_out, state, segment_info)
     }
 
@@ -111,11 +115,16 @@ where
         _term: &BytesRef<Vec<u8>>,
         terms_enum: &mut impl TermsEnum<PostingsEnum = PE>,
         docs_seen: &mut FixedBitSet,
-        norms: &mut N,
+        norms: &Option<N>,
         postings_enum: Option<PE>,
     ) -> Result<(Option<PE>, Option<BlockTermStateEnum>)> {
         let mut norm_values = if self.field_info.as_ref().unwrap().has_norms() {
-            Some(norms.get_norms(self.field_info.as_ref().unwrap())?)
+            Some(
+                norms
+                    .as_ref()
+                    .unwrap()
+                    .get_norms(self.field_info.as_ref().unwrap())?,
+            )
         } else {
             None
         };
