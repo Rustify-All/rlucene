@@ -94,7 +94,7 @@ impl Explanation {
     where
         S: Into<String>,
     {
-        Explanation::new(false, 0.0, description, details)
+        Explanation::new(false, Number::F32(0.0), description, details)
     }
 }
 impl PartialEq for Explanation {
