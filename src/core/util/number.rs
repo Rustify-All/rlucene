@@ -75,7 +75,7 @@ impl Number {
 
     pub fn to_f32(&self) -> Option<f32> {
         match *self {
-            Number::U8(n) => (n as i32).to_f32(),
+            Number::U8(n) => n.to_f32(),
             Number::I16(n) => (n as i32).to_f32(),
             Number::I32(n) => n.to_f32(),
             Number::I64(n) => n.to_f32(),
@@ -86,8 +86,8 @@ impl Number {
 
     pub fn to_f64(&self) -> Option<f64> {
         match *self {
-            Number::U8(n) => (n as i32).to_f64(),
-            Number::I16(n) => (n as i32).to_f64(),
+            Number::U8(n) => n.to_f64(),
+            Number::I16(n) => n.to_f64(),
             Number::I32(n) => n.to_f64(),
             Number::I64(n) => n.to_f64(),
             Number::F32(n) => n.to_f64(),
@@ -128,5 +128,40 @@ impl Hash for Number {
             Number::F32(v) => v.to_bits().hash(state),
             Number::F64(v) => v.to_bits().hash(state),
         }
+    }
+}
+impl From<u8> for Number {
+    fn from(v: u8) -> Self {
+        Number::U8(v)
+    }
+}
+
+impl From<i16> for Number {
+    fn from(v: i16) -> Self {
+        Number::I16(v)
+    }
+}
+
+impl From<i32> for Number {
+    fn from(v: i32) -> Self {
+        Number::I32(v)
+    }
+}
+
+impl From<i64> for Number {
+    fn from(v: i64) -> Self {
+        Number::I64(v)
+    }
+}
+
+impl From<f32> for Number {
+    fn from(v: f32) -> Self {
+        Number::F32(v)
+    }
+}
+
+impl From<f64> for Number {
+    fn from(v: f64) -> Self {
+        Number::F64(v)
     }
 }

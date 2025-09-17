@@ -19,6 +19,7 @@ use std::hash::Hash;
 
 use crate::core::util::number::Number;
 /// Expert: Describes the score computation for document and query.
+#[derive(Clone)]
 pub struct Explanation {
     pub matched: bool,
     pub value: Number,
@@ -27,11 +28,15 @@ pub struct Explanation {
 }
 impl Explanation {
     /// Internal constructor, equivalent to private constructor in Java
-    fn new(matched: bool, value: Number, description: String, details: Vec<Explanation>) -> Self {
+    fn new<N, S>(matched: bool, value: N, description: S, details: Vec<Explanation>) -> Self
+    where
+        N: Into<Number>,
+        S: Into<String>,
+    {
         Explanation {
             matched,
-            value,
-            description,
+            value: value.into(),
+            description: description.into(),
             details,
         }
     }
@@ -70,6 +75,27 @@ impl Explanation {
 
         buffer
     }
+    /// Create a new explanation for a match.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The contribution to the score of the document.
+    /// * `description` - How `value` was computed.
+    /// * `details` - Sub explanations that contributed to this explanation.
+    pub fn match_<N, S>(value: N, description: S, details: Vec<Explanation>) -> Explanation
+    where
+        N: Into<Number>,
+        S: Into<String>,
+    {
+        Explanation::new(true, value, description, details)
+    }
+    /// Create a new explanation for a document which does not match.
+    pub fn no_match<S>(description: S, details: Vec<Explanation>) -> Explanation
+    where
+        S: Into<String>,
+    {
+        Explanation::new(false, 0.0, description, details)
+    }
 }
 impl PartialEq for Explanation {
     fn eq(&self, other: &Self) -> bool {
@@ -93,19 +119,4 @@ impl fmt::Display for Explanation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.to_string_with_depth(0))
     }
-}
-
-/// Create a new explanation for a match.
-///
-/// # Arguments
-///
-/// * `value` - The contribution to the score of the document.
-/// * `description` - How `value` was computed.
-/// * `details` - Sub explanations that contributed to this explanation.
-pub fn match_(value: Number, description: String, details: Vec<Explanation>) -> Explanation {
-    Explanation::new(true, value, description, details)
-}
-/// Create a new explanation for a document which does not match.
-pub fn no_match(description: String, details: Vec<Explanation>) -> Explanation {
-    Explanation::new(false, Number::F32(0.0), description, details)
 }

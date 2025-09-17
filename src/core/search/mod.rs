@@ -40,7 +40,7 @@ pub mod sorted_numeric_sort_field;
 pub mod sorted_set_selector;
 pub mod sorted_set_sort_field;
 pub mod term_query;
-mod term_statistics;
+pub mod term_statistics;
 pub mod top_docs;
 pub mod top_knn_collector;
 mod total_hits;

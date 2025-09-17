@@ -17,10 +17,9 @@
 use crate::core::index::field_invert_state::FieldInvertState;
 use crate::core::index::index_options::IndexOptions;
 use crate::core::search::collection_statistics::CollectionStatistics;
-use crate::core::search::explanation::{Explanation, match_};
+use crate::core::search::explanation::Explanation;
 use crate::core::search::term_statistics::TermStatistics;
 use crate::core::util::error::lucene_error::Result;
-use crate::core::util::number::Number;
 use crate::core::util::small_float::SmallFloat;
 use std::fmt::Display;
 /// Similarity defines the components of Lucene scoring.  
@@ -198,6 +197,6 @@ pub trait SimScorer {
     fn explain(&self, freq: Explanation, norm: i64) -> Explanation {
         let value = self.score(freq.get_value().to_f32().unwrap(), norm);
         let description = format!("score(freq={}), with freq of:", freq.get_value());
-        match_(Number::F32(value), description, vec![freq])
+        Explanation::match_(value, description, vec![freq])
     }
 }
