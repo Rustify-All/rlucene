@@ -14,7 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::core::index::field_invert_state::FieldInvertState;
 use crate::core::search::collection_statistics::CollectionStatistics;
 use crate::core::search::explanation::Explanation;
 use crate::core::search::similarities_impl::similarities::{SimScorer, Similarity};
@@ -165,11 +164,7 @@ impl fmt::Display for BM25Similarity {
 
 impl Similarity for BM25Similarity {
     fn get_discount_overlaps(&self) -> bool {
-        todo!()
-    }
-
-    fn compute_norm(&self, state: &FieldInvertState) -> Result<i64> {
-        todo!()
+        self.discount_overlaps
     }
 
     type SimScorer = BM25Scorer;
