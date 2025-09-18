@@ -20,6 +20,7 @@ use crate::core::search::matches_iterator::MatchesIterator;
 use crate::core::search::query::Query;
 use crate::core::util::error::lucene_error::Result;
 use std::sync::Arc;
+
 /// A [`MatchesIterator`] over a single term's postings list
 pub(crate) struct TermMatchesIterator<Q, PE>
 where
@@ -61,8 +62,8 @@ where
         }
     }
 
-    fn start_position(&self) -> i32 {
-        self.pos
+    fn start_position(&self) -> Result<i32> {
+        Ok(self.pos)
     }
 
     fn end_position(&self) -> i32 {

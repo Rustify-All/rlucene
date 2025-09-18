@@ -28,6 +28,7 @@ use crate::core::util::error::lucene_error::Result;
 /// Matches are ordered by start position, and then by end position. Match intervals may overlap.
 ///
 /// @lucene.experimental
+// TODO: MatchesIterator used for PriorityQueue, so it must implement Default
 pub trait MatchesIterator {
     /// Advance the iterator to the next match position.
     ///
@@ -39,7 +40,7 @@ pub trait MatchesIterator {
     /// The start position of the current match, or `-1` if positions are not available.
     ///
     /// Should only be called after [`MatchesIterator::next`] has returned `true`.
-    fn start_position(&self) -> i32;
+    fn start_position(&self) -> Result<i32>;
 
     /// The end position of the current match, or `-1` if positions are not available.
     ///

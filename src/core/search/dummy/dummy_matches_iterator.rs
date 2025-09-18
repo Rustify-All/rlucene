@@ -16,6 +16,7 @@
  */
 use crate::core::search::dummy::dummy_query::DummyQuery;
 use crate::core::search::matches_iterator::MatchesIterator;
+use crate::core::util::error::lucene_error::Result;
 
 pub struct DummyMatchesIterator;
 impl MatchesIterator for DummyMatchesIterator {
@@ -23,7 +24,7 @@ impl MatchesIterator for DummyMatchesIterator {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    fn start_position(&self) -> i32 {
+    fn start_position(&self) -> Result<i32> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
