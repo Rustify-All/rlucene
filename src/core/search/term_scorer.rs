@@ -42,6 +42,47 @@ where
     impacts_disi: Option<ImpactsDISI<IE, IE, SS>>,
     max_score_cache: Option<MaxScoreCache<ImpactsEnums<IE, PE>, SS>>,
 }
+
+enum TermScorerPostings<'a, IE, PE, SS>
+where
+    IE: ImpactsEnum,
+    PE: PostingsEnum,
+    SS: SimScorer,
+{
+    Disi(&'a mut ImpactsDISI<IE, IE, SS>),
+    Cache(&'a mut ImpactsEnums<IE, PE>),
+}
+
+impl<'a, IE, PE, SS> TermScorerPostings<'a, IE, PE, SS>
+where
+    IE: ImpactsEnum,
+    PE: PostingsEnum,
+    SS: SimScorer,
+{
+    fn freq(&mut self) -> Result<i32> {
+        match self {
+            TermScorerPostings::Disi(disi) => match &mut disi.in_ {
+                Either2DocIdSetIterator::A(_) => {
+                    Err(LuceneError::illegal_state("should not be here"))
+                },
+                Either2DocIdSetIterator::B(s) => s.freq(),
+            },
+            TermScorerPostings::Cache(impacts) => impacts.freq(),
+        }
+    }
+
+    fn doc_id(&mut self) -> Result<i32> {
+        match self {
+            TermScorerPostings::Disi(disi) => match &mut disi.in_ {
+                Either2DocIdSetIterator::A(_) => {
+                    Err(LuceneError::illegal_state("should not be here"))
+                },
+                Either2DocIdSetIterator::B(s) => Ok(s.doc_id()),
+            },
+            TermScorerPostings::Cache(impacts) => Ok(impacts.doc_id()),
+        }
+    }
+}
 impl<PE, SS, N, IE> TermScorer<PE, SS, N, IE>
 where
     PE: PostingsEnum,
@@ -86,35 +127,36 @@ where
     }
     /// Returns term frequency in the current document.
     pub fn freq(&mut self) -> Result<i32> {
-        match self.impacts_disi {
-            Some(ref mut disi) => {
-                debug_assert!(self.max_score_cache.is_none());
-                let v = match disi.in_ {
-                    Either2DocIdSetIterator::A(_) => {
-                        return Err(LuceneError::illegal_state("should not be here"));
-                    },
-                    Either2DocIdSetIterator::B(ref mut s) => s,
-                };
-                v.freq()
-            },
-            None => {
-                debug_assert!(self.max_score_cache.is_some());
-                debug_assert!(
-                    self.max_score_cache
-                        .as_ref()
-                        .unwrap()
-                        .impacts_source
-                        .is_some()
-                );
-                let impacts_source = self
-                    .max_score_cache
-                    .as_mut()
-                    .unwrap()
-                    .impacts_source
-                    .as_mut()
-                    .unwrap();
-                impacts_source.freq()
-            },
+        let mut postings = self.postings()?;
+        postings.freq()
+    }
+
+    fn postings(&mut self) -> Result<TermScorerPostings<'_, IE, PE, SS>> {
+        if let Some(disi) = self.impacts_disi.as_mut() {
+            debug_assert!(self.max_score_cache.is_none());
+            Ok(TermScorerPostings::Disi(disi))
+        } else {
+            let max_score_cache = self.max_score_cache.as_mut().ok_or_else(|| {
+                LuceneError::illegal_state(
+                    "when max_score_cache is None, impacts_disi must not be None",
+                )
+            })?;
+            debug_assert!(max_score_cache.impacts_source.is_some());
+            let impacts_source = max_score_cache.impacts_source.as_mut().unwrap();
+            Ok(TermScorerPostings::Cache(impacts_source))
+        }
+    }
+
+    fn sim_scorer(&self) -> Result<&SS> {
+        if let Some(ref max_score_cache) = self.max_score_cache {
+            debug_assert!(self.impacts_disi.is_none());
+            Ok(&max_score_cache.scorer)
+        } else if let Some(ref disi) = self.impacts_disi {
+            Ok(&disi.max_score_cache.scorer)
+        } else {
+            Err(LuceneError::illegal_state(
+                "when max_score_cache is None, impacts_disi must not be None",
+            ))
         }
     }
 }
@@ -128,55 +170,18 @@ where
 {
     fn score(&mut self) -> Result<f32> {
         let mut norm = 1;
-        let (freq, doc_id) = match self.impacts_disi {
-            Some(ref mut disi) => {
-                debug_assert!(self.max_score_cache.is_none());
-                let v = match disi.in_ {
-                    Either2DocIdSetIterator::A(_) => {
-                        return Err(LuceneError::illegal_state("should not be here"));
-                    },
-                    Either2DocIdSetIterator::B(ref mut s) => s,
-                };
-                (v.freq()?, v.doc_id())
-            },
-            None => {
-                debug_assert!(self.max_score_cache.is_some());
-                debug_assert!(
-                    self.max_score_cache
-                        .as_ref()
-                        .unwrap()
-                        .impacts_source
-                        .is_some()
-                );
-                let impacts_source = self
-                    .max_score_cache
-                    .as_mut()
-                    .unwrap()
-                    .impacts_source
-                    .as_mut()
-                    .unwrap();
-                (impacts_source.freq()?, impacts_source.doc_id())
-            },
+        let (freq, doc_id) = {
+            let mut postings = self.postings()?;
+            let freq = postings.freq()?;
+            let doc_id = postings.doc_id()?;
+            (freq, doc_id)
         };
         if let Some(ref mut norms) = self.norms
             && norms.advance_exact(doc_id)?
         {
             norm = norms.long_value()?;
         }
-        let scorer = match self.max_score_cache {
-            Some(ref scorer) => {
-                debug_assert!(self.impacts_disi.is_none());
-                &scorer.scorer
-            },
-            None => match self.impacts_disi {
-                Some(ref disi) => &disi.max_score_cache.scorer,
-                None => {
-                    return Err(LuceneError::illegal_state(
-                        "when max_score_cache is None, impacts_disi must not be None",
-                    ));
-                },
-            },
-        };
+        let scorer = self.sim_scorer()?;
         Ok(scorer.score(freq as f32, norm))
     }
 
@@ -187,20 +192,7 @@ where
         {
             norm = norms.long_value()?;
         }
-        let scorer = match self.max_score_cache {
-            Some(ref scorer) => {
-                debug_assert!(self.impacts_disi.is_none());
-                &scorer.scorer
-            },
-            None => match self.impacts_disi {
-                Some(ref disi) => &disi.max_score_cache.scorer,
-                None => {
-                    return Err(LuceneError::illegal_state(
-                        "when max_score_cache is None, impacts_disi must not be None",
-                    ));
-                },
-            },
-        };
+        let scorer = self.sim_scorer()?;
         Ok(scorer.score(0f32, norm))
     }
 
@@ -230,36 +222,8 @@ where
     type TwoPhaseIter = DummyTwoPhaseIterator;
 
     fn doc_id(&mut self) -> Result<i32> {
-        match self.impacts_disi {
-            Some(ref mut disi) => {
-                debug_assert!(self.max_score_cache.is_none());
-                let v = match disi.in_ {
-                    Either2DocIdSetIterator::A(_) => {
-                        return Err(LuceneError::illegal_state("should not be here"));
-                    },
-                    Either2DocIdSetIterator::B(ref mut s) => s,
-                };
-                Ok(v.doc_id())
-            },
-            None => {
-                debug_assert!(self.max_score_cache.is_some());
-                debug_assert!(
-                    self.max_score_cache
-                        .as_ref()
-                        .unwrap()
-                        .impacts_source
-                        .is_some()
-                );
-                let impacts_source = self
-                    .max_score_cache
-                    .as_mut()
-                    .unwrap()
-                    .impacts_source
-                    .as_mut()
-                    .unwrap();
-                Ok(impacts_source.doc_id())
-            },
-        }
+        let mut postings = self.postings()?;
+        postings.doc_id()
     }
 
     fn iterator(&mut self) -> Self::DocIdSetIteratorRef<'_> {
