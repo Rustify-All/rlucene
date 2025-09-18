@@ -14,16 +14,29 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-pub mod dummy_bulk_scorer;
-pub mod dummy_disi;
-pub mod dummy_doc_id_set_iterator;
-pub mod dummy_matches;
-pub mod dummy_matches_iterator;
-pub mod dummy_query;
-pub mod dummy_scorable;
-pub mod dummy_scorer;
-pub mod dummy_scorer_supplier;
-pub mod dummy_segment_cacheable;
-pub mod dummy_similarity;
-pub mod dummy_two_phase_iterator;
-pub mod dumy_sim_scorer;
+use crate::core::search::bulk_scorer::BulkScorer;
+use crate::core::search::leaf_collector::LeafCollector;
+use crate::core::util::bits::Bits;
+use crate::core::util::error::lucene_error::Result;
+
+pub struct DummyBulkScorer;
+
+impl BulkScorer for DummyBulkScorer {
+    fn score<LC, B>(
+        &mut self,
+        _collector: &mut LC,
+        _accept_docs: Option<&B>,
+        _min: i32,
+        _max: i32,
+    ) -> Result<i32>
+    where
+        LC: LeafCollector,
+        B: Bits,
+    {
+        unreachable!("Dummy implementation: this method should never be called in real usage")
+    }
+
+    fn cost(&self) -> i64 {
+        unreachable!("Dummy implementation: this method should never be called in real usage")
+    }
+}
