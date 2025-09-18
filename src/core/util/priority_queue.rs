@@ -55,18 +55,18 @@ where
     /// priority queue that tracks element positions would provide a
     /// constant remove time, but the trade-off would be extra cost to all
     /// additions/insertions.)
-    pub fn remove(&mut self, element: &T) -> bool {
+    pub fn remove(&mut self, element: &T) -> Result<bool> {
         if let Some(i) = (1..=self.size).next() {
             if self.heap[i] == *element {
                 self.heap.swap(i, self.size);
             }
             self.size -= 1;
-            if i <= self.size && !self.up_heap(i) {
-                self.down_heap(i);
+            if i <= self.size && !self.up_heap(i)? {
+                self.down_heap(i)?;
             }
-            return true;
+            return Ok(true);
         }
-        false
+        Ok(false)
     }
 }
 
@@ -196,7 +196,7 @@ where
 
         // The loop goes down to 1 as heap is 1-based not 0-based.
         for i in (1..=(self.size >> 1)).rev() {
-            self.down_heap(i);
+            self.down_heap(i)?;
         }
         Ok(())
     }
@@ -208,12 +208,12 @@ where
     ///
     /// # Returns
     /// The new 'top' element in the queue.
-    pub fn add(&mut self, element: T) -> &T {
+    pub fn add(&mut self, element: T) -> Result<&T> {
         let index = self.size + 1;
         self.heap[index] = element;
         self.size = index;
-        self.up_heap(index);
-        &self.heap[1]
+        self.up_heap(index)?;
+        Ok(&self.heap[1])
     }
 
     /// Adds an object to a priority queue in `O(log(size))` time. It returns
@@ -223,16 +223,16 @@ where
     /// previously the smallest value in the heap and now has been replaced
     /// by a larger one, or `None` if the queue wasn't yet full with `max_size`
     /// elements.
-    pub fn insert_with_overflow(&mut self, element: T) -> Option<T> {
+    pub fn insert_with_overflow(&mut self, element: T) -> Result<Option<T>> {
         if self.size < self.max_size {
-            self.add(element);
-            None
-        } else if self.size > 0 && self.compare.less_than(&self.heap[1], &element) {
+            self.add(element)?;
+            Ok(None)
+        } else if self.size > 0 && self.compare.less_than(&self.heap[1], &element)? {
             let ret = mem::replace(&mut self.heap[1], element);
-            self.update_top();
-            Some(ret)
+            self.update_top()?;
+            Ok(Some(ret))
         } else {
-            Some(element)
+            Ok(Some(element))
         }
     }
 
@@ -249,7 +249,7 @@ where
 
     /// Removes and returns the least element of the PriorityQueue in log(size)
     /// time.
-    pub fn pop(&mut self) -> Option<T> {
+    pub fn pop(&mut self) -> Result<Option<T>> {
         if self.size > 0 {
             self.heap.swap(1, self.size);
             let result = self.heap.remove(self.size);
@@ -257,10 +257,10 @@ where
             // the length of the Vec from changing
             self.heap.push(T::default());
             self.size -= 1;
-            self.down_heap(1);
-            Some(result)
+            self.down_heap(1)?;
+            Ok(Some(result))
         } else {
-            None
+            Ok(None)
         }
     }
 
@@ -282,13 +282,13 @@ where
     ///
     /// # Returns
     /// The new 'top' element.
-    pub fn update_top(&mut self) -> &T {
-        self.down_heap(1);
-        &self.heap[1]
+    pub fn update_top(&mut self) -> Result<&T> {
+        self.down_heap(1)?;
+        Ok(&self.heap[1])
     }
 
     /// Replace the top of the pq with `newTop` and run `updateTop()`.
-    pub fn update_top_with_new_top(&mut self, new_top: T) -> &T {
+    pub fn update_top_with_new_top(&mut self, new_top: T) -> Result<&T> {
         self.heap[1] = new_top;
         self.update_top()
     }
@@ -306,34 +306,35 @@ where
         self.size = 0;
     }
 
-    pub fn up_heap(&mut self, orig_pos: usize) -> bool {
+    pub fn up_heap(&mut self, orig_pos: usize) -> Result<bool> {
         let mut i = orig_pos;
         let mut j = i >> 1;
-        while j > 0 && self.compare.less_than(&self.heap[i], &self.heap[j]) {
+        while j > 0 && self.compare.less_than(&self.heap[i], &self.heap[j])? {
             self.heap.swap(i, j);
             i = j;
             j = i >> 1;
         }
-        i != orig_pos
+        Ok(i != orig_pos)
     }
 
-    pub fn down_heap(&mut self, mut i: usize) {
+    pub fn down_heap(&mut self, mut i: usize) -> Result<()> {
         let size = self.size;
         while i * 2 <= size {
             let mut j = i * 2;
             let k = j + 1;
 
-            if k <= size && self.compare.less_than(&self.heap[k], &self.heap[j]) {
+            if k <= size && self.compare.less_than(&self.heap[k], &self.heap[j])? {
                 j = k;
             }
 
-            if !self.compare.less_than(&self.heap[j], &self.heap[i]) {
+            if !self.compare.less_than(&self.heap[j], &self.heap[i])? {
                 break;
             }
 
             self.heap.swap(i, j);
             i = j;
         }
+        Ok(())
     }
 
     /// This method returns the internal heap array as `Vec<Object>`.
@@ -393,7 +394,7 @@ pub trait Compare<T> {
     ///
     /// # Returns
     /// `true` if parameter `a` is less than parameter `b`.
-    fn less_than(&self, a: &T, b: &T) -> bool;
+    fn less_than(&self, a: &T, b: &T) -> Result<bool>;
 }
 
 #[cfg(test)]
@@ -402,6 +403,7 @@ mod tests {
 
     use rand::Rng;
 
+    use crate::core::util::error::lucene_error::Result;
     use crate::core::util::priority_queue::{Compare, PriorityQueue};
     use crate::test::util::lucene_test_case::lucene_test_case_util::{at_least, random};
     use crate::test::util::test_util::TestUtil;
@@ -412,18 +414,18 @@ mod tests {
     struct I32Compare;
 
     impl Compare<i32> for I32Compare {
-        fn less_than(&self, a: &i32, b: &i32) -> bool {
-            a < b
+        fn less_than(&self, a: &i32, b: &i32) -> Result<bool> {
+            Ok(a < b)
         }
     }
     #[test]
     fn test_zero_sized_queue() {
         let mut random = random();
         let mut pq = PriorityQueue::new(0, I32Compare).unwrap();
-        assert_eq!(1, pq.insert_with_overflow(1).unwrap());
+        assert_eq!(1, pq.insert_with_overflow(1).unwrap().unwrap());
         assert_eq!(0, pq.size());
 
-        pq.add(1);
+        pq.add(1).unwrap();
         match random.random_bool(0.5) {
             true => assert_eq!(1, *pq.top_mut()),
             false => assert_eq!(1, *pq.top()),
@@ -452,8 +454,8 @@ mod tests {
     }
 
     impl Compare<ObjectCompare> for ObjectCompare {
-        fn less_than(&self, a: &ObjectCompare, b: &ObjectCompare) -> bool {
-            a.value < b.value
+        fn less_than(&self, a: &ObjectCompare, b: &ObjectCompare) -> Result<bool> {
+            Ok(a.value < b.value)
         }
     }
 
@@ -461,7 +463,7 @@ mod tests {
     fn test_no_extra_work_on_equal_elements() {
         let mut pq = PriorityQueue::new(5, ObjectCompare::default()).unwrap();
         for i in 0..100 {
-            pq.insert_with_overflow(ObjectCompare::new(i, 0));
+            pq.insert_with_overflow(ObjectCompare::new(i, 0)).unwrap();
         }
         let mut indexes: Vec<i32> = Vec::new();
         let iter = pq.iterator();
@@ -482,12 +484,12 @@ mod tests {
             for _i in 0..count {
                 let next: i32 = random.random();
                 sum = sum.wrapping_add(next);
-                heap.add(next);
+                heap.add(next).unwrap();
             }
 
             let mut last = i32::MIN;
             for _i in 0..count {
-                let next = heap.pop().unwrap();
+                let next = heap.pop().unwrap().unwrap();
                 assert!(next >= last);
                 last = next;
                 sum2 = sum2.wrapping_add(last);
@@ -502,9 +504,9 @@ mod tests {
     #[test]
     fn test_clear() {
         let mut pq = PriorityQueue::new(3, I32Compare).unwrap();
-        pq.add(2);
-        pq.add(3);
-        pq.add(1);
+        pq.add(2).unwrap();
+        pq.add(3).unwrap();
+        pq.add(1).unwrap();
         assert_eq!(3, pq.size());
         pq.clear();
         assert_eq!(0, pq.size());
@@ -513,14 +515,14 @@ mod tests {
     #[test]
     fn test_fixed_size() {
         let mut pq = PriorityQueue::new(3, I32Compare).unwrap();
-        pq.insert_with_overflow(2);
-        pq.insert_with_overflow(3);
-        pq.insert_with_overflow(1);
-        pq.insert_with_overflow(5);
-        pq.insert_with_overflow(7);
-        pq.insert_with_overflow(1);
+        pq.insert_with_overflow(2).unwrap();
+        pq.insert_with_overflow(3).unwrap();
+        pq.insert_with_overflow(1).unwrap();
+        pq.insert_with_overflow(5).unwrap();
+        pq.insert_with_overflow(7).unwrap();
+        pq.insert_with_overflow(1).unwrap();
         assert_eq!(3, pq.size());
-        assert_eq!(3, pq.pop().unwrap());
+        assert_eq!(3, pq.pop().unwrap().unwrap());
     }
 
     #[test]
@@ -534,12 +536,12 @@ mod tests {
         let i5 = 7;
         let i6 = 1;
 
-        assert_eq!(pq.insert_with_overflow(i1), None);
-        assert_eq!(pq.insert_with_overflow(i2), None);
-        assert_eq!(pq.insert_with_overflow(i3), None);
-        assert_eq!(pq.insert_with_overflow(i4), None);
-        assert_eq!(pq.insert_with_overflow(i5).unwrap(), i3);
-        assert_eq!(pq.insert_with_overflow(i6).unwrap(), i6);
+        assert_eq!(pq.insert_with_overflow(i1).unwrap(), None);
+        assert_eq!(pq.insert_with_overflow(i2).unwrap(), None);
+        assert_eq!(pq.insert_with_overflow(i3).unwrap(), None);
+        assert_eq!(pq.insert_with_overflow(i4).unwrap(), None);
+        assert_eq!(pq.insert_with_overflow(i5).unwrap().unwrap(), i3);
+        assert_eq!(pq.insert_with_overflow(i6).unwrap().unwrap(), i6);
         assert_eq!(size as usize, pq.size());
         let mut random = random();
         match random.random_bool(0.5) {
@@ -561,7 +563,7 @@ mod tests {
             list2.push(value);
         }
         let mut pq = PriorityQueue::new(size, I32Compare).unwrap();
-        let _ = pq.add_all(list);
+        pq.add_all(list).unwrap();
         check_validity(&pq);
         assert_ordered_when_drained(&mut pq, list2);
     }
@@ -579,11 +581,11 @@ mod tests {
             bulk_added.push(value);
             bulk_added2.push(value);
             let x: i32 = random.random();
-            pq.add(x);
+            pq.add(x).unwrap();
             one_by_one.push(x);
         }
 
-        let _ = pq.add_all(bulk_added);
+        pq.add_all(bulk_added).unwrap();
         check_validity(&pq);
 
         one_by_one.append(&mut bulk_added2);
@@ -597,7 +599,7 @@ mod tests {
         let mut random = random();
         for _i in 0..11 {
             list.push(random.random());
-            pq.add(random.random());
+            pq.add(random.random()).unwrap();
         }
         let result = pq.add_all(list).unwrap_err().to_string();
         assert_eq!(
@@ -618,7 +620,7 @@ mod tests {
         for _i in 0..num_docs_in_pq * 10 {
             let new_entry = random.random::<i32>().abs();
             sds.push(new_entry);
-            let evicted = pq.insert_with_overflow(new_entry);
+            let evicted = pq.insert_with_overflow(new_entry).unwrap();
             check_validity(&pq);
             if let Some(evicted_value) = evicted {
                 let pos = sds.iter().position(|&x| x == evicted_value);
@@ -647,11 +649,11 @@ mod tests {
             let element = (random.random::<f32>() * ((sds.len() - 1) as f32)) as i32;
             let object_to_remove = sds[element as usize];
             assert_eq!(sds.remove(element as usize), object_to_remove);
-            assert!(pq.remove(&object_to_remove));
+            assert!(pq.remove(&object_to_remove).unwrap());
             check_validity(&pq);
             let new_entry = random.random::<i32>().abs();
             sds.push(new_entry);
-            assert_eq!(pq.insert_with_overflow(new_entry), None);
+            assert_eq!(pq.insert_with_overflow(new_entry).unwrap(), None);
             check_validity(&pq);
             let new_least = match random.random_bool(0.5) {
                 true => pq.top_mut(),
@@ -682,7 +684,7 @@ mod tests {
     #[test]
     fn test_iterator_one() {
         let mut pq = PriorityQueue::new(3, I32Compare).unwrap();
-        pq.add(1);
+        pq.add(1).unwrap();
         let mut it = pq.iterator();
         assert_eq!(it.next(), Some(&1));
     }
@@ -690,8 +692,8 @@ mod tests {
     #[test]
     fn test_iterator_two() {
         let mut pq = PriorityQueue::new(3, I32Compare).unwrap();
-        pq.add(1);
-        pq.add(2);
+        pq.add(1).unwrap();
+        pq.add(2).unwrap();
         let mut it = pq.iterator();
         assert_eq!(it.next(), Some(&1));
         assert_eq!(it.next(), Some(&2));
@@ -709,10 +711,12 @@ mod tests {
                 // if queue.size() == 0 || (queue.size() < max_size &&
                 // random.random::<bool>()) {
                 let value: i32 = random.random_range(0..=10);
-                queue.add(value);
+                queue.add(value).unwrap();
                 expected.push(value);
             } else {
-                let pos = expected.iter().position(|&x| x == queue.pop().unwrap());
+                let pos = expected
+                    .iter()
+                    .position(|&x| x == queue.pop().unwrap().unwrap());
                 assert_ne!(pos, None);
                 expected.remove(pos.unwrap());
             }
@@ -743,7 +747,7 @@ mod tests {
         let mut i = 0;
         let mut value: i32;
         while pq.size() > 0 {
-            value = pq.pop().unwrap().into();
+            value = pq.pop().unwrap().unwrap().into();
             assert_eq!(reference_data_list[i], value);
             i += 1;
         }
@@ -758,7 +762,7 @@ mod tests {
         let heap = pq.heap();
         for i in 1..=size {
             let parent = i >> 1;
-            if parent > 1 && !pq.get_compare().less_than(&heap[parent], &heap[i]) {
+            if parent > 1 && !pq.get_compare().less_than(&heap[parent], &heap[i]).unwrap() {
                 assert_eq!(&heap[parent], &heap[i]);
             }
         }

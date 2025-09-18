@@ -663,7 +663,7 @@ impl<T> Compare<T> for IteratorPQCmp
 where
     T: DocValuesFieldIterator,
 {
-    fn less_than(&self, a: &T, b: &T) -> bool {
+    fn less_than(&self, a: &T, b: &T) -> Result<bool> {
         // Sort by smaller doc_id
         let mut cmp = a.doc_id().cmp(&b.doc_id());
         if cmp == std::cmp::Ordering::Equal {
@@ -673,7 +673,7 @@ where
             // never be equal
             assert_ne!(cmp, std::cmp::Ordering::Equal);
         }
-        cmp == std::cmp::Ordering::Less
+        Ok(cmp == std::cmp::Ordering::Less)
     }
 }
 
@@ -740,9 +740,9 @@ where
             }
 
             if self.queue.top_mut().next_doc()? == NO_MORE_DOCS {
-                self.queue.pop();
+                self.queue.pop()?;
             } else {
-                self.queue.update_top();
+                self.queue.update_top()?;
             }
         }
         Ok(self.doc)
@@ -1202,7 +1202,7 @@ where
 
     for mut sub in subs {
         if sub.next_doc()? != NO_MORE_DOCS {
-            queue.add(sub);
+            queue.add(sub)?;
         }
     }
 

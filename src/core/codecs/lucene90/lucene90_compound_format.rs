@@ -97,12 +97,12 @@ impl Lucene90CompoundFormat {
             {
                 for filename in files {
                     let file_length = directory.file_length(filename)?;
-                    pq.add(SizedFile::new(filename.to_string(), file_length));
+                    pq.add(SizedFile::new(filename.to_string(), file_length))?;
                 }
             }
         }
         while pq.size() > 0 {
-            let sized_file = pq.pop();
+            let sized_file = pq.pop()?;
             debug_assert!(sized_file.is_some());
             let file = &sized_file.unwrap().name;
             let start_offset = data.align_file_pointer(BitUtil::LONG_BYTES as i32)?;
@@ -205,8 +205,8 @@ impl SizedFile {
 
 pub struct SizedFileQueueCmp;
 impl Compare<SizedFile> for SizedFileQueueCmp {
-    fn less_than(&self, sf1: &SizedFile, sf2: &SizedFile) -> bool {
-        sf1.length < sf2.length
+    fn less_than(&self, sf1: &SizedFile, sf2: &SizedFile) -> Result<bool> {
+        Ok(sf1.length < sf2.length)
     }
 }
 

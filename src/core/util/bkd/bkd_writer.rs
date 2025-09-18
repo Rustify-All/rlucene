@@ -498,7 +498,7 @@ where
             let doc_map = doc_maps.as_ref().map(|doc_maps| doc_maps[i].clone());
             let mut reader = MergeReader::new(&mut point_values, doc_map)?;
             if reader.next()? {
-                queue.add(reader);
+                queue.add(reader)?;
             }
         }
 
@@ -509,10 +509,10 @@ where
             one_dim_writer.add(&reader.packed_value, reader.doc_id)?;
 
             if reader.next()? {
-                queue.update_top();
+                queue.update_top()?;
             } else {
                 // This segment was exhausted
-                queue.pop();
+                queue.pop()?;
             }
         }
 
@@ -2604,19 +2604,19 @@ impl<S> Compare<MergeReader<S>> for MergeReaderCmp
 where
     S: PointValuesBase,
 {
-    fn less_than(&self, a: &MergeReader<S>, b: &MergeReader<S>) -> bool {
+    fn less_than(&self, a: &MergeReader<S>, b: &MergeReader<S>) -> Result<bool> {
         debug_assert!(!std::ptr::eq(a, b));
         let cmp = self
             .comparator
             .compare(&a.packed_value, 0, &b.packed_value, 0);
 
         if cmp < 0 {
-            true
+            Ok(true)
         } else if cmp > 0 {
-            false
+            Ok(false)
         } else {
             // Tie break by sorting smaller docIDs earlier:
-            a.doc_id < b.doc_id
+            Ok(a.doc_id < b.doc_id)
         }
     }
 }

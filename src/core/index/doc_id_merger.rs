@@ -154,7 +154,7 @@ where
                     next_mapped_doc = sub_mut.next_mapped_doc()?;
                 }
                 if next_mapped_doc != NO_MORE_DOCS {
-                    self.queue.add(sub.clone());
+                    self.queue.add(sub.clone())?;
                 } // else all docs in this sub were deleted; do not add it to the
                 // queue!
             }
@@ -184,14 +184,14 @@ where
             if self.queue.size() == 0 {
                 self.current = None;
             } else {
-                self.current = self.queue.pop();
+                self.current = self.queue.pop()?;
             }
         } else if self.queue.size() > 0 {
             debug_assert!(self.queue_min_doc_id == self.queue.top().borrow().mapped_doc_id);
             debug_assert!(next_doc > self.queue_min_doc_id);
             let new_current = self.queue.top().clone();
             self.queue
-                .update_top_with_new_top(self.current.take().unwrap());
+                .update_top_with_new_top(self.current.take().unwrap())?;
             self.current = Some(new_current);
         }
 
@@ -275,9 +275,9 @@ impl<S> Compare<Rc<RefCell<Sub<S>>>> for SubCompare
 where
     S: SubBase + Default,
 {
-    fn less_than(&self, a: &Rc<RefCell<Sub<S>>>, b: &Rc<RefCell<Sub<S>>>) -> bool {
+    fn less_than(&self, a: &Rc<RefCell<Sub<S>>>, b: &Rc<RefCell<Sub<S>>>) -> Result<bool> {
         debug_assert!(a.borrow().mapped_doc_id != b.borrow().mapped_doc_id);
-        a.borrow().mapped_doc_id < b.borrow().mapped_doc_id
+        Ok(a.borrow().mapped_doc_id < b.borrow().mapped_doc_id)
     }
 }
 
