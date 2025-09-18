@@ -14,7 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-mod Weight;
 mod abstract_knn_collector;
 mod boost_attribute;
 pub mod bulk_scorer;
@@ -59,3 +58,4 @@ mod total_hits;
 pub mod two_phase_iterator;
 mod vector_scorer;
 mod vector_similarity_collector;
+mod weight;
