@@ -35,7 +35,7 @@ pub trait Scorer: Scorable {
     type TwoPhaseIter: TwoPhaseIterator;
 
     /// Returns the doc ID that is currently being scored.
-    fn doc_id(&mut self) -> i32;
+    fn doc_id(&mut self) -> Result<i32>;
 
     /// Return a [`DocIdSetIterator`] over matching documents.
     ///

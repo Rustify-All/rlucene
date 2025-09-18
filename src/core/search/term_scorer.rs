@@ -229,15 +229,17 @@ where
 
     type TwoPhaseIter = DummyTwoPhaseIterator;
 
-    fn doc_id(&mut self) -> i32 {
+    fn doc_id(&mut self) -> Result<i32> {
         match self.impacts_disi {
             Some(ref mut disi) => {
                 debug_assert!(self.max_score_cache.is_none());
                 let v = match disi.in_ {
-                    Either2DocIdSetIterator::A(_) => unreachable!("should not be here"),
+                    Either2DocIdSetIterator::A(_) => {
+                        return Err(LuceneError::illegal_state("should not be here"));
+                    },
                     Either2DocIdSetIterator::B(ref mut s) => s,
                 };
-                v.doc_id()
+                Ok(v.doc_id())
             },
             None => {
                 debug_assert!(self.max_score_cache.is_some());
@@ -255,7 +257,7 @@ where
                     .impacts_source
                     .as_mut()
                     .unwrap();
-                impacts_source.doc_id()
+                Ok(impacts_source.doc_id())
             },
         }
     }

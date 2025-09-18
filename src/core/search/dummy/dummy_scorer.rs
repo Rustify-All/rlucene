@@ -51,7 +51,7 @@ impl Scorer for DummyScorer {
 
     type TwoPhaseIter = DummyTwoPhaseIterator;
 
-    fn doc_id(&mut self) -> i32 {
+    fn doc_id(&mut self) -> Result<i32> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
