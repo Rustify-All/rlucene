@@ -42,7 +42,7 @@ impl Number {
 
     pub fn to_i16(&self) -> Option<i16> {
         match *self {
-            Number::U8(n) => Some(n as i16),
+            Number::U8(n) => n.to_i16(),
             Number::I16(n) => Some(n),
             Number::I32(n) => n.to_i16(),
             Number::I64(n) => n.to_i16(),
@@ -53,8 +53,8 @@ impl Number {
 
     pub fn to_i32(&self) -> Option<i32> {
         match *self {
-            Number::U8(n) => Some(n as i32),
-            Number::I16(n) => Some(n as i32),
+            Number::U8(n) => n.to_i32(),
+            Number::I16(n) => n.to_i32(),
             Number::I32(n) => Some(n),
             Number::I64(n) => n.to_i32(),
             Number::F32(n) => n.to_i32(),
@@ -64,9 +64,9 @@ impl Number {
 
     pub fn to_i64(&self) -> Option<i64> {
         match *self {
-            Number::U8(n) => Some(n as i64),
-            Number::I16(n) => Some(n as i64),
-            Number::I32(n) => Some(n as i64),
+            Number::U8(n) => n.to_i64(),
+            Number::I16(n) => n.to_i64(),
+            Number::I32(n) => n.to_i64(),
             Number::I64(n) => Some(n),
             Number::F32(n) => n.to_i64(),
             Number::F64(n) => n.to_i64(),
@@ -76,7 +76,7 @@ impl Number {
     pub fn to_f32(&self) -> Option<f32> {
         match *self {
             Number::U8(n) => n.to_f32(),
-            Number::I16(n) => (n as i32).to_f32(),
+            Number::I16(n) => n.to_f32(),
             Number::I32(n) => n.to_f32(),
             Number::I64(n) => n.to_f32(),
             Number::F32(n) => Some(n),
