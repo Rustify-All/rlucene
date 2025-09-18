@@ -27,12 +27,15 @@ use crate::core::util::error::lucene_error::Result;
 pub trait Scorer: Scorable {
     /// Concrete iterator type over matching documents.
     type DocIdSetIterator: DocIdSetIterator;
+    type DocIdSetIteratorRef<'a>: DocIdSetIterator
+    where
+        Self: 'a;
 
     /// Optional two-phase iterator type (return `None` if unsupported).
     type TwoPhaseIter: TwoPhaseIterator;
 
     /// Returns the doc ID that is currently being scored.
-    fn doc_id(&self) -> i32;
+    fn doc_id(&mut self) -> i32;
 
     /// Return a [`DocIdSetIterator`] over matching documents.
     ///
@@ -42,7 +45,8 @@ pub trait Scorer: Scorable {
     ///
     /// The returned iterator is a *view*: calling this method several times must
     /// return iterators that share the same state.
-    fn iterator(&mut self) -> &mut Self::DocIdSetIterator;
+    fn iterator(&mut self) -> Self::DocIdSetIteratorRef<'_>;
+    fn iterator_take(&mut self) -> Self::DocIdSetIterator;
 
     /// Optional: Return a two-phase iterator view of this scorer.
     ///

@@ -226,6 +226,28 @@ impl DocIdSetIterator for Range {
         Ok((self.max_doc - self.min_doc) as i64)
     }
 }
+impl<T: DocIdSetIterator> DocIdSetIterator for &mut T {
+    fn doc_id(&self) -> i32 {
+        (**self).doc_id()
+    }
+
+    fn next_doc(&mut self) -> Result<i32> {
+        (**self).next_doc()
+    }
+
+    fn advance(&mut self, target: i32) -> Result<i32> {
+        (**self).advance(target)
+    }
+
+    fn slow_advance(&mut self, target: i32) -> Result<i32> {
+        (**self).slow_advance(target)
+    }
+
+    fn cost(&self) -> Result<i64> {
+        (**self).cost()
+    }
+}
+
 pub mod disi_const {
     /// When returned by
     /// [`next_doc`](crate::core::search::doc_id_set_iterator::DocIdSetIterator::next_doc),
@@ -282,6 +304,7 @@ macro_rules! either_docidsetiterator_named {
     };
 }
 either_docidsetiterator_named!(pub Either2DocIdSetIterator { A: A, B: B});
+either_docidsetiterator_named!(pub Either3DocIdSetIterator { A: A, B: B,C:C});
 either_docidsetiterator_named!(pub(crate) Either5DocIdSetIterator { A: A, B: B, C: C, D: D, E: E });
 
 #[cfg(test)]

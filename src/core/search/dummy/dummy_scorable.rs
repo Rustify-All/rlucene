@@ -20,11 +20,11 @@ use crate::core::util::error::lucene_error::Result;
 pub struct DummyScorable;
 
 impl Scorable for DummyScorable {
-    fn score(&self) -> Result<f32> {
+    fn score(&mut self) -> Result<f32> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    fn smoothing_score(&self, _doc_id: i32) -> Result<f32> {
+    fn smoothing_score(&mut self, _doc_id: i32) -> Result<f32> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 

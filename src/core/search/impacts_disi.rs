@@ -14,9 +14,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::core::index::impacts_source::ImpactsSource;
-use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
+use crate::core::index::impacts_enum::ImpactsEnum;
 use crate::core::search::doc_id_set_iterator::disi_const::NO_MORE_DOCS;
+use crate::core::search::doc_id_set_iterator::{DocIdSetIterator, Either2DocIdSetIterator};
 use crate::core::search::max_score_cache::MaxScoreCache;
 use crate::core::search::similarities_impl::similarities::SimScorer;
 use crate::core::util::error::lucene_error::Result;
@@ -25,25 +25,25 @@ use crate::core::util::error::lucene_error::Result;
 /// iterator the ability to skip low-scoring documents.
 ///
 /// @lucene.internal
-pub struct ImpactsDISI<I, IS, SS>
+pub struct ImpactsDISI<I, IE, SS>
 where
     I: DocIdSetIterator,
-    IS: ImpactsSource,
+    IE: ImpactsEnum,
     SS: SimScorer,
 {
-    in_: I,
-    max_score_cache: MaxScoreCache<IS, SS>,
+    pub(crate) in_: Disi<I, IE>,
+    pub(crate) max_score_cache: MaxScoreCache<IE, SS>,
     min_competitive_score: f32,
     up_to: i32,
     max_score: f32,
 }
-impl<I, IS, SS> ImpactsDISI<I, IS, SS>
+impl<I, IE, SS> ImpactsDISI<I, IE, SS>
 where
     I: DocIdSetIterator,
-    IS: ImpactsSource,
+    IE: ImpactsEnum,
     SS: SimScorer,
 {
-    pub fn new(in_: I, max_score_cache: MaxScoreCache<IS, SS>) -> Self {
+    pub fn new(in_: Disi<I, IE>, max_score_cache: MaxScoreCache<IE, SS>) -> Self {
         Self {
             in_,
             max_score_cache,
@@ -53,7 +53,7 @@ where
         }
     }
     /// Get the [`MaxScoreCache`].
-    pub fn max_score_cache(&self) -> &MaxScoreCache<IS, SS> {
+    pub fn max_score_cache(&self) -> &MaxScoreCache<IE, SS> {
         &self.max_score_cache
     }
 
@@ -76,9 +76,14 @@ where
             // according to impacts, no skipping
             return Ok(target);
         }
-
-        self.up_to = self.max_score_cache.advance_shallow(target)?;
-        self.max_score = self.max_score_cache.get_max_score_for_level_zero()?;
+        let (mut impacts_source, max_score_cache) = {
+            match self.in_ {
+                Either2DocIdSetIterator::A(ref mut t) => (None, &mut self.max_score_cache),
+                Either2DocIdSetIterator::B(ref mut s) => (Some(s), &mut self.max_score_cache),
+            }
+        };
+        self.up_to = max_score_cache.advance_shallow(target, &mut impacts_source)?;
+        self.max_score = max_score_cache.get_max_score_for_level_zero(&mut impacts_source)?;
 
         loop {
             debug_assert!(self.up_to >= target);
@@ -91,9 +96,8 @@ where
                 return Ok(NO_MORE_DOCS);
             }
 
-            let skip_up_to = self
-                .max_score_cache
-                .get_skip_up_to(self.min_competitive_score)?;
+            let skip_up_to =
+                max_score_cache.get_skip_up_to(self.min_competitive_score, &mut impacts_source)?;
             if skip_up_to == -1 {
                 // no further skipping
                 target = self.up_to + 1;
@@ -103,15 +107,15 @@ where
                 target = skip_up_to + 1;
             }
 
-            self.up_to = self.max_score_cache.advance_shallow(target)?;
-            self.max_score = self.max_score_cache.get_max_score_for_level_zero()?;
+            self.up_to = max_score_cache.advance_shallow(target, &mut impacts_source)?;
+            self.max_score = max_score_cache.get_max_score_for_level_zero(&mut impacts_source)?;
         }
     }
 }
-impl<I, IS, SS> DocIdSetIterator for ImpactsDISI<I, IS, SS>
+impl<I, IE, SS> DocIdSetIterator for ImpactsDISI<I, IE, SS>
 where
     I: DocIdSetIterator,
-    IS: ImpactsSource,
+    IE: ImpactsEnum,
     SS: SimScorer,
 {
     fn doc_id(&self) -> i32 {
@@ -135,3 +139,5 @@ where
         self.in_.cost()
     }
 }
+
+type Disi<I, IE> = Either2DocIdSetIterator<I, IE>;

@@ -23,11 +23,11 @@ use crate::core::util::error::lucene_error::Result;
 pub struct DummyScorer;
 
 impl Scorable for DummyScorer {
-    fn score(&self) -> Result<f32> {
+    fn score(&mut self) -> Result<f32> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    fn smoothing_score(&self, _doc_id: i32) -> Result<f32> {
+    fn smoothing_score(&mut self, _doc_id: i32) -> Result<f32> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
@@ -44,13 +44,22 @@ impl Scorable for DummyScorer {
 
 impl Scorer for DummyScorer {
     type DocIdSetIterator = DummyDocIdSetIterator;
+    type DocIdSetIteratorRef<'a>
+        = DummyDocIdSetIterator
+    where
+        Self: 'a;
+
     type TwoPhaseIter = DummyTwoPhaseIterator;
 
-    fn doc_id(&self) -> i32 {
+    fn doc_id(&mut self) -> i32 {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    fn iterator(&mut self) -> &mut Self::DocIdSetIterator {
+    fn iterator(&mut self) -> Self::DocIdSetIteratorRef<'_> {
+        unreachable!("Dummy implementation: this method should never be called in real usage")
+    }
+
+    fn iterator_take(&mut self) -> Self::DocIdSetIterator {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 

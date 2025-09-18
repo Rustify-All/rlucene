@@ -22,7 +22,7 @@ pub trait Scorable {
     ///
     /// # Errors
     /// Returns an error if an I/O error occurs.
-    fn score(&self) -> Result<f32>;
+    fn score(&mut self) -> Result<f32>;
 
     /// Returns the smoothing score of the current document matching the query.
     ///
@@ -38,7 +38,7 @@ pub trait Scorable {
     ///   Inference Network Approaches to Retrieval," *Information Processing
     ///   and Management Special Issue on Bayesian Networks and Information
     ///   Retrieval*, 40(5), pp. 735-750.
-    fn smoothing_score(&self, _doc_id: i32) -> Result<f32> {
+    fn smoothing_score(&mut self, _doc_id: i32) -> Result<f32> {
         Ok(0.0)
     }
 

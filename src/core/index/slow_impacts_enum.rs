@@ -30,7 +30,7 @@ pub struct SlowImpactsEnum<P>
 where
     P: PostingsEnum,
 {
-    delegate: P,
+    pub(crate) delegate: P,
 }
 impl<P> SlowImpactsEnum<P>
 where
