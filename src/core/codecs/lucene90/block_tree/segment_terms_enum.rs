@@ -38,6 +38,11 @@ use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::fst_impl::fst::Arc;
 use crate::core::util::fst_impl::reverse_random_access_reader::ReverseRandomAccessReader;
 
+pub enum PreparedSeekExact {
+    Ready { result: bool },
+    Pending { target: BytesRef<Vec<u8>> },
+}
+
 /// Iterates through terms in this field.
 pub struct SegmentTermsEnum<I, P>
 where
@@ -68,6 +73,14 @@ where
     I: IndexInput,
     P: PostingsReaderBase,
 {
+    fn ready_seek_result(result: bool) -> PreparedSeekExact {
+        PreparedSeekExact::Ready { result }
+    }
+
+    fn pending_seek_result(target: BytesRef<Vec<u8>>) -> PreparedSeekExact {
+        PreparedSeekExact::Pending { target }
+    }
+
     pub fn new(fr: FieldReader<I, P>) -> Result<BaseTermsEnum<Self>> {
         // Construct SegmentTerms first
         let fst_reader = match &fr.index {
@@ -217,7 +230,7 @@ where
         &mut self,
         target: &BytesRef<Vec<u8>>,
         prefetch: bool,
-    ) -> Result<Option<bool>> {
+    ) -> Result<Option<PreparedSeekExact>> {
         if self.fr.index.is_none() {
             return Err(LuceneError::illegal_state("terms index was not loaded"));
         }
@@ -246,6 +259,7 @@ where
         };
         self.target_before_current_length = target_before_current_length;
         self.output_accumulator.reset();
+
         // -1 means equal to staticFrame
         let mut arc_index;
         if self.current_frame_idx != self.static_frame_idx {
@@ -321,7 +335,7 @@ where
             } else {
                 debug_assert_eq!(self.term.length(), target.length);
                 if self.term_exists {
-                    return Ok(Some(true));
+                    return Ok(Some(Self::ready_seek_result(true)));
                 }
             }
         } else {
@@ -395,18 +409,8 @@ where
                 if prefetch {
                     SegmentTermsEnumFrame::prefetch_block(self.current_frame_idx, self)?;
                 }
-                SegmentTermsEnumFrame::load_block(self.current_frame_idx, self)?;
-                let result = SegmentTermsEnumFrame::scan_to_term(
-                    self.current_frame_idx,
-                    target,
-                    false,
-                    self,
-                )?;
-                return if result == SeekStatus::Found {
-                    Ok(Some(true))
-                } else {
-                    Ok(Some(false))
-                };
+                let target_copy = BytesRef::deep_copy_of(target);
+                return Ok(Some(Self::pending_seek_result(target_copy)));
             } else {
                 arc_index = next_arc_idx;
 
@@ -451,13 +455,29 @@ where
         if prefetch {
             SegmentTermsEnumFrame::prefetch_block(self.current_frame_idx, self)?;
         }
-        SegmentTermsEnumFrame::load_block(self.current_frame_idx, self)?;
-        let result =
-            SegmentTermsEnumFrame::scan_to_term(self.current_frame_idx, target, false, self)?;
-        if result == SeekStatus::Found {
-            Ok(Some(true))
-        } else {
-            Ok(Some(false))
+        let target_copy = BytesRef::deep_copy_of(target);
+        Ok(Some(Self::pending_seek_result(target_copy)))
+    }
+}
+
+impl PreparedSeekExact {
+    fn execute<I, P>(&mut self, segment: &mut SegmentTermsEnum<I, P>) -> Result<Option<bool>>
+    where
+        I: IndexInput,
+        P: PostingsReaderBase,
+    {
+        match self {
+            PreparedSeekExact::Ready { result } => Ok(Some(*result)),
+            PreparedSeekExact::Pending { target } => {
+                SegmentTermsEnumFrame::load_block(segment.current_frame_idx, segment)?;
+                let result = SegmentTermsEnumFrame::scan_to_term(
+                    segment.current_frame_idx,
+                    target,
+                    false,
+                    segment,
+                )?;
+                Ok(Some(result == SeekStatus::Found))
+            },
         }
     }
 }
@@ -600,14 +620,14 @@ where
 
     fn seek_exact(&mut self, target: &BytesRef<Vec<u8>>) -> Result<bool> {
         match self.prepare_seek_exact(target, false)? {
-            Some(found) => Ok(found),
+            Some(mut action) => Ok(action.execute(self)?.unwrap_or(false)),
             None => Ok(false),
         }
     }
 
     fn prepare_seek_exact(&mut self, target: &BytesRef<Vec<u8>>) -> Result<bool> {
         match self.prepare_seek_exact(target, true)? {
-            Some(found) => Ok(found),
+            Some(mut action) => Ok(action.execute(self)?.unwrap_or(false)),
             None => Ok(false),
         }
     }
