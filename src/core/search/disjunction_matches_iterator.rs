@@ -123,14 +123,12 @@ where
             let b_start = b.start_offset()?;
             let a_end = a.end_offset()?;
             let b_end = b.end_offset()?;
-            return Ok(a_start < b_start
-                || (a_start == b_start && a_end < b_end));
+            return Ok(a_start < b_start || (a_start == b_start && a_end <= b_end));
         }
         let a_start = a.start_position()?;
         let b_start = b.start_position()?;
         let a_end = a.end_position();
         let b_end = b.end_position();
-        Ok(a_start < b_start
-            || (a_start == b_start && a_end < b_end))
+        Ok(a_start < b_start || (a_start == b_start && a_end <= b_end))
     }
 }
