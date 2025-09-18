@@ -25,7 +25,7 @@ use crate::core::util::priority_queue::{Compare, PriorityQueue};
 /// Reuse API, currently only used by postings during merge
 pub trait DocIDMerger<S>
 where
-    S: SubBase + Default,
+    S: SubBase,
 {
     /// Reuse API, currently only used by postings during merge
     fn reset(&mut self) -> Result<()>;
@@ -39,7 +39,7 @@ where
 
 pub(crate) struct SequentialDocIDMerger<S>
 where
-    S: SubBase + Default,
+    S: SubBase,
 {
     subs: Vec<Rc<RefCell<Sub<S>>>>,
     current: Option<usize>,
@@ -47,7 +47,7 @@ where
 }
 impl<S> SequentialDocIDMerger<S>
 where
-    S: SubBase + Default,
+    S: SubBase,
 {
     pub fn new(subs: Vec<Rc<RefCell<Sub<S>>>>) -> Result<Self> {
         let mut doc_id_merger = Self {
@@ -62,7 +62,7 @@ where
 
 impl<S> DocIDMerger<S> for SequentialDocIDMerger<S>
 where
-    S: SubBase + Default,
+    S: SubBase,
 {
     fn reset(&mut self) -> Result<()> {
         if !self.subs.is_empty() {
@@ -96,7 +96,7 @@ where
 
 pub(crate) struct SortedDocIDMerger<S>
 where
-    S: SubBase + Default,
+    S: SubBase,
 {
     subs: Vec<Rc<RefCell<Sub<S>>>>,
     current: Option<Rc<RefCell<Sub<S>>>>,
@@ -105,7 +105,7 @@ where
 }
 impl<S> SortedDocIDMerger<S>
 where
-    S: SubBase + Default,
+    S: SubBase,
 {
     fn new(subs: Vec<Rc<RefCell<Sub<S>>>>, max_count: i32) -> Result<Self> {
         if max_count <= 1 {
@@ -131,7 +131,7 @@ where
 }
 impl<S> DocIDMerger<S> for SortedDocIDMerger<S>
 where
-    S: SubBase + Default,
+    S: SubBase,
 {
     fn reset(&mut self) -> Result<()> {
         // caller may not have fully consumed the queue:
@@ -201,14 +201,14 @@ where
 }
 pub(crate) enum DocIDMergerEnum<S>
 where
-    S: SubBase + Default,
+    S: SubBase,
 {
     Sequential(SequentialDocIDMerger<S>),
     Sorted(SortedDocIDMerger<S>),
 }
 impl<S> DocIDMerger<S> for DocIDMergerEnum<S>
 where
-    S: SubBase + Default,
+    S: SubBase,
 {
     fn reset(&mut self) -> Result<()> {
         match self {
@@ -226,10 +226,9 @@ where
 }
 
 /// Represents one sub-reader being merged
-#[derive(Default)]
 pub struct Sub<S>
 where
-    S: SubBase + Default,
+    S: SubBase,
 {
     /// Mapped doc ID
     pub sub: S,
@@ -237,7 +236,7 @@ where
 }
 impl<S> Sub<S>
 where
-    S: SubBase + Default,
+    S: SubBase,
 {
     pub fn new(sub: S) -> Self {
         Self {
@@ -273,7 +272,7 @@ pub trait SubBase {
 struct SubCompare;
 impl<S> Compare<Rc<RefCell<Sub<S>>>> for SubCompare
 where
-    S: SubBase + Default,
+    S: SubBase,
 {
     fn less_than(&self, a: &Rc<RefCell<Sub<S>>>, b: &Rc<RefCell<Sub<S>>>) -> Result<bool> {
         debug_assert!(a.borrow().mapped_doc_id != b.borrow().mapped_doc_id);
@@ -282,7 +281,7 @@ where
 }
 
 /// Construct this from the provided subs, specifying the maximum sub count.
-fn of_with_max_count<S: SubBase + Default>(
+fn of_with_max_count<S: SubBase>(
     subs: Vec<Rc<RefCell<Sub<S>>>>,
     max_count: i32,
     index_is_sorted: bool,
@@ -298,7 +297,7 @@ fn of_with_max_count<S: SubBase + Default>(
     }
 }
 /// Construct this from the provided subs.
-pub(crate) fn of<S: SubBase + Default>(
+pub(crate) fn of<S: SubBase>(
     subs: Vec<Rc<RefCell<Sub<S>>>>,
     index_is_sorted: bool,
 ) -> Result<DocIDMergerEnum<S>> {

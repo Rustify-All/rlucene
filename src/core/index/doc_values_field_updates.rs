@@ -422,7 +422,7 @@ impl<D> IntroSorter for IntroSorterImpl<'_, D> where D: DocValuesFieldUpdatesBas
 ///
 /// Only documents with updates are returned by this iterator, and the documents
 /// are returned in increasing order.
-pub trait DocValuesFieldIterator: DocValuesIterator + Default {
+pub trait DocValuesFieldIterator: DocValuesIterator {
     /// Returns a long value for the current document if this iterator is a long
     /// iterator.
     fn long_value(&mut self) -> Result<i64>;
@@ -648,12 +648,6 @@ where
 }
 
 pub(crate) struct IteratorPQCmp;
-impl Default for IteratorPQCmp {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl IteratorPQCmp {
     pub fn new() -> Self {
         Self {}
@@ -748,18 +742,6 @@ where
         Ok(self.doc)
     }
 }
-impl<T> Default for MergedIterator<T>
-where
-    T: DocValuesFieldIterator,
-{
-    fn default() -> Self {
-        Self {
-            queue: PriorityQueue::new(0, IteratorPQCmp::new()).unwrap(),
-            doc: -1,
-        }
-    }
-}
-
 #[derive(Default)]
 pub(crate) struct AbstractIterator<A>
 where
