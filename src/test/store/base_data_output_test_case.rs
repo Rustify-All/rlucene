@@ -41,151 +41,186 @@ pub trait BaseDataOutputTestCase {
         let mut random1 = Xoroshiro128Plus::seed_from_u64(seed);
         let mut random2 = Xoroshiro128Plus::seed_from_u64(seed);
 
-        add_random_data::<DI>(&mut instance, &mut random1, max);
-        add_random_data::<DI>(&mut os, &mut random2, max);
+        add_random_data(&mut instance, &mut random1, max);
+        add_random_data(&mut os, &mut random2, max);
         assert_eq!(&self.get_bytes(instance), os.os.into_inner().unwrap());
         Ok(())
     }
 }
 
-type DataInputProcessor<DI> = Box<dyn FnMut(&mut DI)>;
+pub enum DataInputAction {
+    ReadByte(u8),
+    ReadBytes(Vec<u8>),
+    ReadBytesRange {
+        bytes: Vec<u8>,
+        off: usize,
+        length: usize,
+    },
+    ReadInt(i32),
+    ReadLong(i64),
+    ReadShort(i16),
+    ReadVInt(i32),
+    ReadZInt(i32),
+    ReadZLong(i64),
+    ReadVLong(i64),
+    ReadString(String),
+}
 
-pub fn add_random_data<DI: DataInput>(
+impl DataInputAction {
+    pub fn verify<DI: DataInput>(&self, src: &mut DI) {
+        match self {
+            DataInputAction::ReadByte(value) => {
+                assert_eq!(src.read_byte().unwrap(), *value, "Condition failed for DI");
+            },
+            DataInputAction::ReadBytes(bytes) => {
+                let mut buffer = vec![0u8; bytes.len()];
+                let _ = src.read_bytes(&mut buffer, 0, bytes.len() as i32);
+                assert_eq!(
+                    buffer.as_slice(),
+                    bytes.as_slice(),
+                    "Condition failed for DI"
+                );
+            },
+            DataInputAction::ReadBytesRange { bytes, off, length } => {
+                let mut read: Vec<u8> = vec![0u8; bytes.len() + *off];
+                let _ = src.read_bytes(&mut read, *off as i32, *length as i32);
+                assert_eq!(
+                    read[*off..*off + *length],
+                    bytes[*off..*off + *length],
+                    "readBytes(byte[], off)",
+                );
+            },
+            DataInputAction::ReadInt(value) => {
+                assert_eq!(src.read_int().unwrap(), *value, "readInt()");
+            },
+            DataInputAction::ReadLong(value) => {
+                assert_eq!(src.read_long().unwrap(), *value, "readLong()");
+            },
+            DataInputAction::ReadShort(value) => {
+                assert_eq!(src.read_short().unwrap(), *value, "readShort()");
+            },
+            DataInputAction::ReadVInt(value) => {
+                assert_eq!(src.read_vint().unwrap(), *value, "readVInt()");
+            },
+            DataInputAction::ReadZInt(value) => {
+                assert_eq!(src.read_zint().unwrap(), *value, "readZInt()");
+            },
+            DataInputAction::ReadZLong(value) => {
+                assert_eq!(src.read_zlong().unwrap(), *value, "readZLong()");
+            },
+            DataInputAction::ReadVLong(value) => {
+                assert_eq!(src.read_vlong().unwrap(), *value, "readVLong()");
+            },
+            DataInputAction::ReadString(value) => {
+                assert_eq!(src.read_string().unwrap(), value.as_str(), "readString()");
+            },
+        }
+    }
+}
+
+const GENERATOR_COUNT: usize = 11;
+
+pub fn add_random_data(
     dst: &mut impl DataOutput,
     rnd: &mut impl Rng,
     max_add_calls: i32,
-) -> Vec<DataInputProcessor<DI>> {
-    let cg = create_generators();
-    let mut vec: Vec<DataInputProcessor<DI>> = Vec::new();
+) -> Vec<DataInputAction> {
+    let mut vec: Vec<DataInputAction> = Vec::new();
     for _i in 0..max_add_calls {
-        let random_generator = rnd.random_range(0..cg.len());
-        vec.push(cg[random_generator](dst, rnd));
+        let action = match rnd.random_range(0..GENERATOR_COUNT) {
+            //0 writeByte / readByte
+            0 => {
+                let value: u8 = rnd.random();
+                let _ = dst.write_byte(value);
+                DataInputAction::ReadByte(value)
+            },
+            //1 writeBytes / readBytes (array and buffer version).
+            1 => {
+                let len = rnd.random_range(0..100);
+                let bytes: Vec<u8> = (0..len).map(|_| rnd.random()).collect();
+                let bytes_len = bytes.len();
+                let _ = dst.write_bytes_with_len(&bytes, bytes_len as i32);
+                DataInputAction::ReadBytes(bytes)
+            },
+            //2 writeBytes / readBytes (array + offset).
+            2 => {
+                let len = rnd.random_range(0..10000);
+                let bytes: Vec<u8> = (0..len).map(|_| rnd.random()).collect();
+                let bytes_len = bytes.len();
+                let off = if len == 0 {
+                    0
+                } else {
+                    rnd.random_range(0..bytes_len)
+                };
+                let length = if len == 0 {
+                    0
+                } else {
+                    rnd.random_range(0..(bytes_len - off))
+                };
+                let _ = dst.write_bytes_range(&bytes, off as i32, length as i32);
+                DataInputAction::ReadBytesRange { bytes, off, length }
+            },
+            //3 writeInt / readInt
+            3 => {
+                let value: i32 = rnd.random();
+                let _ = dst.write_int(value);
+                DataInputAction::ReadInt(value)
+            },
+            //4 writeLong / readInt
+            4 => {
+                let value: i64 = rnd.random();
+                let _ = dst.write_long(value);
+                DataInputAction::ReadLong(value)
+            },
+            //5 writeShort / readShort
+            5 => {
+                let value: i16 = rnd.random();
+                let _ = dst.write_short(value);
+                DataInputAction::ReadShort(value)
+            },
+            //6 writeVInt / readVInt
+            6 => {
+                let value: i32 = rnd.random();
+                let _ = dst.write_vint(value);
+                DataInputAction::ReadVInt(value)
+            },
+            //7 writeZInt / readZInt
+            7 => {
+                let value: i32 = rnd.random();
+                let _ = dst.write_zint(value);
+                DataInputAction::ReadZInt(value)
+            },
+            //8 writeZLong / readZLong
+            8 => {
+                let value: i64 = rnd.random();
+                let _ = dst.write_zlong(value);
+                DataInputAction::ReadZLong(value)
+            },
+            //9 writeVLong / readVLong
+            9 => {
+                let mut value: i64 = rnd.random();
+                value &= (-1i64 as u64 >> 1) as i64;
+                let _ = dst.write_vlong(value);
+                DataInputAction::ReadVLong(value)
+            },
+            //10  writeString / readString
+            10 => {
+                let value = if rnd.random_range(0..50) == 0 {
+                    // Occasionally a large blob
+                    (0..rnd.random_range(2048..4096))
+                        .map(|_| rnd.random::<char>())
+                        .collect::<String>()
+                } else {
+                    (0..rnd.random_range(0..10))
+                        .map(|_| rnd.random::<char>())
+                        .collect::<String>()
+                };
+                let _ = dst.write_string(&value);
+                DataInputAction::ReadString(value)
+            },
+            _ => unreachable!("Unexpected generator index"),
+        };
+        vec.push(action);
     }
     vec
-}
-type Generator<DO, DI, R> = fn(&mut DO, &mut R) -> Box<dyn FnMut(&mut DI)>;
-
-fn create_generators<DO: DataOutput, DI: DataInput, R: Rng>() -> Vec<Generator<DO, DI, R>> {
-    vec![
-        //0 writeByte / readByte
-        |dst, rnd| {
-            let value: u8 = rnd.random();
-            let _ = dst.write_byte(value);
-            Box::new(move |src: &mut DI| {
-                assert_eq!(src.read_byte().unwrap(), value, "Condition failed for DI")
-            })
-        },
-        //1 writeBytes / readBytes (array and buffer version).
-        |dst, rnd| {
-            let len = rnd.random_range(0..100);
-            let bytes: Vec<u8> = (0..len).map(|_| rnd.random()).collect();
-            let bytes_len = bytes.len();
-            let _ = dst.write_bytes_with_len(&bytes, bytes_len as i32);
-            Box::new(move |src: &mut DI| {
-                let mut buffer = vec![0u8; bytes_len];
-                let _ = src.read_bytes(&mut buffer, 0, bytes_len as i32);
-                assert_eq!(buffer, bytes, "Condition failed for DI")
-            })
-        },
-        //2 writeBytes / readBytes (array + offset).
-        |dst, rnd| {
-            let len = rnd.random_range(0..10000);
-            let bytes: Vec<u8> = (0..len).map(|_| rnd.random()).collect();
-            let bytes_len = bytes.len();
-            let off = if len == 0 {
-                0
-            } else {
-                rnd.random_range(0..bytes_len)
-            };
-            let length = if len == 0 {
-                0
-            } else {
-                rnd.random_range(0..(bytes_len - off))
-            };
-            let _ = dst.write_bytes_range(&bytes, off as i32, length as i32);
-            Box::new(move |src: &mut DI| {
-                let mut read: Vec<u8> = vec![0u8; bytes.len() + off];
-                let _ = src.read_bytes(&mut read, off as i32, length as i32);
-                assert_eq!(
-                    read[off..off + length],
-                    bytes[off..off + length],
-                    "readBytes(byte[], off)"
-                );
-            })
-        },
-        //3 writeInt / readInt
-        |dst, rnd| {
-            let value: i32 = rnd.random();
-            let _ = dst.write_int(value);
-            Box::new(move |src: &mut DI| {
-                assert_eq!(src.read_int().unwrap(), value, "readInt()");
-            })
-        },
-        //4 writeLong / readInt
-        |dst, rnd| {
-            let value: i64 = rnd.random();
-            let _ = dst.write_long(value);
-            Box::new(move |src: &mut DI| {
-                assert_eq!(src.read_long().unwrap(), value, "readLong()");
-            })
-        },
-        //5 writeShort / readShort
-        |dst, rnd| {
-            let value: i16 = rnd.random();
-            let _ = dst.write_short(value);
-            Box::new(move |src: &mut DI| {
-                assert_eq!(src.read_short().unwrap(), value, "readShort()");
-            })
-        },
-        //6 writeVInt / readVInt
-        |dst, rnd| {
-            let value: i32 = rnd.random();
-            let _ = dst.write_vint(value);
-            Box::new(move |src: &mut DI| {
-                assert_eq!(src.read_vint().unwrap(), value, "readVInt()");
-            })
-        },
-        //7 writeZInt / readZInt
-        |dst, rnd| {
-            let value: i32 = rnd.random();
-            let _ = dst.write_zint(value);
-            Box::new(move |src: &mut DI| {
-                assert_eq!(src.read_zint().unwrap(), value, "readZInt()");
-            })
-        },
-        //8 writeZLong / readZLong
-        |dst, rnd| {
-            let value: i64 = rnd.random();
-            let _ = dst.write_zlong(value);
-            Box::new(move |src: &mut DI| {
-                assert_eq!(src.read_zlong().unwrap(), value, "readZLong()");
-            })
-        },
-        //9 writeVLong / readVLong
-        |dst, rnd| {
-            let mut value: i64 = rnd.random();
-            value &= (-1i64 as u64 >> 1) as i64;
-            let _ = dst.write_vlong(value);
-            Box::new(move |src: &mut DI| {
-                assert_eq!(src.read_vlong().unwrap(), value, "readVLong()");
-            })
-        },
-        //10  writeString / readString
-        |dst, rnd| {
-            let value = if rnd.random_range(0..50) == 0 {
-                // Occasionally a large blob
-                (0..rnd.random_range(2048..4096))
-                    .map(|_| rnd.random::<char>())
-                    .collect::<String>()
-            } else {
-                (0..rnd.random_range(0..10))
-                    .map(|_| rnd.random::<char>())
-                    .collect::<String>()
-            };
-            let _ = dst.write_string(&value);
-            Box::new(move |src: &mut DI| {
-                assert_eq!(src.read_string().unwrap(), value, "readString()");
-            })
-        },
-    ]
 }

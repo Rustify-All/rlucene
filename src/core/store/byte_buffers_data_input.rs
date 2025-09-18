@@ -435,8 +435,8 @@ mod tests {
         let max = if is_night_mode() { 1000000 } else { 100000 };
         let reply = add_random_data(&mut dst, &mut random1, max);
         let mut src = dst.get_data_input();
-        for mut f in reply {
-            f(&mut src);
+        for action in reply {
+            action.verify(&mut src);
         }
         let result = DataInput::read_byte(&mut src);
         assert!(result.is_err());
@@ -465,8 +465,8 @@ mod tests {
                 .slice(prefix_len, size - suffix_len - prefix_len)?;
             assert_eq!(0, src.position());
             assert_eq!(size - prefix_len - suffix_len, src.length());
-            for mut f in reply {
-                f(&mut src);
+            for action in reply {
+                action.verify(&mut src);
             }
             let result = DataInput::read_byte(&mut src);
             assert!(result.is_err());
@@ -505,18 +505,18 @@ mod tests {
             let seed: u64 = random.random();
             let max = 1000;
             let mut random1 = Xoroshiro128Plus::seed_from_u64(seed);
-            let mut reply = add_random_data(&mut dst, &mut random1, max);
+            let reply = add_random_data(&mut dst, &mut random1, max);
             let size = dst.size();
             let mut array = dst.get_array_copy();
             array = Vec::from(&array[prefix_len as usize..array.len()]);
             let mut data_input = dst.get_data_input().slice(prefix_len, size - prefix_len)?;
             data_input.seek(0)?;
-            for f in reply.iter_mut() {
-                f(&mut data_input);
+            for action in &reply {
+                action.verify(&mut data_input);
             }
             data_input.seek(0)?;
-            for f in reply.iter_mut() {
-                f(&mut data_input);
+            for action in &reply {
+                action.verify(&mut data_input);
             }
             for _i in 0..1000 {
                 let offs = random.random_range(0..=array.len() - 1);
