@@ -49,7 +49,7 @@ where
     /// - `disi`: the iterator that defines matching documents.
     pub fn with_disi(score: f32, score_mode: ScoreMode, disi: DISI) -> Self {
         let approximation = match score_mode {
-            ScoreMode::TopScores { .. } => {
+            ScoreMode::TopScores => {
                 ConstantDISI::A(DocIdSetIteratorWrapper::new(EitherEmpty::A(disi)))
             },
             _ => ConstantDISI::B(disi),
@@ -69,9 +69,7 @@ where
     /// - `two_phase_iterator`: the iterator that defines matching documents.
     pub fn with_tpi(score: f32, score_mode: ScoreMode, two_phase_iterator: TPI) -> Self {
         let two_phase_iterator = match score_mode {
-            ScoreMode::TopScores { .. } => {
-                ConstantTPI::A(TwoPhaseIteratorImpl::new(two_phase_iterator))
-            },
+            ScoreMode::TopScores => ConstantTPI::A(TwoPhaseIteratorImpl::new(two_phase_iterator)),
             _ => ConstantTPI::B(two_phase_iterator),
         };
         Self {
@@ -94,7 +92,7 @@ where
     }
 
     fn set_min_competitive_score(&mut self, min_score: f32) -> Result<()> {
-        if min_score > self.score && matches!(self.score_mode, ScoreMode::TopScores { .. }) {
+        if min_score > self.score && matches!(self.score_mode, ScoreMode::TopScores) {
             match self.disi {
                 ConstantDISI_::A(ref mut v) => match v {
                     Either2DocIdSetIterator::A(v) => {

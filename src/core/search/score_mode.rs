@@ -14,52 +14,50 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
+/// Different modes of search.
+#[derive(Debug, Clone, Copy)]
 pub enum ScoreMode {
-    Complete {
-        is_exhaustive: bool,
-        needs_scores: bool,
-    },
+    /// Produced scorers will allow visiting all matches and get their score.
+    Complete,
 
-    CompleteNoScores {
-        is_exhaustive: bool,
-        needs_scores: bool,
-    },
+    /// Produced scorers will allow visiting all matches but scores won't be available.
+    CompleteNoScores,
 
-    TopScores {
-        is_exhaustive: bool,
-        needs_scores: bool,
-    },
+    /// Produced scorers will optionally allow skipping over non-competitive hits
+    /// using the [`Scorer::set_min_competitive_score`] API.
+    TopScores,
 
-    TopDocs {
-        is_exhaustive: bool,
-        needs_scores: bool,
-    },
+    /// ScoreMode for top field collectors that can provide their own iterators,
+    /// to optionally allow to skip for non-competitive docs.
+    TopDocs,
 
-    TopDocsWithScores {
-        is_exhaustive: bool,
-        needs_scores: bool,
-    },
+    /// ScoreMode for top field collectors that can provide their own iterators,
+    /// to optionally allow to skip for non-competitive docs.
+    /// This mode is used when there is a secondary sort by `_score`.
+    TopDocsWithScores,
 }
 
 impl ScoreMode {
+    /// Whether this [`ScoreMode`] needs to compute scores.
     pub fn needs_scores(&self) -> bool {
         match self {
-            ScoreMode::Complete { needs_scores, .. }
-            | ScoreMode::CompleteNoScores { needs_scores, .. }
-            | ScoreMode::TopScores { needs_scores, .. }
-            | ScoreMode::TopDocs { needs_scores, .. }
-            | ScoreMode::TopDocsWithScores { needs_scores, .. } => *needs_scores,
+            ScoreMode::Complete => true,
+            ScoreMode::CompleteNoScores => false,
+            ScoreMode::TopScores => true,
+            ScoreMode::TopDocs => false,
+            ScoreMode::TopDocsWithScores => true,
         }
     }
 
+    /// Returns `true` if for this [`ScoreMode`] it is necessary to process all documents,
+    /// or `false` if it is enough to go through top documents only.
     pub fn is_exhaustive(&self) -> bool {
         match self {
-            ScoreMode::Complete { is_exhaustive, .. }
-            | ScoreMode::CompleteNoScores { is_exhaustive, .. }
-            | ScoreMode::TopScores { is_exhaustive, .. }
-            | ScoreMode::TopDocs { is_exhaustive, .. }
-            | ScoreMode::TopDocsWithScores { is_exhaustive, .. } => *is_exhaustive,
+            ScoreMode::Complete => true,
+            ScoreMode::CompleteNoScores => true,
+            ScoreMode::TopScores => false,
+            ScoreMode::TopDocs => false,
+            ScoreMode::TopDocsWithScores => false,
         }
     }
 }
