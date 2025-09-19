@@ -29,6 +29,7 @@ use crate::core::index::term_state::{TermState, TermStateEnum};
 use crate::core::index::terms::Terms;
 use crate::core::index::terms_enum::{SeekStatus, TermsEnum};
 use crate::core::index::{BytesRef, BytesRefBuilder};
+use crate::core::store::directory::Directory;
 use crate::core::store::{ByteArrayDataInput, DataInput, IndexInput};
 use crate::core::util::ToInt;
 use crate::core::util::array_util::ArrayUtil;
@@ -37,6 +38,7 @@ use crate::core::util::dummy::dummy_attribute_source::DummyAttributeSource;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::fst_impl::fst::Arc;
 use crate::core::util::fst_impl::reverse_random_access_reader::ReverseRandomAccessReader;
+use crate::core::util::io_boolean_supplier::IOBooleanSupplier;
 
 /// Iterates through terms in this field.
 pub struct SegmentTermsEnum<I, P>
@@ -213,11 +215,11 @@ where
         self.eof = true;
         true
     }
-    pub fn prepare_seek_exact(
-        &mut self,
-        target: &BytesRef<Vec<u8>>,
+    pub fn prepare_seek_exact<'a>(
+        &'a mut self,
+        target: &'a BytesRef<Vec<u8>>,
         prefetch: bool,
-    ) -> Result<Option<bool>> {
+    ) -> Result<Option<PreparedSeekExactEnum<'a, I, P>>> {
         if self.fr.index.is_none() {
             return Err(LuceneError::illegal_state("terms index was not loaded"));
         }
@@ -246,6 +248,7 @@ where
         };
         self.target_before_current_length = target_before_current_length;
         self.output_accumulator.reset();
+
         // -1 means equal to staticFrame
         let mut arc_index;
         if self.current_frame_idx != self.static_frame_idx {
@@ -321,7 +324,7 @@ where
             } else {
                 debug_assert_eq!(self.term.length(), target.length);
                 if self.term_exists {
-                    return Ok(Some(true));
+                    return Ok(Some(PreparedSeekExactEnum::Ready { result: true }));
                 }
             }
         } else {
@@ -395,18 +398,8 @@ where
                 if prefetch {
                     SegmentTermsEnumFrame::prefetch_block(self.current_frame_idx, self)?;
                 }
-                SegmentTermsEnumFrame::load_block(self.current_frame_idx, self)?;
-                let result = SegmentTermsEnumFrame::scan_to_term(
-                    self.current_frame_idx,
-                    target,
-                    false,
-                    self,
-                )?;
-                return if result == SeekStatus::Found {
-                    Ok(Some(true))
-                } else {
-                    Ok(Some(false))
-                };
+                let v = IOBooleanSupplierImpl::new(self, target);
+                return Ok(Some(PreparedSeekExactEnum::SegmentTermsEnum(v)));
             } else {
                 arc_index = next_arc_idx;
 
@@ -451,14 +444,50 @@ where
         if prefetch {
             SegmentTermsEnumFrame::prefetch_block(self.current_frame_idx, self)?;
         }
-        SegmentTermsEnumFrame::load_block(self.current_frame_idx, self)?;
-        let result =
-            SegmentTermsEnumFrame::scan_to_term(self.current_frame_idx, target, false, self)?;
-        if result == SeekStatus::Found {
-            Ok(Some(true))
-        } else {
-            Ok(Some(false))
-        }
+        let v = IOBooleanSupplierImpl::new(self, target);
+        Ok(Some(PreparedSeekExactEnum::SegmentTermsEnum(v)))
+    }
+}
+
+pub enum PreparedSeekExactEnum<'a, I, P>
+where
+    I: IndexInput,
+    P: PostingsReaderBase,
+{
+    SegmentTermsEnum(IOBooleanSupplierImpl<'a, I, P>),
+    Ready { result: bool },
+}
+pub(crate) struct IOBooleanSupplierImpl<'a, I, P>
+where
+    I: IndexInput,
+    P: PostingsReaderBase,
+{
+    segment: &'a mut SegmentTermsEnum<I, P>,
+    target: &'a BytesRef<Vec<u8>>,
+}
+impl<'a, I, P> IOBooleanSupplierImpl<'a, I, P>
+where
+    I: IndexInput,
+    P: PostingsReaderBase,
+{
+    pub fn new(segment: &'a mut SegmentTermsEnum<I, P>, target: &'a BytesRef<Vec<u8>>) -> Self {
+        IOBooleanSupplierImpl { segment, target }
+    }
+}
+impl<'a, I, P> IOBooleanSupplier for IOBooleanSupplierImpl<'a, I, P>
+where
+    I: IndexInput,
+    P: PostingsReaderBase,
+{
+    fn get(&mut self) -> Result<bool> {
+        SegmentTermsEnumFrame::load_block(self.segment.current_frame_idx, self.segment)?;
+        let result = SegmentTermsEnumFrame::scan_to_term(
+            self.segment.current_frame_idx,
+            self.target,
+            false,
+            self.segment,
+        )?;
+        Ok(result == SeekStatus::Found)
     }
 }
 
@@ -600,14 +629,16 @@ where
 
     fn seek_exact(&mut self, target: &BytesRef<Vec<u8>>) -> Result<bool> {
         match self.prepare_seek_exact(target, false)? {
-            Some(found) => Ok(found),
+            Some(PreparedSeekExactEnum::Ready { result }) => Ok(result),
+            Some(PreparedSeekExactEnum::SegmentTermsEnum(mut supplier)) => supplier.get(),
             None => Ok(false),
         }
     }
 
     fn prepare_seek_exact(&mut self, target: &BytesRef<Vec<u8>>) -> Result<bool> {
-        match self.prepare_seek_exact(target, true)? {
-            Some(found) => Ok(found),
+        match self.prepare_seek_exact(target, false)? {
+            Some(PreparedSeekExactEnum::Ready { result }) => Ok(result),
+            Some(PreparedSeekExactEnum::SegmentTermsEnum(mut supplier)) => supplier.get(),
             None => Ok(false),
         }
     }

@@ -16,6 +16,5 @@
  */
 use crate::core::util::error::lucene_error::Result;
 pub trait IOBooleanSupplier {
-    fn get(&self) -> Result<bool>;
-    fn get_mut(&mut self) -> Result<bool>;
+    fn get(&mut self) -> Result<bool>;
 }
