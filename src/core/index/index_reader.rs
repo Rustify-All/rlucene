@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use crate::core::index::term::Term;
 use crate::core::util::error::lucene_error::Result;
 pub trait IndexReader {
     fn max_doc(&self) -> Result<i32>;
@@ -43,7 +44,38 @@ pub trait IndexReader {
 
     fn do_close(&mut self) -> Result<()>;
 
-    fn check_integrity(&self) -> Result<()>;
+    /// Returns the number of documents containing the `term`.
+    /// This method returns `0` if the term or field does not exist.
+    /// This method does not take into account deleted documents that
+    /// have not yet been merged away.
+    ///
+    /// See [`TermsEnum::doc_freq`](crate::core::index::terms_enum::TermsEnum::doc_freq).
+    fn doc_freq(&self, term: &Term) -> Result<i32>;
+
+    /// Returns the total number of occurrences of `term` across all documents
+    /// (the sum of the `freq()` for each doc that has this term).
+    /// Note that, like other term measures, this measure does not take
+    /// deleted documents into account.
+    fn total_term_freq(&self, term: &Term) -> Result<i64>;
+    /// Returns the sum of [`TermsEnum::doc_freq`](crate::core::index::terms_enum::TermsEnum::doc_freq) for all terms in this field.
+    /// Note that, just like other term measures, this measure does not take
+    /// deleted documents into account.
+    ///
+    /// See [`Terms::get_sum_doc_freq`](crate::core::index::terms::Terms::get_sum_doc_freq).
+    fn sum_doc_freq(&self, field: &str) -> Result<i64>;
+    /// Returns the number of documents that have at least one term for this field.
+    /// Note that, just like other term measures, this measure does not take
+    /// deleted documents into account.
+    ///
+    /// See [`Terms::get_doc_count`](crate::core::index::terms::Terms::get_doc_count).
+    fn doc_count(&self, field: &str) -> Result<i32>;
+
+    /// Returns the sum of [`TermsEnum::total_term_freq`] for all terms in this field.
+    /// Note that, just like other term measures, this measure does not take
+    /// deleted documents into account.
+    ///
+    /// See [`Terms::get_sum_total_term_freq`](crate::core::index::terms::Terms::get_sum_total_term_freq).
+    fn sum_total_term_freq(&self, field: &str) -> Result<i64>;
 }
 
 pub enum IndexReaderEnum {}
@@ -80,7 +112,23 @@ impl IndexReader for IndexReaderEnum {
         todo!()
     }
 
-    fn check_integrity(&self) -> Result<()> {
+    fn doc_freq(&self, term: &Term) -> Result<i32> {
+        todo!()
+    }
+
+    fn total_term_freq(&self, term: &Term) -> Result<i64> {
+        todo!()
+    }
+
+    fn sum_doc_freq(&self, field: &str) -> Result<i64> {
+        todo!()
+    }
+
+    fn doc_count(&self, field: &str) -> Result<i32> {
+        todo!()
+    }
+
+    fn sum_total_term_freq(&self, field: &str) -> Result<i64> {
         todo!()
     }
 }

@@ -24,6 +24,7 @@ use crate::core::index::dummy::dummy_terms::DummyTerms;
 use crate::core::index::field_infos::FieldInfos;
 use crate::core::index::index_reader::IndexReader;
 use crate::core::index::leaf_reader::LeafReader;
+use crate::core::index::term::Term;
 use crate::core::util::dummy::dummy_bits::DummyBits;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use std::sync::Arc;
@@ -44,8 +45,24 @@ impl IndexReader for DocValuesLeafReader {
         Err(LuceneError::unsupported_operation(""))
     }
 
-    fn check_integrity(&self) -> Result<()> {
-        Err(LuceneError::unsupported_operation(""))
+    fn doc_freq(&self, term: &Term) -> Result<i32> {
+        LeafReader::doc_freq(self, term)
+    }
+
+    fn total_term_freq(&self, term: &Term) -> Result<i64> {
+        LeafReader::total_term_freq(self, term)
+    }
+
+    fn sum_doc_freq(&self, field: &str) -> Result<i64> {
+        LeafReader::sum_doc_freq(self, field)
+    }
+
+    fn doc_count(&self, field: &str) -> Result<i32> {
+        LeafReader::doc_count(self, field)
+    }
+
+    fn sum_total_term_freq(&self, field: &str) -> Result<i64> {
+        LeafReader::sum_total_term_freq(self, field)
     }
 }
 
@@ -108,6 +125,9 @@ impl LeafReader for DocValuesLeafReader {
     type Bits = DummyBits;
 
     fn get_live_docs(&self) -> Result<Option<Self::Bits>> {
+        Err(LuceneError::unsupported_operation(""))
+    }
+    fn check_integrity(&self) -> Result<()> {
         Err(LuceneError::unsupported_operation(""))
     }
 }

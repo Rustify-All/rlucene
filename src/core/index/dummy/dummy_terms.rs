@@ -26,10 +26,6 @@ use std::borrow::Cow;
 
 pub struct DummyTerms;
 impl Terms for DummyTerms {
-    fn get_terms() -> Result<()> {
-        unreachable!("Dummy implementation: this method should never be called in real usage")
-    }
-
     type TermsEnum = DummyTermsEnum;
 
     fn iterator(&self) -> Result<Self::TermsEnum> {

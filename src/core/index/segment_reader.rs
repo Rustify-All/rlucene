@@ -36,6 +36,7 @@ use crate::core::index::segment_commit_info::SegmentCommitInfo;
 use crate::core::index::segment_core_readers::{CfsOrBaseInput, SegmentCoreReaders};
 use crate::core::index::segment_doc_values::SegmentDocValues;
 use crate::core::index::segment_doc_values_producer::SegmentDocValuesProducer;
+use crate::core::index::term::Term;
 use crate::core::store::IOContext;
 use crate::core::store::directory::Directory;
 use crate::core::util::bits::{Bits, Either2Bits};
@@ -325,12 +326,24 @@ where
         Ok(())
     }
 
-    fn check_integrity(&self) -> Result<()> {
-        CodecReader::default_check_integrity(self)?;
-        if let Some(dv) = &self.core.cfs_reader {
-            dv.sub_compound_dir.check_integrity()?;
-        }
-        Ok(())
+    fn doc_freq(&self, term: &Term) -> Result<i32> {
+        LeafReader::doc_freq(self, term)
+    }
+
+    fn total_term_freq(&self, term: &Term) -> Result<i64> {
+        LeafReader::total_term_freq(self, term)
+    }
+
+    fn sum_doc_freq(&self, field: &str) -> Result<i64> {
+        LeafReader::sum_doc_freq(self, field)
+    }
+
+    fn doc_count(&self, field: &str) -> Result<i32> {
+        LeafReader::doc_count(self, field)
+    }
+
+    fn sum_total_term_freq(&self, field: &str) -> Result<i64> {
+        LeafReader::sum_total_term_freq(self, field)
     }
 }
 impl<D> LeafReader for SegmentReader<D>
@@ -407,6 +420,13 @@ where
             },
             None => Ok(None),
         }
+    }
+    fn check_integrity(&self) -> Result<()> {
+        CodecReader::default_check_integrity(self)?;
+        if let Some(dv) = &self.core.cfs_reader {
+            dv.sub_compound_dir.check_integrity()?;
+        }
+        Ok(())
     }
 }
 impl<D> CodecReader for SegmentReader<D>

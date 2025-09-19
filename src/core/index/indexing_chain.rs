@@ -82,6 +82,7 @@ use crate::core::index::sorter::{DocMap, DocMapImpl, Sorter};
 use crate::core::index::sorting_stored_fields_consumer::SortingStoredFieldsConsumer;
 use crate::core::index::sorting_term_vectors_consumer::SortingTermVectorsConsumer;
 use crate::core::index::stored_fields_consumer::StoredFieldsConsumer;
+use crate::core::index::term::Term;
 use crate::core::index::term_vectors_consumer::{PerFieldMeta, TermVectorsConsumer};
 use crate::core::index::vector_encoding::VectorEncoding;
 use crate::core::index::vector_similarity_function::VectorSimilarityFunction;
@@ -1975,8 +1976,24 @@ where
         self.base.do_close()
     }
 
-    fn check_integrity(&self) -> Result<()> {
-        self.base.check_integrity()
+    fn doc_freq(&self, term: &Term) -> Result<i32> {
+        LeafReader::doc_freq(self, term)
+    }
+
+    fn total_term_freq(&self, term: &Term) -> Result<i64> {
+        LeafReader::total_term_freq(self, term)
+    }
+
+    fn sum_doc_freq(&self, field: &str) -> Result<i64> {
+        LeafReader::sum_doc_freq(self, field)
+    }
+
+    fn doc_count(&self, field: &str) -> Result<i32> {
+        LeafReader::doc_count(self, field)
+    }
+
+    fn sum_total_term_freq(&self, field: &str) -> Result<i64> {
+        LeafReader::sum_total_term_freq(self, field)
     }
 }
 
@@ -2150,6 +2167,10 @@ where
     fn get_live_docs(&self) -> Result<Option<Self::Bits>> {
         self.base.get_live_docs()
     }
+
+    fn check_integrity(&self) -> Result<()> {
+        self.base.check_integrity()
+    }
 }
 struct DocValuesLeafReaderImpl2<'a, SFB>
 where
@@ -2191,8 +2212,24 @@ where
         self.base.do_close()
     }
 
-    fn check_integrity(&self) -> Result<()> {
-        self.base.check_integrity()
+    fn doc_freq(&self, term: &Term) -> Result<i32> {
+        LeafReader::doc_freq(self, term)
+    }
+
+    fn total_term_freq(&self, term: &Term) -> Result<i64> {
+        LeafReader::total_term_freq(self, term)
+    }
+
+    fn sum_doc_freq(&self, field: &str) -> Result<i64> {
+        LeafReader::sum_doc_freq(self, field)
+    }
+
+    fn doc_count(&self, field: &str) -> Result<i32> {
+        LeafReader::doc_count(self, field)
+    }
+
+    fn sum_total_term_freq(&self, field: &str) -> Result<i64> {
+        LeafReader::sum_total_term_freq(self, field)
     }
 }
 
@@ -2289,6 +2326,9 @@ where
 
     fn get_live_docs(&self) -> Result<Option<Self::Bits>> {
         self.base.get_live_docs()
+    }
+    fn check_integrity(&self) -> Result<()> {
+        self.base.check_integrity()
     }
 }
 

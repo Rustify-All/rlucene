@@ -21,7 +21,7 @@ use crate::core::codecs::postings_reader_base::PostingsReaderBase;
 use crate::core::index::BytesRef;
 use crate::core::index::freq_prox_fields::FreqProxTermsEnum;
 use crate::core::index::term_state::{Either2TermState, TermState, TermStateEnum};
-use crate::core::index::terms_enum::{SeekStatus, TermsEnum};
+use crate::core::index::terms_enum::{EmptyTermsEnum, SeekStatus, TermsEnum};
 use crate::core::store::IndexInput;
 use crate::core::util::attribute_source::Either2AttributeSource;
 use crate::core::util::bytes_ref_iterator::BytesRefIterator;
@@ -204,6 +204,11 @@ where
     I: IndexInput,
 {
     fn from(value: TermsDict<I>) -> Self {
+        BaseTermsEnum::new(value)
+    }
+}
+impl From<EmptyTermsEnum> for BaseTermsEnum<EmptyTermsEnum> {
+    fn from(value: EmptyTermsEnum) -> Self {
         BaseTermsEnum::new(value)
     }
 }

@@ -16,20 +16,101 @@
  */
 use crate::core::index::binary_doc_values::BinaryDocValues;
 use crate::core::index::doc_values_skipper::DocValuesSkipper;
+use crate::core::index::dummy::dummy_postings_enum::DummyPostingsEnum;
 use crate::core::index::field_infos::FieldInfos;
 use crate::core::index::index_reader::IndexReader;
 use crate::core::index::numeric_doc_values::NumericDocValues;
+use crate::core::index::postings_enum::Either2PostingsEnum;
 use crate::core::index::sorted_doc_values::SortedDocValues;
 use crate::core::index::sorted_numeric_doc_values::SortedNumericDocValues;
 use crate::core::index::sorted_set_doc_values::SortedSetDocValues;
-use crate::core::index::terms::Terms;
+use crate::core::index::term::Term;
+use crate::core::index::terms::{Terms, terms_util};
+use crate::core::index::terms_enum::TermsEnum;
 use crate::core::util::bits::Bits;
-use crate::core::util::error::lucene_error::Result;
+use crate::core::util::error::lucene_error::{LuceneError, Result};
 use std::sync::Arc;
 
 pub trait LeafReader: IndexReader {
+    fn doc_freq(&self, term: &Term) -> Result<i32>
+    where
+        Self: Sized,
+    {
+        let terms = terms_util::get_terms(self, term.field())?;
+        let mut terms_enum = terms.iterator()?;
+
+        if terms_enum.seek_exact(term.bytes())? {
+            terms_enum.doc_freq()
+        } else {
+            Ok(0)
+        }
+    }
+    /// Returns the number of documents containing the term `t`.
+    /// This method returns `0` if the term or field does not exist.
+    /// This method does not take into account deleted documents
+    /// that have not yet been merged away.
+    fn total_term_freq(&self, term: &Term) -> Result<i64>
+    where
+        Self: Sized,
+    {
+        let terms = terms_util::get_terms(self, term.field())?;
+        let mut terms_enum = terms.iterator()?;
+
+        if terms_enum.seek_exact(term.bytes())? {
+            terms_enum.total_term_freq()
+        } else {
+            Ok(0)
+        }
+    }
+    fn sum_doc_freq(&self, field: &str) -> Result<i64>
+    where
+        Self: Sized,
+    {
+        if let Some(terms) = self.terms(field)? {
+            terms.get_sum_doc_freq()
+        } else {
+            Ok(0)
+        }
+    }
+
+    fn doc_count(&self, field: &str) -> Result<i32>
+    where
+        Self: Sized,
+    {
+        if let Some(terms) = self.terms(field)? {
+            terms.get_doc_count()
+        } else {
+            Ok(0)
+        }
+    }
+
+    fn sum_total_term_freq(&self, field: &str) -> Result<i64>
+    where
+        Self: Sized,
+    {
+        if let Some(terms) = self.terms(field)? {
+            terms.get_sum_total_term_freq()
+        } else {
+            Ok(0)
+        }
+    }
+
     type Terms: Terms;
     fn terms(&self, field: &str) -> Result<Option<Self::Terms>>;
+
+    fn postings(&mut self, term: &Term, flags: i32) -> Result<Option<LeafPostingsEnum<Self::Terms>>>
+    where
+        Self: Sized,
+    {
+        let terms = terms_util::get_terms(self, term.field())?;
+        let mut terms_enum = terms.iterator()?;
+        if terms_enum.seek_exact(term.bytes())? {
+            Ok(Some(terms_enum.postings_with_flags(None, flags)?))
+        } else {
+            Ok(None)
+        }
+    }
+
     type NumericDocValues: NumericDocValues;
     fn get_numeric_doc_values(&self, field: &str) -> Result<Option<Self::NumericDocValues>>;
 
@@ -58,4 +139,12 @@ pub trait LeafReader: IndexReader {
 
     type Bits: Bits;
     fn get_live_docs(&self) -> Result<Option<Self::Bits>>;
+
+    fn check_integrity(&self) -> Result<()> {
+        Err(LuceneError::unsupported_operation(""))
+    }
 }
+
+// DummyPostingsEnum from  EmptyTerms's EmptyTermsEnum's PostingsEnum
+type LeafPostingsEnum<T> =
+    Either2PostingsEnum<<<T as Terms>::TermsEnum as TermsEnum>::PostingsEnum, DummyPostingsEnum>;

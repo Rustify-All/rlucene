@@ -17,8 +17,9 @@
 use std::borrow::Cow;
 
 use crate::core::index::automaton_terms_enum::AutomatonTermsEnum;
-use crate::core::index::filtered_terms_enum::FilteredTermsEnum;
-use crate::core::index::terms_enum::{Either2TermsEnum, SeekStatus, TermsEnum};
+use crate::core::index::base_terms_enum::BaseTermsEnum;
+use crate::core::index::filtered_terms_enum::{FilteredTermsEnum, FilteredTermsEnumBase};
+use crate::core::index::terms_enum::{Either2TermsEnum, EmptyTermsEnum, SeekStatus, TermsEnum};
 use crate::core::index::{BytesRef, BytesRefBuilder};
 use crate::core::util::automation::compiled_automaton::CompiledAutomaton;
 use crate::core::util::bytes_ref_iterator::BytesRefIterator;
@@ -26,19 +27,6 @@ use crate::core::util::error::lucene_error::Result;
 
 /// Trait representing base term statistics and access.
 pub trait Terms {
-    /// Returns the [`Terms`] index for this field, or [`Terms::EMPTY`] if it
-    /// has none.
-    ///
-    /// Returns:
-    /// - A `Terms` instance, or an empty instance if the field does not exist
-    ///   in this reader.
-    ///
-    /// Errors:
-    /// - Returns an error if an I/O error occurs.
-    fn get_terms() -> Result<()> {
-        unimplemented!()
-    }
-
     type TermsEnum: TermsEnum;
     /// Returns an iterator that will step through all terms. This method will
     /// not return None.
@@ -196,6 +184,88 @@ pub trait Terms {
             self.get_sum_total_term_freq()?,
             self.get_sum_doc_freq()?
         ))
+    }
+}
+pub mod terms_util {
+    use crate::core::index::leaf_reader::LeafReader;
+    use crate::core::index::terms::{EitherEmptyTerms, EmptyTerms};
+    use crate::core::util::error::lucene_error::Result;
+
+    /// Returns the [`Terms`] index for this field, or [`crate::core::index::terms::Terms::EMPTY`] if it
+    /// has none.
+    ///
+    /// Returns:
+    /// - A `Terms` instance, or an empty instance if the field does not exist
+    ///   in this reader.
+    ///
+    /// Errors:
+    /// - Returns an error if an I/O error occurs.
+    pub(crate) fn get_terms<LR>(reader: &LR, filed: &str) -> Result<EitherEmptyTerms<LR::Terms>>
+    where
+        LR: LeafReader,
+    {
+        let terms = reader.terms(filed)?;
+        match terms {
+            Some(t) => Ok(EitherEmptyTerms::A(t)),
+            None => Ok(EitherEmptyTerms::B(EmptyTerms)),
+        }
+    }
+}
+pub type EitherEmptyTerms<T> = Either2Terms<T, EmptyTerms>;
+
+#[derive(Default)]
+pub struct EmptyTerms;
+impl Terms for EmptyTerms {
+    type TermsEnum = BaseTermsEnum<EmptyTermsEnum>;
+
+    fn iterator(&self) -> Result<Self::TermsEnum> {
+        Ok(EmptyTermsEnum.into())
+    }
+
+    type IntersectIter
+        = FilteredTermsEnum<Self::TermsEnum, AutomatonTermsEnum>
+    where
+        Self::TermsEnum: BytesRefIterator,
+        AutomatonTermsEnum: FilteredTermsEnumBase;
+
+    fn intersect(
+        &self,
+        compiled: &mut CompiledAutomaton,
+        start_term: Option<BytesRef<Vec<u8>>>,
+    ) -> Result<Self::IntersectIter> {
+        self.default_intersect(compiled, start_term)
+    }
+
+    fn size(&self) -> Result<i64> {
+        Ok(0)
+    }
+
+    fn get_sum_total_term_freq(&self) -> Result<i64> {
+        Ok(0)
+    }
+
+    fn get_sum_doc_freq(&self) -> Result<i64> {
+        Ok(0)
+    }
+
+    fn get_doc_count(&self) -> Result<i32> {
+        Ok(0)
+    }
+
+    fn has_freqs(&self) -> bool {
+        false
+    }
+
+    fn has_offsets(&self) -> bool {
+        false
+    }
+
+    fn has_positions(&self) -> bool {
+        false
+    }
+
+    fn has_payloads(&self) -> bool {
+        false
     }
 }
 

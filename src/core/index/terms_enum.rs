@@ -17,12 +17,16 @@
 use std::borrow::Cow;
 
 use crate::core::index::BytesRef;
+use crate::core::index::dummy::dummy_impacts_enum::DummyImpactsEnum;
+use crate::core::index::dummy::dummy_postings_enum::DummyPostingsEnum;
+use crate::core::index::dummy::dummy_term_state_type::DummyTermState;
 use crate::core::index::impacts_enum::{Either2ImpactsEnum, ImpactsEnum};
 use crate::core::index::postings_enum::{Either2PostingsEnum, FREQS, PostingsEnum};
 use crate::core::index::term_state::{Either2TermState, TermState, TermStateEnum};
 use crate::core::util::attribute_source::AttributeSource;
 use crate::core::util::attribute_source::Either2AttributeSource;
 use crate::core::util::bytes_ref_iterator::BytesRefIterator;
+use crate::core::util::dummy::dummy_attribute_source::DummyAttributeSource;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 
 /// Iterator to seek [`seek_ceil(BytesRef)`](TermsEnum::seek_ceil),
@@ -206,6 +210,99 @@ pub enum SeekStatus {
     Found,
     /// A different term was found after the requested term.
     NotFound,
+}
+
+#[derive(Default)]
+pub struct EmptyTermsEnum;
+
+impl BytesRefIterator for EmptyTermsEnum {
+    fn next(&mut self) -> Result<Option<Cow<'_, BytesRef<Vec<u8>>>>> {
+        Ok(None)
+    }
+}
+
+impl TermsEnum for EmptyTermsEnum {
+    type AttributeSource = DummyAttributeSource;
+
+    fn attributes(&self) -> Result<Self::AttributeSource> {
+        Err(LuceneError::not_implemented(""))
+    }
+
+    fn seek_exact(&mut self, _term: &BytesRef<Vec<u8>>) -> Result<bool> {
+        Err(LuceneError::not_implemented(""))
+    }
+
+    fn prepare_seek_exact(&mut self, _text: &BytesRef<Vec<u8>>) -> Result<bool> {
+        Err(LuceneError::not_implemented(""))
+    }
+
+    fn seek_ceil(&mut self, _term: &BytesRef<Vec<u8>>) -> Result<SeekStatus> {
+        Ok(SeekStatus::End)
+    }
+
+    fn seek_exact_with_ord(&mut self, _ord: i64) -> Result<()> {
+        Ok(())
+    }
+
+    fn seek_exact_with_state(
+        &mut self,
+        _term: &BytesRef<Vec<u8>>,
+        _state: &TermStateEnum,
+    ) -> Result<()> {
+        Err(LuceneError::not_implemented(""))
+    }
+
+    fn term(&self) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
+        Err(LuceneError::illegal_state(
+            "this method should never be called",
+        ))
+    }
+
+    fn ord(&self) -> Result<i64> {
+        Err(LuceneError::illegal_state(
+            "this method should never be called",
+        ))
+    }
+
+    fn doc_freq(&mut self) -> Result<i32> {
+        Err(LuceneError::illegal_state(
+            "this method should never be called",
+        ))
+    }
+
+    fn total_term_freq(&mut self) -> Result<i64> {
+        Err(LuceneError::illegal_state(
+            "this method should never be called",
+        ))
+    }
+
+    type PostingsEnum = DummyPostingsEnum;
+
+    fn postings_with_flags(
+        &mut self,
+        _reuse: Option<Self::PostingsEnum>,
+        _flags: i32,
+    ) -> Result<Self::PostingsEnum> {
+        Err(LuceneError::illegal_state(
+            "this method should never be called",
+        ))
+    }
+
+    type ImpactsEnum = DummyImpactsEnum;
+
+    fn impacts(&mut self, _flags: i32) -> Result<Self::ImpactsEnum> {
+        Err(LuceneError::illegal_state(
+            "this method should never be called",
+        ))
+    }
+
+    type TermState = DummyTermState;
+
+    fn term_state(&mut self) -> Result<Self::TermState> {
+        Err(LuceneError::illegal_state(
+            "this method should never be called",
+        ))
+    }
 }
 
 // TermsEnum

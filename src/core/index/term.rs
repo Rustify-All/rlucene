@@ -93,6 +93,10 @@ impl Term {
     pub fn text(&self) -> Result<String> {
         Self::get_string(&self.bytes)
     }
+    /// Returns the bytes of this term, these should not be modified.
+    pub fn bytes(&self) -> &BytesRef<Vec<u8>> {
+        &self.bytes
+    }
 }
 impl Display for Term {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

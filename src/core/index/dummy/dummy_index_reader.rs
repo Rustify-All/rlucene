@@ -24,6 +24,7 @@ use crate::core::index::dummy::dummy_terms::DummyTerms;
 use crate::core::index::field_infos::FieldInfos;
 use crate::core::index::index_reader::IndexReader;
 use crate::core::index::leaf_reader::LeafReader;
+use crate::core::index::term::Term;
 use crate::core::util::dummy::dummy_bits::DummyBits;
 use crate::core::util::error::lucene_error::Result;
 use std::sync::Arc;
@@ -62,7 +63,23 @@ impl IndexReader for DummyIndexReader {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    fn check_integrity(&self) -> Result<()> {
+    fn doc_freq(&self, _term: &Term) -> Result<i32> {
+        unreachable!("Dummy implementation: this method should never be called in real usage")
+    }
+
+    fn total_term_freq(&self, _term: &Term) -> Result<i64> {
+        unreachable!("Dummy implementation: this method should never be called in real usage")
+    }
+
+    fn sum_doc_freq(&self, _field: &str) -> Result<i64> {
+        unreachable!("Dummy implementation: this method should never be called in real usage")
+    }
+
+    fn doc_count(&self, _field: &str) -> Result<i32> {
+        unreachable!("Dummy implementation: this method should never be called in real usage")
+    }
+
+    fn sum_total_term_freq(&self, _field: &str) -> Result<i64> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 }
@@ -125,6 +142,10 @@ impl LeafReader for DummyIndexReader {
     type Bits = DummyBits;
 
     fn get_live_docs(&self) -> Result<Option<Self::Bits>> {
+        unreachable!("Dummy implementation: this method should never be called in real usage")
+    }
+
+    fn check_integrity(&self) -> Result<()> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 }
