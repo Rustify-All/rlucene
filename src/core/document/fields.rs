@@ -42,6 +42,39 @@ pub enum Fields {
     NumericDocValues(NumericDocValuesField),
     Reverse(ReservedField<NumericDocValuesField>),
 }
+impl From<Field> for Fields {
+    fn from(f: Field) -> Self {
+        Fields::Field(f)
+    }
+}
+
+impl From<TextField> for Fields {
+    fn from(t: TextField) -> Self {
+        Fields::Text(t)
+    }
+}
+
+impl From<StringField> for Fields {
+    fn from(s: StringField) -> Self {
+        Fields::String(s)
+    }
+}
+
+impl From<StoredField> for Fields {
+    fn from(s: StoredField) -> Self {
+        Fields::Stored(s)
+    }
+}
+impl From<NumericDocValuesField> for Fields {
+    fn from(n: NumericDocValuesField) -> Self {
+        Fields::NumericDocValues(n)
+    }
+}
+impl From<ReservedField<NumericDocValuesField>> for Fields {
+    fn from(r: ReservedField<NumericDocValuesField>) -> Self {
+        Fields::Reverse(r)
+    }
+}
 impl Display for Fields {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -218,30 +251,6 @@ impl IndexableField for Fields {
             Fields::NumericDocValues(f) => f.init_token_stream(analyzer),
             Fields::Reverse(f) => f.init_token_stream(analyzer),
         }
-    }
-}
-
-impl From<Field> for Fields {
-    fn from(f: Field) -> Self {
-        Fields::Field(f)
-    }
-}
-
-impl From<TextField> for Fields {
-    fn from(t: TextField) -> Self {
-        Fields::Text(t)
-    }
-}
-
-impl From<StringField> for Fields {
-    fn from(s: StringField) -> Self {
-        Fields::String(s)
-    }
-}
-
-impl From<StoredField> for Fields {
-    fn from(s: StoredField) -> Self {
-        Fields::Stored(s)
     }
 }
 

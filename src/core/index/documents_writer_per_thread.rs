@@ -1079,10 +1079,7 @@ where
     type IntoIter = Chain<Once<Fields>, B::IntoIter>;
 
     fn into_iter(self) -> Self::IntoIter {
-        let parent_field = Fields::Reverse(ReservedField::new(NumericDocValuesField::new(
-            &self.parent_field,
-            -1,
-        )));
-        once(parent_field).chain(self.doc)
+        let parent_field = ReservedField::new(NumericDocValuesField::new(&self.parent_field, -1));
+        once(parent_field.into()).chain(self.doc)
     }
 }
