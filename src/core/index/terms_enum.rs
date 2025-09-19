@@ -29,88 +29,6 @@ use crate::core::util::bytes_ref_iterator::BytesRefIterator;
 use crate::core::util::dummy::dummy_attribute_source::DummyAttributeSource;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::io_boolean_supplier::IOBooleanSupplier;
-
-pub trait PreparedSeekExactResult<'a>: Sized {
-    fn ready(result: bool) -> Self;
-    fn execute(self) -> Result<bool>;
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ReadyPreparedSeekExact {
-    result: bool,
-}
-
-impl ReadyPreparedSeekExact {
-    pub fn new(result: bool) -> Self {
-        Self { result }
-    }
-}
-
-impl<'a> PreparedSeekExactResult<'a> for ReadyPreparedSeekExact {
-    fn ready(result: bool) -> Self {
-        ReadyPreparedSeekExact::new(result)
-    }
-
-    fn execute(self) -> Result<bool> {
-        Ok(self.result)
-    }
-}
-
-pub enum PreparedSeekExactEnum<S>
-where
-    S: IOBooleanSupplier,
-{
-    Ready { result: bool },
-    Supplier(S),
-}
-
-impl<S> PreparedSeekExactEnum<S>
-where
-    S: IOBooleanSupplier,
-{
-    pub fn supplier(supplier: S) -> Self {
-        Self::Supplier(supplier)
-    }
-}
-
-impl<'a, S> PreparedSeekExactResult<'a> for PreparedSeekExactEnum<S>
-where
-    S: IOBooleanSupplier + 'a,
-{
-    fn ready(result: bool) -> Self {
-        PreparedSeekExactEnum::Ready { result }
-    }
-
-    fn execute(self) -> Result<bool> {
-        match self {
-            PreparedSeekExactEnum::Ready { result } => Ok(result),
-            PreparedSeekExactEnum::Supplier(mut supplier) => supplier.get(),
-        }
-    }
-}
-
-pub enum Either2PreparedSeekExact<A, B> {
-    A(A),
-    B(B),
-}
-
-impl<'a, A, B> PreparedSeekExactResult<'a> for Either2PreparedSeekExact<A, B>
-where
-    A: PreparedSeekExactResult<'a>,
-    B: PreparedSeekExactResult<'a>,
-{
-    fn ready(result: bool) -> Self {
-        Either2PreparedSeekExact::A(A::ready(result))
-    }
-
-    fn execute(self) -> Result<bool> {
-        match self {
-            Either2PreparedSeekExact::A(value) => value.execute(),
-            Either2PreparedSeekExact::B(value) => value.execute(),
-        }
-    }
-}
-
 /// Iterator to seek [`seek_ceil(BytesRef)`](TermsEnum::seek_ceil),
 /// [`seek_exact(BytesRef)`](TermsEnum::seek_exact) or step through
 /// [`next`](BytesRefIterator::next) terms to obtain frequency information
@@ -394,6 +312,87 @@ impl TermsEnum for EmptyTermsEnum {
         Err(LuceneError::illegal_state(
             "this method should never be called",
         ))
+    }
+}
+
+pub trait PreparedSeekExactResult<'a>: Sized {
+    fn ready(result: bool) -> Self;
+    fn execute(self) -> Result<bool>;
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ReadyPreparedSeekExact {
+    result: bool,
+}
+
+impl ReadyPreparedSeekExact {
+    pub fn new(result: bool) -> Self {
+        Self { result }
+    }
+}
+
+impl<'a> PreparedSeekExactResult<'a> for ReadyPreparedSeekExact {
+    fn ready(result: bool) -> Self {
+        ReadyPreparedSeekExact::new(result)
+    }
+
+    fn execute(self) -> Result<bool> {
+        Ok(self.result)
+    }
+}
+
+pub enum PreparedSeekExactEnum<S>
+where
+    S: IOBooleanSupplier,
+{
+    Ready { result: bool },
+    Supplier(S),
+}
+
+impl<S> PreparedSeekExactEnum<S>
+where
+    S: IOBooleanSupplier,
+{
+    pub fn supplier(supplier: S) -> Self {
+        Self::Supplier(supplier)
+    }
+}
+
+impl<'a, S> PreparedSeekExactResult<'a> for PreparedSeekExactEnum<S>
+where
+    S: IOBooleanSupplier + 'a,
+{
+    fn ready(result: bool) -> Self {
+        PreparedSeekExactEnum::Ready { result }
+    }
+
+    fn execute(self) -> Result<bool> {
+        match self {
+            PreparedSeekExactEnum::Ready { result } => Ok(result),
+            PreparedSeekExactEnum::Supplier(mut supplier) => supplier.get(),
+        }
+    }
+}
+
+pub enum Either2PreparedSeekExact<A, B> {
+    A(A),
+    B(B),
+}
+
+impl<'a, A, B> PreparedSeekExactResult<'a> for Either2PreparedSeekExact<A, B>
+where
+    A: PreparedSeekExactResult<'a>,
+    B: PreparedSeekExactResult<'a>,
+{
+    fn ready(result: bool) -> Self {
+        Either2PreparedSeekExact::A(A::ready(result))
+    }
+
+    fn execute(self) -> Result<bool> {
+        match self {
+            Either2PreparedSeekExact::A(value) => value.execute(),
+            Either2PreparedSeekExact::B(value) => value.execute(),
+        }
     }
 }
 

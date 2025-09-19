@@ -103,23 +103,29 @@ where
         &'a mut self,
         text: &'a BytesRef<Vec<u8>>,
     ) -> Result<Option<Self::PreparedSeekExact<'a>>> {
-        // Use a mutable reference to self.sub directly, avoiding unsafe code.
-        match self.sub.prepare_seek_exact(text) {
-            Ok(value) => Ok(value),
-            Err(LuceneError::NotImplemented(_)) => {
-                let result = match self.sub.seek_exact(text) {
-                    Ok(found) => found,
-                    Err(LuceneError::NotImplemented(_)) => {
-                        self.sub.seek_ceil(text)? == SeekStatus::Found
-                    },
-                    Err(e) => return Err(e),
-                };
+        let sub_ptr: *mut S = &mut self.sub;
 
-                Ok(Some(
-                    <Self::PreparedSeekExact<'a> as PreparedSeekExactResult<'a>>::ready(result),
-                ))
-            },
-            Err(e) => Err(e),
+        // SAFETY: `sub_ptr` originates from `&'a mut self` so it stays valid for the duration of
+        // this method. We perform the calls sequentially and never create aliasing mutable
+        // references while the raw pointer is used.
+        unsafe {
+            match (*sub_ptr).prepare_seek_exact(text) {
+                Ok(value) => Ok(value),
+                Err(LuceneError::NotImplemented(_)) => {
+                    let result = match (*sub_ptr).seek_exact(text) {
+                        Ok(found) => found,
+                        Err(LuceneError::NotImplemented(_)) => {
+                            (*sub_ptr).seek_ceil(text)? == SeekStatus::Found
+                        },
+                        Err(e) => return Err(e),
+                    };
+
+                    Ok(Some(
+                        <Self::PreparedSeekExact<'a> as PreparedSeekExactResult<'a>>::ready(result),
+                    ))
+                },
+                Err(e) => Err(e),
+            }
         }
     }
 
