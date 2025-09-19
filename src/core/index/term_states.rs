@@ -197,48 +197,25 @@ where
     )?;
 
     if needs_stats {
-        let mut pending_term_lookups = Vec::new();
-
         for ctx in context.leaves()? {
             let terms = terms_util::get_terms(ctx.reader(), term.field())?;
             let mut terms_enum = terms.iterator()?;
 
-            if let Some(supplier) = terms_enum.prepare_seek_exact(term.bytes())? {
-                let ord = ctx.ord;
-                if pending_term_lookups.len() <= ord {
-                    pending_term_lookups.resize_with(ord + 1, || None);
-                }
-                pending_term_lookups[ord] = Some(PendingTermLookup::new(terms_enum, supplier));
-            }
-        }
+            let should_register = match terms_enum.prepare_seek_exact(term.bytes())? {
+                Some(supplier) => supplier.get()?,
+                None => false,
+            };
 
-        for (ord, pending) in pending_term_lookups.into_iter().enumerate() {
-            if let Some(pending_lookup) = pending {
-                if pending_lookup.supplier.get()? {
-                    let mut terms_enum = pending_lookup.terms_enum;
-                    per_reader_term_state.register_with_stats(
-                        terms_enum.term_state()?,
-                        ord,
-                        terms_enum.doc_freq()?,
-                        terms_enum.total_term_freq()?,
-                    );
-                }
+            if should_register {
+                per_reader_term_state.register_with_stats(
+                    terms_enum.term_state()?,
+                    ctx.ord,
+                    terms_enum.doc_freq()?,
+                    terms_enum.total_term_freq()?,
+                );
             }
         }
     }
 
     Ok(per_reader_term_state)
-}
-pub struct PendingTermLookup<TE, S> {
-    pub terms_enum: TE,
-    pub supplier: S,
-}
-
-impl<TE, S> PendingTermLookup<TE, S> {
-    pub fn new(terms_enum: TE, supplier: S) -> Self {
-        Self {
-            terms_enum,
-            supplier,
-        }
-    }
 }
