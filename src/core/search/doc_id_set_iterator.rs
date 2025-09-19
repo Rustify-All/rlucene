@@ -247,6 +247,33 @@ impl<T: DocIdSetIterator> DocIdSetIterator for &mut T {
         (**self).cost()
     }
 }
+impl<T: DocIdSetIterator> DocIdSetIterator for &T {
+    fn doc_id(&self) -> i32 {
+        (**self).doc_id()
+    }
+
+    fn next_doc(&mut self) -> Result<i32> {
+        Err(LuceneError::not_implemented(
+            "next_doc() is not implemented for &T",
+        ))
+    }
+
+    fn advance(&mut self, _target: i32) -> Result<i32> {
+        Err(LuceneError::not_implemented(
+            "advance() is not implemented for &T",
+        ))
+    }
+
+    fn slow_advance(&mut self, _target: i32) -> Result<i32> {
+        Err(LuceneError::not_implemented(
+            "slow_advance() is not implemented for &T",
+        ))
+    }
+
+    fn cost(&self) -> Result<i64> {
+        (**self).cost()
+    }
+}
 
 pub mod disi_const {
     /// When returned by
@@ -306,6 +333,7 @@ macro_rules! either_docidsetiterator_named {
 either_docidsetiterator_named!(pub Either2DocIdSetIterator { A: A, B: B});
 either_docidsetiterator_named!(pub Either3DocIdSetIterator { A: A, B: B,C:C});
 either_docidsetiterator_named!(pub(crate) Either5DocIdSetIterator { A: A, B: B, C: C, D: D, E: E });
+pub type EitherEmpty<DISI> = Either2DocIdSetIterator<DISI, EmptyDISI>;
 
 #[cfg(test)]
 mod tests {

@@ -31,6 +31,14 @@ impl TwoPhaseIterator for DummyTwoPhaseIterator {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
+    fn take_approximation(&mut self) -> Self::DocIdSetIterator {
+        unreachable!("Dummy implementation: this method should never be called in real usage")
+    }
+
+    fn set_empty(&mut self) {
+        unreachable!("Dummy implementation: this method should never be called in real usage")
+    }
+
     fn matches(&mut self) -> Result<bool> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }

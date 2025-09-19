@@ -229,7 +229,7 @@ where
     fn iterator(&mut self) -> Self::DocIdSetIteratorRef<'_> {
         if self.impacts_disi.is_some() {
             debug_assert!(self.max_score_cache.is_none());
-            Either3DocIdSetIterator::C(self.impacts_disi.as_mut().unwrap())
+            TermScorerDisiRef::C(self.impacts_disi.as_mut().unwrap())
         } else {
             debug_assert!(self.impacts_disi.is_none());
             debug_assert!(
@@ -247,8 +247,8 @@ where
                 .as_mut()
                 .unwrap()
             {
-                Either2ImpactsEnum::A(t) => Either3DocIdSetIterator::A(t),
-                Either2ImpactsEnum::B(s) => Either3DocIdSetIterator::B(&mut s.delegate),
+                Either2ImpactsEnum::A(t) => TermScorerDisiRef::A(t),
+                Either2ImpactsEnum::B(s) => TermScorerDisiRef::B(&mut s.delegate),
             }
         }
     }
@@ -256,7 +256,7 @@ where
     fn iterator_take(&mut self) -> Self::DocIdSetIterator {
         if self.impacts_disi.is_some() {
             debug_assert!(self.max_score_cache.is_none());
-            Either3DocIdSetIterator::C(std::mem::take(&mut self.impacts_disi).unwrap())
+            TermScorerDisi::C(std::mem::take(&mut self.impacts_disi).unwrap())
         } else {
             debug_assert!(self.impacts_disi.is_none());
             debug_assert!(
@@ -274,10 +274,8 @@ where
                 .take()
                 .unwrap()
             {
-                Either2ImpactsEnum::A(t) => Either3DocIdSetIterator::A(t),
-                Either2ImpactsEnum::B(mut s) => {
-                    Either3DocIdSetIterator::B(std::mem::take(&mut s.delegate))
-                },
+                Either2ImpactsEnum::A(t) => TermScorerDisi::A(t),
+                Either2ImpactsEnum::B(mut s) => TermScorerDisi::B(std::mem::take(&mut s.delegate)),
             }
         }
     }

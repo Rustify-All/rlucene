@@ -27,6 +27,10 @@ pub trait TwoPhaseIterator {
     /// `TwoPhaseIterator`.
     fn approximation_mut(&mut self) -> &mut Self::DocIdSetIterator;
     fn approximation(&self) -> &Self::DocIdSetIterator;
+    fn take_approximation(&mut self) -> Self::DocIdSetIterator;
+
+    /// set the approximation to an empty iterator
+    fn set_empty(&mut self);
 
     /// Return whether the current doc ID that `approximation()` is on matches.
     ///
@@ -50,7 +54,7 @@ pub struct TwoPhaseIteratorAsDocIdSetIterator<TPI>
 where
     TPI: TwoPhaseIterator,
 {
-    two_phase_iterator: TPI,
+    pub(crate) two_phase_iterator: TPI,
 }
 
 impl<TPI> TwoPhaseIteratorAsDocIdSetIterator<TPI>
@@ -98,3 +102,83 @@ where
         self.two_phase_iterator.approximation().cost()
     }
 }
+/// Return a DocIdSetIterator view of the provided TwoPhaseIterator.
+pub fn as_doc_id_set_iterator<TPI>(tpi: TPI) -> TwoPhaseIteratorAsDocIdSetIterator<TPI>
+where
+    TPI: TwoPhaseIterator,
+{
+    TwoPhaseIteratorAsDocIdSetIterator::new(tpi)
+}
+
+pub fn unwrap<TPI>(tp: TwoPhaseIteratorAsDocIdSetIterator<TPI>) -> TPI
+where
+    TPI: TwoPhaseIterator,
+{
+    tp.two_phase_iterator
+}
+
+macro_rules! either_two_phase_iterator_homo {
+    ($vis:vis $name:ident { $HeadVar:ident : $HeadT:ident $(, $Var:ident : $T:ident )+ $(,)? }) => {
+        $vis enum $name<$HeadT, $( $T ),+> {
+            $HeadVar($HeadT),
+            $( $Var($T), )+
+        }
+
+        impl<$HeadT, $( $T ),+> TwoPhaseIterator for $name<$HeadT, $( $T ),+>
+        where
+            $HeadT: TwoPhaseIterator,
+            $( $T: TwoPhaseIterator<DocIdSetIterator = <$HeadT as TwoPhaseIterator>::DocIdSetIterator> ),+
+        {
+            type DocIdSetIterator = <$HeadT as TwoPhaseIterator>::DocIdSetIterator;
+
+            #[inline]
+            fn approximation_mut(&mut self) -> &mut Self::DocIdSetIterator {
+                match self {
+                    Self::$HeadVar(inner) => inner.approximation_mut(),
+                    $( Self::$Var(inner) => inner.approximation_mut(), )+
+                }
+            }
+
+            #[inline]
+            fn approximation(&self) -> &Self::DocIdSetIterator {
+                match self {
+                    Self::$HeadVar(inner) => inner.approximation(),
+                    $( Self::$Var(inner) => inner.approximation(), )+
+                }
+            }
+
+            #[inline]
+            fn take_approximation(&mut self) -> Self::DocIdSetIterator {
+                match self {
+                    Self::$HeadVar(inner) => inner.take_approximation(),
+                    $( Self::$Var(inner) => inner.take_approximation(), )+
+                }
+            }
+
+            #[inline]
+            fn set_empty(&mut self) {
+                match self {
+                    Self::$HeadVar(inner) => inner.set_empty(),
+                    $( Self::$Var(inner) => inner.set_empty(), )+
+                }
+            }
+
+            #[inline]
+            fn matches(&mut self) -> Result<bool> {
+                match self {
+                    Self::$HeadVar(inner) => inner.matches(),
+                    $( Self::$Var(inner) => inner.matches(), )+
+                }
+            }
+
+            #[inline]
+            fn match_cost(&self) -> f32 {
+                match self {
+                    Self::$HeadVar(inner) => inner.match_cost(),
+                    $( Self::$Var(inner) => inner.match_cost(), )+
+                }
+            }
+        }
+    };
+}
+either_two_phase_iterator_homo!(pub Either2TwoPhaseIterator { A: A, B: B });
