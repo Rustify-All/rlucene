@@ -226,7 +226,13 @@ pub trait Weight: SegmentCacheable {
     /// # Errors
     ///
     /// Returns an error if a low-level I/O error occurs.
-    fn count<LR>(&self, _context: &LeafReaderContext<LR>) -> Result<i32>
+    fn count<LR>(&self, context: &LeafReaderContext<LR>) -> Result<i32>
+    where
+        LR: LeafReader,
+    {
+        self.default_count(context)
+    }
+    fn default_count<LR>(&self, _context: &LeafReaderContext<LR>) -> Result<i32>
     where
         LR: LeafReader,
     {

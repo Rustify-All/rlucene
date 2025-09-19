@@ -14,9 +14,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use crate::core::index::index_reader_context::IndexReaderContext;
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::leaf_reader_context::LeafReaderContext;
 use crate::core::index::term::Term;
+use crate::core::index::terms::Terms;
+use crate::core::index::terms_enum::TermsEnum;
 use crate::core::search::dummy::dummy_bulk_scorer::DummyBulkScorer;
 use crate::core::search::dummy::dummy_matches::DummyMatches;
 use crate::core::search::dummy::dummy_scorer::DummyScorer;
@@ -90,6 +93,17 @@ impl Display for TermQuery {
 }
 
 pub struct TermWeight;
+impl TermWeight {
+    fn get_terms_enum<LR>(
+        &self,
+        _context: &LeafReaderContext<LR>,
+    ) -> Result<Option<<LR::Terms as Terms>::TermsEnum>>
+    where
+        LR: LeafReader,
+    {
+        todo!()
+    }
+}
 
 impl SegmentCacheable for TermWeight {
     fn is_cacheable<LR>(&self, ctx: &LeafReaderContext<LR>) -> bool
@@ -137,6 +151,21 @@ impl Weight for TermWeight {
         LR: LeafReader,
     {
         todo!()
+    }
+
+    fn count<LR>(&self, context: &LeafReaderContext<LR>) -> Result<i32>
+    where
+        LR: LeafReader,
+    {
+        if !context.reader().has_deletions()? {
+            if let Some(mut terms_enum) = self.get_terms_enum(context)? {
+                terms_enum.doc_freq()
+            } else {
+                Ok(0)
+            }
+        } else {
+            self.default_count(context)
+        }
     }
 }
 
