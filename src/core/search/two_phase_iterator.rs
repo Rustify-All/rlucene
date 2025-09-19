@@ -29,7 +29,7 @@ pub trait TwoPhaseIterator {
     fn approximation(&self) -> &Self::DocIdSetIterator;
     fn take_approximation(&mut self) -> Self::DocIdSetIterator;
 
-    /// set the approximation to an empty iterator
+    /// Set the approximation to an empty iterator
     fn set_empty(&mut self);
 
     /// Return whether the current doc ID that `approximation()` is on matches.
