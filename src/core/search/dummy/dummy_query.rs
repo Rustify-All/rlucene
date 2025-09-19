@@ -14,6 +14,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use crate::core::index::index_reader_context::IndexReaderContext;
+use crate::core::index::leaf_reader::LeafReader;
 use crate::core::search::dummy::dummy_weight::DummyWeight;
 use crate::core::search::index_searcher::IndexSearcher;
 use crate::core::search::query::{Query, QueryEnum};
@@ -30,21 +32,29 @@ impl Query for DummyQuery {
 
     type Weight = DummyWeight;
 
-    fn crate_weight(
+    fn crate_weight<IRC, LR>(
         &self,
-        _search: &IndexSearcher,
+        _search: &IndexSearcher<IRC, LR>,
         _score_mod: &ScoreMode,
         _boost: f32,
-    ) -> crate::core::util::error::lucene_error::Result<Self::Weight> {
+    ) -> crate::core::util::error::lucene_error::Result<Self::Weight>
+    where
+        IRC: IndexReaderContext<LR>,
+        LR: LeafReader,
+    {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
     type Query = DummyQuery;
 
-    fn rewrite(
+    fn rewrite<IRC, LR>(
         &self,
-        _searcher: &IndexSearcher,
-    ) -> crate::core::util::error::lucene_error::Result<Option<Self::Query>> {
+        _searcher: &IndexSearcher<IRC, LR>,
+    ) -> crate::core::util::error::lucene_error::Result<Option<Self::Query>>
+    where
+        IRC: IndexReaderContext<LR>,
+        LR: LeafReader,
+    {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 

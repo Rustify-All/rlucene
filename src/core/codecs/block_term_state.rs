@@ -77,6 +77,12 @@ pub enum BlockTermStateEnum {
     Int(IntBlockTermState),
     Block(BlockTermState),
 }
+// pending useing
+impl Default for BlockTermStateEnum {
+    fn default() -> Self {
+        BlockTermStateEnum::Block(BlockTermState::default())
+    }
+}
 impl BlockTermStateEnum {
     pub fn get_block_term_state(&mut self) -> &mut BlockTermState {
         match self {

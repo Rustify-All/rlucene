@@ -14,6 +14,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use crate::core::index::index_reader_context::IndexReaderContext;
+use crate::core::index::leaf_reader::LeafReader;
 use crate::core::search::dummy::dummy_query::DummyQuery;
 use crate::core::search::dummy::dummy_weight::DummyWeight;
 use crate::core::search::index_searcher::IndexSearcher;
@@ -29,19 +31,27 @@ pub trait Query: Eq + Hash + Display + Debug {
     fn wrap(self) -> QueryEnum;
 
     type Weight: Weight;
-    fn crate_weight(
+    fn crate_weight<IRC, LR>(
         &self,
-        _search: &IndexSearcher,
+        _search: &IndexSearcher<IRC, LR>,
         _score_mod: &ScoreMode,
         _boost: f32,
-    ) -> Result<Self::Weight> {
+    ) -> Result<Self::Weight>
+    where
+        IRC: IndexReaderContext<LR>,
+        LR: LeafReader,
+    {
         Err(LuceneError::unsupported_operation(format!(
             "Query {} does not implement create_weight",
             std::any::type_name::<Self>()
         )))
     }
     type Query: Query;
-    fn rewrite(&self, _searcher: &IndexSearcher) -> Result<Option<Self::Query>> {
+    fn rewrite<IRC, LR>(&self, _searcher: &IndexSearcher<IRC, LR>) -> Result<Option<Self::Query>>
+    where
+        IRC: IndexReaderContext<LR>,
+        LR: LeafReader,
+    {
         Ok(None)
     }
     fn visit<QV>(&self, visitor: &QV)
@@ -96,18 +106,26 @@ impl Query for QueryEnum {
 
     type Weight = DummyWeight;
 
-    fn crate_weight(
+    fn crate_weight<IRC, LR>(
         &self,
-        _search: &IndexSearcher,
+        _search: &IndexSearcher<IRC, LR>,
         _score_mod: &ScoreMode,
         _boost: f32,
-    ) -> Result<Self::Weight> {
+    ) -> Result<Self::Weight>
+    where
+        IRC: IndexReaderContext<LR>,
+        LR: LeafReader,
+    {
         todo!()
     }
 
     type Query = DummyQuery;
 
-    fn rewrite(&self, _searcher: &IndexSearcher) -> Result<Option<Self::Query>> {
+    fn rewrite<IRC, LR>(&self, _searcher: &IndexSearcher<IRC, LR>) -> Result<Option<Self::Query>>
+    where
+        IRC: IndexReaderContext<LR>,
+        LR: LeafReader,
+    {
         todo!()
     }
 

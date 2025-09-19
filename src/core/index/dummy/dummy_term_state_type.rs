@@ -26,6 +26,12 @@ impl Display for DummyTermState {
     }
 }
 
+impl Default for DummyTermState {
+    fn default() -> Self {
+        unreachable!("Dummy implementation: this method should never be called in real usage")
+    }
+}
+
 impl TermState for DummyTermState {
     fn copy_from(&mut self, _other: &TermStateEnum) -> Result<()> {
         unreachable!("Dummy implementation: this method should never be called in real usage")

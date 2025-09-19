@@ -25,7 +25,7 @@ use std::fmt;
 /// [`IndexReaderContext`] for [`LeafReader`] instances.
 pub struct LeafReaderContext<LR> {
     /// The reader's ord in the top-level's leaves array
-    ord: i32,
+    pub(crate) ord: usize,
     /// The reader's absolute doc base
     doc_base: i32,
     reader: LR,
@@ -40,7 +40,7 @@ where
         reader: LR,
         ord: i32,
         doc_base: i32,
-        leaf_ord: i32,
+        leaf_ord: usize,
         leaf_doc_base: i32,
     ) -> Self {
         Self {

@@ -630,7 +630,7 @@ where
 
     fn seek_exact(&mut self, target: &BytesRef<Vec<u8>>) -> Result<bool> {
         match self.prepare_seek_exact(target, false)? {
-            Some(prepared) => prepared.execute(),
+            Some(prepared) => prepared.get(),
             None => Ok(false),
         }
     }

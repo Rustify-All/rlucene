@@ -238,7 +238,7 @@ impl From<EmptyTermsEnum> for BaseTermsEnum<EmptyTermsEnum> {
         BaseTermsEnum::new(value)
     }
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct TermStateImpl1;
 impl Display for TermStateImpl1 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

@@ -14,9 +14,27 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use crate::core::index::index_reader_context::IndexReaderContext;
+use crate::core::index::leaf_reader::LeafReader;
+use crate::core::index::leaf_reader_context::LeafReaderContext;
 
-pub struct IndexSearcher;
+pub struct IndexSearcher<IRC, LR>
+where
+    IRC: IndexReaderContext<LR>,
+    LR: LeafReader,
+{
+    reader_context: IRC,
+    leaf_contexts: Vec<LeafReaderContext<LR>>,
+}
 
-impl IndexSearcher {
+impl<IRC, LR> IndexSearcher<IRC, LR>
+where
+    IRC: IndexReaderContext<LR>,
+    LR: LeafReader,
+{
     pub fn stored_fields(&self) {}
+
+    pub fn get_top_reader_context(&self) -> &IRC {
+        &self.reader_context
+    }
 }

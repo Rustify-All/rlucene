@@ -14,12 +14,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use crate::core::index::base_terms_enum::TermStateImpl1;
+use crate::core::index::dummy::dummy_term_state_type::DummyTermState;
 use crate::core::index::index_reader_context::IndexReaderContext;
+use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::term::Term;
-use crate::core::index::term_state::TermState;
+use crate::core::index::term_state::{Either2TermState, TermState};
+use crate::core::index::terms::{Terms, terms_util};
+use crate::core::index::terms_enum::{PreparedSeekExactResult, TermsEnum};
+use crate::core::search::index_searcher::IndexSearcher;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
+
 /// Maintains an [`IndexReader`](crate::core::index::index_reader::IndexReader) [`TermState`] view over [`IndexReader`](crate::core::index::index_reader::IndexReader) instances
 /// containing a single term. The [`TermStates`] doesn't track if the given [`TermState`]
 /// objects are valid, neither if the [`TermState`] instances refer to the same terms in the
@@ -163,5 +170,75 @@ where
             writeln!(f, "  state={}", state)?;
         }
         Ok(())
+    }
+}
+pub type TermStateTerm<T> = Either2TermState<
+    <<<T as LeafReader>::Terms as Terms>::TermsEnum as TermsEnum>::TermState,
+    Either2TermState<TermStateImpl1, DummyTermState>,
+>;
+pub fn build<IRC, LR>(
+    index_searcher: &IndexSearcher<IRC, LR>,
+    term: Term,
+    needs_stats: bool,
+) -> Result<TermStates<TermStateTerm<LR>>>
+where
+    IRC: IndexReaderContext<LR>,
+    LR: LeafReader,
+{
+    let context = index_searcher.get_top_reader_context();
+    let term = Rc::new(term);
+    let mut per_reader_term_state = TermStates::new(
+        if needs_stats {
+            None
+        } else {
+            Some(term.clone())
+        },
+        context,
+    )?;
+
+    if needs_stats {
+        let mut pending_term_lookups = Vec::new();
+
+        for ctx in context.leaves()? {
+            let terms = terms_util::get_terms(ctx.reader(), term.field())?;
+            let mut terms_enum = terms.iterator()?;
+
+            if let Some(supplier) = terms_enum.prepare_seek_exact(term.bytes())? {
+                let ord = ctx.ord;
+                if pending_term_lookups.len() <= ord {
+                    pending_term_lookups.resize_with(ord + 1, || None);
+                }
+                pending_term_lookups[ord] = Some(PendingTermLookup::new(terms_enum, supplier));
+            }
+        }
+
+        for (ord, pending) in pending_term_lookups.into_iter().enumerate() {
+            if let Some(pending_lookup) = pending {
+                if pending_lookup.supplier.get()? {
+                    let mut terms_enum = pending_lookup.terms_enum;
+                    per_reader_term_state.register_with_stats(
+                        terms_enum.term_state()?,
+                        ord,
+                        terms_enum.doc_freq()?,
+                        terms_enum.total_term_freq()?,
+                    );
+                }
+            }
+        }
+    }
+
+    Ok(per_reader_term_state)
+}
+pub struct PendingTermLookup<TE, S> {
+    pub terms_enum: TE,
+    pub supplier: S,
+}
+
+impl<TE, S> PendingTermLookup<TE, S> {
+    pub fn new(terms_enum: TE, supplier: S) -> Self {
+        Self {
+            terms_enum,
+            supplier,
+        }
     }
 }

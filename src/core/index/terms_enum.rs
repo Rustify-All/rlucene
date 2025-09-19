@@ -317,7 +317,7 @@ impl TermsEnum for EmptyTermsEnum {
 
 pub trait PreparedSeekExactResult<'a>: Sized {
     fn ready(result: bool) -> Self;
-    fn execute(self) -> Result<bool>;
+    fn get(self) -> Result<bool>;
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -336,7 +336,7 @@ impl<'a> PreparedSeekExactResult<'a> for ReadyPreparedSeekExact {
         ReadyPreparedSeekExact::new(result)
     }
 
-    fn execute(self) -> Result<bool> {
+    fn get(self) -> Result<bool> {
         Ok(self.result)
     }
 }
@@ -366,7 +366,7 @@ where
         PreparedSeekExactEnum::Ready { result }
     }
 
-    fn execute(self) -> Result<bool> {
+    fn get(self) -> Result<bool> {
         match self {
             PreparedSeekExactEnum::Ready { result } => Ok(result),
             PreparedSeekExactEnum::Supplier(mut supplier) => supplier.get(),
@@ -388,10 +388,10 @@ where
         Either2PreparedSeekExact::A(A::ready(result))
     }
 
-    fn execute(self) -> Result<bool> {
+    fn get(self) -> Result<bool> {
         match self {
-            Either2PreparedSeekExact::A(value) => value.execute(),
-            Either2PreparedSeekExact::B(value) => value.execute(),
+            Either2PreparedSeekExact::A(value) => value.get(),
+            Either2PreparedSeekExact::B(value) => value.get(),
         }
     }
 }
