@@ -20,7 +20,7 @@ use crate::core::index::dummy::dummy_postings_enum::DummyPostingsEnum;
 use crate::core::index::field_infos::FieldInfos;
 use crate::core::index::index_reader::IndexReader;
 use crate::core::index::numeric_doc_values::NumericDocValues;
-use crate::core::index::postings_enum::Either2PostingsEnum;
+use crate::core::index::postings_enum::{Either2PostingsEnum, FREQS};
 use crate::core::index::sorted_doc_values::SortedDocValues;
 use crate::core::index::sorted_numeric_doc_values::SortedNumericDocValues;
 use crate::core::index::sorted_set_doc_values::SortedSetDocValues;
@@ -97,8 +97,17 @@ pub trait LeafReader: IndexReader {
 
     type Terms: Terms;
     fn terms(&self, field: &str) -> Result<Option<Self::Terms>>;
-
-    fn postings(&mut self, term: &Term, flags: i32) -> Result<Option<LeafPostingsEnum<Self::Terms>>>
+    /// Returns [`PostingsEnum`](crate::core::index::postings_enum::PostingsEnum) for the specified term.
+    /// This will return `None` if either the field or term does not exist.
+    ///
+    /// **NOTE:** The returned [`PostingsEnum`](crate::core::index::postings_enum::PostingsEnum) may contain deleted docs.
+    ///
+    /// See [`TermsEnum::postings`].
+    fn postings_with_flag(
+        &mut self,
+        term: &Term,
+        flags: i32,
+    ) -> Result<Option<LeafPostingsEnum<Self::Terms>>>
     where
         Self: Sized,
     {
@@ -109,6 +118,21 @@ pub trait LeafReader: IndexReader {
         } else {
             Ok(None)
         }
+    }
+    /// Returns [`PostingsEnum`](crate::core::index::postings_enum::PostingsEnum) for the specified term with [`FREQS`].
+    ///
+    /// Use this method if you only require documents and frequencies,
+    /// and do not need any proximity data.
+    /// This method is equivalent to [`Self::postings_with_flag`].
+    ///
+    /// **NOTE:** The returned [`PostingsEnum`](crate::core::index::postings_enum::PostingsEnum) may contain deleted docs.
+    ///
+    /// See [`Self::postings_with_flag`].
+    fn postings(&mut self, term: &Term) -> Result<Option<LeafPostingsEnum<Self::Terms>>>
+    where
+        Self: Sized,
+    {
+        self.postings_with_flag(term, FREQS as i32)
     }
 
     type NumericDocValues: NumericDocValues;

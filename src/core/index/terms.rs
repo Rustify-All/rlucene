@@ -200,11 +200,11 @@ pub mod terms_util {
     ///
     /// Errors:
     /// - Returns an error if an I/O error occurs.
-    pub(crate) fn get_terms<LR>(reader: &LR, filed: &str) -> Result<EitherEmptyTerms<LR::Terms>>
+    pub(crate) fn get_terms<LR>(reader: &LR, field: &str) -> Result<EitherEmptyTerms<LR::Terms>>
     where
         LR: LeafReader,
     {
-        let terms = reader.terms(filed)?;
+        let terms = reader.terms(field)?;
         match terms {
             Some(t) => Ok(EitherEmptyTerms::A(t)),
             None => Ok(EitherEmptyTerms::B(EmptyTerms)),
