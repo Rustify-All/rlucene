@@ -20,7 +20,7 @@ use std::fmt::Debug;
 use crate::core::index::BytesRef;
 use crate::core::index::dummy::dummy_postings_enum::DummyPostingsEnum;
 use crate::core::index::term_state::TermStateEnum;
-use crate::core::index::terms_enum::{SeekStatus, TermsEnum};
+use crate::core::index::terms_enum::{ReadyPreparedSeekExact, SeekStatus, TermsEnum};
 use crate::core::util::bytes_ref_iterator::BytesRefIterator;
 use crate::core::util::error::lucene_error::LuceneError;
 use crate::core::util::error::lucene_error::Result;
@@ -140,9 +140,23 @@ where
     F: FilteredTermsEnumBase,
 {
     type AttributeSource = T::AttributeSource;
+    type PreparedSeekExact<'a>
+        = ReadyPreparedSeekExact
+    where
+        T: 'a,
+        F: 'a;
 
     fn attributes(&self) -> Result<Self::AttributeSource> {
         self.tenum.attributes()
+    }
+
+    fn prepare_seek_exact<'a>(
+        &'a mut self,
+        _text: &'a BytesRef<Vec<u8>>,
+    ) -> Result<Option<Self::PreparedSeekExact<'a>>> {
+        Err(LuceneError::unsupported_operation(
+            "FilteredTermsEnum::prepare_seek_exact",
+        ))
     }
 
     fn seek_ceil(&mut self, _term: &BytesRef<Vec<u8>>) -> Result<SeekStatus> {

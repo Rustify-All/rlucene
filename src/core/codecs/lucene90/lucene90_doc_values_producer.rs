@@ -51,7 +51,7 @@ use crate::core::index::sorted_numeric_doc_values::{
 use crate::core::index::sorted_set_doc_values::SortedSetDocValues;
 use crate::core::index::sorted_set_doc_values_writer::Either2SortedSetDocValues;
 use crate::core::index::term_state::TermStateEnum;
-use crate::core::index::terms_enum::{SeekStatus, TermsEnum};
+use crate::core::index::terms_enum::{ReadyPreparedSeekExact, SeekStatus, TermsEnum};
 use crate::core::index::{BytesRef, IndexFileNames};
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
 use crate::core::search::doc_id_set_iterator::disi_const::NO_MORE_DOCS;
@@ -2995,6 +2995,10 @@ where
     I: IndexInput,
 {
     type AttributeSource = DummyAttributeSource;
+    type PreparedSeekExact<'a>
+        = ReadyPreparedSeekExact
+    where
+        I: 'a;
 
     fn attributes(&self) -> Result<Self::AttributeSource> {
         Err(LuceneError::not_implemented(""))
@@ -3004,7 +3008,10 @@ where
         Err(LuceneError::not_implemented(""))
     }
 
-    fn prepare_seek_exact(&mut self, _text: &BytesRef<Vec<u8>>) -> Result<bool> {
+    fn prepare_seek_exact<'a>(
+        &'a mut self,
+        _text: &'a BytesRef<Vec<u8>>,
+    ) -> Result<Option<Self::PreparedSeekExact<'a>>> {
         Err(LuceneError::not_implemented(""))
     }
 

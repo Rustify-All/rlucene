@@ -27,9 +27,11 @@ use crate::core::codecs::postings_reader_base::PostingsReaderBase;
 use crate::core::index::base_terms_enum::BaseTermsEnum;
 use crate::core::index::term_state::{TermState, TermStateEnum};
 use crate::core::index::terms::Terms;
-use crate::core::index::terms_enum::{SeekStatus, TermsEnum};
+use crate::core::index::terms_enum::{
+    PreparedSeekExactEnum as CorePreparedSeekExactEnum, PreparedSeekExactResult, SeekStatus,
+    TermsEnum,
+};
 use crate::core::index::{BytesRef, BytesRefBuilder};
-use crate::core::store::directory::Directory;
 use crate::core::store::{ByteArrayDataInput, DataInput, IndexInput};
 use crate::core::util::ToInt;
 use crate::core::util::array_util::ArrayUtil;
@@ -399,7 +401,7 @@ where
                     SegmentTermsEnumFrame::prefetch_block(self.current_frame_idx, self)?;
                 }
                 let v = IOBooleanSupplierImpl::new(self, target);
-                return Ok(Some(PreparedSeekExactEnum::SegmentTermsEnum(v)));
+                return Ok(Some(PreparedSeekExactEnum::Supplier(v)));
             } else {
                 arc_index = next_arc_idx;
 
@@ -445,19 +447,10 @@ where
             SegmentTermsEnumFrame::prefetch_block(self.current_frame_idx, self)?;
         }
         let v = IOBooleanSupplierImpl::new(self, target);
-        Ok(Some(PreparedSeekExactEnum::SegmentTermsEnum(v)))
+        Ok(Some(PreparedSeekExactEnum::Supplier(v)))
     }
 }
-
-pub enum PreparedSeekExactEnum<'a, I, P>
-where
-    I: IndexInput,
-    P: PostingsReaderBase,
-{
-    SegmentTermsEnum(IOBooleanSupplierImpl<'a, I, P>),
-    Ready { result: bool },
-}
-pub(crate) struct IOBooleanSupplierImpl<'a, I, P>
+pub struct IOBooleanSupplierImpl<'a, I, P>
 where
     I: IndexInput,
     P: PostingsReaderBase,
@@ -490,6 +483,9 @@ where
         Ok(result == SeekStatus::Found)
     }
 }
+
+pub type PreparedSeekExactEnum<'a, I, P> =
+    CorePreparedSeekExactEnum<IOBooleanSupplierImpl<'a, I, P>>;
 
 impl<I, P> BytesRefIterator for SegmentTermsEnum<I, P>
 where
@@ -622,6 +618,11 @@ where
     P: PostingsReaderBase,
 {
     type AttributeSource = DummyAttributeSource;
+    type PreparedSeekExact<'a>
+        = PreparedSeekExactEnum<'a, I, P>
+    where
+        I: 'a,
+        P: 'a;
 
     fn attributes(&self) -> Result<Self::AttributeSource> {
         Err(LuceneError::not_implemented(""))
@@ -629,18 +630,16 @@ where
 
     fn seek_exact(&mut self, target: &BytesRef<Vec<u8>>) -> Result<bool> {
         match self.prepare_seek_exact(target, false)? {
-            Some(PreparedSeekExactEnum::Ready { result }) => Ok(result),
-            Some(PreparedSeekExactEnum::SegmentTermsEnum(mut supplier)) => supplier.get(),
+            Some(prepared) => prepared.execute(),
             None => Ok(false),
         }
     }
 
-    fn prepare_seek_exact(&mut self, target: &BytesRef<Vec<u8>>) -> Result<bool> {
-        match self.prepare_seek_exact(target, false)? {
-            Some(PreparedSeekExactEnum::Ready { result }) => Ok(result),
-            Some(PreparedSeekExactEnum::SegmentTermsEnum(mut supplier)) => supplier.get(),
-            None => Ok(false),
-        }
+    fn prepare_seek_exact<'a>(
+        &'a mut self,
+        target: &'a BytesRef<Vec<u8>>,
+    ) -> Result<Option<Self::PreparedSeekExact<'a>>> {
+        self.prepare_seek_exact(target, false)
     }
 
     fn seek_ceil(&mut self, target: &BytesRef<Vec<u8>>) -> Result<SeekStatus> {

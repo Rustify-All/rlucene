@@ -28,6 +28,88 @@ use crate::core::util::attribute_source::Either2AttributeSource;
 use crate::core::util::bytes_ref_iterator::BytesRefIterator;
 use crate::core::util::dummy::dummy_attribute_source::DummyAttributeSource;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
+use crate::core::util::io_boolean_supplier::IOBooleanSupplier;
+
+pub trait PreparedSeekExactResult<'a>: Sized {
+    fn ready(result: bool) -> Self;
+    fn execute(self) -> Result<bool>;
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ReadyPreparedSeekExact {
+    result: bool,
+}
+
+impl ReadyPreparedSeekExact {
+    pub fn new(result: bool) -> Self {
+        Self { result }
+    }
+}
+
+impl<'a> PreparedSeekExactResult<'a> for ReadyPreparedSeekExact {
+    fn ready(result: bool) -> Self {
+        ReadyPreparedSeekExact::new(result)
+    }
+
+    fn execute(self) -> Result<bool> {
+        Ok(self.result)
+    }
+}
+
+pub enum PreparedSeekExactEnum<S>
+where
+    S: IOBooleanSupplier,
+{
+    Ready { result: bool },
+    Supplier(S),
+}
+
+impl<S> PreparedSeekExactEnum<S>
+where
+    S: IOBooleanSupplier,
+{
+    pub fn supplier(supplier: S) -> Self {
+        Self::Supplier(supplier)
+    }
+}
+
+impl<'a, S> PreparedSeekExactResult<'a> for PreparedSeekExactEnum<S>
+where
+    S: IOBooleanSupplier + 'a,
+{
+    fn ready(result: bool) -> Self {
+        PreparedSeekExactEnum::Ready { result }
+    }
+
+    fn execute(self) -> Result<bool> {
+        match self {
+            PreparedSeekExactEnum::Ready { result } => Ok(result),
+            PreparedSeekExactEnum::Supplier(mut supplier) => supplier.get(),
+        }
+    }
+}
+
+pub enum Either2PreparedSeekExact<A, B> {
+    A(A),
+    B(B),
+}
+
+impl<'a, A, B> PreparedSeekExactResult<'a> for Either2PreparedSeekExact<A, B>
+where
+    A: PreparedSeekExactResult<'a>,
+    B: PreparedSeekExactResult<'a>,
+{
+    fn ready(result: bool) -> Self {
+        Either2PreparedSeekExact::A(A::ready(result))
+    }
+
+    fn execute(self) -> Result<bool> {
+        match self {
+            Either2PreparedSeekExact::A(value) => value.execute(),
+            Either2PreparedSeekExact::B(value) => value.execute(),
+        }
+    }
+}
 
 /// Iterator to seek [`seek_ceil(BytesRef)`](TermsEnum::seek_ceil),
 /// [`seek_exact(BytesRef)`](TermsEnum::seek_exact) or step through
@@ -44,6 +126,9 @@ use crate::core::util::error::lucene_error::{LuceneError, Result};
 /// methods.
 pub trait TermsEnum: BytesRefIterator {
     type AttributeSource: AttributeSource;
+    type PreparedSeekExact<'a>: PreparedSeekExactResult<'a>
+    where
+        Self: 'a;
     /// Returns the related attribute source.
     fn attributes(&self) -> Result<Self::AttributeSource> {
         Err(LuceneError::need_implemented(""))
@@ -69,7 +154,10 @@ pub trait TermsEnum: BytesRefIterator {
     ///
     /// **NOTE**: This may return `None` if this [`TermsEnum`] can identify that
     /// the term may not exist without performing any I/O.
-    fn prepare_seek_exact(&mut self, _text: &BytesRef<Vec<u8>>) -> Result<bool> {
+    fn prepare_seek_exact<'a>(
+        &'a mut self,
+        _text: &'a BytesRef<Vec<u8>>,
+    ) -> Result<Option<Self::PreparedSeekExact<'a>>> {
         Err(LuceneError::need_implemented(""))
     }
 
@@ -223,6 +311,7 @@ impl BytesRefIterator for EmptyTermsEnum {
 
 impl TermsEnum for EmptyTermsEnum {
     type AttributeSource = DummyAttributeSource;
+    type PreparedSeekExact<'a> = ReadyPreparedSeekExact;
 
     fn attributes(&self) -> Result<Self::AttributeSource> {
         Err(LuceneError::not_implemented(""))
@@ -232,7 +321,10 @@ impl TermsEnum for EmptyTermsEnum {
         Err(LuceneError::not_implemented(""))
     }
 
-    fn prepare_seek_exact(&mut self, _text: &BytesRef<Vec<u8>>) -> Result<bool> {
+    fn prepare_seek_exact<'a>(
+        &'a mut self,
+        _text: &'a BytesRef<Vec<u8>>,
+    ) -> Result<Option<Self::PreparedSeekExact<'a>>> {
         Err(LuceneError::not_implemented(""))
     }
 
@@ -324,6 +416,11 @@ where
     B: TermsEnum,
 {
     type AttributeSource = Either2AttributeSource<A::AttributeSource, B::AttributeSource>;
+    type PreparedSeekExact<'a>
+        = Either2PreparedSeekExact<A::PreparedSeekExact<'a>, B::PreparedSeekExact<'a>>
+    where
+        A: 'a,
+        B: 'a;
 
     fn attributes(&self) -> Result<Self::AttributeSource> {
         match self {
@@ -339,10 +436,17 @@ where
         }
     }
 
-    fn prepare_seek_exact(&mut self, _text: &BytesRef<Vec<u8>>) -> Result<bool> {
+    fn prepare_seek_exact<'a>(
+        &'a mut self,
+        _text: &'a BytesRef<Vec<u8>>,
+    ) -> Result<Option<Self::PreparedSeekExact<'a>>> {
         match self {
-            Either2TermsEnum::A(t) => t.prepare_seek_exact(_text),
-            Either2TermsEnum::B(s) => s.prepare_seek_exact(_text),
+            Either2TermsEnum::A(t) => t
+                .prepare_seek_exact(_text)
+                .map(|opt| opt.map(Either2PreparedSeekExact::A)),
+            Either2TermsEnum::B(s) => s
+                .prepare_seek_exact(_text)
+                .map(|opt| opt.map(Either2PreparedSeekExact::B)),
         }
     }
 

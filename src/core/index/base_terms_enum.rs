@@ -21,7 +21,9 @@ use crate::core::codecs::postings_reader_base::PostingsReaderBase;
 use crate::core::index::BytesRef;
 use crate::core::index::freq_prox_fields::FreqProxTermsEnum;
 use crate::core::index::term_state::{Either2TermState, TermState, TermStateEnum};
-use crate::core::index::terms_enum::{EmptyTermsEnum, SeekStatus, TermsEnum};
+use crate::core::index::terms_enum::{
+    EmptyTermsEnum, PreparedSeekExactResult, SeekStatus, TermsEnum,
+};
 use crate::core::store::IndexInput;
 use crate::core::util::attribute_source::Either2AttributeSource;
 use crate::core::util::bytes_ref_iterator::BytesRefIterator;
@@ -70,6 +72,10 @@ where
     S: TermsEnum,
 {
     type AttributeSource = Either2AttributeSource<S::AttributeSource, DummyAttributeSource>;
+    type PreparedSeekExact<'a>
+        = S::PreparedSeekExact<'a>
+    where
+        S: 'a;
 
     fn attributes(&self) -> Result<Self::AttributeSource> {
         match self.sub.attributes() {
@@ -93,13 +99,33 @@ where
         }
     }
 
-    fn prepare_seek_exact(&mut self, text: &BytesRef<Vec<u8>>) -> Result<bool> {
-        match self.sub.prepare_seek_exact(text) {
-            Ok(v) => Ok(v),
-            Err(e) => match e {
-                LuceneError::NotImplemented(_) => self.seek_exact(text),
-                _ => Err(e),
-            },
+    fn prepare_seek_exact<'a>(
+        &'a mut self,
+        text: &'a BytesRef<Vec<u8>>,
+    ) -> Result<Option<Self::PreparedSeekExact<'a>>> {
+        let sub_ptr: *mut S = &mut self.sub;
+
+        // SAFETY: `sub_ptr` originates from `&'a mut self` so it stays valid for the duration of
+        // this method. We perform the calls sequentially and never create aliasing mutable
+        // references while the raw pointer is used.
+        unsafe {
+            match (*sub_ptr).prepare_seek_exact(text) {
+                Ok(value) => Ok(value),
+                Err(LuceneError::NotImplemented(_)) => {
+                    let result = match (*sub_ptr).seek_exact(text) {
+                        Ok(found) => found,
+                        Err(LuceneError::NotImplemented(_)) => {
+                            (*sub_ptr).seek_ceil(text)? == SeekStatus::Found
+                        },
+                        Err(e) => return Err(e),
+                    };
+
+                    Ok(Some(
+                        <Self::PreparedSeekExact<'a> as PreparedSeekExactResult<'a>>::ready(result),
+                    ))
+                },
+                Err(e) => Err(e),
+            }
         }
     }
 

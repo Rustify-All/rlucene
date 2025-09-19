@@ -179,6 +179,10 @@ where
     T: TermsEnum,
 {
     type AttributeSource = T::AttributeSource;
+    type PreparedSeekExact<'a>
+        = T::PreparedSeekExact<'a>
+    where
+        T: 'a;
 
     fn attributes(&self) -> Result<Self::AttributeSource> {
         self.terms_enum.attributes()
@@ -186,6 +190,13 @@ where
 
     fn seek_exact(&mut self, term: &BytesRef<Vec<u8>>) -> Result<bool> {
         self.terms_enum.seek_exact(term)
+    }
+
+    fn prepare_seek_exact<'a>(
+        &'a mut self,
+        text: &'a BytesRef<Vec<u8>>,
+    ) -> Result<Option<Self::PreparedSeekExact<'a>>> {
+        self.terms_enum.prepare_seek_exact(text)
     }
 
     fn seek_ceil(&mut self, term: &BytesRef<Vec<u8>>) -> Result<SeekStatus> {

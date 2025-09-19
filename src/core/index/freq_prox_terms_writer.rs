@@ -427,6 +427,11 @@ where
     D: DocMap,
 {
     type AttributeSource = <FilterTermsEnum<T> as TermsEnum>::AttributeSource;
+    type PreparedSeekExact<'a>
+        = <FilterTermsEnum<T> as TermsEnum>::PreparedSeekExact<'a>
+    where
+        T: 'a,
+        D: 'a;
 
     fn attributes(&self) -> Result<Self::AttributeSource> {
         self.base.attributes()
@@ -436,7 +441,10 @@ where
         self.base.seek_exact(term)
     }
 
-    fn prepare_seek_exact(&mut self, text: &BytesRef<Vec<u8>>) -> Result<bool> {
+    fn prepare_seek_exact<'a>(
+        &'a mut self,
+        text: &'a BytesRef<Vec<u8>>,
+    ) -> Result<Option<Self::PreparedSeekExact<'a>>> {
         self.base.prepare_seek_exact(text)
     }
 

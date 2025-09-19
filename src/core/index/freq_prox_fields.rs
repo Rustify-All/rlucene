@@ -29,7 +29,7 @@ use crate::core::index::postings_enum::{
     Either2PostingsEnum, FREQS, OFFSETS, POSITIONS, feature_requested,
 };
 use crate::core::index::terms::Terms;
-use crate::core::index::terms_enum::{SeekStatus, TermsEnum};
+use crate::core::index::terms_enum::{ReadyPreparedSeekExact, SeekStatus, TermsEnum};
 use crate::core::index::{BytesRef, BytesRefBuilder};
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
 use crate::core::search::doc_id_set_iterator::disi_const::NO_MORE_DOCS;
@@ -232,6 +232,14 @@ impl BytesRefIterator for FreqProxTermsEnum {
 
 impl TermsEnum for FreqProxTermsEnum {
     type AttributeSource = DummyAttributeSource;
+    type PreparedSeekExact<'a> = ReadyPreparedSeekExact;
+
+    fn prepare_seek_exact<'a>(
+        &'a mut self,
+        _text: &'a BytesRef<Vec<u8>>,
+    ) -> Result<Option<Self::PreparedSeekExact<'a>>> {
+        Err(LuceneError::unsupported_operation(""))
+    }
 
     fn seek_ceil(&mut self, text: &BytesRef<Vec<u8>>) -> Result<SeekStatus> {
         let postings_array_enum = &self

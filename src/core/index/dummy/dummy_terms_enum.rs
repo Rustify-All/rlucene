@@ -18,7 +18,7 @@ use crate::core::index::BytesRef;
 use crate::core::index::dummy::dummy_impacts_enum::DummyImpactsEnum;
 use crate::core::index::dummy::dummy_postings_enum::DummyPostingsEnum;
 use crate::core::index::term_state::TermStateEnum;
-use crate::core::index::terms_enum::{SeekStatus, TermsEnum};
+use crate::core::index::terms_enum::{ReadyPreparedSeekExact, SeekStatus, TermsEnum};
 use crate::core::util::bytes_ref_iterator::BytesRefIterator;
 use crate::core::util::dummy::dummy_attribute_source::DummyAttributeSource;
 use crate::core::util::error::lucene_error::Result;
@@ -33,8 +33,16 @@ impl BytesRefIterator for DummyTermsEnum {
 
 impl TermsEnum for DummyTermsEnum {
     type AttributeSource = DummyAttributeSource;
+    type PreparedSeekExact<'a> = ReadyPreparedSeekExact;
 
     fn attributes(&self) -> Result<Self::AttributeSource> {
+        unreachable!("Dummy implementation: this method should never be called in real usage")
+    }
+
+    fn prepare_seek_exact<'a>(
+        &'a mut self,
+        _text: &'a BytesRef<Vec<u8>>,
+    ) -> Result<Option<Self::PreparedSeekExact<'a>>> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 

@@ -17,7 +17,7 @@
 use crate::core::index::dummy::dummy_impacts_enum::DummyImpactsEnum;
 use crate::core::index::dummy::dummy_postings_enum::DummyPostingsEnum;
 use crate::core::index::dummy::dummy_term_state_type::DummyTermState;
-use crate::core::index::terms_enum::TermsEnum;
+use crate::core::index::terms_enum::{ReadyPreparedSeekExact, TermsEnum};
 use crate::core::util::bytes_ref_iterator::BytesRefIterator;
 use crate::core::util::dummy::dummy_attribute_source::DummyAttributeSource;
 
@@ -29,6 +29,7 @@ impl BytesRefIterator for SortedDocValuesTermsEnum {}
 
 impl TermsEnum for SortedDocValuesTermsEnum {
     type AttributeSource = DummyAttributeSource;
+    type PreparedSeekExact<'a> = ReadyPreparedSeekExact;
 
     type PostingsEnum = DummyPostingsEnum;
     type ImpactsEnum = DummyImpactsEnum;
