@@ -91,7 +91,7 @@ where
     IE: ImpactsEnum,
 {
     /// Construct a [`TermScorer`] that will iterate all documents.
-    pub fn new_with_postings(postings_enum: PE, scorer: SS, norms: Option<N>) -> Self {
+    pub fn with_postings(postings_enum: PE, scorer: SS, norms: Option<N>) -> Self {
         let impacts_enum = SlowImpactsEnum::new(postings_enum);
 
         let max_score_cache = MaxScoreCache::new(Some(Either2ImpactsEnum::B(impacts_enum)), scorer);

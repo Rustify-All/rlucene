@@ -196,7 +196,7 @@ where
     TS: TokenStream,
     RS: ReuseStrategy<TS>,
 {
-    fn new_with_rs(reuse_strategy: RS) -> Self {
+    fn with_rs(reuse_strategy: RS) -> Self {
         Self {
             reuse_strategy,
             _phantom: PhantomData,

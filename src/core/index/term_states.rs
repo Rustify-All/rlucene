@@ -58,7 +58,7 @@ where
     pub fn was_built_for(&self, context: &impl IndexReaderContext) -> bool {
         Rc::ptr_eq(&self.top_reader_context_identity, &context.base().identity)
     }
-    pub fn new_with_state_and_stats(
+    pub fn with_state_and_stats(
         context: &impl IndexReaderContext,
         state: TS,
         ord: usize,
