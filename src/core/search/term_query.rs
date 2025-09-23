@@ -24,9 +24,8 @@ use crate::core::index::leaf_reader::{
 use crate::core::index::leaf_reader_context::LeafReaderContext;
 use crate::core::index::numeric_doc_values::NumericDocValues;
 use crate::core::index::term::Term;
-use crate::core::index::term_state::TermState;
+use crate::core::index::term_state::{TermState, TermStateEnum};
 use crate::core::index::term_states::{PrepareState, TermStateTerm, TermStates, build};
-use crate::core::index::terms::Terms;
 use crate::core::index::terms_enum::TermsEnum;
 use crate::core::search::collection_statistics::CollectionStatistics;
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
@@ -54,7 +53,7 @@ use std::sync::Arc;
 
 pub struct TermQuery<TS>
 where
-    TS: TermState,
+    TS: TermState<TermState = TermStateEnum>,
 {
     term: Arc<Term>,
     per_reader_term_state: Option<TermStates<TS>>,
@@ -72,7 +71,7 @@ impl TermQuery<DummyTermState> {
 }
 impl<TS> TermQuery<TS>
 where
-    TS: TermState,
+    TS: TermState<TermState = TermStateEnum>,
 {
     pub fn new_with_states<T>(term: T, states: TermStates<TS>) -> Self
     where
@@ -90,7 +89,7 @@ where
 
 impl<TS> PartialEq<Self> for TermQuery<TS>
 where
-    TS: TermState,
+    TS: TermState<TermState = TermStateEnum>,
 {
     fn eq(&self, other: &Self) -> bool {
         self.term == other.term
@@ -99,18 +98,18 @@ where
 
 impl<TS> Hash for TermQuery<TS>
 where
-    TS: TermState,
+    TS: TermState<TermState = TermStateEnum>,
 {
     fn hash<H: Hasher>(&self, state: &mut H) {
         // TODO
         self.term.hash(state);
     }
 }
-impl<TS> Eq for TermQuery<TS> where TS: TermState {}
+impl<TS> Eq for TermQuery<TS> where TS: TermState<TermState = TermStateEnum> {}
 
 impl<TS> Debug for TermQuery<TS>
 where
-    TS: TermState,
+    TS: TermState<TermState = TermStateEnum>,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         todo!()
@@ -119,7 +118,7 @@ where
 
 impl<TS> Query for TermQuery<TS>
 where
-    TS: TermState,
+    TS: TermState<TermState = TermStateEnum>,
 {
     fn as_string(&self, field: &str) -> String {
         let mut buffer = String::new();
@@ -183,7 +182,7 @@ where
 
 impl<TS> Display for TermQuery<TS>
 where
-    TS: TermState,
+    TS: TermState<TermState = TermStateEnum>,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_string(""))
@@ -193,7 +192,7 @@ where
 pub struct TermWeight<S, TS, LR>
 where
     S: Similarity,
-    TS: TermState,
+    TS: TermState<TermState = TermStateEnum>,
     LR: LeafReader,
 {
     similarity: Rc<S>,
@@ -205,7 +204,7 @@ where
 impl<S, TS, LR> TermWeight<S, TS, LR>
 where
     S: Similarity,
-    TS: TermState,
+    TS: TermState<TermState = TermStateEnum>,
     LR: LeafReader,
 {
     pub fn new<IRC>(
@@ -288,7 +287,7 @@ where
 impl<S, TS, LR> SegmentCacheable for TermWeight<S, TS, LR>
 where
     S: Similarity,
-    TS: TermState,
+    TS: TermState<TermState = TermStateEnum>,
     LR: LeafReader,
 {
     fn is_cacheable<LR1>(&self, _ctx: &LeafReaderContext<LR1>) -> bool
@@ -302,7 +301,7 @@ where
 impl<S, TS, LR> Weight for TermWeight<S, TS, LR>
 where
     S: Similarity,
-    TS: TermState,
+    TS: TermState<TermState = TermStateEnum>,
     LR: LeafReader,
 {
     type Matches = DummyMatches;
@@ -480,7 +479,7 @@ pub(crate) type TermQuerySimScorer<S> = Either2SimScorer<S, SimScorerImpl>;
 
 pub enum TermStatesENum<TS, LR>
 where
-    TS: TermState,
+    TS: TermState<TermState = TermStateEnum>,
     LR: LeafReader,
 {
     A(TermStates<TermStateTerm<LR>>),
@@ -488,7 +487,7 @@ where
 }
 impl<TS, LR> TermStatesENum<TS, LR>
 where
-    TS: TermState,
+    TS: TermState<TermState = TermStateEnum>,
     LR: LeafReader,
 {
     pub fn doc_freq(&self) -> Result<i32> {

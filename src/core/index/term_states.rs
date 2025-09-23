@@ -36,7 +36,7 @@ use std::sync::Arc;
 /// associated readers.
 pub struct TermStates<TS>
 where
-    TS: TermState,
+    TS: TermState<TermState = TermStateEnum>,
 {
     top_reader_context_identity: Arc<()>,
     states: Vec<Option<Arc<EitherEmptyTermState<TS>>>>,
@@ -46,7 +46,7 @@ where
 }
 impl<TS> TermStates<TS>
 where
-    TS: TermState,
+    TS: TermState<TermState = TermStateEnum>,
 {
     pub fn new<IRC, LR>(term: Option<Arc<Term>>, context: &IRC) -> Result<Self>
     where
@@ -254,7 +254,7 @@ where
 }
 impl<TS> Display for TermStates<TS>
 where
-    TS: TermState,
+    TS: TermState<TermState = TermStateEnum>,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "TermStates")?;
@@ -285,7 +285,9 @@ impl Clone for EmptyTermState {
 }
 
 impl TermState for EmptyTermState {
-    fn copy_from(&mut self, other: &TermStateEnum) -> Result<()> {
+    type TermState = TermStateEnum;
+
+    fn copy_from(&mut self, _other: &Self::TermState) -> Result<()> {
         Ok(())
     }
 }

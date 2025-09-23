@@ -27,7 +27,9 @@ impl Display for DummyTermState {
 }
 
 impl TermState for DummyTermState {
-    fn copy_from(&mut self, _other: &TermStateEnum) -> Result<()> {
+    type TermState = TermStateEnum;
+
+    fn copy_from(&mut self, _other: &Self::TermState) -> Result<()> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 }

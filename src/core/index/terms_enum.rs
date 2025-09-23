@@ -22,7 +22,7 @@ use crate::core::index::dummy::dummy_postings_enum::DummyPostingsEnum;
 use crate::core::index::dummy::dummy_term_state_type::DummyTermState;
 use crate::core::index::impacts_enum::{Either2ImpactsEnum, ImpactsEnum};
 use crate::core::index::postings_enum::{Either2PostingsEnum, FREQS, PostingsEnum};
-use crate::core::index::term_state::{Either2TermState, TermState};
+use crate::core::index::term_state::{Either2TermState, TermState, TermStateEnum};
 use crate::core::util::attribute_source::AttributeSource;
 use crate::core::util::attribute_source::Either2AttributeSource;
 use crate::core::util::bytes_ref_iterator::BytesRefIterator;
@@ -191,7 +191,7 @@ pub trait TermsEnum: BytesRefIterator {
         Err(LuceneError::need_implemented(""))
     }
 
-    type TermState: TermState;
+    type TermState: TermState<TermState = TermStateEnum>;
     /// Expert: Returns the [`TermsEnum`]'s internal state to position the enum
     /// without re-seeking the term dictionary.
     ///

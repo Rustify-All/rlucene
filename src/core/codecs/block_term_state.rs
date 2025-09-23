@@ -55,7 +55,9 @@ impl Display for BlockTermState {
 }
 
 impl TermState for BlockTermState {
-    fn copy_from(&mut self, other: &TermStateEnum) -> Result<()> {
+    type TermState = TermStateEnum;
+
+    fn copy_from(&mut self, other: &Self::TermState) -> Result<()> {
         match other {
             TermStateEnum::Block(BlockTermStateEnum::Block(block)) => {
                 self.doc_freq = block.doc_freq;
@@ -93,7 +95,9 @@ impl Display for BlockTermStateEnum {
 }
 
 impl TermState for BlockTermStateEnum {
-    fn copy_from(&mut self, other: &TermStateEnum) -> Result<()> {
+    type TermState = TermStateEnum;
+
+    fn copy_from(&mut self, other: &Self::TermState) -> Result<()> {
         match self {
             BlockTermStateEnum::Int(int) => int.copy_from(other),
             BlockTermStateEnum::Block(block) => block.copy_from(other),

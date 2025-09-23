@@ -32,7 +32,9 @@ impl Display for OrdTermState {
 }
 
 impl TermState for OrdTermState {
-    fn copy_from(&mut self, other: &TermStateEnum) -> Result<()> {
+    type TermState = TermStateEnum;
+
+    fn copy_from(&mut self, other: &Self::TermState) -> Result<()> {
         match other {
             TermStateEnum::Ord(other_ord_term_state) => {
                 self.ord = other_ord_term_state.ord;

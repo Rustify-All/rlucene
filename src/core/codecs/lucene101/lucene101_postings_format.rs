@@ -418,7 +418,9 @@ impl Display for IntBlockTermState {
 }
 
 impl TermState for IntBlockTermState {
-    fn copy_from(&mut self, other: &TermStateEnum) -> Result<()> {
+    type TermState = TermStateEnum;
+
+    fn copy_from(&mut self, other: &Self::TermState) -> Result<()> {
         match other {
             TermStateEnum::Block(BlockTermStateEnum::Int(other)) => {
                 self.doc_start_fp = other.doc_start_fp;

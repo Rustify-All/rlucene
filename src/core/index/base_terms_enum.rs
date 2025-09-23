@@ -230,7 +230,9 @@ impl Display for TermStateImpl1 {
     }
 }
 impl TermState for TermStateImpl1 {
-    fn copy_from(&mut self, _other: &TermStateEnum) -> Result<()> {
+    type TermState = TermStateEnum;
+
+    fn copy_from(&mut self, _other: &Self::TermState) -> Result<()> {
         Err(LuceneError::unsupported_operation(""))
     }
 }
