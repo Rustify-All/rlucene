@@ -101,7 +101,7 @@ impl SegmentTermsEnumFrame {
     pub fn new<I, P>(ord: i32, fr: &FieldReader<I, P>) -> Result<Self>
     where
         I: IndexInput,
-        P: PostingsReaderBase,
+        P: PostingsReaderBase<TermState = BlockTermStateEnum>,
     {
         let mut state = fr.parent.postings_reader.new_term_state()?;
         state.get_block_term_state().total_term_freq = -1;
@@ -175,7 +175,7 @@ impl SegmentTermsEnumFrame {
     ) -> Result<bool>
     where
         I: IndexInput,
-        P: PostingsReaderBase,
+        P: PostingsReaderBase<TermState = BlockTermStateEnum>,
     {
         let frame = if frame_idx == ste.static_frame_idx {
             &mut ste.static_frame
@@ -200,7 +200,7 @@ impl SegmentTermsEnumFrame {
     ) -> Result<()>
     where
         I: IndexInput,
-        P: PostingsReaderBase,
+        P: PostingsReaderBase<TermState = BlockTermStateEnum>,
     {
         let (next_ent, fp) = {
             let frame = if frame_idx == ste.static_frame_idx {
@@ -239,7 +239,7 @@ impl SegmentTermsEnumFrame {
     ) -> Result<bool>
     where
         I: IndexInput,
-        P: PostingsReaderBase,
+        P: PostingsReaderBase<TermState = BlockTermStateEnum>,
     {
         // Clone the IndexInput lazily, so that consumers
         // that just pull a TermsEnum to
@@ -386,7 +386,7 @@ impl SegmentTermsEnumFrame {
     pub fn next<I, P>(frame_idx: usize, ste: &mut SegmentTermsEnum<I, P>) -> Result<bool>
     where
         I: IndexInput,
-        P: PostingsReaderBase,
+        P: PostingsReaderBase<TermState = BlockTermStateEnum>,
     {
         let frame = if frame_idx == ste.static_frame_idx {
             &mut ste.static_frame
@@ -403,7 +403,7 @@ impl SegmentTermsEnumFrame {
     pub fn next_leaf<I, P>(frame_idx: usize, ste: &mut SegmentTermsEnum<I, P>) -> Result<()>
     where
         I: IndexInput,
-        P: PostingsReaderBase,
+        P: PostingsReaderBase<TermState = BlockTermStateEnum>,
     {
         // TODO: 可以判断下是不是static 就可以避免这里的判断
         let frame = if frame_idx == ste.static_frame_idx {
@@ -444,7 +444,7 @@ impl SegmentTermsEnumFrame {
     ) -> Result<bool>
     where
         I: IndexInput,
-        P: PostingsReaderBase,
+        P: PostingsReaderBase<TermState = BlockTermStateEnum>,
     {
         loop {
             let v = {
@@ -527,7 +527,7 @@ impl SegmentTermsEnumFrame {
     ) -> Result<()>
     where
         I: IndexInput,
-        P: PostingsReaderBase,
+        P: PostingsReaderBase<TermState = BlockTermStateEnum>,
     {
         Self::scan_to_floor_frame_with_target(frame_idx, &BytesRef::new(), ste, false)
     }
@@ -539,7 +539,7 @@ impl SegmentTermsEnumFrame {
     ) -> Result<()>
     where
         I: IndexInput,
-        P: PostingsReaderBase,
+        P: PostingsReaderBase<TermState = BlockTermStateEnum>,
     {
         let frame = if frame_idx == ste.static_frame_idx {
             &mut ste.static_frame
@@ -594,7 +594,7 @@ impl SegmentTermsEnumFrame {
     pub fn decode_meta_data<I, P>(frame_idx: usize, ste: &mut SegmentTermsEnum<I, P>) -> Result<()>
     where
         I: IndexInput,
-        P: PostingsReaderBase,
+        P: PostingsReaderBase<TermState = BlockTermStateEnum>,
     {
         let frame = if frame_idx == ste.static_frame_idx {
             &mut ste.static_frame
@@ -653,7 +653,7 @@ impl SegmentTermsEnumFrame {
     ) -> bool
     where
         I: IndexInput,
-        P: PostingsReaderBase,
+        P: PostingsReaderBase<TermState = BlockTermStateEnum>,
     {
         let frame = if frame_idx == ste.static_frame_idx {
             &ste.static_frame
@@ -677,7 +677,7 @@ impl SegmentTermsEnumFrame {
     ) -> Result<()>
     where
         I: IndexInput,
-        P: PostingsReaderBase,
+        P: PostingsReaderBase<TermState = BlockTermStateEnum>,
     {
         let frame = if frame_idx == ste.static_frame_idx {
             &mut ste.static_frame
@@ -722,7 +722,7 @@ impl SegmentTermsEnumFrame {
     ) -> Result<SeekStatus>
     where
         I: IndexInput,
-        P: PostingsReaderBase,
+        P: PostingsReaderBase<TermState = BlockTermStateEnum>,
     {
         let frame = if frame_idx == ste.static_frame_idx {
             &mut ste.static_frame
@@ -749,7 +749,7 @@ impl SegmentTermsEnumFrame {
     ) -> Result<SeekStatus>
     where
         I: IndexInput,
-        P: PostingsReaderBase,
+        P: PostingsReaderBase<TermState = BlockTermStateEnum>,
     {
         {
             let frame = if frame_idx == ste.static_frame_idx {
@@ -845,7 +845,7 @@ impl SegmentTermsEnumFrame {
     ) -> Result<SeekStatus>
     where
         I: IndexInput,
-        P: PostingsReaderBase,
+        P: PostingsReaderBase<TermState = BlockTermStateEnum>,
     {
         {
             let frame = if frame_idx == ste.static_frame_idx {
@@ -949,7 +949,7 @@ impl SegmentTermsEnumFrame {
     ) -> Result<SeekStatus>
     where
         I: IndexInput,
-        P: PostingsReaderBase,
+        P: PostingsReaderBase<TermState = BlockTermStateEnum>,
     {
         debug_assert!({
             let frame = if frame_idx == ste.static_frame_idx {
@@ -1098,7 +1098,7 @@ impl SegmentTermsEnumFrame {
     pub(crate) fn fill_term<I, P>(frame_idx: usize, ste: &mut SegmentTermsEnum<I, P>)
     where
         I: IndexInput,
-        P: PostingsReaderBase,
+        P: PostingsReaderBase<TermState = BlockTermStateEnum>,
     {
         let frame = if frame_idx == ste.static_frame_idx {
             &mut ste.static_frame

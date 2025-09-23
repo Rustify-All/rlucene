@@ -261,7 +261,9 @@ where
         Ok(())
     }
 
-    fn new_term_state(&self) -> Result<BlockTermStateEnum> {
+    type TermState = BlockTermStateEnum;
+
+    fn new_term_state(&self) -> Result<Self::TermState> {
         Ok(BlockTermStateEnum::Int(IntBlockTermState::default()))
     }
 
@@ -269,14 +271,14 @@ where
         &self,
         input: &mut impl DataInput,
         field_info: &Arc<FieldInfo>,
-        state: &mut BlockTermStateEnum,
+        term_state: &mut Self::TermState,
         absolute: bool,
     ) -> Result<()> {
-        let term_state = match state {
-            BlockTermStateEnum::Int(state) => state,
+        let term_state = match term_state {
+            BlockTermStateEnum::Int(s) => s,
             _ => {
                 return Err(LuceneError::illegal_state(
-                    "BlockTermStateEnum's type is not Int",
+                    "term_state should be IntBlockTermState",
                 ));
             },
         };
@@ -323,7 +325,7 @@ where
     fn postings(
         &self,
         field_info: &FieldInfo,
-        state: &BlockTermStateEnum,
+        term_state: &Self::TermState,
         reuse: Option<Self::PostingsEnum>,
         flags: i32,
     ) -> Result<Option<Self::PostingsEnum>> {
@@ -332,16 +334,7 @@ where
             return Ok(Some(reuse_enum));
         }
         let mut block = BlockPostingsEnum::new(field_info, flags, false, self)?;
-        match state {
-            BlockTermStateEnum::Int(term_state) => {
-                block.reset(term_state, flags, self)?;
-            },
-            _ => {
-                return Err(LuceneError::illegal_state(
-                    "BlockTermStateEnum's type is not Int",
-                ));
-            },
-        }
+        block.reset(term_state, flags, self)?;
         Ok(Some(block))
     }
 
@@ -350,19 +343,12 @@ where
     fn impacts(
         &self,
         field_info: &FieldInfo,
-        state: &BlockTermStateEnum,
+        term_state: &Self::TermState,
         flags: i32,
     ) -> Result<Self::ImpactsEnum> {
-        match state {
-            BlockTermStateEnum::Int(term_state) => {
-                let mut block = BlockPostingsEnum::new(field_info, flags, true, self)?;
-                block.reset(term_state, flags, self)?;
-                Ok(block)
-            },
-            _ => Err(LuceneError::illegal_state(
-                "BlockTermStateEnum's type is not Int",
-            )),
-        }
+        let mut block = BlockPostingsEnum::new(field_info, flags, true, self)?;
+        block.reset(term_state, flags, self)?;
+        Ok(block)
     }
 
     fn check_integrity(&self) -> Result<()> {
@@ -680,10 +666,18 @@ where
 
     pub fn reset(
         &mut self,
-        term_state: &IntBlockTermState,
+        term_state: &BlockTermStateEnum,
         _flags: i32,
         reader: &Lucene101PostingsReader<I>,
     ) -> Result<&mut Self> {
+        let term_state = match term_state {
+            BlockTermStateEnum::Int(s) => s,
+            _ => {
+                return Err(LuceneError::illegal_state(
+                    "term_state should be IntBlockTermState",
+                ));
+            },
+        };
         self.doc_freq = term_state.base.doc_freq;
         self.singleton_doc_id = term_state.singleton_doc_id;
         if self.doc_freq > 1 {

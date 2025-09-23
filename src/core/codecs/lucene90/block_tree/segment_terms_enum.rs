@@ -41,7 +41,7 @@ use crate::core::util::fst_impl::reverse_random_access_reader::ReverseRandomAcce
 pub struct SegmentTermsEnum<I, P>
 where
     I: IndexInput,
-    P: PostingsReaderBase,
+    P: PostingsReaderBase<TermState = BlockTermStateEnum>,
 {
     // Lazy init: input stream
     pub(crate) input: Option<I>,
@@ -66,7 +66,7 @@ where
 impl<I, P> SegmentTermsEnum<I, P>
 where
     I: IndexInput,
-    P: PostingsReaderBase,
+    P: PostingsReaderBase<TermState = BlockTermStateEnum>,
 {
     pub fn new(fr: FieldReader<I, P>) -> Result<BaseTermsEnum<Self>> {
         // Construct SegmentTerms first
@@ -455,7 +455,7 @@ where
 impl<I, P> BytesRefIterator for SegmentTermsEnum<I, P>
 where
     I: IndexInput,
-    P: PostingsReaderBase,
+    P: PostingsReaderBase<TermState = BlockTermStateEnum>,
 {
     fn next(&mut self) -> Result<Option<Cow<'_, BytesRef<Vec<u8>>>>> {
         let input_none = { self.input.is_none() };
@@ -580,7 +580,7 @@ where
 impl<I, P> TermsEnum for SegmentTermsEnum<I, P>
 where
     I: IndexInput,
-    P: PostingsReaderBase,
+    P: PostingsReaderBase<TermState = BlockTermStateEnum>,
 {
     type AttributeSource = DummyAttributeSource;
 

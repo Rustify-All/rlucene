@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 use crate::core::codecs::CodecUtil;
+use crate::core::codecs::block_term_state::BlockTermStateEnum;
 use crate::core::codecs::fields_producer::FieldsProducer;
 use crate::core::codecs::lucene90::block_tree::field_reader::FieldReader;
 use crate::core::codecs::postings_reader_base::PostingsReaderBase;
@@ -33,6 +34,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Display;
 use std::sync::Arc;
+
 /// A block-based terms index and dictionary that assigns terms to variable
 /// length blocks according to how they share prefixes. The terms index is a
 /// prefix trie whose leaves are term blocks. The advantage of this approach is
@@ -288,7 +290,7 @@ where
 impl<I, PR> Fields for Lucene90BlockTreeTermsReader<I, PR>
 where
     I: IndexInput,
-    PR: PostingsReaderBase,
+    PR: PostingsReaderBase<TermState = BlockTermStateEnum>,
 {
     type FieldIter<'a>
         = std::slice::Iter<'a, String>
@@ -344,7 +346,7 @@ where
 impl<I, PR> FieldsProducer for Lucene90BlockTreeTermsReader<I, PR>
 where
     I: IndexInput,
-    PR: PostingsReaderBase,
+    PR: PostingsReaderBase<TermState = BlockTermStateEnum>,
 {
     fn check_integrity(&self) -> Result<()> {
         CodecUtil::checksum_entire_file(&*self.index_in.lock())?;
