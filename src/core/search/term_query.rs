@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 use crate::core::index::doc_values_iterator::DocValuesIterator;
-use crate::core::index::index_reader_context::IndexReaderContext;
+use crate::core::index::index_reader_context::{IRCTermState, IndexReaderContext};
 use crate::core::index::leaf_reader::{
     LRImpactsEnum, LRNumericDocValues, LRPosting, LRTermState, LRTermsEnum, LeafReader,
 };
@@ -49,8 +49,6 @@ use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::rc::Rc;
 use std::sync::Arc;
-
-pub type IRCTermState<IRC> = <<<<IRC as IndexReaderContext>::LeafReader as LeafReader>::Terms as Terms>::TermsEnum as TermsEnum>::TermState;
 
 pub struct TermQuery<IRC>
 where

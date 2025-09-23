@@ -18,6 +18,8 @@ use crate::core::index::composite_reader_context::CompositeReaderContext;
 use crate::core::index::index_reader::IndexReader;
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::leaf_reader_context::LeafReaderContext;
+use crate::core::index::terms::Terms;
+use crate::core::index::terms_enum::TermsEnum;
 use crate::core::util::error::lucene_error::Result;
 use std::sync::Arc;
 
@@ -134,3 +136,4 @@ where
         todo!()
     }
 }
+pub type IRCTermState<IRC> = <<<<IRC as IndexReaderContext>::LeafReader as LeafReader>::Terms as Terms>::TermsEnum as TermsEnum>::TermState;
