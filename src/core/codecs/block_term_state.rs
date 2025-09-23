@@ -18,7 +18,7 @@ use std::fmt::{Display, Formatter};
 
 use crate::core::codecs::lucene101::lucene101_postings_format::IntBlockTermState;
 use crate::core::index::ord_term_state::OrdTermState;
-use crate::core::index::term_state::{TermState, TermStateEnum};
+use crate::core::index::term_state::TermState;
 use crate::core::util::error::lucene_error::LuceneError;
 use crate::core::util::error::lucene_error::Result;
 
@@ -55,20 +55,13 @@ impl Display for BlockTermState {
 }
 
 impl TermState for BlockTermState {
-    fn copy_from(&mut self, other: &TermStateEnum) -> Result<()> {
-        match other {
-            TermStateEnum::Block(BlockTermStateEnum::Block(block)) => {
-                self.doc_freq = block.doc_freq;
-                self.total_term_freq = block.total_term_freq;
-                self.term_block_ord = block.term_block_ord;
-                self.block_file_pointer = block.block_file_pointer;
-                self.ord = block.ord.clone();
-                Ok(())
-            },
-            _ => Err(LuceneError::illegal_state(
-                "enum other should be BlockTermState",
-            )),
-        }
+    fn copy_from(&mut self, other: &Self) -> Result<()> {
+        self.doc_freq = other.doc_freq;
+        self.total_term_freq = other.total_term_freq;
+        self.term_block_ord = other.term_block_ord;
+        self.block_file_pointer = other.block_file_pointer;
+        self.ord = other.ord.clone();
+        Ok(())
     }
 }
 
@@ -93,10 +86,13 @@ impl Display for BlockTermStateEnum {
 }
 
 impl TermState for BlockTermStateEnum {
-    fn copy_from(&mut self, other: &TermStateEnum) -> Result<()> {
-        match self {
-            BlockTermStateEnum::Int(int) => int.copy_from(other),
-            BlockTermStateEnum::Block(block) => block.copy_from(other),
+    fn copy_from(&mut self, other: &Self) -> Result<()> {
+        match (self, other) {
+            (BlockTermStateEnum::Int(int), BlockTermStateEnum::Int(o)) => int.copy_from(o),
+            (BlockTermStateEnum::Block(block), BlockTermStateEnum::Block(o)) => block.copy_from(o),
+            _ => Err(LuceneError::illegal_state(
+                "TermState variants must match when copying",
+            )),
         }
     }
 }

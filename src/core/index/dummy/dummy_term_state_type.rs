@@ -16,7 +16,7 @@
  */
 use std::fmt::{Debug, Display, Formatter};
 
-use crate::core::index::term_state::{TermState, TermStateEnum};
+use crate::core::index::term_state::TermState;
 use crate::core::util::error::lucene_error::Result;
 #[derive(Debug, Clone)]
 pub struct DummyTermState;
@@ -27,7 +27,7 @@ impl Display for DummyTermState {
 }
 
 impl TermState for DummyTermState {
-    fn copy_from(&mut self, _other: &TermStateEnum) -> Result<()> {
+    fn copy_from(&mut self, _other: &Self) -> Result<()> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 }

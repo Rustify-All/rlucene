@@ -16,7 +16,7 @@
  */
 use std::fmt::{Display, Formatter};
 
-use crate::core::codecs::block_term_state::{BlockTermState, BlockTermStateEnum};
+use crate::core::codecs::block_term_state::BlockTermState;
 use crate::core::codecs::block_tree::lucene90_block_tree_terms_reader::Lucene90BlockTreeTermsReader;
 use crate::core::codecs::block_tree::lucene90_block_tree_terms_writer::{
     DEFAULT_MAX_BLOCK_SIZE, DEFAULT_MIN_BLOCK_SIZE, Lucene90BlockTreeTermsWriter,
@@ -31,7 +31,7 @@ use crate::core::codecs::push_postings_writer_base::PushPostingsWriterBase;
 use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::segment_read_state::SegmentReadState;
 use crate::core::index::segment_write_state::SegmentWriteState;
-use crate::core::index::term_state::{TermState, TermStateEnum};
+use crate::core::index::term_state::TermState;
 use crate::core::store::directory::Directory;
 use crate::core::util::error::lucene_error::LuceneError;
 use crate::core::util::error::lucene_error::Result;
@@ -418,21 +418,13 @@ impl Display for IntBlockTermState {
 }
 
 impl TermState for IntBlockTermState {
-    fn copy_from(&mut self, other: &TermStateEnum) -> Result<()> {
-        match other {
-            TermStateEnum::Block(BlockTermStateEnum::Int(other)) => {
-                self.doc_start_fp = other.doc_start_fp;
-                self.pos_start_fp = other.pos_start_fp;
-                self.pay_start_fp = other.pay_start_fp;
-                self.last_pos_block_offset = other.last_pos_block_offset;
-                self.singleton_doc_id = other.singleton_doc_id;
-                self.base = other.base.clone();
-                Ok(())
-            },
-            _ => Err(LuceneError::illegal_state(
-                "enum other should be IntBlockTermState",
-            )),
-        }
+    fn copy_from(&mut self, other: &Self) -> Result<()> {
+        self.doc_start_fp = other.doc_start_fp;
+        self.pos_start_fp = other.pos_start_fp;
+        self.pay_start_fp = other.pay_start_fp;
+        self.last_pos_block_offset = other.last_pos_block_offset;
+        self.singleton_doc_id = other.singleton_doc_id;
+        self.base.copy_from(&other.base)
     }
 }
 

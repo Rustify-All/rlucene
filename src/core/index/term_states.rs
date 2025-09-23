@@ -20,7 +20,7 @@ use crate::core::index::index_reader_context::IndexReaderContext;
 use crate::core::index::leaf_reader::{LeafReader, LeafReaderTermState};
 use crate::core::index::leaf_reader_context::LeafReaderContext;
 use crate::core::index::term::Term;
-use crate::core::index::term_state::{Either2TermState, TermState, TermStateEnum};
+use crate::core::index::term_state::{Either2TermState, TermState};
 use crate::core::index::terms::{Terms, terms_util};
 use crate::core::index::terms_enum::TermsEnum;
 use crate::core::search::index_searcher::IndexSearcher;
@@ -285,7 +285,7 @@ impl Clone for EmptyTermState {
 }
 
 impl TermState for EmptyTermState {
-    fn copy_from(&mut self, other: &TermStateEnum) -> Result<()> {
+    fn copy_from(&mut self, _other: &Self) -> Result<()> {
         Ok(())
     }
 }

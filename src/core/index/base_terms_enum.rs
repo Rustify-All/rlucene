@@ -21,7 +21,7 @@ use crate::core::codecs::lucene90_doc_values_producer::TermsDict;
 use crate::core::codecs::postings_reader_base::PostingsReaderBase;
 use crate::core::index::BytesRef;
 use crate::core::index::freq_prox_fields::FreqProxTermsEnum;
-use crate::core::index::term_state::{Either2TermState, TermState, TermStateEnum};
+use crate::core::index::term_state::{Either2TermState, TermState};
 use crate::core::index::terms_enum::{EmptyTermsEnum, SeekStatus, TermsEnum};
 use crate::core::store::IndexInput;
 use crate::core::util::attribute_source::Either2AttributeSource;
@@ -230,7 +230,7 @@ impl Display for TermStateImpl1 {
     }
 }
 impl TermState for TermStateImpl1 {
-    fn copy_from(&mut self, _other: &TermStateEnum) -> Result<()> {
+    fn copy_from(&mut self, _other: &Self) -> Result<()> {
         Err(LuceneError::unsupported_operation(""))
     }
 }

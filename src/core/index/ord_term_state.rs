@@ -16,8 +16,8 @@
  */
 use std::fmt::{Display, Formatter};
 
-use crate::core::index::term_state::{TermState, TermStateEnum};
-use crate::core::util::error::lucene_error::{LuceneError, Result};
+use crate::core::index::term_state::TermState;
+use crate::core::util::error::lucene_error::Result;
 
 /// An ordinal-based [`TermState`]
 #[derive(Clone, Default)]
@@ -32,15 +32,8 @@ impl Display for OrdTermState {
 }
 
 impl TermState for OrdTermState {
-    fn copy_from(&mut self, other: &TermStateEnum) -> Result<()> {
-        match other {
-            TermStateEnum::Ord(other_ord_term_state) => {
-                self.ord = other_ord_term_state.ord;
-                Ok(())
-            },
-            _ => Err(LuceneError::illegal_state(
-                "enum other should be OrdTermState",
-            )),
-        }
+    fn copy_from(&mut self, other: &Self) -> Result<()> {
+        self.ord = other.ord;
+        Ok(())
     }
 }

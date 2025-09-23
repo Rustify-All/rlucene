@@ -20,13 +20,13 @@ use crate::core::codecs::block_term_state::BlockTermStateEnum;
 use crate::core::index::base_terms_enum::TermStateImpl1;
 use crate::core::index::dummy::dummy_term_state_type::DummyTermState;
 use crate::core::index::ord_term_state::OrdTermState;
-use crate::core::util::error::lucene_error::Result;
+use crate::core::util::error::lucene_error::{LuceneError, Result};
 
 /// Encapsulates all required internal state to position the associated
 /// [`TermsEnum`](crate::core::index::terms_enum::TermsEnum) without re-seeking.
 pub trait TermState: Display + Clone {
     /// Copies the content of the given `TermState` to this instance.
-    fn copy_from(&mut self, other: &TermStateEnum) -> Result<()>;
+    fn copy_from(&mut self, other: &Self) -> Result<()>;
 }
 
 pub enum TermStateEnum {
@@ -55,7 +55,7 @@ impl Default for TermStateEnum {
 }
 
 impl TermState for TermStateEnum {
-    fn copy_from(&mut self, _other: &TermStateEnum) -> Result<()> {
+    fn copy_from(&mut self, _other: &Self) -> Result<()> {
         todo!()
     }
 }
@@ -96,10 +96,13 @@ where
     A: TermState,
     B: TermState,
 {
-    fn copy_from(&mut self, other: &TermStateEnum) -> Result<()> {
-        match self {
-            Either2TermState::A(t) => t.copy_from(other),
-            Either2TermState::B(s) => s.copy_from(other),
+    fn copy_from(&mut self, other: &Self) -> Result<()> {
+        match (self, other) {
+            (Either2TermState::A(t), Either2TermState::A(o)) => t.copy_from(o),
+            (Either2TermState::B(s), Either2TermState::B(o)) => s.copy_from(o),
+            _ => Err(LuceneError::illegal_state(
+                "TermState variants must match when copying",
+            )),
         }
     }
 }
