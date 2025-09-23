@@ -119,9 +119,13 @@ where
     fn seek_exact_with_state(
         &mut self,
         term: &BytesRef<Vec<u8>>,
-        state: &TermStateEnum,
+        state: &Self::TermState,
     ) -> Result<()> {
-        match self.sub.seek_exact_with_state(term, state) {
+        let result = match state {
+            Either2TermState::A(_) => Err(LuceneError::not_implemented("")),
+            Either2TermState::B(sub_state) => self.sub.seek_exact_with_state(term, sub_state),
+        };
+        match result {
             Ok(v) => Ok(v),
             Err(e) => match e {
                 LuceneError::NotImplemented(_) => {
@@ -129,7 +133,7 @@ where
                         return Err(LuceneError::illegal_argument(format!(
                             "term= {term} does not exist"
                         )));
-                    };
+                    }
                     Ok(())
                 },
                 _ => Err(e),

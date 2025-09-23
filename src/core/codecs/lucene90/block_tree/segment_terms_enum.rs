@@ -25,7 +25,6 @@ use crate::core::codecs::lucene90::block_tree::field_reader::FieldReader;
 use crate::core::codecs::lucene90::block_tree::segment_terms_enum_frame::SegmentTermsEnumFrame;
 use crate::core::codecs::postings_reader_base::PostingsReaderBase;
 use crate::core::index::base_terms_enum::BaseTermsEnum;
-use crate::core::index::term_state::{TermState, TermStateEnum};
 use crate::core::index::terms::Terms;
 use crate::core::index::terms_enum::{PrepareSeekStatus, SeekStatus, TermsEnum};
 use crate::core::index::{BytesRef, BytesRefBuilder};
@@ -820,13 +819,13 @@ where
     fn seek_exact_with_state(
         &mut self,
         target: &BytesRef<Vec<u8>>,
-        other_state: &TermStateEnum,
+        other_state: &Self::TermState,
     ) -> Result<()> {
         debug_assert!(self.clear_eof());
         if (target.cmp(self.term.get_bytes_mut_ref()).to_int() != 0 || !self.term_exists)
-            && let TermStateEnum::Block(_) = other_state
+            && matches!(other_state, BlockTermStateEnum::Block(_))
         {
-            self.static_frame.state.copy_from(other_state)?;
+            self.static_frame.state = other_state.clone();
             self.current_frame_idx = self.static_frame_idx;
             self.term.copy_bytes_with_ref(target);
             self.static_frame.meta_data_upto = self.static_frame.get_term_block_ord();

@@ -18,7 +18,6 @@ use crate::core::index::BytesRef;
 use crate::core::index::automaton_terms_enum::AutomatonTermsEnum;
 use crate::core::index::fields::Fields;
 use crate::core::index::filtered_terms_enum::{FilteredTermsEnum, FilteredTermsEnumBase};
-use crate::core::index::term_state::TermStateEnum;
 use crate::core::index::terms::Terms;
 use crate::core::index::terms_enum::{SeekStatus, TermsEnum};
 use crate::core::util::automation::compiled_automaton::CompiledAutomaton;
@@ -199,7 +198,7 @@ where
     fn seek_exact_with_state(
         &mut self,
         term: &BytesRef<Vec<u8>>,
-        state: &TermStateEnum,
+        state: &Self::TermState,
     ) -> Result<()> {
         self.terms_enum.seek_exact_with_state(term, state)
     }

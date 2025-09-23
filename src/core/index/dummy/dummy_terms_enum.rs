@@ -49,7 +49,7 @@ impl TermsEnum for DummyTermsEnum {
     fn seek_exact_with_state(
         &mut self,
         _term: &BytesRef<Vec<u8>>,
-        _state: &TermStateEnum,
+        _state: &Self::TermState,
     ) -> Result<()> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }

@@ -37,7 +37,6 @@ use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::segment_write_state::SegmentWriteState;
 use crate::core::index::sorter::DocMap;
 use crate::core::index::term::Term;
-use crate::core::index::term_state::TermStateEnum;
 use crate::core::index::term_vectors_consumer::TermVectorsConsumer;
 use crate::core::index::terms::Terms;
 use crate::core::index::terms_enum::{SeekStatus, TermsEnum};
@@ -451,7 +450,7 @@ where
     fn seek_exact_with_state(
         &mut self,
         term: &BytesRef<Vec<u8>>,
-        state: &TermStateEnum,
+        state: &Self::TermState,
     ) -> Result<()> {
         self.base.seek_exact_with_state(term, state)
     }

@@ -22,7 +22,7 @@ use crate::core::index::dummy::dummy_postings_enum::DummyPostingsEnum;
 use crate::core::index::dummy::dummy_term_state_type::DummyTermState;
 use crate::core::index::impacts_enum::{Either2ImpactsEnum, ImpactsEnum};
 use crate::core::index::postings_enum::{Either2PostingsEnum, FREQS, PostingsEnum};
-use crate::core::index::term_state::{Either2TermState, TermState, TermStateEnum};
+use crate::core::index::term_state::{Either2TermState, TermState};
 use crate::core::util::attribute_source::AttributeSource;
 use crate::core::util::attribute_source::Either2AttributeSource;
 use crate::core::util::bytes_ref_iterator::BytesRefIterator;
@@ -116,7 +116,7 @@ pub trait TermsEnum: BytesRefIterator {
     fn seek_exact_with_state(
         &mut self,
         _term: &BytesRef<Vec<u8>>,
-        _state: &TermStateEnum,
+        _state: &Self::TermState,
     ) -> Result<()> {
         Err(LuceneError::need_implemented(""))
     }
@@ -256,7 +256,7 @@ impl TermsEnum for EmptyTermsEnum {
     fn seek_exact_with_state(
         &mut self,
         _term: &BytesRef<Vec<u8>>,
-        _state: &TermStateEnum,
+        _state: &Self::TermState,
     ) -> Result<()> {
         Err(LuceneError::not_implemented(""))
     }
@@ -372,11 +372,21 @@ where
     fn seek_exact_with_state(
         &mut self,
         _term: &BytesRef<Vec<u8>>,
-        _state: &TermStateEnum,
+        _state: &Self::TermState,
     ) -> Result<()> {
         match self {
-            Either2TermsEnum::A(t) => t.seek_exact_with_state(_term, _state),
-            Either2TermsEnum::B(s) => s.seek_exact_with_state(_term, _state),
+            Either2TermsEnum::A(t) => match _state {
+                Either2TermState::A(state) => t.seek_exact_with_state(_term, state),
+                _ => Err(LuceneError::illegal_state(
+                    "EitherTermsEnum::A expected EitherTermState::A",
+                )),
+            },
+            Either2TermsEnum::B(s) => match _state {
+                Either2TermState::B(state) => s.seek_exact_with_state(_term, state),
+                _ => Err(LuceneError::illegal_state(
+                    "EitherTermsEnum::B expected EitherTermState::B",
+                )),
+            },
         }
     }
 

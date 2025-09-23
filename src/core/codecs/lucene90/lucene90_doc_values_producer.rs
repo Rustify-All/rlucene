@@ -50,7 +50,6 @@ use crate::core::index::sorted_numeric_doc_values::{
 };
 use crate::core::index::sorted_set_doc_values::SortedSetDocValues;
 use crate::core::index::sorted_set_doc_values_writer::Either2SortedSetDocValues;
-use crate::core::index::term_state::TermStateEnum;
 use crate::core::index::terms_enum::{SeekStatus, TermsEnum};
 use crate::core::index::{BytesRef, IndexFileNames};
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
@@ -3062,7 +3061,7 @@ where
     fn seek_exact_with_state(
         &mut self,
         _term: &BytesRef<Vec<u8>>,
-        _state: &TermStateEnum,
+        _state: &Self::TermState,
     ) -> Result<()> {
         Err(LuceneError::not_implemented(""))
     }

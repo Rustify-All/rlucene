@@ -19,7 +19,6 @@ use std::fmt::Debug;
 
 use crate::core::index::BytesRef;
 use crate::core::index::dummy::dummy_postings_enum::DummyPostingsEnum;
-use crate::core::index::term_state::TermStateEnum;
 use crate::core::index::terms_enum::{SeekStatus, TermsEnum};
 use crate::core::util::bytes_ref_iterator::BytesRefIterator;
 use crate::core::util::error::lucene_error::LuceneError;
@@ -160,7 +159,7 @@ where
     fn seek_exact_with_state(
         &mut self,
         _term: &BytesRef<Vec<u8>>,
-        _state: &TermStateEnum,
+        _state: &Self::TermState,
     ) -> Result<()> {
         Err(LuceneError::unsupported_operation(
             "FilteredTermsEnum::seek_exact_with_state",
