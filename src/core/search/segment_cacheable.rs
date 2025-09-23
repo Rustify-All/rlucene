@@ -29,8 +29,8 @@ use crate::core::index::leaf_reader_context::LeafReaderContext;
 /// Objects that are not segment-immutable, such as those that rely on global statistics or
 /// scores, should return `false`.
 pub trait SegmentCacheable {
+    type LeafReader: LeafReader;
+
     /// Returns `true` if the object can be cached against a given leaf.
-    fn is_cacheable<LR>(&self, ctx: &LeafReaderContext<LR>) -> bool
-    where
-        LR: LeafReader;
+    fn is_cacheable(&self, ctx: &LeafReaderContext<Self::LeafReader>) -> bool;
 }

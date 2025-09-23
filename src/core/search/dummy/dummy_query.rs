@@ -32,7 +32,7 @@ impl Query for DummyQuery {
     }
 
     type Weight<S, LR>
-        = DummyWeight
+        = DummyWeight<LR>
     where
         S: Similarity,
         LR: LeafReader;

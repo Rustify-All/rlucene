@@ -25,47 +25,50 @@ use crate::core::search::scorer_supplier::ScorerSupplier;
 use crate::core::search::segment_cacheable::SegmentCacheable;
 use crate::core::search::weight::Weight;
 use crate::core::util::error::lucene_error::Result;
+use std::marker::PhantomData;
 
-pub struct DummyWeight;
+pub struct DummyWeight<LR> {
+    _phantom: PhantomData<LR>,
+}
 
-impl SegmentCacheable for DummyWeight {
-    fn is_cacheable<LR>(&self, ctx: &LeafReaderContext<LR>) -> bool
-    where
-        LR: LeafReader,
-    {
+impl<LR> SegmentCacheable for DummyWeight<LR>
+where
+    LR: LeafReader,
+{
+    type LeafReader = LR;
+
+    fn is_cacheable(&self, _ctx: &LeafReaderContext<Self::LeafReader>) -> bool {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 }
 
-impl Weight for DummyWeight {
+impl<LR> Weight for DummyWeight<LR>
+where
+    LR: LeafReader,
+{
     type Matches = DummyMatches;
 
-    fn matches<LR>(
+    fn matches(
         &mut self,
-        _context: &LeafReaderContext<LR>,
+        _context: &LeafReaderContext<Self::LeafReader>,
         _doc: i32,
-    ) -> Result<Option<Self::Matches>>
-    where
-        LR: LeafReader,
-    {
+    ) -> Result<Option<Self::Matches>> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    fn default_matches<LR>(
+    fn default_matches(
         &mut self,
-        _context: &LeafReaderContext<LR>,
+        _context: &LeafReaderContext<Self::LeafReader>,
         _doc: i32,
-    ) -> Result<Option<MatchWithNoTerms>>
-    where
-        LR: LeafReader,
-    {
+    ) -> Result<Option<MatchWithNoTerms>> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    fn explain<LR>(&mut self, _context: &LeafReaderContext<LR>, _doc: i32) -> Result<Explanation>
-    where
-        LR: LeafReader,
-    {
+    fn explain(
+        &mut self,
+        _context: &LeafReaderContext<Self::LeafReader>,
+        _doc: i32,
+    ) -> Result<Explanation> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
@@ -75,49 +78,34 @@ impl Weight for DummyWeight {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    fn scorer<LR>(
+    fn scorer(
         &mut self,
-        _context: &LeafReaderContext<LR>,
-    ) -> Result<Option<<Self::ScorerSupplier as ScorerSupplier>::Scorer>>
-    where
-        LR: LeafReader,
-    {
+        _context: &LeafReaderContext<Self::LeafReader>,
+    ) -> Result<Option<<Self::ScorerSupplier as ScorerSupplier>::Scorer>> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
     type ScorerSupplier = DummyScorerSupplier;
 
-    fn scorer_supplier<LR>(
+    fn scorer_supplier(
         &mut self,
-        _context: &LeafReaderContext<LR>,
-    ) -> Result<Option<Self::ScorerSupplier>>
-    where
-        LR: LeafReader,
-    {
+        _context: &LeafReaderContext<Self::LeafReader>,
+    ) -> Result<Option<Self::ScorerSupplier>> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    fn bulk_scorer<LR>(
+    fn bulk_scorer(
         &mut self,
-        _context: &LeafReaderContext<LR>,
-    ) -> Result<Option<<Self::ScorerSupplier as ScorerSupplier>::BulkScorer>>
-    where
-        LR: LeafReader,
-    {
+        _context: &LeafReaderContext<Self::LeafReader>,
+    ) -> Result<Option<<Self::ScorerSupplier as ScorerSupplier>::BulkScorer>> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    fn count<LR>(&self, _context: &LeafReaderContext<LR>) -> Result<i32>
-    where
-        LR: LeafReader,
-    {
+    fn count(&self, _context: &LeafReaderContext<Self::LeafReader>) -> Result<i32> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    fn default_count<LR>(&self, _context: &LeafReaderContext<LR>) -> Result<i32>
-    where
-        LR: LeafReader,
-    {
+    fn default_count(&self, _context: &LeafReaderContext<Self::LeafReader>) -> Result<i32> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 }

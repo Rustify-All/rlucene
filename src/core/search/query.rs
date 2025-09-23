@@ -125,7 +125,7 @@ impl Query for QueryEnum {
     }
 
     type Weight<S, LR>
-        = DummyWeight
+        = DummyWeight<LR>
     where
         S: Similarity,
         LR: LeafReader;

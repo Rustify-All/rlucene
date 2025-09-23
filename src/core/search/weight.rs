@@ -14,7 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::leaf_reader_context::LeafReaderContext;
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
 use crate::core::search::explanation::Explanation;
@@ -56,21 +55,16 @@ pub trait Weight: SegmentCacheable {
     /// # Parameters
     /// - `context`: the reader's context to create the [`Matches`] for
     /// - `doc`: the document's id relative to the given context's reader
-    fn matches<LR>(
+    fn matches(
         &mut self,
-        context: &LeafReaderContext<LR>,
+        context: &LeafReaderContext<Self::LeafReader>,
         doc: i32,
-    ) -> Result<Option<Self::Matches>>
-    where
-        LR: LeafReader;
-    fn default_matches<LR>(
+    ) -> Result<Option<Self::Matches>>;
+    fn default_matches(
         &mut self,
-        context: &LeafReaderContext<LR>,
+        context: &LeafReaderContext<Self::LeafReader>,
         doc: i32,
-    ) -> Result<Option<MatchWithNoTerms>>
-    where
-        LR: LeafReader,
-    {
+    ) -> Result<Option<MatchWithNoTerms>> {
         let scorer_supplier = self.scorer_supplier(context)?;
         let scorer_supplier = match scorer_supplier {
             None => return Ok(None),
@@ -102,9 +96,11 @@ pub trait Weight: SegmentCacheable {
     /// # Parameters
     /// - `context`: the reader's context to create the [`Explanation`] for
     /// - `doc`: the document's id relative to the given context's reader
-    fn explain<LR>(&mut self, context: &LeafReaderContext<LR>, doc: i32) -> Result<Explanation>
-    where
-        LR: LeafReader;
+    fn explain(
+        &mut self,
+        context: &LeafReaderContext<Self::LeafReader>,
+        doc: i32,
+    ) -> Result<Explanation>;
 
     type Query: Query;
     /// The query that this weight concerns.
@@ -133,13 +129,10 @@ pub trait Weight: SegmentCacheable {
     /// # Errors
     ///
     /// Returns an error if a low-level I/O error occurs.
-    fn scorer<LR>(
+    fn scorer(
         &mut self,
-        context: &LeafReaderContext<LR>,
-    ) -> Result<Option<<Self::ScorerSupplier as ScorerSupplier>::Scorer>>
-    where
-        LR: LeafReader,
-    {
+        context: &LeafReaderContext<Self::LeafReader>,
+    ) -> Result<Option<<Self::ScorerSupplier as ScorerSupplier>::Scorer>> {
         let scorer_supplier = match self.scorer_supplier(context)? {
             None => return Ok(None),
             Some(s) => s,
@@ -174,23 +167,18 @@ pub trait Weight: SegmentCacheable {
     ///
     /// - [`Scorer`]
     /// - [`DefaultScorerSupplier`]
-    fn scorer_supplier<LR>(
+    fn scorer_supplier(
         &mut self,
-        context: &LeafReaderContext<LR>,
-    ) -> Result<Option<Self::ScorerSupplier>>
-    where
-        LR: LeafReader;
+        context: &LeafReaderContext<Self::LeafReader>,
+    ) -> Result<Option<Self::ScorerSupplier>>;
     /// Helper method that delegates to [`Weight::scorer_supplier`].
     ///
     /// A bulk scorer for the same [`LeafReaderContext`] instance may be requested
     /// multiple times as part of a single search call.
-    fn bulk_scorer<LR>(
+    fn bulk_scorer(
         &mut self,
-        context: &LeafReaderContext<LR>,
-    ) -> Result<Option<<Self::ScorerSupplier as ScorerSupplier>::BulkScorer>>
-    where
-        LR: LeafReader,
-    {
+        context: &LeafReaderContext<Self::LeafReader>,
+    ) -> Result<Option<<Self::ScorerSupplier as ScorerSupplier>::BulkScorer>> {
         let mut scorer_supplier = match self.scorer_supplier(context)? {
             None => return Ok(None),
             Some(s) => s,
@@ -227,16 +215,10 @@ pub trait Weight: SegmentCacheable {
     /// # Errors
     ///
     /// Returns an error if a low-level I/O error occurs.
-    fn count<LR>(&self, context: &LeafReaderContext<LR>) -> Result<i32>
-    where
-        LR: LeafReader,
-    {
+    fn count(&self, context: &LeafReaderContext<Self::LeafReader>) -> Result<i32> {
         self.default_count(context)
     }
-    fn default_count<LR>(&self, _context: &LeafReaderContext<LR>) -> Result<i32>
-    where
-        LR: LeafReader,
-    {
+    fn default_count(&self, _context: &LeafReaderContext<Self::LeafReader>) -> Result<i32> {
         Ok(-1)
     }
 }

@@ -26,7 +26,6 @@ use crate::core::index::numeric_doc_values::NumericDocValues;
 use crate::core::index::term::Term;
 use crate::core::index::term_state::TermState;
 use crate::core::index::term_states::{PrepareState, TermStateTerm, TermStates, build};
-use crate::core::index::terms::Terms;
 use crate::core::index::terms_enum::TermsEnum;
 use crate::core::search::collection_statistics::CollectionStatistics;
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
@@ -275,7 +274,7 @@ where
     }
     fn get_terms_enum<LR1>(
         &self,
-        context: &LeafReaderContext<LR1>,
+        _context: &LeafReaderContext<LR1>,
     ) -> Result<Option<LeafReaderTermsEnum<LR1>>>
     where
         LR1: LeafReader,
@@ -290,10 +289,9 @@ where
     TS: TermState,
     LR: LeafReader,
 {
-    fn is_cacheable<LR1>(&self, _ctx: &LeafReaderContext<LR1>) -> bool
-    where
-        LR1: LeafReader,
-    {
+    type LeafReader = LR;
+
+    fn is_cacheable(&self, _ctx: &LeafReaderContext<Self::LeafReader>) -> bool {
         true
     }
 }
@@ -306,21 +304,15 @@ where
 {
     type Matches = DummyMatches;
 
-    fn matches<LR1>(
+    fn matches(
         &mut self,
-        context: &LeafReaderContext<LR1>,
-        doc: i32,
-    ) -> Result<Option<Self::Matches>>
-    where
-        LR1: LeafReader,
-    {
+        _context: &LeafReaderContext<LR>,
+        _doc: i32,
+    ) -> Result<Option<Self::Matches>> {
         todo!()
     }
 
-    fn explain<LR1>(&mut self, context: &LeafReaderContext<LR1>, doc: i32) -> Result<Explanation>
-    where
-        LR1: LeafReader,
-    {
+    fn explain(&mut self, context: &LeafReaderContext<LR>, doc: i32) -> Result<Explanation> {
         let mut scorer_opt = self.scorer(context)?;
         if let Some(scorer) = scorer_opt.as_mut() {
             let new_doc = scorer.iterator().advance(doc)?;
@@ -375,20 +367,14 @@ where
 
     type ScorerSupplier = ScorerSupplierImpl<LR, S>;
 
-    fn scorer_supplier<LR1>(
+    fn scorer_supplier(
         &mut self,
-        context: &LeafReaderContext<LR1>,
-    ) -> Result<Option<Self::ScorerSupplier>>
-    where
-        LR1: LeafReader,
-    {
+        _context: &LeafReaderContext<LR>,
+    ) -> Result<Option<Self::ScorerSupplier>> {
         todo!()
     }
 
-    fn count<LR1>(&self, context: &LeafReaderContext<LR1>) -> Result<i32>
-    where
-        LR1: LeafReader,
-    {
+    fn count(&self, context: &LeafReaderContext<LR>) -> Result<i32> {
         if !context.reader().has_deletions()? {
             if let Some(mut terms_enum) = self.get_terms_enum(context)? {
                 terms_enum.doc_freq()
