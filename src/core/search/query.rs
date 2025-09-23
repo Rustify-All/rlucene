@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::core::index::dummy::dummy_term_state_type::DummyTermState;
+use crate::core::index::dummy::dummy_index_reader_context::DummyIndexReaderContext;
 use crate::core::index::index_reader_context::IndexReaderContext;
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::search::dummy::dummy_query::DummyQuery;
@@ -66,12 +66,12 @@ pub trait Query: Eq + Hash + Display + Debug {
 }
 
 pub enum QueryEnum {
-    Term(TermQuery<DummyTermState>),
+    Term(TermQuery<DummyIndexReaderContext>),
 }
 
 impl Eq for QueryEnum {}
 
-impl PartialEq<QueryEnum> for TermQuery<DummyTermState> {
+impl PartialEq<QueryEnum> for TermQuery<DummyIndexReaderContext> {
     fn eq(&self, other: &QueryEnum) -> bool {
         match other {
             QueryEnum::Term(t) => self == t,
@@ -161,8 +161,8 @@ impl Query for QueryEnum {
     }
 }
 
-impl From<TermQuery<DummyTermState>> for QueryEnum {
-    fn from(value: TermQuery<DummyTermState>) -> Self {
+impl From<TermQuery<DummyIndexReaderContext>> for QueryEnum {
+    fn from(value: TermQuery<DummyIndexReaderContext>) -> Self {
         QueryEnum::Term(value)
     }
 }

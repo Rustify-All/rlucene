@@ -16,7 +16,9 @@
  */
 use crate::core::index::dummy::dummy_index_reader::DummyIndexReader;
 use crate::core::index::dummy::dummy_leaf_reader::DummyLeafReader;
-use crate::core::index::index_reader_context::{IndexReaderContext, IndexReaderContextBase, IndexReaderContextEnum, IndexReaderContextSealed};
+use crate::core::index::index_reader_context::{
+    IndexReaderContext, IndexReaderContextBase, IndexReaderContextEnum, IndexReaderContextSealed,
+};
 use crate::core::index::leaf_reader_context::LeafReaderContext;
 
 pub struct DummyIndexReaderContext;
@@ -32,7 +34,10 @@ impl IndexReaderContext for DummyIndexReaderContext {
 
     type LeafReader = DummyLeafReader;
 
-    fn leaves(&self) -> crate::core::util::error::lucene_error::Result<&[LeafReaderContext<Self::LeafReader>]> {
+    fn leaves(
+        &self,
+    ) -> crate::core::util::error::lucene_error::Result<&[LeafReaderContext<Self::LeafReader>]>
+    {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 

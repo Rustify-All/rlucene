@@ -15,7 +15,6 @@
  * limitations under the License.
  */
 use crate::core::index::doc_values_iterator::DocValuesIterator;
-use crate::core::index::dummy::dummy_term_state_type::DummyTermState;
 use crate::core::index::index_reader_context::IndexReaderContext;
 use crate::core::index::leaf_reader::{
     LRImpactsEnum, LRNumericDocValues, LRPosting, LRTermState, LRTermsEnum, LeafReader,
@@ -23,8 +22,8 @@ use crate::core::index::leaf_reader::{
 use crate::core::index::leaf_reader_context::LeafReaderContext;
 use crate::core::index::numeric_doc_values::NumericDocValues;
 use crate::core::index::term::Term;
-use crate::core::index::term_state::TermState;
 use crate::core::index::term_states::{PrepareState, TermStateTerm, TermStates, build};
+use crate::core::index::terms::Terms;
 use crate::core::index::terms_enum::TermsEnum;
 use crate::core::search::collection_statistics::CollectionStatistics;
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
@@ -47,17 +46,23 @@ use crate::core::search::weight::Weight;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
+use std::marker::PhantomData;
 use std::rc::Rc;
 use std::sync::Arc;
 
-pub struct TermQuery<TS>
+pub type IRCTermState<IRC> = <<<<IRC as IndexReaderContext>::LeafReader as LeafReader>::Terms as Terms>::TermsEnum as TermsEnum>::TermState;
+
+pub struct TermQuery<IRC>
 where
-    TS: TermState,
+    IRC: IndexReaderContext,
 {
     term: Arc<Term>,
-    per_reader_term_state: Option<TermStates<TS>>,
+    per_reader_term_state: Option<TermStates<IRCTermState<IRC>>>,
 }
-impl TermQuery<DummyTermState> {
+impl<IRC> TermQuery<IRC>
+where
+    IRC: IndexReaderContext,
+{
     pub fn new<T>(term: T) -> Self
     where
         T: Into<Arc<Term>>,
@@ -67,57 +72,52 @@ impl TermQuery<DummyTermState> {
             per_reader_term_state: None,
         }
     }
-}
-impl<TS> TermQuery<TS>
-where
-    TS: TermState,
-{
-    pub fn new_with_states<T>(term: T, states: TermStates<TS>) -> Self
+    pub fn new_with_states<T>(term: T, states: TermStates<IRCTermState<IRC>>) -> Self
     where
         T: Into<Arc<Term>>,
     {
         Self {
             term: term.into(),
-            per_reader_term_state: Option::from(states),
+            per_reader_term_state: Some(states),
         }
     }
-    pub fn get_term_state(&self) -> Option<&TermStates<TS>> {
+    pub fn get_term_state(&self) -> Option<&TermStates<IRCTermState<IRC>>> {
         self.per_reader_term_state.as_ref()
     }
 }
 
-impl<TS> PartialEq<Self> for TermQuery<TS>
+impl<IRC> PartialEq<Self> for TermQuery<IRC>
 where
-    TS: TermState,
+    IRC: IndexReaderContext,
 {
     fn eq(&self, other: &Self) -> bool {
         self.term == other.term
     }
 }
 
-impl<TS> Hash for TermQuery<TS>
+impl<IRC> Hash for TermQuery<IRC>
 where
-    TS: TermState,
+    IRC: IndexReaderContext,
 {
     fn hash<H: Hasher>(&self, state: &mut H) {
         // TODO
         self.term.hash(state);
     }
 }
-impl<TS> Eq for TermQuery<TS> where TS: TermState {}
+impl<IRC> Eq for TermQuery<IRC> where IRC: IndexReaderContext {}
 
-impl<TS> Debug for TermQuery<TS>
+impl<IRC> Debug for TermQuery<IRC>
 where
-    TS: TermState,
+    IRC: IndexReaderContext,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         todo!()
     }
 }
 
-impl<TS> Query for TermQuery<TS>
+impl<IRC> Query for TermQuery<IRC>
 where
-    TS: TermState,
+    IRC: IndexReaderContext,
 {
     fn as_string(&self, field: &str) -> String {
         let mut buffer = String::new();
@@ -137,19 +137,19 @@ where
     }
 
     type Weight<S, LR>
-        = TermWeight<S, TS, LR>
+        = TermWeight<S, IRC, LR>
     where
         S: Similarity,
         LR: LeafReader;
 
-    fn crate_weight<IRC, S>(
+    fn crate_weight<I, S>(
         mut self,
-        search: &IndexSearcher<IRC, S>,
+        search: &IndexSearcher<I, S>,
         score_mod: &ScoreMode,
         boost: f32,
-    ) -> Result<Self::Weight<S, IRC::LeafReader>>
+    ) -> Result<Self::Weight<S, I::LeafReader>>
     where
-        IRC: IndexReaderContext,
+        I: IndexReaderContext,
         S: Similarity,
         Self: Sized,
     {
@@ -161,14 +161,18 @@ where
                 .unwrap()
                 .was_built_for(context)
         {
-            TermStatesENum::A(build(search, self.term.clone(), score_mod.needs_scores())?)
+            TermStatesENum::<IRC, I::LeafReader>::A(build(
+                search,
+                self.term.clone(),
+                score_mod.needs_scores(),
+            )?)
         } else {
-            TermStatesENum::B(self.per_reader_term_state.take().unwrap())
+            TermStatesENum::<IRC, I::LeafReader>::B(self.per_reader_term_state.take().unwrap())
         };
         TermWeight::new(search, *score_mod, boost, Some(term_state), Rc::new(self))
     }
 
-    type Query = TermQuery<TS>;
+    type Query = TermQuery<IRC>;
 
     fn visit<QV>(&self, _visitor: &QV)
     where
@@ -178,43 +182,43 @@ where
     }
 }
 
-impl<TS> Display for TermQuery<TS>
+impl<IRC> Display for TermQuery<IRC>
 where
-    TS: TermState,
+    IRC: IndexReaderContext,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_string(""))
     }
 }
 
-pub struct TermWeight<S, TS, LR>
+pub struct TermWeight<S, IRC, LR>
 where
     S: Similarity,
-    TS: TermState,
+    IRC: IndexReaderContext,
     LR: LeafReader,
 {
     similarity: Rc<S>,
     sim_scorer: Option<Rc<TermQuerySimScorer<S::SimScorer>>>,
-    term_states: Option<TermStatesENum<TS, LR>>,
+    term_states: Option<TermStatesENum<IRC, LR>>,
     score_mode: ScoreMode,
-    parent_query: Rc<TermQuery<TS>>,
+    parent_query: Rc<TermQuery<IRC>>,
+    _marker: PhantomData<LR>,
 }
-impl<S, TS, LR> TermWeight<S, TS, LR>
+impl<S, IRC, LR> TermWeight<S, IRC, LR>
 where
     S: Similarity,
-    TS: TermState,
+    IRC: IndexReaderContext,
     LR: LeafReader,
 {
-    pub fn new<IRC>(
-        searcher: &IndexSearcher<IRC, S>,
+    pub fn new<I>(
+        searcher: &IndexSearcher<I, S>,
         score_mode: ScoreMode,
         boost: f32,
-        term_states: Option<TermStatesENum<TS, LR>>,
-        query: Rc<TermQuery<TS>>,
+        term_states: Option<TermStatesENum<IRC, LR>>,
+        query: Rc<TermQuery<IRC>>,
     ) -> Result<Self>
     where
-        IRC: IndexReaderContext,
-        LR: LeafReader,
+        I: IndexReaderContext<LeafReader = LR>,
     {
         if score_mode.needs_scores() && term_states.is_none() {
             return Err(LuceneError::illegal_argument(
@@ -269,23 +273,18 @@ where
             term_states,
             score_mode,
             parent_query: query,
+            _marker: PhantomData,
         })
     }
-    fn get_terms_enum<LR1>(
-        &self,
-        _context: &LeafReaderContext<LR1>,
-    ) -> Result<Option<LRTermsEnum<LR1>>>
-    where
-        LR1: LeafReader,
-    {
+    fn get_terms_enum(&self, _context: &LeafReaderContext<LR>) -> Result<Option<LRTermsEnum<LR>>> {
         todo!()
     }
 }
 
-impl<S, TS, LR> SegmentCacheable for TermWeight<S, TS, LR>
+impl<S, IRC, LR> SegmentCacheable for TermWeight<S, IRC, LR>
 where
     S: Similarity,
-    TS: TermState,
+    IRC: IndexReaderContext,
     LR: LeafReader,
 {
     type LeafReader = LR;
@@ -295,10 +294,10 @@ where
     }
 }
 
-impl<S, TS, LR> Weight for TermWeight<S, TS, LR>
+impl<S, IRC, LR> Weight for TermWeight<S, IRC, LR>
 where
     S: Similarity,
-    TS: TermState,
+    IRC: IndexReaderContext,
     LR: LeafReader,
 {
     type Matches = DummyMatches;
@@ -358,7 +357,7 @@ where
         ))
     }
 
-    type Query = TermQuery<TS>;
+    type Query = TermQuery<IRC>;
 
     fn get_query(&self) -> &Self::Query {
         todo!()
@@ -462,17 +461,17 @@ impl SimScorer for SimScorerImpl {
 }
 pub(crate) type TermQuerySimScorer<S> = Either2SimScorer<S, SimScorerImpl>;
 
-pub enum TermStatesENum<TS, LR>
+pub enum TermStatesENum<StoredIRC, LR>
 where
-    TS: TermState,
+    StoredIRC: IndexReaderContext,
     LR: LeafReader,
 {
     A(TermStates<TermStateTerm<LR>>),
-    B(TermStates<TS>),
+    B(TermStates<IRCTermState<StoredIRC>>),
 }
-impl<TS, LR> TermStatesENum<TS, LR>
+impl<StoredIRC, LR> TermStatesENum<StoredIRC, LR>
 where
-    TS: TermState,
+    StoredIRC: IndexReaderContext,
     LR: LeafReader,
 {
     pub fn doc_freq(&self) -> Result<i32> {
@@ -487,10 +486,9 @@ where
             TermStatesENum::B(v) => v.total_term_freq(),
         }
     }
-    pub fn was_built_for<IRC>(&self, ctx: &IRC) -> bool
+    pub fn was_built_for<C>(&self, ctx: &C) -> bool
     where
-        IRC: IndexReaderContext,
-        LR: LeafReader,
+        C: IndexReaderContext,
     {
         match self {
             TermStatesENum::A(v) => v.was_built_for(ctx),
