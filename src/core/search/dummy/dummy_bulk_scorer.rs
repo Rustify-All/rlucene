@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 use crate::core::search::bulk_scorer::BulkScorer;
+use crate::core::search::dummy::dummy_scorer::DummyScorer;
 use crate::core::search::leaf_collector::LeafCollector;
 use crate::core::util::bits::Bits;
 use crate::core::util::error::lucene_error::Result;
@@ -22,6 +23,8 @@ use crate::core::util::error::lucene_error::Result;
 pub struct DummyBulkScorer;
 
 impl BulkScorer for DummyBulkScorer {
+    type CollectorScorer = DummyScorer;
+
     fn score<LC, B>(
         &mut self,
         _collector: &mut LC,
@@ -30,7 +33,7 @@ impl BulkScorer for DummyBulkScorer {
         _max: i32,
     ) -> Result<i32>
     where
-        LC: LeafCollector,
+        LC: LeafCollector<Scorer = DummyScorer>,
         B: Bits,
     {
         unreachable!("Dummy implementation: this method should never be called in real usage")

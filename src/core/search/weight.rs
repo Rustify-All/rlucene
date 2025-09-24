@@ -245,6 +245,8 @@ impl<S> BulkScorer for DefaultBulkScorer<S>
 where
     S: Scorer,
 {
+    type CollectorScorer = S;
+
     fn score<LC, B>(
         &mut self,
         collector: &mut LC,
@@ -253,10 +255,19 @@ where
         max: i32,
     ) -> Result<i32>
     where
-        LC: LeafCollector,
+        LC: LeafCollector<Scorer = S>,
         B: Bits,
     {
-        todo!()
+        collector.set_scorer(&mut self.scorer)?;
+
+        let has_competitive_iterator = collector.competitive_iterator()?.is_some();
+
+        if !has_competitive_iterator && accept_docs.is_none() && min == 0 && max == NO_MORE_DOCS {
+            score_all(collector, accept_docs)?;
+            Ok(NO_MORE_DOCS)
+        } else {
+            score_range(collector, accept_docs, min, max)
+        }
     }
 
     fn cost(&mut self) -> Result<i64> {
@@ -296,29 +307,45 @@ where
 }
 /// Specialized method to bulk-score all hits;
 /// we separate this from scoreRange to help out hotspot. See [`LUCENE-5487`](https://issues.apache.org/jira/browse/LUCENE-5487">LUCENE-5487)
-fn score_all<C, S, B>(collector: &mut C, scorer: &mut S, accept_docs: Option<&B>) -> Result<()>
+fn score_all<C, B>(collector: &mut C, accept_docs: Option<&B>) -> Result<()>
 where
     C: LeafCollector,
-    S: Scorer,
     B: Bits,
 {
-    if let Some(mut two_phase) = scorer.two_phase_iterator() {
+    let has_two_phase = {
+        let scorer = collector.scorer_mut()?;
+        scorer.two_phase_iterator().is_some()
+    };
+
+    if has_two_phase {
         loop {
-            let doc = {
-                let iter = two_phase.approximation_mut();
-                iter.next_doc()?
+            let (doc, matches) = {
+                let scorer = collector.scorer_mut()?;
+                let mut two_phase = scorer.two_phase_iterator().unwrap();
+                let doc = {
+                    let iter = two_phase.approximation_mut();
+                    iter.next_doc()?
+                };
+                if doc == NO_MORE_DOCS {
+                    (doc, false)
+                } else {
+                    (doc, two_phase.matches()?)
+                }
             };
             if doc == NO_MORE_DOCS {
                 break;
             }
-            if accept_docs.is_none_or(|a| a.get(doc)) && two_phase.matches()? {
+            if accept_docs.is_none_or(|a| a.get(doc)) && matches {
                 collector.collect(doc)?;
             }
         }
     } else {
-        let mut iter = scorer.iterator();
         loop {
-            let doc = iter.next_doc()?;
+            let doc = {
+                let scorer = collector.scorer_mut()?;
+                let mut iter = scorer.iterator();
+                iter.next_doc()?
+            };
             if doc == NO_MORE_DOCS {
                 break;
             }
@@ -331,71 +358,101 @@ where
 }
 /// Specialized method to bulk-score a range of hits;
 /// we separate this from scoreAll to help out hotspot. See [`LUCENE-5487`](https://issues.apache.org/jira/browse/LUCENE-5487">LUCENE-5487)
-fn score_range<C, S, B, DISI>(
+fn score_range<C, B>(
     collector: &mut C,
-    scorer: &mut S,
-    mut competitive_iterator: Option<&mut DISI>,
     accept_docs: Option<&B>,
     mut min: i32,
     max: i32,
 ) -> Result<i32>
 where
     C: LeafCollector,
-    S: Scorer,
     B: Bits,
-    DISI: DocIdSetIterator,
 {
-    if let Some(competitive_iterator) = competitive_iterator.as_mut()
-        && competitive_iterator.doc_id() > min
-    {
-        // The competitive iterator may not match any docs in the range.
-        min = competitive_iterator.doc_id().min(max);
+    if let Some(iterator) = collector.competitive_iterator()? {
+        if iterator.doc_id() > min {
+            min = iterator.doc_id().min(max);
+        }
     }
 
     let mut doc = {
-        let d = scorer.iterator().doc_id();
+        let scorer = collector.scorer_mut()?;
+        let mut iter = scorer.iterator();
+        let d = iter.doc_id();
         if d < min {
             if d == min - 1 {
-                scorer.iterator().next_doc()?
+                iter.next_doc()?
             } else {
-                scorer.iterator().advance(min)?
+                iter.advance(min)?
             }
         } else {
             d
         }
     };
 
-    let has_two_phase = { scorer.two_phase_iterator().is_some() };
-    if !has_two_phase && competitive_iterator.is_none() {
-        // Optimize simple iterators with collectors that can't skip
-        let mut iterator = scorer.iterator();
+    let has_two_phase = {
+        let scorer = collector.scorer_mut()?;
+        scorer.two_phase_iterator().is_some()
+    };
+
+    let has_competitive = collector.competitive_iterator()?.is_some();
+
+    if !has_two_phase && !has_competitive {
         while doc < max {
             if accept_docs.is_none_or(|a| a.get(doc)) {
                 collector.collect(doc)?;
             }
-            doc = iterator.next_doc()?;
+            doc = {
+                let scorer = collector.scorer_mut()?;
+                let mut iter = scorer.iterator();
+                iter.next_doc()?
+            };
         }
-    } else {
-        while doc < max {
-            if let Some(competitive_iterator) = competitive_iterator.as_mut() {
-                debug_assert!(competitive_iterator.doc_id() <= doc);
-                if competitive_iterator.doc_id() < doc {
-                    competitive_iterator.advance(doc)?;
-                }
-                if competitive_iterator.doc_id() != doc {
-                    doc = scorer.iterator().advance(competitive_iterator.doc_id())?;
-                    continue;
-                }
-            }
-
-            if accept_docs.is_none_or(|a| a.get(doc))
-                && (!has_two_phase || scorer.two_phase_iterator().as_mut().unwrap().matches()?)
-            {
-                collector.collect(doc)?;
-            }
-
-            doc = scorer.iterator().next_doc()?;
-        }
+        return Ok(doc);
     }
+
+    while doc < max {
+        if has_competitive {
+            let mut advance_to = None;
+            if let Some(iterator) = collector.competitive_iterator()? {
+                debug_assert!(iterator.doc_id() <= doc);
+                let candidate = if iterator.doc_id() < doc {
+                    iterator.advance(doc)?
+                } else {
+                    iterator.doc_id()
+                };
+                if candidate != doc {
+                    advance_to = Some(candidate);
+                }
+            }
+
+            if let Some(target) = advance_to {
+                doc = {
+                    let scorer = collector.scorer_mut()?;
+                    let mut iter = scorer.iterator();
+                    iter.advance(target)?
+                };
+                continue;
+            }
+        }
+
+        let matches = if has_two_phase {
+            let scorer = collector.scorer_mut()?;
+            let mut two_phase = scorer.two_phase_iterator().unwrap();
+            two_phase.matches()?
+        } else {
+            true
+        };
+
+        if accept_docs.is_none_or(|a| a.get(doc)) && matches {
+            collector.collect(doc)?;
+        }
+
+        doc = {
+            let scorer = collector.scorer_mut()?;
+            let mut iter = scorer.iterator();
+            iter.next_doc()?
+        };
+    }
+
     Ok(doc)
 }

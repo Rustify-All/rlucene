@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 use crate::core::search::leaf_collector::LeafCollector;
+use crate::core::search::scorer::Scorer;
 use crate::core::util::bits::Bits;
 use crate::core::util::error::lucene_error::Result;
 
@@ -24,6 +25,7 @@ use crate::core::util::error::lucene_error::Result;
 /// documents need to override this. Otherwise, a default implementation is
 /// wrapped around the [`Scorer`] returned by [`Weight::scorer`](crate::core::search::weight::Weight::bulk_scorer).
 pub trait BulkScorer {
+    type CollectorScorer: Scorer;
     /// Collects matching documents in a range and returns an estimation of the
     /// next matching document which is on or after `max`.
     ///
@@ -61,7 +63,7 @@ pub trait BulkScorer {
         max: i32,
     ) -> Result<i32>
     where
-        LC: LeafCollector,
+        LC: LeafCollector<Scorer = Self::CollectorScorer>,
         B: Bits;
 
     /// Same as [`DocIdSetIterator::cost`](crate::core::search::doc_id_set_iterator::DocIdSetIterator::cost) for bulk scorers.

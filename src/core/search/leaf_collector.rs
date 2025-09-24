@@ -16,7 +16,7 @@
  */
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
 use crate::core::search::doc_id_stream::DocIdStream;
-use crate::core::search::scorable::Scorable;
+use crate::core::search::scorer::Scorer;
 use crate::core::util::error::lucene_error::Result;
 /// Collector decouples the score from the collected doc: the score computation
 /// is skipped entirely if it's not needed.
@@ -38,14 +38,17 @@ use crate::core::util::error::lucene_error::Result;
 ///
 /// @lucene.experimental
 pub trait LeafCollector {
+    type Scorer: Scorer;
     /// Called before successive calls to [`LeafCollector::collect`].
     ///
     /// Implementations that need the score of the current document (passed in
-    /// to `collect`) should save the passed-in [`Scorable`] and call
+    /// to `collect`) should save the passed-in [`Scorer`] and call
     /// `scorer.score()` when needed.
-    fn set_scorer<S>(&mut self, scorer: &mut S) -> Result<()>
-    where
-        S: Scorable;
+    fn set_scorer(&mut self, scorer: &mut Self::Scorer) -> Result<()>;
+
+    /// Returns the scorer that was most recently provided via
+    /// [`LeafCollector::set_scorer`].
+    fn scorer_mut(&mut self) -> Result<&mut Self::Scorer>;
 
     /// Called once for every document matching a query, with the unbased document number.
     ///
