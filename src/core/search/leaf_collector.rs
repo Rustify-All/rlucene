@@ -44,7 +44,7 @@ pub trait LeafCollector {
     /// Implementations that need the score of the current document (passed in
     /// to `collect`) should save the passed-in [`Scorer`] and call
     /// `scorer.score()` when needed.
-    fn set_scorer(&mut self, scorer: &mut Self::Scorer) -> Result<()>;
+    fn set_scorer(&mut self, scorer: Self::Scorer) -> Result<()>;
 
     /// Returns the scorer that was most recently provided via
     /// [`LeafCollector::set_scorer`].

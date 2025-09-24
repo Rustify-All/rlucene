@@ -231,14 +231,16 @@ pub struct DefaultBulkScorer<S>
 where
     S: Scorer,
 {
-    scorer: S,
+    scorer: Option<S>,
 }
 impl<S> DefaultBulkScorer<S>
 where
     S: Scorer,
 {
     pub fn new(scorer: S) -> Self {
-        Self { scorer }
+        Self {
+            scorer: Some(scorer),
+        }
     }
 }
 impl<S> BulkScorer for DefaultBulkScorer<S>
@@ -258,11 +260,30 @@ where
         LC: LeafCollector<Scorer = S>,
         B: Bits,
     {
-        collector.set_scorer(&mut self.scorer)?;
+        let has_two_phase = { self.scorer.as_mut().unwrap().two_phase_iterator().is_some() };
+        let doc_id = if has_two_phase {
+            self.scorer
+                .as_mut()
+                .unwrap()
+                .two_phase_iterator()
+                .as_ref()
+                .unwrap()
+                .approximation()
+                .doc_id()
+        } else {
+            self.scorer.as_mut().unwrap().iterator().doc_id()
+        };
+
+        collector.set_scorer(self.scorer.take().unwrap())?;
 
         let has_competitive_iterator = collector.competitive_iterator()?.is_some();
 
-        if !has_competitive_iterator && accept_docs.is_none() && min == 0 && max == NO_MORE_DOCS {
+        if !has_competitive_iterator
+            && doc_id == -1
+            && accept_docs.is_none()
+            && min == 0
+            && max == NO_MORE_DOCS
+        {
             score_all(collector, accept_docs)?;
             Ok(NO_MORE_DOCS)
         } else {
@@ -271,7 +292,7 @@ where
     }
 
     fn cost(&mut self) -> Result<i64> {
-        self.scorer.iterator().cost()
+        self.scorer.as_mut().unwrap().iterator().cost()
     }
 }
 pub struct DefaultScorerSupplier<S>
@@ -368,10 +389,10 @@ where
     C: LeafCollector,
     B: Bits,
 {
-    if let Some(iterator) = collector.competitive_iterator()? {
-        if iterator.doc_id() > min {
-            min = iterator.doc_id().min(max);
-        }
+    if let Some(iterator) = collector.competitive_iterator()?
+        && iterator.doc_id() > min
+    {
+        min = iterator.doc_id().min(max);
     }
 
     let mut doc = {
