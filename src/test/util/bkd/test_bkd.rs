@@ -27,7 +27,7 @@ use crate::core::index::BytesRef;
 use crate::core::index::merge_state::{DocMap, DocMapEnum};
 use crate::core::index::point_values::{
     IntersectVisitor, MAX_DIMENSIONS, MAX_INDEX_DIMENSIONS, MAX_NUM_BYTES, PointTree, PointValues,
-    PointValuesBase, Relation,
+    Relation,
 };
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
 use crate::core::search::doc_id_set_iterator::disi_const::NO_MORE_DOCS;
@@ -95,7 +95,7 @@ fn test_basic_ints_1d() -> Result<()> {
                 config: config.clone(),
                 random: &mut random,
             };
-            let r = PointValues::new(sub_point_values);
+            let r = sub_point_values;
             r.intersect(&mut visitor)?;
 
             for doc_id in 0..100 {
@@ -176,7 +176,7 @@ fn test_random_ints_n_dims() -> Result<()> {
         let mut input = dir.open_input("bkd", &IOContext::default_io_context()?)?;
         input.seek(index_fp)?;
         let sub_point_values = get_point_values(Rc::new(RefCell::new(input)))?;
-        let r = PointValues::new(sub_point_values);
+        let r = sub_point_values;
 
         let min_packed_value = r.get_min_packed_value()?.unwrap();
         let max_packed_value = r.get_max_packed_value()?.unwrap();
@@ -312,7 +312,7 @@ fn test_big_int_n_dims() -> Result<()> {
         let mut input = dir.open_input("bkd", &IOContext::default_io_context()?)?;
         input.seek(index_fp)?;
         let sub_point_values = get_point_values(Rc::new(RefCell::new(input)))?;
-        let point_values = PointValues::new(sub_point_values);
+        let point_values = sub_point_values;
 
         let iters = at_least(&mut random, 100);
         for iter in 0..iters {
@@ -1000,7 +1000,7 @@ fn verify_with_max_mb<D: Directory, R: Rng + ?Sized>(
         let mut readers = Vec::new();
         for fp in to_merge {
             input.borrow_mut().seek(*fp)?;
-            readers.push(PointValues::new(get_point_values(input.clone())?));
+            readers.push(get_point_values(input.clone())?);
         }
 
         {
@@ -1029,7 +1029,7 @@ fn verify_with_max_mb<D: Directory, R: Rng + ?Sized>(
     input.borrow_mut().seek(index_fp)?;
     let sub_point_values = get_point_values(input.clone())?;
     assert_size(&mut sub_point_values.get_point_tree()?, random)?;
-    let point_values = PointValues::new(sub_point_values);
+    let point_values = sub_point_values;
 
     let iters = at_least(random, 100);
     for _ in 0..iters {
@@ -1403,7 +1403,7 @@ fn test_tie_break_order() -> Result<()> {
     let mut input = dir.open_input("bkd", &IOContext::default_io_context()?)?;
     input.seek(fp)?;
     let sub_point_values = get_point_values(Rc::new(RefCell::new(input)))?;
-    let point_values = PointValues::new(sub_point_values);
+    let point_values = sub_point_values;
     point_values.intersect(&mut IntersectVisitorMock2::new())?;
     Ok(())
 }
@@ -1515,7 +1515,7 @@ fn test_check_data_dim_optimal_order() -> Result<()> {
     point_in.seek(index_fp)?;
 
     let sub_point_values = get_point_values(Rc::new(RefCell::new(point_in)))?;
-    let point_values = PointValues::new(sub_point_values);
+    let point_values = sub_point_values;
     point_values.intersect(&mut IntersectVisitorMock3::new(
         num_data_dims,
         num_bytes_per_dim,
@@ -1594,7 +1594,7 @@ fn test_2d_long_ords_offline() -> Result<()> {
     let mut input = dir.open_input("bkd", &IOContext::default_io_context()?)?;
     input.seek(fp)?;
     let sub_point_values = get_point_values(Rc::new(RefCell::new(input)))?;
-    let point_values = PointValues::new(sub_point_values);
+    let point_values = sub_point_values;
 
     let mut count = [0];
     let mut visitor = IntersectVisitorMock4 {
@@ -1694,7 +1694,7 @@ fn test_wasted_leading_bytes() -> Result<()> {
     let mut input = dir.open_input("bkd", &IOContext::default_io_context()?)?;
     input.seek(fp)?;
     let sub_point_values = get_point_values(Rc::new(RefCell::new(input)))?;
-    let point_values = PointValues::new(sub_point_values);
+    let point_values = sub_point_values;
 
     let mut count = [0];
     let mut visitor = IntersectVisitorMock5 {
@@ -1819,7 +1819,7 @@ fn test_estimate_point_count() -> Result<()> {
 
     let mut input = dir.open_input("bkd", &IOContext::default_io_context()?)?;
     input.seek(index_fp)?;
-    let point_values = PointValues::new(get_point_values(Rc::new(RefCell::new(input)))?);
+    let point_values = get_point_values(Rc::new(RefCell::new(input)))?;
 
     // If all points match, then the point count is numValues
     assert_eq!(

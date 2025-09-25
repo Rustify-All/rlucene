@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 use crate::core::codecs::lucene90_points_reader::Lucene90PointsReader;
-use crate::core::index::point_values::{PointValues, PointValuesBase};
+use crate::core::index::point_values::PointValues;
 use crate::core::store::IndexInput;
 use crate::core::util::CoreHelper;
 use crate::core::util::bkd::bkd_reader::BKDReader;
@@ -28,8 +28,8 @@ pub trait PointsReader: Clone {
     /// a checksum value against large data files.
     fn check_integrity(&self) -> Result<()>;
 
-    type PointValuesBase: PointValuesBase;
-    fn get_values(&self, field: &str) -> Result<PointValues<Self::PointValuesBase>>;
+    type PointValuesType: PointValues;
+    fn get_values(&self, field: &str) -> Result<Self::PointValuesType>;
 
     /// Returns an instance optimized for merging. This instance may only be
     /// cloned
@@ -73,9 +73,9 @@ where
         }
     }
 
-    type PointValuesBase = BKDReader<I>;
+    type PointValuesType = BKDReader<I>;
 
-    fn get_values(&self, field: &str) -> Result<PointValues<Self::PointValuesBase>> {
+    fn get_values(&self, field: &str) -> Result<Self::PointValuesType> {
         match self {
             PointsReaderEnum::Lucene90(reader) => reader.get_values(field),
         }

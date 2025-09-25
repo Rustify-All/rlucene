@@ -15,7 +15,6 @@
  * limitations under the License.
  */
 use crate::core::codecs::points_reader::PointsReader;
-use crate::core::index::point_values::PointValues;
 use crate::core::index::segment_read_state::SegmentReadState;
 use crate::core::store::IndexInput;
 use crate::core::store::directory::Directory;
@@ -64,9 +63,9 @@ where
         todo!()
     }
 
-    type PointValuesBase = BKDReader<I>;
+    type PointValuesType = BKDReader<I>;
 
-    fn get_values(&self, _field: &str) -> Result<PointValues<Self::PointValuesBase>> {
+    fn get_values(&self, _field: &str) -> Result<Self::PointValuesType> {
         todo!()
     }
 }

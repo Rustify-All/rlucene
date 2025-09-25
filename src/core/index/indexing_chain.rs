@@ -61,7 +61,6 @@ use crate::core::index::norm_values_writer::NormValuesWriter;
 use crate::core::index::numeric_doc_values_writer::{
     BufferedNumericDocValues, NumericDocValuesWriter,
 };
-use crate::core::index::point_values::PointValues;
 use crate::core::index::point_values_writer::PointValuesWriter;
 use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::segment_read_state::SegmentReadState;
@@ -2178,9 +2177,9 @@ where
         self.base.get_live_docs()
     }
 
-    type PointValuesBase = <DocValuesLeafReader as LeafReader>::PointValuesBase;
+    type PointValuesType = <DocValuesLeafReader as LeafReader>::PointValuesType;
 
-    fn get_point_values(&self, _field: &str) -> Result<Option<PointValues<Self::PointValuesBase>>> {
+    fn get_point_values(&self, _field: &str) -> Result<Option<Self::PointValuesType>> {
         self.base.get_point_values(_field)
     }
 
@@ -2353,9 +2352,9 @@ where
         self.base.get_live_docs()
     }
 
-    type PointValuesBase = <DocValuesLeafReader as LeafReader>::PointValuesBase;
+    type PointValuesType = <DocValuesLeafReader as LeafReader>::PointValuesType;
 
-    fn get_point_values(&self, _field: &str) -> Result<Option<PointValues<Self::PointValuesBase>>> {
+    fn get_point_values(&self, _field: &str) -> Result<Option<Self::PointValuesType>> {
         self.base.get_point_values(_field)
     }
     fn check_integrity(&self) -> Result<()> {

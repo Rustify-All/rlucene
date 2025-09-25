@@ -20,9 +20,7 @@ use crate::core::codecs::points_reader::PointsReader;
 use crate::core::codecs::points_writer::PointsWriter;
 use crate::core::index::BytesRef;
 use crate::core::index::field_info::FieldInfo;
-use crate::core::index::point_values::{
-    IntersectVisitor, PointTree, PointValues, PointValuesBase, Relation,
-};
+use crate::core::index::point_values::{IntersectVisitor, PointTree, PointValues, Relation};
 use crate::core::index::segment_write_state::SegmentWriteState;
 use crate::core::index::sorter::DocMap;
 use crate::core::store::DataOutput;
@@ -193,14 +191,14 @@ where
         Err(LuceneError::unsupported_operation(""))
     }
 
-    type PointValuesBase = PointValuesImpl<DM>;
+    type PointValuesType = PointValuesImpl<DM>;
 
-    fn get_values(&self, field_name: &str) -> Result<PointValues<Self::PointValuesBase>> {
+    fn get_values(&self, field_name: &str) -> Result<Self::PointValuesType> {
         if !field_name.eq(self.field_info.name.as_str()) {
             return Err(LuceneError::illegal_argument("fieldName must be the same"));
         }
         let values = self.values.take();
-        Ok(PointValues::new(PointValuesImpl::new(values)))
+        Ok(PointValuesImpl::new(values))
     }
 }
 
@@ -244,7 +242,7 @@ where
         }
     }
 }
-impl<DM> PointValuesBase for PointValuesImpl<DM>
+impl<DM> PointValues for PointValuesImpl<DM>
 where
     DM: DocMap,
 {

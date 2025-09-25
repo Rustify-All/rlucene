@@ -15,11 +15,11 @@
  * limitations under the License.
  */
 use crate::core::index::dummy::dummy_point_tree::DummyPointTree;
-use crate::core::index::point_values::PointValuesBase;
+use crate::core::index::point_values::PointValues;
 use crate::core::util::error::lucene_error::Result;
 
 pub struct DummyPointValuesBase;
-impl PointValuesBase for DummyPointValuesBase {
+impl PointValues for DummyPointValuesBase {
     fn get_min_packed_value(&self) -> Result<Option<Vec<u8>>> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }

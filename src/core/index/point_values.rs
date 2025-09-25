@@ -22,77 +22,48 @@ use crate::core::util::bkd::bkd_reader::BKDPointTree;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::ints_ref::IntsRef;
 
-pub struct PointValues<S>
-where
-    S: PointValuesBase,
-{
-    sub_point_values: S,
-}
+pub trait PointValues {
+    /// Returns minimum value for each dimension, packed, or None if `size()` is
+    /// `0`
+    fn get_min_packed_value(&self) -> Result<Option<Vec<u8>>>;
 
-impl<S> PointValues<S>
-where
-    S: PointValuesBase,
-{
-    pub fn new(sub_point_values: S) -> Self {
-        Self { sub_point_values }
-    }
+    /// Returns maximum value for each dimension, packed, or None if `size()` is
+    /// `0`
+    fn get_max_packed_value(&self) -> Result<Option<Vec<u8>>>;
+
+    /// Returns how many dimensions are represented in the values
+    fn get_num_dimensions(&self) -> Result<i32>;
+
+    /// Returns how many dimensions are used for the index
+    fn get_num_index_dimensions(&self) -> Result<i32>;
+    /// Returns the number of bytes per dimension
+    fn get_bytes_per_dimension(&self) -> Result<i32>;
+
+    /// Returns the total number of indexed points across all documents.
+    fn size(&self) -> Result<i64>;
+
+    /// Returns the total number of documents that have indexed at least one
+    /// point.
+    fn get_doc_count(&self) -> Result<i32>;
+    type PointTree: PointTree;
+    fn get_point_tree(&self) -> Result<Self::PointTree>;
+
     /// Finds all documents and points matching the provided visitor.
     /// This method does not enforce live documents, so it's up to the caller
     /// to test whether each document is deleted, if necessary.
-    pub fn intersect(&self, visitor: &mut impl IntersectVisitor) -> Result<()> {
+    fn intersect(&self, visitor: &mut impl IntersectVisitor) -> Result<()> {
         let mut point_tree = self.get_point_tree()?;
-        Self::intersect_with_point_tree(visitor, &mut point_tree)?;
+        intersect_with_point_tree(visitor, &mut point_tree)?;
         debug_assert!(!point_tree.move_to_parent()?);
         Ok(())
     }
 
-    /// Recursively processes the point tree to find matching documents and
-    /// points.
-    fn intersect_with_point_tree(
-        visitor: &mut impl IntersectVisitor,
-        point_tree: &mut impl PointTree,
-    ) -> Result<()> {
-        let relation = visitor.compare(
-            point_tree.get_min_packed_value()?,
-            point_tree.get_max_packed_value()?,
-        )?;
-
-        match relation {
-            Relation::CellOutsideQuery => {
-                // This cell is fully outside the query shape: stop recursing
-            },
-            Relation::CellInsideQuery => {
-                // This cell is fully inside the query shape: recursively add
-                // all points in this cell without filtering
-                point_tree.visit_doc_ids(visitor)?;
-            },
-            Relation::CellCrossesQuery => {
-                // The cell crosses the shape boundary, or the cell fully
-                // contains the query, so we fall through and do
-                // full filtering:
-                if point_tree.move_to_child()? {
-                    loop {
-                        Self::intersect_with_point_tree(visitor, point_tree)?;
-                        if !point_tree.move_to_sibling()? {
-                            break;
-                        }
-                    }
-                    point_tree.move_to_parent()?;
-                } else {
-                    // Leaf node; scan and filter all points in this block:
-                    point_tree.visit_doc_values(visitor)?;
-                }
-            },
-        }
-
-        Ok(())
-    }
     /// Estimate the number of points that would be visited by `intersect`
     /// with the given `IntersectVisitor`. This should run many times faster
     /// than `intersect(IntersectVisitor)`.
-    pub fn estimate_point_count(&self, visitor: &mut impl IntersectVisitor) -> Result<i64> {
+    fn estimate_point_count(&self, visitor: &mut impl IntersectVisitor) -> Result<i64> {
         let mut point_tree = self.get_point_tree()?;
-        let count = Self::estimate_point_count_with_point_tree(visitor, &mut point_tree, i64::MAX)?;
+        let count = estimate_point_count_with_point_tree(visitor, &mut point_tree, i64::MAX)?;
         debug_assert!(!point_tree.move_to_parent()?);
         Ok(count)
     }
@@ -100,63 +71,14 @@ where
     /// Estimate if the point count that would be matched by `intersect`
     /// with the given `IntersectVisitor` is greater than or equal to the
     /// `upper_bound`.
-    pub fn is_estimated_point_count_greater_than_or_equal_to(
+    fn is_estimated_point_count_greater_than_or_equal_to(
         visitor: &mut impl IntersectVisitor,
         point_tree: &mut impl PointTree,
         upper_bound: i64,
     ) -> Result<bool> {
-        Ok(
-            Self::estimate_point_count_with_point_tree(visitor, point_tree, upper_bound)?
-                >= upper_bound,
-        )
+        Ok(estimate_point_count_with_point_tree(visitor, point_tree, upper_bound)? >= upper_bound)
     }
 
-    /// Estimate the number of documents that would be matched by `intersect`
-    /// with the given `IntersectVisitor`. The estimation will terminate when
-    /// the point count gets greater than or equal to the upper bound.
-    // TODO: will broad-first help estimation terminate earlier?
-    fn estimate_point_count_with_point_tree(
-        visitor: &mut impl IntersectVisitor,
-        point_tree: &mut impl PointTree,
-        upper_bound: i64,
-    ) -> Result<i64> {
-        let relation = visitor.compare(
-            point_tree.get_min_packed_value()?,
-            point_tree.get_max_packed_value()?,
-        )?;
-
-        match relation {
-            Relation::CellOutsideQuery => {
-                // This cell is fully outside the query shape: no points added
-                Ok(0)
-            },
-            Relation::CellInsideQuery => {
-                // This cell is fully inside the query shape: add all points
-                point_tree.size()
-            },
-            Relation::CellCrossesQuery => {
-                // The cell crosses the shape boundary: keep recursing
-                if point_tree.move_to_child()? {
-                    let mut cost = 0;
-                    while cost < upper_bound {
-                        cost += Self::estimate_point_count_with_point_tree(
-                            visitor,
-                            point_tree,
-                            upper_bound - cost,
-                        )?;
-                        if !point_tree.move_to_sibling()? {
-                            break;
-                        }
-                    }
-                    point_tree.move_to_parent()?;
-                    Ok(cost)
-                } else {
-                    // Assume half the points matched
-                    Ok((point_tree.size()? + 1) / 2)
-                }
-            },
-        }
-    }
     /// Estimate the number of documents that would be matched by `intersect`
     /// with the given `IntersectVisitor`. This should run many times faster
     /// than `intersect(IntersectVisitor)`.
@@ -174,7 +96,8 @@ where
             Ok(estimated_point_count)
         } else {
             // in case of multi values estimate the number of docs using the
-            // solution provided in https://math.stackexchange.com/questions/1175295/urn-problem-probability-of-drawing-balls-of-k-unique-colors
+            // solution provided in https://math.stackexchange.com/questions/1175295/urn-problem-probability-of-drawing-balls-of
+            //k-unique-colors
             // then approximate the solution for points per doc << size() which
             // results in the expression D * (1 - ((N - n) /
             // N)^(N/D)) where D is the total number of docs, N the
@@ -189,70 +112,90 @@ where
         }
     }
 }
-impl<S> PointValuesBase for PointValues<S>
-where
-    S: PointValuesBase,
-{
-    fn get_min_packed_value(&self) -> Result<Option<Vec<u8>>> {
-        self.sub_point_values.get_min_packed_value()
-    }
-    fn get_max_packed_value(&self) -> Result<Option<Vec<u8>>> {
-        self.sub_point_values.get_max_packed_value()
+
+fn intersect_with_point_tree(
+    visitor: &mut impl IntersectVisitor,
+    point_tree: &mut impl PointTree,
+) -> Result<()> {
+    let relation = visitor.compare(
+        point_tree.get_min_packed_value()?,
+        point_tree.get_max_packed_value()?,
+    )?;
+
+    match relation {
+        Relation::CellOutsideQuery => {
+            // This cell is fully outside the query shape: stop recursing
+        },
+        Relation::CellInsideQuery => {
+            // This cell is fully inside the query shape: recursively add
+            // all points in this cell without filtering
+            point_tree.visit_doc_ids(visitor)?;
+        },
+        Relation::CellCrossesQuery => {
+            // The cell crosses the shape boundary, or the cell fully
+            // contains the query, so we fall through and do
+            // full filtering:
+            if point_tree.move_to_child()? {
+                loop {
+                    intersect_with_point_tree(visitor, point_tree)?;
+                    if !point_tree.move_to_sibling()? {
+                        break;
+                    }
+                }
+                point_tree.move_to_parent()?;
+            } else {
+                // Leaf node; scan and filter all points in this block:
+                point_tree.visit_doc_values(visitor)?;
+            }
+        },
     }
 
-    fn get_num_dimensions(&self) -> Result<i32> {
-        self.sub_point_values.get_num_dimensions()
-    }
+    Ok(())
+}
 
-    fn get_num_index_dimensions(&self) -> Result<i32> {
-        self.sub_point_values.get_num_dimensions()
-    }
+fn estimate_point_count_with_point_tree(
+    visitor: &mut impl IntersectVisitor,
+    point_tree: &mut impl PointTree,
+    upper_bound: i64,
+) -> Result<i64> {
+    let relation = visitor.compare(
+        point_tree.get_min_packed_value()?,
+        point_tree.get_max_packed_value()?,
+    )?;
 
-    fn get_bytes_per_dimension(&self) -> Result<i32> {
-        self.sub_point_values.get_bytes_per_dimension()
-    }
-
-    fn size(&self) -> Result<i64> {
-        self.sub_point_values.size()
-    }
-
-    fn get_doc_count(&self) -> Result<i32> {
-        self.sub_point_values.get_doc_count()
-    }
-
-    type PointTree = S::PointTree;
-
-    fn get_point_tree(&self) -> Result<Self::PointTree> {
-        self.sub_point_values.get_point_tree()
+    match relation {
+        Relation::CellOutsideQuery => {
+            // This cell is fully outside the query shape: no points added
+            Ok(0)
+        },
+        Relation::CellInsideQuery => {
+            // This cell is fully inside the query shape: add all points
+            point_tree.size()
+        },
+        Relation::CellCrossesQuery => {
+            // The cell crosses the shape boundary: keep recursing
+            if point_tree.move_to_child()? {
+                let mut cost = 0;
+                while cost < upper_bound {
+                    cost += estimate_point_count_with_point_tree(
+                        visitor,
+                        point_tree,
+                        upper_bound - cost,
+                    )?;
+                    if !point_tree.move_to_sibling()? {
+                        break;
+                    }
+                }
+                point_tree.move_to_parent()?;
+                Ok(cost)
+            } else {
+                // Assume half the points matched
+                Ok((point_tree.size()? + 1) / 2)
+            }
+        },
     }
 }
-pub trait PointValuesBase {
-    /// Returns minimum value for each dimension, packed, or None if `size()` is
-    /// `0`
-    fn get_min_packed_value(&self) -> Result<Option<Vec<u8>>>;
 
-    /// Returns maximum value for each dimension, packed, or None if `size()` is
-    /// `0`
-    fn get_max_packed_value(&self) -> Result<Option<Vec<u8>>>;
-
-    /// Returns how many dimensions are represented in the values
-    fn get_num_dimensions(&self) -> Result<i32>;
-
-    /// Returns how many dimensions are used for the index
-    fn get_num_index_dimensions(&self) -> Result<i32>;
-
-    /// Returns the number of bytes per dimension
-    fn get_bytes_per_dimension(&self) -> Result<i32>;
-
-    /// Returns the total number of indexed points across all documents.
-    fn size(&self) -> Result<i64>;
-
-    /// Returns the total number of documents that have indexed at least one
-    /// point.
-    fn get_doc_count(&self) -> Result<i32>;
-    type PointTree: PointTree;
-    fn get_point_tree(&self) -> Result<Self::PointTree>;
-}
 /// Used by `intersect` to check how each recursive cell corresponds to the
 /// query.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

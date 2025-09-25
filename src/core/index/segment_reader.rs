@@ -32,7 +32,6 @@ use crate::core::index::index_reader::IndexReader;
 use crate::core::index::leaf_metadata::LeafMetaData;
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::pending_deletes::DocBits;
-use crate::core::index::point_values::PointValues;
 use crate::core::index::segment_commit_info::SegmentCommitInfo;
 use crate::core::index::segment_core_readers::{CfsOrBaseInput, SegmentCoreReaders};
 use crate::core::index::segment_doc_values::SegmentDocValues;
@@ -439,9 +438,9 @@ where
         }
     }
 
-    type PointValuesBase = <<Self as CodecReader>::PointsReader as PointsReader>::PointValuesBase;
+    type PointValuesType = <<Self as CodecReader>::PointsReader as PointsReader>::PointValuesType;
 
-    fn get_point_values(&self, field: &str) -> Result<Option<PointValues<Self::PointValuesBase>>> {
+    fn get_point_values(&self, field: &str) -> Result<Option<Self::PointValuesType>> {
         CodecReader::get_point_values(self, field)
     }
 

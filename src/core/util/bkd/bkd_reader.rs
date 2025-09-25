@@ -19,7 +19,7 @@ use std::rc::Rc;
 
 use crate::core::codecs::CodecUtil;
 use crate::core::index::BytesRef;
-use crate::core::index::point_values::{IntersectVisitor, PointTree, PointValuesBase, Relation};
+use crate::core::index::point_values::{IntersectVisitor, PointTree, PointValues, Relation};
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
 use crate::core::search::doc_id_set_iterator::disi_const::NO_MORE_DOCS;
 use crate::core::store::{DataInput, IndexInput};
@@ -179,7 +179,7 @@ where
         Ok(count[0] != last_leaf_node_point_count)
     }
 }
-impl<I> PointValuesBase for BKDReader<I>
+impl<I> PointValues for BKDReader<I>
 where
     I: IndexInput,
 {

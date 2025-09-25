@@ -25,7 +25,6 @@ use crate::core::index::dummy::dummy_terms::DummyTerms;
 use crate::core::index::field_infos::FieldInfos;
 use crate::core::index::index_reader::IndexReader;
 use crate::core::index::leaf_reader::LeafReader;
-use crate::core::index::point_values::PointValues;
 use crate::core::index::term::Term;
 use crate::core::util::dummy::dummy_bits::DummyBits;
 use crate::core::util::error::lucene_error::Result;
@@ -136,9 +135,9 @@ impl LeafReader for DummyLeafReader {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    type PointValuesBase = DummyPointValuesBase;
+    type PointValuesType = DummyPointValuesBase;
 
-    fn get_point_values(&self, _field: &str) -> Result<Option<PointValues<Self::PointValuesBase>>> {
+    fn get_point_values(&self, _field: &str) -> Result<Option<Self::PointValuesType>> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 

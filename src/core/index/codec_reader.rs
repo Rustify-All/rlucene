@@ -27,7 +27,6 @@ use crate::core::index::field_info::FieldInfo;
 use crate::core::index::fields::Fields;
 use crate::core::index::index_options::IndexOptions;
 use crate::core::index::leaf_reader::LeafReader;
-use crate::core::index::point_values::PointValues;
 use crate::core::index::stored_field_visitor::StoredFieldVisitor;
 use crate::core::index::stored_fields::StoredFields;
 use crate::core::index::term_vectors::{Either2TermVectors, EmptyTermVectors};
@@ -244,7 +243,7 @@ pub trait CodecReader: LeafReader {
     fn get_point_values(
         &self,
         field: &str,
-    ) -> Result<Option<PointValues<<Self::PointsReader as PointsReader>::PointValuesBase>>> {
+    ) -> Result<Option<<Self::PointsReader as PointsReader>::PointValuesType>> {
         self.ensure_open()?;
 
         let fi = self.get_field_infos()?.field_info_by_name(field);
