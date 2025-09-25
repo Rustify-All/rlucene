@@ -183,13 +183,19 @@ fn test_random_ints_n_dims() -> Result<()> {
         for dim in 0..num_index_dims as usize {
             assert_eq!(
                 min_value[dim],
-                NumericUtils::sortable_bytes_to_int(&min_packed_value, dim * BitUtil::INT_BYTES),
+                NumericUtils::sortable_bytes_to_int(
+                    min_packed_value.as_ref(),
+                    dim * BitUtil::INT_BYTES,
+                ),
                 "Mismatch in min value for dim {}",
                 dim
             );
             assert_eq!(
                 max_value[dim],
-                NumericUtils::sortable_bytes_to_int(&max_packed_value, dim * BitUtil::INT_BYTES),
+                NumericUtils::sortable_bytes_to_int(
+                    max_packed_value.as_ref(),
+                    dim * BitUtil::INT_BYTES,
+                ),
                 "Mismatch in max value for dim {}",
                 dim
             );

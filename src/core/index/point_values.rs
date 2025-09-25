@@ -21,15 +21,16 @@ use crate::core::util::bkd::bkd_config::BKDConfig;
 use crate::core::util::bkd::bkd_reader::BKDPointTree;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::ints_ref::IntsRef;
+use std::borrow::Cow;
 
 pub trait PointValues {
     /// Returns minimum value for each dimension, packed, or None if `size()` is
     /// `0`
-    fn get_min_packed_value(&self) -> Result<Option<Vec<u8>>>;
+    fn get_min_packed_value(&self) -> Result<Option<Cow<'_, Vec<u8>>>>;
 
     /// Returns maximum value for each dimension, packed, or None if `size()` is
     /// `0`
-    fn get_max_packed_value(&self) -> Result<Option<Vec<u8>>>;
+    fn get_max_packed_value(&self) -> Result<Option<Cow<'_, Vec<u8>>>>;
 
     /// Returns how many dimensions are represented in the values
     fn get_num_dimensions(&self) -> Result<i32>;

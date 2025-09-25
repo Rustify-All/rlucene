@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -183,12 +184,12 @@ impl<I> PointValues for BKDReader<I>
 where
     I: IndexInput,
 {
-    fn get_min_packed_value(&self) -> Result<Option<Vec<u8>>> {
-        Ok(Option::from(self.min_packed_value.clone()))
+    fn get_min_packed_value(&self) -> Result<Option<Cow<'_, Vec<u8>>>> {
+        Ok(Some(Cow::Borrowed(&self.min_packed_value)))
     }
 
-    fn get_max_packed_value(&self) -> Result<Option<Vec<u8>>> {
-        Ok(Option::from(self.max_packed_value.clone()))
+    fn get_max_packed_value(&self) -> Result<Option<Cow<'_, Vec<u8>>>> {
+        Ok(Some(Cow::Borrowed(&self.max_packed_value)))
     }
 
     fn get_num_dimensions(&self) -> Result<i32> {

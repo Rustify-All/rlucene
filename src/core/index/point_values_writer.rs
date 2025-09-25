@@ -33,6 +33,7 @@ use crate::core::util::paged_bytes::{
     PagedBytes, PagedBytesDataOutput, PagedBytesReader, get_data_output,
 };
 use crate::core::util::{CoreHelper, Counter, CounterEnumLock, SliceCopyOps};
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::sync::Arc;
 
@@ -246,11 +247,11 @@ impl<DM> PointValues for PointValuesImpl<DM>
 where
     DM: DocMap,
 {
-    fn get_min_packed_value(&self) -> Result<Option<Vec<u8>>> {
+    fn get_min_packed_value(&self) -> Result<Option<Cow<'_, Vec<u8>>>> {
         Err(LuceneError::unsupported_operation(""))
     }
 
-    fn get_max_packed_value(&self) -> Result<Option<Vec<u8>>> {
+    fn get_max_packed_value(&self) -> Result<Option<Cow<'_, Vec<u8>>>> {
         Err(LuceneError::unsupported_operation(""))
     }
 
