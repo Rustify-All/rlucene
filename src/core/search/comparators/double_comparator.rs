@@ -16,11 +16,11 @@
  */
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::leaf_reader_context::LeafReaderContext;
-use crate::core::search::comparators::numeric_comparator::{
-    NumericComparator, NumericComparatorBase,
-};
+use crate::core::search::comparators::numeric_comparator::NumericComparator;
 use crate::core::search::dummy::dummy_leaf_field_comparator::DummyLeafFieldComparator;
 use crate::core::search::field_comparator::FieldComparator;
+use crate::core::search::pruning::Pruning;
+use crate::core::util::bit_util::BitUtil;
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::numeric_utils::NumericUtils;
 /// Comparator based on [`f64::partial_cmp`] (equivalent to Java's `Double.compare`) for `num_hits`.
@@ -36,7 +36,22 @@ pub struct DoubleComparator {
 }
 
 impl DoubleComparator {
-    pub fn new(num_hits: usize, missing_value: f64, base: NumericComparator<f64>) -> Self {
+    pub fn new(
+        field: String,
+        num_hits: usize,
+        missing_value: Option<f64>,
+        reverse: bool,
+        pruning: Pruning,
+    ) -> Self {
+        let missing_value = missing_value.unwrap_or(0f64);
+        let base = NumericComparator::new(
+            field,
+            missing_value,
+            reverse,
+            pruning,
+            BitUtil::FLOAT_BYTES as i32,
+            NumericUtils::double_to_sortable_long(missing_value),
+        );
         Self {
             values: vec![0.0; num_hits],
             top_value: 0.0,
@@ -44,16 +59,6 @@ impl DoubleComparator {
             missing_value,
             base,
         }
-    }
-}
-
-impl NumericComparatorBase for DoubleComparator {
-    fn missing_value_as_comparable_long(&self) -> i64 {
-        NumericUtils::double_to_sortable_long(self.missing_value)
-    }
-
-    fn sortable_bytes_to_long(&self, bytes: &[u8]) -> i64 {
-        NumericUtils::sortable_bytes_to_long(bytes, 0)
     }
 }
 

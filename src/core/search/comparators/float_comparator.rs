@@ -16,11 +16,11 @@
  */
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::leaf_reader_context::LeafReaderContext;
-use crate::core::search::comparators::numeric_comparator::{
-    NumericComparator, NumericComparatorBase,
-};
+use crate::core::search::comparators::numeric_comparator::NumericComparator;
 use crate::core::search::dummy::dummy_leaf_field_comparator::DummyLeafFieldComparator;
 use crate::core::search::field_comparator::FieldComparator;
+use crate::core::search::pruning::Pruning;
+use crate::core::util::bit_util::BitUtil;
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::numeric_utils::NumericUtils;
 /// Comparator based partial_cmp on for numHits.
@@ -34,7 +34,22 @@ pub struct FloatComparator {
 }
 
 impl FloatComparator {
-    pub fn new(num_hits: usize, missing_value: f32, base: NumericComparator<f32>) -> Self {
+    pub fn new(
+        field: String,
+        num_hits: usize,
+        missing_value: Option<f32>,
+        reverse: bool,
+        pruning: Pruning,
+    ) -> Self {
+        let missing_value = missing_value.unwrap_or(0f32);
+        let base = NumericComparator::new(
+            field,
+            missing_value,
+            reverse,
+            pruning,
+            BitUtil::FLOAT_BYTES as i32,
+            NumericUtils::float_to_sortable_int(missing_value) as i64,
+        );
         Self {
             values: vec![0.0; num_hits],
             top_value: 0.0,
@@ -42,16 +57,6 @@ impl FloatComparator {
             missing_value,
             base,
         }
-    }
-}
-
-impl NumericComparatorBase for FloatComparator {
-    fn missing_value_as_comparable_long(&self) -> i64 {
-        NumericUtils::float_to_sortable_int(self.missing_value) as i64
-    }
-
-    fn sortable_bytes_to_long(&self, bytes: &[u8]) -> i64 {
-        NumericUtils::sortable_bytes_to_int(bytes, 0) as i64
     }
 }
 

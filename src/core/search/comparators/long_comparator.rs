@@ -16,41 +16,43 @@
  */
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::leaf_reader_context::LeafReaderContext;
-use crate::core::search::comparators::numeric_comparator::{
-    NumericComparator, NumericComparatorBase,
-};
+use crate::core::search::comparators::numeric_comparator::NumericComparator;
 use crate::core::search::dummy::dummy_leaf_field_comparator::DummyLeafFieldComparator;
 use crate::core::search::field_comparator::FieldComparator;
-use crate::core::util::numeric_utils::NumericUtils;
+use crate::core::search::pruning::Pruning;
+use crate::core::util::bit_util::BitUtil;
 /// Comparator based on partial_cmp for numHits.
 /// This comparator provides a skipping functionality – an iterator that can skip over non-competitive documents.
 pub struct LongComparator {
     values: Vec<i64>,
     top_value: i64,
     bottom: i64,
-    missing_value: i64,
     base: NumericComparator<i64>,
 }
 
 impl LongComparator {
-    pub fn new(num_hits: usize, missing_value: i64, base: NumericComparator<i64>) -> Self {
+    pub fn new(
+        field: String,
+        num_hits: usize,
+        missing_value: Option<i64>,
+        reverse: bool,
+        pruning: Pruning,
+    ) -> Self {
+        let missing_value = missing_value.unwrap_or(0);
+        let base = NumericComparator::new(
+            field,
+            missing_value,
+            reverse,
+            pruning,
+            BitUtil::LONG_BYTES as i32,
+            missing_value,
+        );
         Self {
             values: vec![0; num_hits],
             top_value: 0,
             bottom: 0,
-            missing_value,
             base,
         }
-    }
-}
-
-impl NumericComparatorBase for LongComparator {
-    fn missing_value_as_comparable_long(&self) -> i64 {
-        self.missing_value
-    }
-
-    fn sortable_bytes_to_long(&self, bytes: &[u8]) -> i64 {
-        NumericUtils::sortable_bytes_to_long(bytes, 0)
     }
 }
 
