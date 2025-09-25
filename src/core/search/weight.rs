@@ -19,10 +19,11 @@ use crate::core::search::bulk_scorer::BulkScorer;
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
 use crate::core::search::doc_id_set_iterator::disi_const::NO_MORE_DOCS;
 use crate::core::search::explanation::Explanation;
-use crate::core::search::leaf_collector::{LeafCollector, LeafCollectorScorer};
+use crate::core::search::leaf_collector::LeafCollector;
 use crate::core::search::matches::Matches;
 use crate::core::search::matches_utils::MatchWithNoTerms;
 use crate::core::search::query::Query;
+use crate::core::search::scorable::ScorerEnum;
 use crate::core::search::scorer::Scorer;
 use crate::core::search::scorer_supplier::ScorerSupplier;
 use crate::core::search::segment_cacheable::SegmentCacheable;
@@ -274,7 +275,7 @@ where
             self.scorer.as_mut().unwrap().iterator().doc_id()
         };
 
-        collector.set_scorer(LeafCollectorScorer::<S, S::Scorable>::Scorer(
+        collector.set_scorer(ScorerEnum::<S, S::Scorable>::Scorer(
             self.scorer.take().unwrap(),
         ))?;
 
@@ -286,10 +287,10 @@ where
             && min == 0
             && max == NO_MORE_DOCS
         {
-            score_all::<LC, B, S>(collector, accept_docs)?;
+            score_all(collector, accept_docs)?;
             Ok(NO_MORE_DOCS)
         } else {
-            score_range::<LC, B, S>(collector, accept_docs, min, max)
+            score_range(collector, accept_docs, min, max)
         }
     }
 
@@ -334,21 +335,20 @@ where
 }
 /// Specialized method to bulk-score all hits;
 /// we separate this from scoreRange to help out hotspot. See [`LUCENE-5487`](https://issues.apache.org/jira/browse/LUCENE-5487">LUCENE-5487)
-fn score_all<C, B, S>(collector: &mut C, accept_docs: Option<&B>) -> Result<()>
+fn score_all<C, B>(collector: &mut C, accept_docs: Option<&B>) -> Result<()>
 where
     C: LeafCollector,
     B: Bits,
-    S: Scorer,
 {
     let has_two_phase = {
-        let scorer = collector.scorer_mut::<S>()?;
+        let scorer = collector.scorer_mut()?;
         scorer.two_phase_iterator().is_some()
     };
 
     if has_two_phase {
         loop {
             let (doc, matches) = {
-                let scorer = collector.scorer_mut::<S>()?;
+                let scorer = collector.scorer_mut()?;
                 let mut two_phase = scorer.two_phase_iterator().unwrap();
                 let doc = {
                     let iter = two_phase.approximation_mut();
@@ -370,7 +370,7 @@ where
     } else {
         loop {
             let doc = {
-                let scorer = collector.scorer_mut::<S>()?;
+                let scorer = collector.scorer_mut()?;
                 let mut iter = scorer.iterator();
                 iter.next_doc()?
             };
@@ -386,7 +386,7 @@ where
 }
 /// Specialized method to bulk-score a range of hits;
 /// we separate this from scoreAll to help out hotspot. See [`LUCENE-5487`](https://issues.apache.org/jira/browse/LUCENE-5487">LUCENE-5487)
-fn score_range<C, B, S>(
+fn score_range<C, B>(
     collector: &mut C,
     accept_docs: Option<&B>,
     mut min: i32,
@@ -395,7 +395,6 @@ fn score_range<C, B, S>(
 where
     C: LeafCollector,
     B: Bits,
-    S: Scorer,
 {
     if let Some(iterator) = collector.competitive_iterator()?
         && iterator.doc_id() > min
@@ -404,7 +403,7 @@ where
     }
 
     let mut doc = {
-        let scorer = collector.scorer_mut::<S>()?;
+        let scorer = collector.scorer_mut()?;
         let mut iter = scorer.iterator();
         let d = iter.doc_id();
         if d < min {
@@ -419,7 +418,7 @@ where
     };
 
     let has_two_phase = {
-        let scorer = collector.scorer_mut::<S>()?;
+        let scorer = collector.scorer_mut()?;
         scorer.two_phase_iterator().is_some()
     };
 
@@ -431,7 +430,7 @@ where
                 collector.collect(doc)?;
             }
             doc = {
-                let scorer = collector.scorer_mut::<S>()?;
+                let scorer = collector.scorer_mut()?;
                 let mut iter = scorer.iterator();
                 iter.next_doc()?
             };
@@ -456,7 +455,7 @@ where
 
             if let Some(target) = advance_to {
                 doc = {
-                    let scorer = collector.scorer_mut::<S>()?;
+                    let scorer = collector.scorer_mut()?;
                     let mut iter = scorer.iterator();
                     iter.advance(target)?
                 };
@@ -465,7 +464,7 @@ where
         }
 
         let matches = if has_two_phase {
-            let scorer = collector.scorer_mut::<S>()?;
+            let scorer = collector.scorer_mut()?;
             let mut two_phase = scorer.two_phase_iterator().unwrap();
             two_phase.matches()?
         } else {
@@ -477,7 +476,7 @@ where
         }
 
         doc = {
-            let scorer = collector.scorer_mut::<S>()?;
+            let scorer = collector.scorer_mut()?;
             let mut iter = scorer.iterator();
             iter.next_doc()?
         };
