@@ -91,24 +91,6 @@ where
     }
 }
 
-/// Collector decouples the score from the collected doc: the score computation
-/// is skipped entirely if it's not needed.
-///
-/// Collectors that do need the score should implement the [`Self::set_scorer`]
-/// method, to hold onto the passed [`Scorer`] instance, and call
-/// [`Scorer::score`] within the `collect` method to compute the current hit's score.
-/// If your collector may request the score for a single hit multiple times,
-/// you should use [`ScoreCachingWrappingScorer`].
-///
-/// # Note
-///
-/// The doc that is passed to the `collect` method is relative to the current reader.
-/// If your collector needs to resolve this to the docID space of the `Multi*Reader`,
-/// you must re-base it by recording the docBase from the most recent `set_next_reader` call.
-/// Not all collectors need to rebase the docID.
-/// For example, a collector that simply counts the total number of hits would skip it.
-///
-/// @lucene.experimental
 pub enum ScorerEnum<S, C>
 where
     S: Scorer,
