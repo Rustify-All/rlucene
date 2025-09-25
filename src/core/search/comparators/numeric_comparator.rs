@@ -86,7 +86,7 @@ where
             pruning,
         }
     }
-    fn set_top_value(&mut self, _value: V) {
+    pub(crate) fn set_top_value(&mut self, _value: V) {
         self.top_value_set = true;
     }
     fn set_single_sort(&mut self) {
