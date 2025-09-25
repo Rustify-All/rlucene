@@ -33,7 +33,7 @@ impl BulkScorer for DummyBulkScorer {
         _max: i32,
     ) -> Result<i32>
     where
-        LC: LeafCollector<Scorer = DummyScorer>,
+        LC: LeafCollector,
         B: Bits,
     {
         unreachable!("Dummy implementation: this method should never be called in real usage")

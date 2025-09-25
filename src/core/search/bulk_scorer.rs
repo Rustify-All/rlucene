@@ -62,7 +62,7 @@ pub trait BulkScorer {
         max: i32,
     ) -> Result<i32>
     where
-        LC: LeafCollector<Scorer = Self::CollectorScorer>,
+        LC: LeafCollector,
         B: Bits;
 
     /// Same as [`DocIdSetIterator::cost`](crate::core::search::doc_id_set_iterator::DocIdSetIterator::cost) for bulk scorers.
