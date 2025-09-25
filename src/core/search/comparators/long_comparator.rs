@@ -16,7 +16,9 @@
  */
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::leaf_reader_context::LeafReaderContext;
-use crate::core::search::comparators::numeric_comparator::NumericComparatorBase;
+use crate::core::search::comparators::numeric_comparator::{
+    NumericComparator, NumericComparatorBase,
+};
 use crate::core::search::dummy::dummy_leaf_field_comparator::DummyLeafFieldComparator;
 use crate::core::search::field_comparator::FieldComparator;
 use crate::core::util::numeric_utils::NumericUtils;
@@ -27,15 +29,17 @@ pub struct LongComparator {
     top_value: i64,
     bottom: i64,
     missing_value: i64,
+    base: NumericComparator<i64>,
 }
 
 impl LongComparator {
-    pub fn new(num_hits: usize, missing_value: i64) -> Self {
+    pub fn new(num_hits: usize, missing_value: i64, base: NumericComparator<i64>) -> Self {
         Self {
             values: vec![0; num_hits],
             top_value: 0,
             bottom: 0,
             missing_value,
+            base,
         }
     }
 }
@@ -58,6 +62,7 @@ impl FieldComparator for LongComparator {
     }
 
     fn set_top_value(&mut self, value: Self::V) {
+        self.base.set_top_value(value);
         self.top_value = value;
     }
 
