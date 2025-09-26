@@ -38,7 +38,7 @@ impl LeafFieldComparator for DummyLeafFieldComparator {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    fn set_scorer<S1, S2>(&mut self, _scorer: ScorerEnum<S1, S2>) -> Result<()>
+    fn set_scorer<S1, S2>(&mut self, _scorer: &ScorerEnum<S1, S2>) -> Result<()>
     where
         S1: Scorer,
         S2: Scorable,

@@ -125,7 +125,7 @@ pub trait LeafFieldComparator {
     ///
     /// # Errors
     /// Returns an error if an I/O error occurs.
-    fn set_scorer<S1, S2>(&mut self, scorer: ScorerEnum<S1, S2>) -> Result<()>
+    fn set_scorer<S1, S2>(&mut self, scorer: &ScorerEnum<S1, S2>) -> Result<()>
     where
         S1: Scorer,
         S2: Scorable;
@@ -167,7 +167,7 @@ impl LeafFieldComparator for LeafFieldComparatorEnum {
         todo!()
     }
 
-    fn set_scorer<S1, S2>(&mut self, _scorer: ScorerEnum<S1, S2>) -> Result<()>
+    fn set_scorer<S1, S2>(&mut self, _scorer: &ScorerEnum<S1, S2>) -> Result<()>
     where
         S1: Scorer,
         S2: Scorable,

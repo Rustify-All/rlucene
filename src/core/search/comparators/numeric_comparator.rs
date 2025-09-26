@@ -424,7 +424,7 @@ where
 
     pub(crate) fn set_scorer<S1, S2>(
         &mut self,
-        mut scorer: ScorerEnum<S1, S2>,
+        _scorer: &ScorerEnum<S1, S2>,
         bottom: V,
         top: V,
     ) -> Result<()>
@@ -433,14 +433,7 @@ where
         S2: Scorable,
     {
         if self.iterator_cost == -1 {
-            match scorer {
-                ScorerEnum::Scorer(ref mut s) => {
-                    self.iterator_cost = s.iterator().cost()?;
-                },
-                ScorerEnum::Scorable(_) => {
-                    self.iterator_cost = self.max_doc as i64;
-                },
-            }
+            self.iterator_cost = self.max_doc as i64;
             self.update_competitive_iterator(bottom, top)?;
         }
         Ok(())
