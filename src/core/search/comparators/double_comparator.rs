@@ -86,8 +86,8 @@ impl FieldComparator for DoubleComparator {
         self.top_value = value;
     }
 
-    fn value(&self, slot: i32) -> &Self::V {
-        &self.values[slot as usize]
+    fn value(&self, slot: i32) -> Self::V {
+        self.values[slot as usize]
     }
 
     type LeafFieldComparator<LR>
