@@ -24,7 +24,7 @@ use crate::core::search::comparators::long_comparator::LongLeafComparator;
 use crate::core::search::comparators::numeric_comparator::{
     CompetitiveIterator, CompetitiveIteratorType,
 };
-use crate::core::search::doc_id_set_iterator::{DocIdSetIterator, Either6DocIdSetIterator};
+use crate::core::search::doc_id_set_iterator::{DocIdSetIterator, Either3DocIdSetIterator};
 use crate::core::search::dummy::dummy_doc_id_set_iterator::DummyDocIdSetIterator;
 use crate::core::search::field_comparator::TermValLeafComparator;
 use crate::core::search::scorable::{Scorable, ScorerEnum};
@@ -179,11 +179,8 @@ pub trait LeafFieldComparator {
 
 type NumericCompetitiveIterator<LR> = CompetitiveIterator<CompetitiveIteratorType<Numeric<LR>>>;
 
-pub type LeafFieldComparatorDocIdSetIterator<LR> = Either6DocIdSetIterator<
+pub type LeafFieldComparatorDocIdSetIterator<LR> = Either3DocIdSetIterator<
     DocComparatorIterator,
-    NumericCompetitiveIterator<LR>,
-    NumericCompetitiveIterator<LR>,
-    NumericCompetitiveIterator<LR>,
     NumericCompetitiveIterator<LR>,
     DummyDocIdSetIterator,
 >;
@@ -287,16 +284,16 @@ where
                 .map(LeafFieldComparatorDocIdSetIterator::<LR>::B),
             Self::Float(comparator) => comparator
                 .competitive_iterator()
-                .map(LeafFieldComparatorDocIdSetIterator::<LR>::C),
+                .map(LeafFieldComparatorDocIdSetIterator::<LR>::B),
             Self::Int(comparator) => comparator
                 .competitive_iterator()
-                .map(LeafFieldComparatorDocIdSetIterator::<LR>::D),
+                .map(LeafFieldComparatorDocIdSetIterator::<LR>::B),
             Self::Long(comparator) => comparator
                 .competitive_iterator()
-                .map(LeafFieldComparatorDocIdSetIterator::<LR>::E),
+                .map(LeafFieldComparatorDocIdSetIterator::<LR>::B),
             Self::TermVal(comparator) => comparator
                 .competitive_iterator()
-                .map(LeafFieldComparatorDocIdSetIterator::<LR>::F),
+                .map(LeafFieldComparatorDocIdSetIterator::<LR>::C),
         }
     }
 
