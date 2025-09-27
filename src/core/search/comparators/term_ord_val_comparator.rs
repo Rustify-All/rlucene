@@ -15,18 +15,24 @@
  * limitations under the License.
  */
 use crate::core::index::BytesRef;
-use crate::core::index::doc_values::Sorted;
+use crate::core::index::doc_values::{DocValues, Sorted};
+use crate::core::index::doc_values_iterator::DocValuesIterator;
+use crate::core::index::index_options::IndexOptions;
+use crate::core::index::index_reader_context::IndexReaderContext;
 use crate::core::index::leaf_reader::{LRPosting, LRTermsEnum, LeafReader};
 use crate::core::index::leaf_reader_context::LeafReaderContext;
 use crate::core::index::postings_enum::NONE;
 use crate::core::index::sorted_doc_values::SortedDocValues;
+use crate::core::index::terms::Terms;
 use crate::core::index::terms_enum::TermsEnum;
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
 use crate::core::search::doc_id_set_iterator::disi_const::NO_MORE_DOCS;
-use crate::core::search::dummy::dummy_leaf_field_comparator::DummyLeafFieldComparator;
 use crate::core::search::field_comparator::FieldComparator;
 use crate::core::search::index_searcher::get_max_clause_count;
+use crate::core::search::leaf_field_comparator::LeafFieldComparator;
 use crate::core::search::pruning::Pruning;
+use crate::core::search::scorable::{Scorable, ScorerEnum};
+use crate::core::search::scorer::Scorer;
 use crate::core::util::ToInt;
 use crate::core::util::bytes_ref_iterator::BytesRefIterator;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
@@ -61,7 +67,7 @@ pub struct TermOrdValComparator {
     reverse: bool,
     sort_missing_last: bool,
     /// Bottom value (same as `values[bottomSlot]` once bottomSlot is set).  Cached for faster compares.
-    pub(crate) bottom_value: Option<BytesRef<Vec<u8>>>,
+    pub(crate) bottom_value: Option<usize>,
     /* Bottom slot, or -1 if queue isn't full yet */
     pub(crate) bottom_slot: i32,
     /// Set by setTopValue.
@@ -136,18 +142,19 @@ impl FieldComparator for TermOrdValComparator {
     }
 
     type LeafFieldComparator<LR>
-        = DummyLeafFieldComparator
+        = TermOrdValLeafComparator<LR>
     where
         LR: LeafReader;
 
     fn get_leaf_comparator<LR>(
         self,
         context: &LeafReaderContext<LR>,
-    ) -> crate::core::util::error::lucene_error::Result<Self::LeafFieldComparator<LR>>
+    ) -> Result<Self::LeafFieldComparator<LR>>
     where
         LR: LeafReader,
     {
-        todo!()
+        let v = get_sorted_doc_values(context, &self.field)?;
+        TermOrdValLeafComparator::new(context, v, self)
     }
 
     fn compare_values(&self, val1: Option<&Self::V>, val2: Option<&Self::V>) -> i32 {
@@ -167,13 +174,389 @@ impl FieldComparator for TermOrdValComparator {
         self.can_skip_documents = false;
     }
 }
+/// Retrieves the SortedDocValues for the field in this segment
+fn get_sorted_doc_values<LR>(context: &LeafReaderContext<LR>, field: &str) -> Result<Sorted<LR>>
+where
+    LR: LeafReader,
+{
+    DocValues::get_sorted(context.reader(), field)
+}
+pub struct TermOrdValLeafComparator<LR>
+where
+    LR: LeafReader,
+{
+    /// Current reader's doc ord/values.
+    pub(crate) terms_index: Sorted<LR>,
+    /// True if current bottom slot matches the current reader.
+    pub(crate) bottom_same_reader: bool,
+    /// Bottom ord (same as ords[bottomSlot] once bottomSlot is set).  Cached for faster compares.
+    pub(crate) bottom_ord: i32,
+    pub(crate) top_same_reader: bool,
+    pub(crate) top_ord: i32,
+    /// Which ordinal to use for a missing value.
+    pub(crate) missing_ord: i32,
+    competitive_iterator: Option<CompetitiveIterator<LR>>,
+    dense: bool,
+    comparator: TermOrdValComparator,
+}
+impl<LR> TermOrdValLeafComparator<LR>
+where
+    LR: LeafReader,
+{
+    pub fn new(
+        context: &LeafReaderContext<LR>,
+        mut terms_index: Sorted<LR>,
+        comparator: TermOrdValComparator,
+    ) -> Result<Self> {
+        let missing_ord = if comparator.sort_missing_last {
+            i32::MAX
+        } else {
+            -1
+        };
+        let (top_ord, top_same_reader) = if let Some(ref top_value) = comparator.top_value {
+            // Recompute topOrd/SameReader
+            let ord = terms_index.lookup_term(top_value)?;
+            if ord >= 0 {
+                (ord, true)
+            } else {
+                (-ord - 2, false)
+            }
+        } else {
+            (missing_ord, true)
+        };
+
+        let mut leaf = TermOrdValLeafComparator {
+            terms_index,
+            bottom_same_reader: false,
+            bottom_ord: -1,
+            top_same_reader,
+            top_ord,
+            missing_ord,
+            competitive_iterator: None,
+            dense: false,
+            comparator,
+        };
+
+        if leaf.comparator.bottom_slot != -1 {
+            leaf.set_bottom(leaf.comparator.bottom_slot as usize)?;
+        }
+
+        let enable_skipping = if !leaf.comparator.can_skip_documents {
+            leaf.dense = false;
+            false
+        } else {
+            let field_info = context
+                .reader()
+                .get_field_infos()?
+                .field_info_by_name(&leaf.comparator.field);
+            if field_info.is_none() {
+                if leaf.terms_index.get_value_count()? != 0 {
+                    return Err(LuceneError::illegal_state(format!(
+                        "Field [{}] cannot be found in field infos",
+                        leaf.comparator.field
+                    )));
+                }
+                leaf.dense = false;
+                true
+            } else if *field_info.unwrap().get_index_options() == IndexOptions::None {
+                // No terms index
+                leaf.dense = false;
+                false
+            } else {
+                let terms = context.reader().terms(&leaf.comparator.field)?;
+                match terms {
+                    None => {
+                        leaf.dense = false;
+                    },
+                    Some(ref t) => {
+                        leaf.dense = t.get_sum_doc_freq()? == context.reader().max_doc()? as i64;
+                    },
+                }
+
+                if leaf.dense || leaf.comparator.top_value.is_some() {
+                    true
+                } else if leaf.comparator.reverse == leaf.comparator.sort_missing_last {
+                    // Missing values are always competitive, we can never skip
+                    false
+                } else {
+                    true
+                }
+            }
+        };
+
+        let doc_values_terms = leaf.terms_index.terms_enum()?;
+
+        let docs_with_field = match leaf.dense {
+            true => None,
+            false => Some(get_sorted_doc_values(context, &leaf.comparator.field)?),
+        };
+        let terms = context.reader().terms(&leaf.comparator.field)?;
+        let terms_iter = match terms {
+            None => {
+                return Err(LuceneError::illegal_state("terms is None"));
+            },
+            Some(terms_enum) => terms_enum.iterator()?,
+        };
+
+        if enable_skipping {
+            leaf.competitive_iterator = Some(CompetitiveIterator::new(
+                context,
+                leaf.dense,
+                doc_values_terms,
+                docs_with_field,
+                terms_iter,
+            )?);
+        }
+
+        leaf.update_competitive_iterator()?;
+
+        Ok(leaf)
+    }
+    fn update_competitive_iterator(&mut self) -> Result<()> {
+        let comparator = &self.comparator;
+
+        if self.competitive_iterator.is_none()
+            || !comparator.hits_threshold_reached
+            || comparator.bottom_slot == -1
+        {
+            return Ok(());
+        }
+        // This logic to figure out min and max ords is quite complex and verbose, can it be made
+        // simpler?
+        let min_ord: i32;
+        let max_ord: i32;
+
+        if !comparator.reverse {
+            if let Some(ref top_value) = comparator.top_value {
+                if self.top_same_reader {
+                    min_ord = self.top_ord;
+                } else {
+                    // In the case when the top value doesn't exist in the segment, topOrd is set as the
+                    // previous ord, and we are only interested in values that compare strictly greater than
+                    // this.
+                    min_ord = self.top_ord + 1;
+                }
+            } else if comparator.sort_missing_last || self.dense {
+                min_ord = 0;
+            } else {
+                // Missing values are still competitive.
+                min_ord = -1;
+            }
+
+            if self.bottom_ord == self.missing_ord {
+                // The queue still contains missing values.
+                if comparator.single_sort {
+                    // If there is no tie breaker, we can start ignoring missing values from now on.
+                    max_ord = self.terms_index.get_value_count()? - 1;
+                } else {
+                    max_ord = i32::MAX;
+                }
+            } else if self.bottom_same_reader {
+                // If there is no tie breaker, we can start ignoring values that compare equal to the
+                // current top value too.
+                max_ord = if comparator.single_sort {
+                    self.bottom_ord - 1
+                } else {
+                    self.bottom_ord
+                };
+            } else {
+                max_ord = self.bottom_ord;
+            }
+        } else {
+            if self.bottom_ord == self.missing_ord {
+                // The queue still contains missing values.
+                if comparator.single_sort {
+                    // If there is no tie breaker, we can start ignoring missing values from now on.
+                    min_ord = 0;
+                } else {
+                    min_ord = -1;
+                }
+            } else if self.bottom_same_reader {
+                // If there is no tie breaker, we can start ignoring values that compare equal to the
+                // current top value too.
+                min_ord = if comparator.single_sort {
+                    self.bottom_ord + 1
+                } else {
+                    self.bottom_ord
+                };
+            } else {
+                min_ord = self.bottom_ord + 1;
+            }
+
+            if comparator.top_value.is_some() {
+                max_ord = self.top_ord;
+            } else if !comparator.sort_missing_last || self.dense {
+                max_ord = self.terms_index.get_value_count()? - 1;
+            } else {
+                max_ord = i32::MAX;
+            }
+        }
+
+        if min_ord == -1 || max_ord == i32::MAX {
+            // Missing values are still competitive, we can't skip yet.
+            return Ok(());
+        }
+
+        debug_assert!(min_ord >= 0);
+        debug_assert!(max_ord < self.terms_index.get_value_count()?);
+
+        self.competitive_iterator
+            .as_mut()
+            .unwrap()
+            .update(min_ord, max_ord)?;
+
+        Ok(())
+    }
+    fn get_ord_for_doc(&mut self, doc: i32) -> Result<i32> {
+        if self.terms_index.advance_exact(doc)? {
+            Ok(self.terms_index.ord_value()?)
+        } else {
+            Ok(-1)
+        }
+    }
+}
+impl<LR> LeafFieldComparator for TermOrdValLeafComparator<LR>
+where
+    LR: LeafReader,
+{
+    fn set_bottom(&mut self, bottom: usize) -> Result<()> {
+        self.comparator.bottom_slot = bottom as i32;
+        self.comparator.bottom_value = Some(bottom);
+
+        if self.comparator.current_reader_gen == self.comparator.reader_gen[bottom] {
+            self.bottom_ord = self.comparator.ords[bottom];
+            self.bottom_same_reader = true;
+        } else {
+            match &self.comparator.bottom_value {
+                None => {
+                    // missingOrd is null for all segments
+                    debug_assert!(self.comparator.ords[bottom] == self.missing_ord);
+                    self.bottom_ord = self.missing_ord;
+                    self.bottom_same_reader = true;
+                    self.comparator.reader_gen[bottom] = self.comparator.current_reader_gen;
+                },
+                Some(bottom_value) => {
+                    let target = match self.comparator.values[*bottom_value].as_ref() {
+                        None => {
+                            return Err(LuceneError::illegal_state(
+                                "bottomValue is None but ords[bottomSlot] is not missingOrd",
+                            ));
+                        },
+                        Some(v) => v,
+                    };
+                    let ord = self.terms_index.lookup_term(target)?;
+                    if ord < 0 {
+                        self.bottom_ord = -ord - 2;
+                        self.bottom_same_reader = false;
+                    } else {
+                        self.bottom_ord = ord;
+                        self.bottom_same_reader = true;
+                        self.comparator.reader_gen[bottom] = self.comparator.current_reader_gen;
+                        self.comparator.ords[bottom] = self.bottom_ord;
+                    }
+                },
+            }
+        }
+
+        self.update_competitive_iterator()?;
+        Ok(())
+    }
+
+    fn compare_bottom<S1, S2>(&mut self, doc: i32, scorer: &mut ScorerEnum<S1, S2>) -> Result<i32>
+    where
+        S1: Scorer,
+        S2: Scorable,
+    {
+        debug_assert!(self.comparator.bottom_slot != -1);
+
+        let mut doc_ord = self.get_ord_for_doc(doc)?;
+        if doc_ord == -1 {
+            doc_ord = self.missing_ord;
+        }
+
+        if self.bottom_same_reader {
+            // ord is precisely comparable, even in the equal case
+            Ok(self.bottom_ord - doc_ord)
+        } else if self.bottom_ord >= doc_ord {
+            // the equals case always means bottom is > doc
+            // (because we set bottomOrd to the lower bound in setBottom):
+            Ok(1)
+        } else {
+            Ok(-1)
+        }
+    }
+
+    fn compare_top<S1, S2>(&mut self, doc: i32, scorer: &mut ScorerEnum<S1, S2>) -> Result<i32>
+    where
+        S1: Scorer,
+        S2: Scorable,
+    {
+        let mut ord = self.get_ord_for_doc(doc)?;
+        if ord == -1 {
+            ord = self.missing_ord;
+        }
+
+        if self.top_same_reader {
+            // ord is precisely comparable, even in the equal case
+            // System.out.println("compareTop doc=" + doc + " ord=" + ord + " ret=" + (topOrd-ord));
+            Ok(self.top_ord - ord)
+        } else if ord <= self.top_ord {
+            // the equals case always means doc is < value
+            // (because we set topOrd to the lower bound)
+            Ok(1)
+        } else {
+            Ok(-1)
+        }
+    }
+
+    fn copy<S1, S2>(&mut self, slot: usize, doc: i32, scorer: &mut ScorerEnum<S1, S2>) -> Result<()>
+    where
+        S1: Scorer,
+        S2: Scorable,
+    {
+        let mut ord = self.get_ord_for_doc(doc)?;
+        if ord == -1 {
+            ord = self.missing_ord;
+            self.comparator.values[slot] = None;
+        } else {
+            debug_assert!(ord >= 0);
+
+            let v = self.terms_index.lookup_ord(ord)?.into_owned();
+            self.comparator.values[slot] = Some(v);
+        }
+
+        self.comparator.ords[slot] = ord;
+        self.comparator.reader_gen[slot] = self.comparator.current_reader_gen;
+
+        Ok(())
+    }
+
+    fn set_scorer<S1, S2>(&mut self, _scorer: &mut ScorerEnum<S1, S2>) -> Result<()>
+    where
+        S1: Scorer,
+        S2: Scorable,
+    {
+        Ok(())
+    }
+
+    type DocIdSetIterator = CompetitiveIterator<LR>;
+
+    fn competitive_iterator(&mut self) -> Option<Self::DocIdSetIterator> {
+        self.competitive_iterator.take()
+    }
+
+    fn set_hits_threshold_reached(&mut self) -> Result<()> {
+        self.comparator.hits_threshold_reached = true;
+        self.update_competitive_iterator()
+    }
+}
+
 const MAX_TERMS: i32 = 1024;
-pub(crate) struct CompetitiveIterator<LR>
+pub struct CompetitiveIterator<LR>
 where
     LR: LeafReader,
 {
     max_doc: i32,
-    field: String,
     dense: bool,
     doc_values_terms: <Sorted<LR> as SortedDocValues>::TermsEnum,
     doc: i32,
@@ -190,21 +573,19 @@ where
     LR: LeafReader,
 {
     pub fn new(
-        reader: &LR,
-        field: String,
+        reader: &LeafReaderContext<LR>,
         dense: bool,
         doc_values_terms: <Sorted<LR> as SortedDocValues>::TermsEnum,
         docs_with_field: Option<Sorted<LR>>,
         terms_enum: LRTermsEnum<LR>,
     ) -> Result<Self> {
-        let max_doc = reader.max_doc()?;
+        let max_doc = reader.reader().max_doc()?;
         debug_assert!(
             !(dense && docs_with_field.is_some()),
             "docs_with_field must be None when dense = true"
         );
         Ok(Self {
             max_doc,
-            field,
             dense,
             doc_values_terms,
             doc: -1,
