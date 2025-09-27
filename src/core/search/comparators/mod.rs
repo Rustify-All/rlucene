@@ -15,10 +15,10 @@
  * limitations under the License.
  */
 pub mod doc_comparator;
-mod double_comparator;
-mod float_comparator;
+pub(crate) mod double_comparator;
+pub(crate) mod float_comparator;
 pub mod int_comparator;
-mod long_comparator;
+pub(crate) mod long_comparator;
 pub mod min_doc_iterator;
 pub mod numeric_comparator;
-mod term_ord_val_comparator;
+pub(crate) mod term_ord_val_comparator;

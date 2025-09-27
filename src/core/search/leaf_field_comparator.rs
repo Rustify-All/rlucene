@@ -14,8 +14,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
+use crate::core::index::doc_values::Numeric;
+use crate::core::index::leaf_reader::LeafReader;
+use crate::core::search::comparators::doc_comparator::{DocComparatorIterator, DocLeafComparator};
+use crate::core::search::comparators::double_comparator::DoubleLeafComparator;
+use crate::core::search::comparators::float_comparator::FloatLeafComparator;
+use crate::core::search::comparators::int_comparator::IntLeafComparator;
+use crate::core::search::comparators::long_comparator::LongLeafComparator;
+use crate::core::search::comparators::numeric_comparator::{
+    CompetitiveIterator, CompetitiveIteratorType,
+};
+use crate::core::search::doc_id_set_iterator::{DocIdSetIterator, Either6DocIdSetIterator};
 use crate::core::search::dummy::dummy_doc_id_set_iterator::DummyDocIdSetIterator;
+use crate::core::search::field_comparator::TermValLeafComparator;
 use crate::core::search::scorable::{Scorable, ScorerEnum};
 use crate::core::search::scorer::Scorer;
 use crate::core::util::error::lucene_error::Result;
@@ -165,56 +176,138 @@ pub trait LeafFieldComparator {
         Ok(())
     }
 }
-pub enum LeafFieldComparatorEnum {}
-impl LeafFieldComparator for LeafFieldComparatorEnum {
-    fn set_bottom(&mut self, _slot: usize) -> Result<()> {
-        todo!()
+
+type NumericCompetitiveIterator<LR> = CompetitiveIterator<CompetitiveIteratorType<Numeric<LR>>>;
+
+pub type LeafFieldComparatorDocIdSetIterator<LR> = Either6DocIdSetIterator<
+    DocComparatorIterator,
+    NumericCompetitiveIterator<LR>,
+    NumericCompetitiveIterator<LR>,
+    NumericCompetitiveIterator<LR>,
+    NumericCompetitiveIterator<LR>,
+    DummyDocIdSetIterator,
+>;
+
+pub enum LeafFieldComparatorEnum<LR>
+where
+    LR: LeafReader,
+{
+    Doc(DocLeafComparator),
+    Double(DoubleLeafComparator<LR>),
+    Float(FloatLeafComparator<LR>),
+    Int(IntLeafComparator<LR>),
+    Long(LongLeafComparator<LR>),
+    TermVal(TermValLeafComparator<LR>),
+}
+
+impl<LR> LeafFieldComparator for LeafFieldComparatorEnum<LR>
+where
+    LR: LeafReader,
+{
+    fn set_bottom(&mut self, slot: usize) -> Result<()> {
+        match self {
+            Self::Doc(comparator) => comparator.set_bottom(slot),
+            Self::Double(comparator) => comparator.set_bottom(slot),
+            Self::Float(comparator) => comparator.set_bottom(slot),
+            Self::Int(comparator) => comparator.set_bottom(slot),
+            Self::Long(comparator) => comparator.set_bottom(slot),
+            Self::TermVal(comparator) => comparator.set_bottom(slot),
+        }
     }
 
-    fn compare_bottom<S1, S2>(&mut self, _doc: i32, _scorer: &mut ScorerEnum<S1, S2>) -> Result<i32>
+    fn compare_bottom<S1, S2>(&mut self, doc: i32, scorer: &mut ScorerEnum<S1, S2>) -> Result<i32>
     where
         S1: Scorer,
         S2: Scorable,
     {
-        todo!()
+        match self {
+            Self::Doc(comparator) => comparator.compare_bottom(doc, scorer),
+            Self::Double(comparator) => comparator.compare_bottom(doc, scorer),
+            Self::Float(comparator) => comparator.compare_bottom(doc, scorer),
+            Self::Int(comparator) => comparator.compare_bottom(doc, scorer),
+            Self::Long(comparator) => comparator.compare_bottom(doc, scorer),
+            Self::TermVal(comparator) => comparator.compare_bottom(doc, scorer),
+        }
     }
 
-    fn compare_top<S1, S2>(&mut self, _doc: i32, _scorer: &mut ScorerEnum<S1, S2>) -> Result<i32>
+    fn compare_top<S1, S2>(&mut self, doc: i32, scorer: &mut ScorerEnum<S1, S2>) -> Result<i32>
     where
         S1: Scorer,
         S2: Scorable,
     {
-        todo!()
+        match self {
+            Self::Doc(comparator) => comparator.compare_top(doc, scorer),
+            Self::Double(comparator) => comparator.compare_top(doc, scorer),
+            Self::Float(comparator) => comparator.compare_top(doc, scorer),
+            Self::Int(comparator) => comparator.compare_top(doc, scorer),
+            Self::Long(comparator) => comparator.compare_top(doc, scorer),
+            Self::TermVal(comparator) => comparator.compare_top(doc, scorer),
+        }
     }
 
-    fn copy<S1, S2>(
-        &mut self,
-        _slot: usize,
-        _doc: i32,
-        _scorer: &mut ScorerEnum<S1, S2>,
-    ) -> Result<()>
+    fn copy<S1, S2>(&mut self, slot: usize, doc: i32, scorer: &mut ScorerEnum<S1, S2>) -> Result<()>
     where
         S1: Scorer,
         S2: Scorable,
     {
-        todo!()
+        match self {
+            Self::Doc(comparator) => comparator.copy(slot, doc, scorer),
+            Self::Double(comparator) => comparator.copy(slot, doc, scorer),
+            Self::Float(comparator) => comparator.copy(slot, doc, scorer),
+            Self::Int(comparator) => comparator.copy(slot, doc, scorer),
+            Self::Long(comparator) => comparator.copy(slot, doc, scorer),
+            Self::TermVal(comparator) => comparator.copy(slot, doc, scorer),
+        }
     }
 
-    fn set_scorer<S1, S2>(&mut self, _scorer: &mut ScorerEnum<S1, S2>) -> Result<()>
+    fn set_scorer<S1, S2>(&mut self, scorer: &mut ScorerEnum<S1, S2>) -> Result<()>
     where
         S1: Scorer,
         S2: Scorable,
     {
-        todo!()
+        match self {
+            Self::Doc(comparator) => comparator.set_scorer(scorer),
+            Self::Double(comparator) => comparator.set_scorer(scorer),
+            Self::Float(comparator) => comparator.set_scorer(scorer),
+            Self::Int(comparator) => comparator.set_scorer(scorer),
+            Self::Long(comparator) => comparator.set_scorer(scorer),
+            Self::TermVal(comparator) => comparator.set_scorer(scorer),
+        }
     }
 
-    type DocIdSetIterator = DummyDocIdSetIterator;
+    type DocIdSetIterator = LeafFieldComparatorDocIdSetIterator<LR>;
 
     fn competitive_iterator(&mut self) -> Option<Self::DocIdSetIterator> {
-        todo!()
+        match self {
+            Self::Doc(comparator) => comparator
+                .competitive_iterator()
+                .map(LeafFieldComparatorDocIdSetIterator::<LR>::A),
+            Self::Double(comparator) => comparator
+                .competitive_iterator()
+                .map(LeafFieldComparatorDocIdSetIterator::<LR>::B),
+            Self::Float(comparator) => comparator
+                .competitive_iterator()
+                .map(LeafFieldComparatorDocIdSetIterator::<LR>::C),
+            Self::Int(comparator) => comparator
+                .competitive_iterator()
+                .map(LeafFieldComparatorDocIdSetIterator::<LR>::D),
+            Self::Long(comparator) => comparator
+                .competitive_iterator()
+                .map(LeafFieldComparatorDocIdSetIterator::<LR>::E),
+            Self::TermVal(comparator) => comparator
+                .competitive_iterator()
+                .map(LeafFieldComparatorDocIdSetIterator::<LR>::F),
+        }
     }
 
     fn set_hits_threshold_reached(&mut self) -> Result<()> {
-        todo!()
+        match self {
+            Self::Doc(comparator) => comparator.set_hits_threshold_reached(),
+            Self::Double(comparator) => comparator.set_hits_threshold_reached(),
+            Self::Float(comparator) => comparator.set_hits_threshold_reached(),
+            Self::Int(comparator) => comparator.set_hits_threshold_reached(),
+            Self::Long(comparator) => comparator.set_hits_threshold_reached(),
+            Self::TermVal(comparator) => comparator.set_hits_threshold_reached(),
+        }
     }
 }
