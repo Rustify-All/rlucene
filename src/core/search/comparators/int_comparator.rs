@@ -142,7 +142,11 @@ where
             .set_bottom(self.comparator.bottom, self.comparator.top_value)
     }
 
-    fn compare_bottom(&mut self, doc: i32) -> Result<i32> {
+    fn compare_bottom<S1, S2>(&mut self, doc: i32, _scorer: &ScorerEnum<S1, S2>) -> Result<i32>
+    where
+        S1: Scorer,
+        S2: Scorable,
+    {
         let v = self.get_value_for_doc(doc)?;
         Ok(self.comparator.bottom.cmp(&v).to_int())
     }
@@ -152,7 +156,11 @@ where
         Ok(self.comparator.top_value.cmp(&v).to_int())
     }
 
-    fn copy(&mut self, slot: usize, doc: i32) -> Result<()> {
+    fn copy<S1, S2>(&mut self, slot: usize, doc: i32, _scorer: &ScorerEnum<S1, S2>) -> Result<()>
+    where
+        S1: Scorer,
+        S2: Scorable,
+    {
         let v = self.get_value_for_doc(doc)?;
         self.comparator.values[slot] = v;
         self.base.copy(doc)

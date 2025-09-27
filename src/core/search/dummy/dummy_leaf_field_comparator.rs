@@ -26,7 +26,11 @@ impl LeafFieldComparator for DummyLeafFieldComparator {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    fn compare_bottom(&mut self, _doc: i32) -> Result<i32> {
+    fn compare_bottom<S1, S2>(&mut self, _doc: i32, _scorer: &ScorerEnum<S1, S2>) -> Result<i32>
+    where
+        S1: Scorer,
+        S2: Scorable,
+    {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
@@ -34,7 +38,11 @@ impl LeafFieldComparator for DummyLeafFieldComparator {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    fn copy(&mut self, _slot: usize, _doc: i32) -> Result<()> {
+    fn copy<S1, S2>(&mut self, _slot: usize, _doc: i32, _scorer: &ScorerEnum<S1, S2>) -> Result<()>
+    where
+        S1: Scorer,
+        S2: Scorable,
+    {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 

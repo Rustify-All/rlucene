@@ -72,6 +72,7 @@ pub trait LeafFieldComparator {
     ///
     /// # Arguments
     /// - `doc`: The docID that was hit.
+    /// - `scorer`: The scorer instance currently used to evaluate the hit.
     ///
     /// # Returns
     /// - `N < 0` if the doc's value is sorted after the bottom entry (not
@@ -81,7 +82,10 @@ pub trait LeafFieldComparator {
     ///
     /// # Errors
     /// Returns an error if an I/O error occurs.
-    fn compare_bottom(&mut self, doc: i32) -> Result<i32>;
+    fn compare_bottom<S1, S2>(&mut self, doc: i32, scorer: &ScorerEnum<S1, S2>) -> Result<i32>
+    where
+        S1: Scorer,
+        S2: Scorable;
 
     /// Compare the top value with this document.
     ///
@@ -112,10 +116,14 @@ pub trait LeafFieldComparator {
     /// # Arguments
     /// - `slot`: The slot to copy the hit to.
     /// - `doc`: The docID relative to the current reader.
+    /// - `scorer`: The scorer instance currently used to evaluate the hit.
     ///
     /// # Errors
     /// Returns an error if an I/O error occurs.
-    fn copy(&mut self, slot: usize, doc: i32) -> Result<()>;
+    fn copy<S1, S2>(&mut self, slot: usize, doc: i32, scorer: &ScorerEnum<S1, S2>) -> Result<()>
+    where
+        S1: Scorer,
+        S2: Scorable;
 
     /// Sets the scorer to use in case a document's score is needed.
     ///
@@ -155,7 +163,11 @@ impl LeafFieldComparator for LeafFieldComparatorEnum {
         todo!()
     }
 
-    fn compare_bottom(&mut self, _doc: i32) -> Result<i32> {
+    fn compare_bottom<S1, S2>(&mut self, _doc: i32, _scorer: &ScorerEnum<S1, S2>) -> Result<i32>
+    where
+        S1: Scorer,
+        S2: Scorable,
+    {
         todo!()
     }
 
@@ -163,7 +175,11 @@ impl LeafFieldComparator for LeafFieldComparatorEnum {
         todo!()
     }
 
-    fn copy(&mut self, _slot: usize, _doc: i32) -> Result<()> {
+    fn copy<S1, S2>(&mut self, _slot: usize, _doc: i32, _scorer: &ScorerEnum<S1, S2>) -> Result<()>
+    where
+        S1: Scorer,
+        S2: Scorable,
+    {
         todo!()
     }
 

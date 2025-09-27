@@ -170,7 +170,11 @@ impl LeafFieldComparator for DocLeafComparator {
         Ok(())
     }
 
-    fn compare_bottom(&mut self, doc: i32) -> Result<i32> {
+    fn compare_bottom<S1, S2>(&mut self, doc: i32, _scorer: &ScorerEnum<S1, S2>) -> Result<i32>
+    where
+        S1: Scorer,
+        S2: Scorable,
+    {
         // No overflow risk because docIDs are non-negative
         Ok(self.comparator.bottom - (self.doc_base + doc))
     }
@@ -180,7 +184,11 @@ impl LeafFieldComparator for DocLeafComparator {
         Ok(self.comparator.top_value.cmp(&doc_value).to_int())
     }
 
-    fn copy(&mut self, slot: usize, doc: i32) -> Result<()> {
+    fn copy<S1, S2>(&mut self, slot: usize, doc: i32, _scorer: &ScorerEnum<S1, S2>) -> Result<()>
+    where
+        S1: Scorer,
+        S2: Scorable,
+    {
         self.comparator.doc_ids[slot] = self.doc_base + doc;
         Ok(())
     }
