@@ -347,8 +347,6 @@ where
     current: Option<Rc<RefCell<Sub<BinaryDocValuesSub<I>>>>>,
     doc_id_merger: DocIDMergerEnum<BinaryDocValuesSub<I>>,
     final_cost: i64,
-    // TODO: could we avoid copy here?
-    bytes: BytesRef<Vec<u8>>,
 }
 
 impl<I> DocValuesIterator for BinaryDocValuesMerge<I>
@@ -399,12 +397,12 @@ where
         match self.current {
             Some(ref current) => {
                 let mut current = current.borrow_mut();
-                // TODO:Since we need to return a reference, but cannot return a
+                // TODO:IMPORTANT Since we need to return a reference, but cannot return a
                 // temporary value created by borrowing,
                 // we are forced to make a copy.Is there any way to avoid the
                 // copy?
-                self.bytes = current.sub.values.binary_value()?.into_owned();
-                Ok(Cow::Borrowed(&self.bytes))
+                let v = current.sub.values.binary_value()?.into_owned();
+                Ok(Cow::Owned(v))
             },
             None => Err(LuceneError::unreachable("should not be here")),
         }
@@ -477,7 +475,6 @@ where
             current: None,
             doc_id_merger,
             final_cost: cost,
-            bytes: BytesRef::default(),
         };
         Ok(doc_value)
     }
