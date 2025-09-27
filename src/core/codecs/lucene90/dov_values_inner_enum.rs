@@ -40,6 +40,7 @@ use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
 use crate::core::store::IndexInput;
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::long_values::Either5LongValues;
+use std::borrow::Cow;
 
 pub enum BaseSortedDocValuesEnum<I>
 where
@@ -217,7 +218,7 @@ impl<I> SparseBinaryDocValuesBase<I> for SparseBinaryDocValuesBaseEnum<I>
 where
     I: IndexInput,
 {
-    fn binary_value(&mut self, disi: &mut IndexedDISI<I>) -> Result<&BytesRef<Vec<u8>>> {
+    fn binary_value(&mut self, disi: &mut IndexedDISI<I>) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
         match self {
             SparseBinaryDocValuesBaseEnum::Sparse(sub) => sub.binary_value(disi),
             SparseBinaryDocValuesBaseEnum::Sparse1(sub) => sub.binary_value(disi),
@@ -237,7 +238,7 @@ impl<I> DenseBinaryDocValuesBase for DenseBinaryDocValuesBaseEnum<I>
 where
     I: IndexInput,
 {
-    fn binary_value(&mut self, doc: i32) -> Result<&BytesRef<Vec<u8>>> {
+    fn binary_value(&mut self, doc: i32) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
         match self {
             DenseBinaryDocValuesBaseEnum::Dense(sub) => sub.binary_value(doc),
             DenseBinaryDocValuesBaseEnum::Dense1(sub) => sub.binary_value(doc),

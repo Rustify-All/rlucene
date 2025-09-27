@@ -1383,7 +1383,7 @@ impl<I> BinaryDocValues for DenseBinaryDocValues<I>
 where
     I: IndexInput,
 {
-    fn binary_value(&mut self) -> Result<&BytesRef<Vec<u8>>> {
+    fn binary_value(&mut self) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
         self.sub.binary_value(self.doc)
     }
 }
@@ -1438,7 +1438,7 @@ impl<I> BinaryDocValues for SparseBinaryDocValues<I>
 where
     I: IndexInput,
 {
-    fn binary_value(&mut self) -> Result<&BytesRef<Vec<u8>>> {
+    fn binary_value(&mut self) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
         self.sub.binary_value(&mut self.disi)
     }
 }
@@ -1947,7 +1947,7 @@ where
 }
 
 pub trait DenseBinaryDocValuesBase {
-    fn binary_value(&mut self, doc: i32) -> Result<&BytesRef<Vec<u8>>>;
+    fn binary_value(&mut self, doc: i32) -> Result<Cow<'_, BytesRef<Vec<u8>>>>;
 }
 
 pub struct DenseBinaryDocValuesBaseImpl<I>
@@ -1962,14 +1962,14 @@ impl<I> DenseBinaryDocValuesBase for DenseBinaryDocValuesBaseImpl<I>
 where
     I: IndexInput,
 {
-    fn binary_value(&mut self, doc: i32) -> Result<&BytesRef<Vec<u8>>> {
+    fn binary_value(&mut self, doc: i32) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
         self.bytes_slice.read_bytes(
             (doc * self.length) as i64,
             &mut self.bytes.bytes,
             0,
             self.length,
         )?;
-        Ok(&self.bytes)
+        Ok(Cow::Borrowed(&self.bytes))
     }
 }
 pub struct DenseBinaryDocValuesBaseImpl1<I>
@@ -1984,7 +1984,7 @@ impl<I> DenseBinaryDocValuesBase for DenseBinaryDocValuesBaseImpl1<I>
 where
     I: IndexInput,
 {
-    fn binary_value(&mut self, doc: i32) -> Result<&BytesRef<Vec<u8>>> {
+    fn binary_value(&mut self, doc: i32) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
         let start_offset = self.addresses.get(doc as i64)?;
         self.bytes.length = (self.addresses.get((doc + 1) as i64)? - start_offset) as usize;
         self.bytes_slice.read_bytes(
@@ -1993,7 +1993,7 @@ where
             0,
             self.bytes.length as i32,
         )?;
-        Ok(&self.bytes)
+        Ok(Cow::Borrowed(&self.bytes))
     }
 }
 
@@ -2001,7 +2001,7 @@ pub trait SparseBinaryDocValuesBase<I>
 where
     I: IndexInput,
 {
-    fn binary_value(&mut self, disi: &mut IndexedDISI<I>) -> Result<&BytesRef<Vec<u8>>>;
+    fn binary_value(&mut self, disi: &mut IndexedDISI<I>) -> Result<Cow<'_, BytesRef<Vec<u8>>>>;
 }
 pub struct SparseBinaryDocValuesBaseImpl<I>
 where
@@ -2015,11 +2015,11 @@ impl<I> SparseBinaryDocValuesBase<I> for SparseBinaryDocValuesBaseImpl<I>
 where
     I: IndexInput,
 {
-    fn binary_value(&mut self, disi: &mut IndexedDISI<I>) -> Result<&BytesRef<Vec<u8>>> {
+    fn binary_value(&mut self, disi: &mut IndexedDISI<I>) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
         let pos = (disi.index() * self.length) as i64;
         self.bytes_slice
             .read_bytes(pos, &mut self.bytes.bytes, 0, self.length)?;
-        Ok(&self.bytes)
+        Ok(Cow::Borrowed(&self.bytes))
     }
 }
 pub struct SparseBinaryDocValuesBaseImpl1<I>
@@ -2034,7 +2034,7 @@ impl<I> SparseBinaryDocValuesBase<I> for SparseBinaryDocValuesBaseImpl1<I>
 where
     I: IndexInput,
 {
-    fn binary_value(&mut self, disi: &mut IndexedDISI<I>) -> Result<&BytesRef<Vec<u8>>> {
+    fn binary_value(&mut self, disi: &mut IndexedDISI<I>) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
         let index = disi.index() as i64;
         let start_offset = self.addresses.get(index)?;
         self.bytes.length = (self.addresses.get(index + 1)? - start_offset) as usize;
@@ -2044,7 +2044,7 @@ where
             0,
             self.bytes.length as i32,
         )?;
-        Ok(&self.bytes)
+        Ok(Cow::Borrowed(&self.bytes))
     }
 }
 
@@ -2766,7 +2766,7 @@ where
         Ok(sub.into())
     }
 
-    fn get_term_from_index(&mut self, index: i64) -> Result<&BytesRef<Vec<u8>>> {
+    fn get_term_from_index(&mut self, index: i64) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
         debug_assert!(
             index >= 0
                 && index
@@ -2786,7 +2786,7 @@ where
             Ok::<(), LuceneError>(())
         })?;
 
-        Ok(&self.term)
+        Ok(Cow::Borrowed(&self.term))
     }
     fn seek_terms_index(&mut self, text: &BytesRef<Vec<u8>>) -> Result<i64> {
         let mut lo: i64 = 0;
@@ -2795,7 +2795,7 @@ where
         while lo <= hi {
             let mid = (lo + hi) >> 1;
             let term = self.get_term_from_index(mid)?;
-            let cmp = term.cmp(text).to_int();
+            let cmp = term.as_ref().cmp(text).to_int();
             if cmp <= 0 {
                 lo = mid + 1;
             } else {
@@ -2804,12 +2804,17 @@ where
         }
 
         debug_assert!(
-            hi < 0 || self.get_term_from_index(hi)?.cmp(text).to_int() <= 0,
+            hi < 0 || self.get_term_from_index(hi)?.as_ref().cmp(text).to_int() <= 0,
             "hi check failed"
         );
         debug_assert!(
             hi == ((self.entry.terms_dict_size - 1) >> self.entry.terms_dict_index_shift)
-                || self.get_term_from_index(hi + 1)?.cmp(text).to_int() > 0,
+                || self
+                    .get_term_from_index(hi + 1)?
+                    .as_ref()
+                    .cmp(text)
+                    .to_int()
+                    > 0,
             "hi+1 check failed"
         );
         // return -1 iff empty term dict
@@ -2819,7 +2824,7 @@ where
         );
         Ok(hi)
     }
-    fn get_first_term_from_block(&mut self, block: i64) -> Result<&BytesRef<Vec<u8>>> {
+    fn get_first_term_from_block(&mut self, block: i64) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
         debug_assert!(
             block >= 0
                 && block
@@ -2839,7 +2844,7 @@ where
             Ok::<(), LuceneError>(())
         })?;
 
-        Ok(&self.term)
+        Ok(Cow::Borrowed(&self.term))
     }
     fn seek_block(&mut self, text: &BytesRef<Vec<u8>>) -> Result<i64> {
         let index = self.seek_terms_index(text)?;
@@ -2864,7 +2869,7 @@ where
         while block_lo <= block_hi {
             let block_mid = ((block_lo + block_hi) as u64 >> 1) as i64;
             let term = self.get_first_term_from_block(block_mid)?;
-            let cmp = term.cmp(text).to_int();
+            let cmp = term.as_ref().cmp(text).to_int();
             if cmp <= 0 {
                 block_lo = block_mid + 1;
             } else {
@@ -2873,7 +2878,13 @@ where
         }
 
         debug_assert!(
-            block_hi < 0 || self.get_first_term_from_block(block_hi)?.cmp(text).to_int() <= 0
+            block_hi < 0
+                || self
+                    .get_first_term_from_block(block_hi)?
+                    .as_ref()
+                    .cmp(text)
+                    .to_int()
+                    <= 0
         );
         debug_assert!(
             block_hi
@@ -2882,6 +2893,7 @@ where
                     as i64
                 || self
                     .get_first_term_from_block(block_hi + 1)?
+                    .as_ref()
                     .cmp(text)
                     .to_int()
                     > 0

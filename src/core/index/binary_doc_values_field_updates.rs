@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 use parking_lot::Mutex;
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use crate::core::index::doc_values_field_updates::{
@@ -91,7 +92,8 @@ impl DocValuesFieldUpdatesBase for BinaryDocValuesFieldUpdates {
         doc_id: i32,
         iterator: &mut T,
     ) -> Result<()> {
-        self.add_byte_ref(doc_id, iterator.binary_value()?, 0)
+        let value = iterator.binary_value()?;
+        self.add_byte_ref(doc_id, value.as_ref(), 0)
     }
 
     fn iterator(
@@ -187,9 +189,9 @@ impl AbstractIteratorBase for AbstractIteratorBinary {
         ))
     }
 
-    fn binary_value(&mut self) -> Result<&BytesRef<Vec<u8>>> {
+    fn binary_value(&mut self) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
         self.values.offset = self.offset as usize;
         self.values.length = self.length as usize;
-        Ok(&self.values)
+        Ok(Cow::Borrowed(&self.values))
     }
 }

@@ -336,12 +336,12 @@ impl DocValuesIterator for EmptyBinary {
     }
 }
 impl BinaryDocValues for EmptyBinary {
-    fn binary_value(&mut self) -> Result<&BytesRef<Vec<u8>>> {
+    fn binary_value(&mut self) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
         debug_assert!(
             false,
             "EmptyBinary::binary_value() should not be called, as it is an empty iterator"
         );
-        Ok(&self.bytes)
+        Ok(Cow::Borrowed(&self.bytes))
     }
 }
 /// An empty [`NumericDocValues`] which returns no documents  */

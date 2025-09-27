@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 use parking_lot::Mutex;
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use crate::core::index::BytesRef;
@@ -419,7 +420,7 @@ pub trait DocValuesFieldIterator: DocValuesIterator {
 
     /// Returns a binary value for the current document if this iterator is a
     /// binary value iterator.
-    fn binary_value(&mut self) -> Result<&BytesRef<Vec<u8>>>;
+    fn binary_value(&mut self) -> Result<Cow<'_, BytesRef<Vec<u8>>>>;
 
     /// Returns the delGen for this packet.
     fn del_gen(&self) -> i64;
@@ -496,7 +497,7 @@ impl DocValuesFieldIterator for DocValuesFieldIteratorEnum {
         }
     }
 
-    fn binary_value(&mut self) -> Result<&BytesRef<Vec<u8>>> {
+    fn binary_value(&mut self) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
         match self {
             DocValuesFieldIteratorEnum::AbstractBinary(it) => it.binary_value(),
             DocValuesFieldIteratorEnum::AbstractNumeric(it) => it.binary_value(),
@@ -571,7 +572,7 @@ impl<T> BinaryDocValues for BinaryDocValuesDVFU<T>
 where
     T: DocValuesFieldIterator,
 {
-    fn binary_value(&mut self) -> Result<&BytesRef<Vec<u8>>> {
+    fn binary_value(&mut self) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
         self.iterator.binary_value()
     }
 }
@@ -681,7 +682,7 @@ where
         self.queue.top_mut().long_value()
     }
 
-    fn binary_value(&mut self) -> Result<&BytesRef<Vec<u8>>> {
+    fn binary_value(&mut self) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
         self.queue.top_mut().binary_value()
     }
 
@@ -800,7 +801,7 @@ where
         self.sub.long_value()
     }
 
-    fn binary_value(&mut self) -> Result<&BytesRef<Vec<u8>>> {
+    fn binary_value(&mut self) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
         self.sub.binary_value()
     }
 
@@ -820,7 +821,7 @@ pub trait AbstractIteratorBase {
     /// * `idx` - The internal index to set the value to.
     fn set(&mut self, idx: i64) -> Result<()>;
     fn long_value(&mut self) -> Result<i64>;
-    fn binary_value(&mut self) -> Result<&BytesRef<Vec<u8>>>;
+    fn binary_value(&mut self) -> Result<Cow<'_, BytesRef<Vec<u8>>>>;
 }
 
 pub(crate) struct SingleValueDocValuesFieldUpdates {
@@ -858,7 +859,7 @@ impl SingleValueDocValuesFieldUpdates {
             has_no_value_iter: None,
         })
     }
-    pub fn binary_value(&self) -> Result<&BytesRef<Vec<u8>>> {
+    pub fn binary_value(&self) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
         self.sub_update.binary_value()
     }
     pub fn long_value(&self) -> Result<i64> {
@@ -892,7 +893,7 @@ impl DocValuesFieldUpdatesBase for SingleValueDocValuesFieldUpdates {
     }
 
     fn add_byte_ref(&mut self, doc: i32, value: &BytesRef<Vec<u8>>, _index: i32) -> Result<()> {
-        debug_assert!(self.sub_update.binary_value()? == value);
+        debug_assert!(self.sub_update.binary_value()?.as_ref() == value);
         self.bit_set.set(doc);
         self.has_at_least_one_value = true;
         if self.has_no_value.is_some() {
@@ -965,7 +966,7 @@ impl DocValuesFieldUpdatesBase for SingleValueDocValuesFieldUpdates {
 }
 
 pub trait SingleValueDocValuesFieldUpdatesBase {
-    fn binary_value(&self) -> Result<&BytesRef<Vec<u8>>>;
+    fn binary_value(&self) -> Result<Cow<'_, BytesRef<Vec<u8>>>>;
     fn long_value(&self) -> Result<i64>;
     fn sub_type(&self) -> DocValuesType;
 }
@@ -1003,7 +1004,7 @@ impl DocValuesFieldIterator for SingleValueDocValuesFieldUpdatesIterator {
         self.single.long_value()
     }
 
-    fn binary_value(&mut self) -> Result<&BytesRef<Vec<u8>>> {
+    fn binary_value(&mut self) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
         self.single.binary_value()
     }
 

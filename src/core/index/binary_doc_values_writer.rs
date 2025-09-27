@@ -48,6 +48,7 @@ use crate::core::util::{
     BytesRefArray, CoreHelper, Counter, CounterEnum, CounterEnumBorrow, CounterEnumLock,
     SortableBytesRefArray,
 };
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
@@ -351,8 +352,8 @@ where
     D: DocIdSetIterator,
     DI: DataInput,
 {
-    fn binary_value(&mut self) -> Result<&BytesRef<Vec<u8>>> {
-        Ok(self.value.get_bytes_ref())
+    fn binary_value(&mut self) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
+        Ok(Cow::Borrowed(self.value.get_bytes_ref()))
     }
 }
 
@@ -407,10 +408,10 @@ impl DocValuesIterator for SortingBinaryDocValues {
 }
 
 impl BinaryDocValues for SortingBinaryDocValues {
-    fn binary_value(&mut self) -> Result<&BytesRef<Vec<u8>>> {
+    fn binary_value(&mut self) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
         let idx = self.dvs.offsets[self.doc_id as usize] - 1;
         self.dvs.values.get(&mut self.spare, idx)?;
-        Ok(self.spare.get_bytes_ref())
+        Ok(Cow::Borrowed(self.spare.get_bytes_ref()))
     }
 }
 
@@ -441,7 +442,7 @@ impl BinaryDVs {
             }
             let new_doc = sort_map.old_to_new(doc_id) as usize;
             let val = old_values.binary_value()?;
-            values.append(val)?;
+            values.append(val.as_ref())?;
             offsets[new_doc] = offset;
             offset += 1;
         }

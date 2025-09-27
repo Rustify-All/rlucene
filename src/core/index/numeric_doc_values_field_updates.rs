@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 use parking_lot::Mutex;
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use crate::core::index::BytesRef;
@@ -175,7 +176,7 @@ impl AbstractIteratorBase for AbstractIteratorNumeric {
         Ok(self.value)
     }
 
-    fn binary_value(&mut self) -> Result<&BytesRef<Vec<u8>>> {
+    fn binary_value(&mut self) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
         unreachable!("NumericDocValuesFieldUpdatesIterator does not support binary_value")
     }
 }
@@ -190,7 +191,7 @@ impl SingleValueNumericDocValuesFieldUpdates {
     }
 }
 impl SingleValueDocValuesFieldUpdatesBase for SingleValueNumericDocValuesFieldUpdates {
-    fn binary_value(&self) -> Result<&BytesRef<Vec<u8>>> {
+    fn binary_value(&self) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
         Err(LuceneError::unreachable(
             "SingleValueNumericDocValuesFieldUpdates does not support binary_value",
         ))

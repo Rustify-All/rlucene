@@ -18,6 +18,7 @@ use crate::core::index::BytesRef;
 use crate::core::index::doc_values_iterator::DocValuesIterator;
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
+use std::borrow::Cow;
 
 pub trait BinaryDocValues: DocValuesIterator {
     /// Returns the binary value for the current document ID.
@@ -26,7 +27,7 @@ pub trait BinaryDocValues: DocValuesIterator {
     ///
     /// # Returns
     /// The binary value for the current document ID.
-    fn binary_value(&mut self) -> Result<&BytesRef<Vec<u8>>> {
+    fn binary_value(&mut self) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
         Err(LuceneError::not_implemented("this method need implement"))
     }
 }
@@ -79,7 +80,7 @@ macro_rules! either_binary_docvalues {
             $( $T: BinaryDocValues ),+
         {
 
-            fn binary_value(&mut self) -> Result<&BytesRef<Vec<u8>>> {
+            fn binary_value(&mut self) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
                 match self {
                     $( Self::$Variant(inner) => inner.binary_value(), )+
                 }

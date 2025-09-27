@@ -40,6 +40,7 @@ use crate::core::search::doc_id_set_iterator::disi_const::NO_MORE_DOCS;
 use crate::core::store::IndexInput;
 use crate::core::util::CoreHelper;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -394,7 +395,7 @@ impl<I> BinaryDocValues for BinaryDocValuesMerge<I>
 where
     I: IndexInput,
 {
-    fn binary_value(&mut self) -> Result<&BytesRef<Vec<u8>>> {
+    fn binary_value(&mut self) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
         match self.current {
             Some(ref current) => {
                 let mut current = current.borrow_mut();
@@ -402,8 +403,8 @@ where
                 // temporary value created by borrowing,
                 // we are forced to make a copy.Is there any way to avoid the
                 // copy?
-                self.bytes = current.sub.values.binary_value()?.clone();
-                Ok(&self.bytes)
+                self.bytes = current.sub.values.binary_value()?.into_owned();
+                Ok(Cow::Borrowed(&self.bytes))
             },
             None => Err(LuceneError::unreachable("should not be here")),
         }
