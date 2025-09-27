@@ -71,7 +71,12 @@ where
             return Ok(self.queue.size() > 0);
         }
 
-        if !self.queue.top_mut().next()? {
+        if !self
+            .queue
+            .top_mut()
+            .expect("priority queue top element should exist")
+            .next()?
+        {
             self.queue.pop()?;
         }
 
@@ -84,31 +89,49 @@ where
     }
 
     fn start_position(&self) -> Result<i32> {
-        self.queue.top().start_position()
+        self.queue
+            .top()
+            .expect("priority queue top element should exist")
+            .start_position()
     }
 
     fn end_position(&self) -> i32 {
-        self.queue.top().end_position()
+        self.queue
+            .top()
+            .expect("priority queue top element should exist")
+            .end_position()
     }
 
     fn start_offset(&self) -> Result<i32> {
-        self.queue.top().start_offset()
+        self.queue
+            .top()
+            .expect("priority queue top element should exist")
+            .start_offset()
     }
 
     fn end_offset(&self) -> Result<i32> {
-        self.queue.top().end_offset()
+        self.queue
+            .top()
+            .expect("priority queue top element should exist")
+            .end_offset()
     }
 
     type MatchesIterator = M::MatchesIterator;
 
     fn get_sub_matches(&mut self) -> Result<Option<&Self::MatchesIterator>> {
-        self.queue.top_mut().get_sub_matches()
+        self.queue
+            .top_mut()
+            .expect("priority queue top element should exist")
+            .get_sub_matches()
     }
 
     type Query = M::Query;
 
     fn get_query(&self) -> &Self::Query {
-        self.queue.top().get_query()
+        self.queue
+            .top()
+            .expect("priority queue top element should exist")
+            .get_query()
     }
 }
 

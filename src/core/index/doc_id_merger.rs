@@ -123,7 +123,12 @@ where
     }
     fn set_queue_min_doc_id(&mut self) {
         if self.queue.size() > 0 {
-            self.queue_min_doc_id = self.queue.top().borrow().mapped_doc_id;
+            self.queue_min_doc_id = self
+                .queue
+                .top()
+                .expect("priority queue top element should exist")
+                .borrow()
+                .mapped_doc_id;
         } else {
             self.queue_min_doc_id = NO_MORE_DOCS;
         }
@@ -187,9 +192,21 @@ where
                 self.current = self.queue.pop()?;
             }
         } else if self.queue.size() > 0 {
-            debug_assert!(self.queue_min_doc_id == self.queue.top().borrow().mapped_doc_id);
+            debug_assert!(
+                self.queue_min_doc_id
+                    == self
+                        .queue
+                        .top()
+                        .expect("priority queue top element should exist")
+                        .borrow()
+                        .mapped_doc_id
+            );
             debug_assert!(next_doc > self.queue_min_doc_id);
-            let new_current = self.queue.top().clone();
+            let new_current = self
+                .queue
+                .top()
+                .expect("priority queue top element should exist")
+                .clone();
             self.queue
                 .update_top_with_new_top(self.current.take().unwrap())?;
             self.current = Some(new_current);

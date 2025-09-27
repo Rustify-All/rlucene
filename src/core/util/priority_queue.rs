@@ -229,30 +229,34 @@ where
         if self.size < self.max_size {
             self.add(element)?;
             Ok(None)
-        } else if self.size > 0 && self.compare.less_than(self.top(), &element)? {
-            let ret = self.heap[1]
-                .replace(element)
-                .expect("priority queue top element should exist");
-            self.update_top()?;
-            Ok(Some(ret))
+        } else if self.size > 0 {
+            if let Some(top) = self.top() {
+                if self.compare.less_than(top, &element)? {
+                    let ret = self.heap[1]
+                        .replace(element)
+                        .expect("priority queue top element should exist");
+                    self.update_top()?;
+                    Ok(Some(ret))
+                } else {
+                    Ok(Some(element))
+                }
+            } else {
+                Ok(Some(element))
+            }
         } else {
             Ok(Some(element))
         }
     }
 
     /// Returns the least element of the PriorityQueue in constant time.
-    pub fn top_mut(&mut self) -> &mut T {
+    pub fn top_mut(&mut self) -> Option<&mut T> {
         // We don't need to check size here: if maxSize is 0,
         // then heap is length 2 array with both entries null.
         // If size is 0 then heap[1] is already null.
-        self.heap[1]
-            .as_mut()
-            .expect("priority queue top element should exist")
+        self.heap[1].as_mut()
     }
-    pub fn top(&self) -> &T {
-        self.heap[1]
-            .as_ref()
-            .expect("priority queue top element should exist")
+    pub fn top(&self) -> Option<&T> {
+        self.heap[1].as_ref()
     }
 
     /// Removes and returns the least element of the PriorityQueue in log(size)
@@ -453,8 +457,15 @@ mod tests {
 
         pq.add(1)?;
         match random.random_bool(0.5) {
-            true => assert_eq!(1, *pq.top_mut()),
-            false => assert_eq!(1, *pq.top()),
+            true => assert_eq!(
+                1,
+                *pq.top_mut()
+                    .expect("priority queue top element should exist")
+            ),
+            false => assert_eq!(
+                1,
+                *pq.top().expect("priority queue top element should exist")
+            ),
         }
         Ok(())
     }
@@ -576,8 +587,15 @@ mod tests {
         assert_eq!(size as usize, pq.size());
         let mut random = random();
         match random.random_bool(0.5) {
-            true => assert_eq!(2, *pq.top_mut()),
-            false => assert_eq!(2, *pq.top()),
+            true => assert_eq!(
+                2,
+                *pq.top_mut()
+                    .expect("priority queue top element should exist")
+            ),
+            false => assert_eq!(
+                2,
+                *pq.top().expect("priority queue top element should exist")
+            ),
         }
         Ok(())
     }
@@ -666,17 +684,18 @@ mod tests {
                 }
             }
             let new_least = match random.random_bool(0.5) {
-                true => pq.top_mut(),
-                false => pq.top(),
+                true => *pq
+                    .top_mut()
+                    .expect("priority queue top element should exist"),
+                false => *pq.top().expect("priority queue top element should exist"),
             };
-            if last_least.is_some() && *new_least != new_entry && *new_least != last_least.unwrap()
-            {
+            if last_least.is_some() && new_least != new_entry && new_least != last_least.unwrap() {
                 // If there has been a change of least entry and it wasn't our
                 // new addition we expect the scores to increase
-                assert!(*new_least <= new_entry);
-                assert!(*new_least >= last_least.unwrap());
+                assert!(new_least <= new_entry);
+                assert!(new_least >= last_least.unwrap());
             }
-            last_least = Some(*new_least);
+            last_least = Some(new_least);
         }
         // Try many random additions to existing entries - we should always see
         // increasing scores in the lowest entry in the PQ
@@ -691,21 +710,23 @@ mod tests {
             assert_eq!(pq.insert_with_overflow(new_entry).unwrap(), None);
             check_validity(&pq);
             let new_least = match random.random_bool(0.5) {
-                true => pq.top_mut(),
-                false => pq.top(),
+                true => *pq
+                    .top_mut()
+                    .expect("priority queue top element should exist"),
+                false => *pq.top().expect("priority queue top element should exist"),
             };
             if object_to_remove != last_least.unwrap()
                 && last_least.is_some()
-                && *new_least != new_entry
+                && new_least != new_entry
             {
                 // If there has been a change of least entry and it wasn't our
                 // new addition or the loss of our randomly
                 // removed entry we expect the
                 // scores to increase
-                assert!(*new_least <= new_entry);
-                assert!(*new_least >= last_least.unwrap());
+                assert!(new_least <= new_entry);
+                assert!(new_least >= last_least.unwrap());
             }
-            last_least = Some(*new_least);
+            last_least = Some(new_least);
         }
         Ok(())
     }

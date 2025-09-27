@@ -503,7 +503,9 @@ where
         let mut one_dim_writer = OneDimensionBKDWriter::new(data_out.clone(), self)?;
 
         while queue.size() != 0 {
-            let reader = queue.top_mut();
+            let reader = queue
+                .top_mut()
+                .expect("priority queue top element should exist");
             one_dim_writer.add(&reader.packed_value, reader.doc_id)?;
 
             if reader.next()? {
