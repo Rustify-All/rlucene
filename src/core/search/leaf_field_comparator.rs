@@ -94,9 +94,9 @@ pub trait LeafFieldComparator {
     /// new document were slot2.
     ///
     /// This is only called for searches that use searchAfter (deep paging).
-    ///
     /// # Arguments
     /// - `doc`: The docID that was hit.
+    /// - `scorer`: The scorer instance currently used to evaluate the hit.
     ///
     /// # Returns
     /// - `N < 0` if the doc's value is sorted after the top entry (not
@@ -106,7 +106,10 @@ pub trait LeafFieldComparator {
     ///
     /// # Errors
     /// Returns an error if an I/O error occurs.
-    fn compare_top(&mut self, doc: i32) -> Result<i32>;
+    fn compare_top<S1, S2>(&mut self, doc: i32, scorer: &ScorerEnum<S1, S2>) -> Result<i32>
+    where
+        S1: Scorer,
+        S2: Scorable;
 
     /// Called when a new hit is competitive.
     ///
@@ -171,7 +174,11 @@ impl LeafFieldComparator for LeafFieldComparatorEnum {
         todo!()
     }
 
-    fn compare_top(&mut self, _doc: i32) -> Result<i32> {
+    fn compare_top<S1, S2>(&mut self, _doc: i32, _scorer: &ScorerEnum<S1, S2>) -> Result<i32>
+    where
+        S1: Scorer,
+        S2: Scorable,
+    {
         todo!()
     }
 

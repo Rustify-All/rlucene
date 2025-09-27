@@ -179,7 +179,11 @@ impl LeafFieldComparator for DocLeafComparator {
         Ok(self.comparator.bottom - (self.doc_base + doc))
     }
 
-    fn compare_top(&mut self, doc: i32) -> Result<i32> {
+    fn compare_top<S1, S2>(&mut self, doc: i32, _scorer: &ScorerEnum<S1, S2>) -> Result<i32>
+    where
+        S1: Scorer,
+        S2: Scorable,
+    {
         let doc_value = self.doc_base + doc;
         Ok(self.comparator.top_value.cmp(&doc_value).to_int())
     }

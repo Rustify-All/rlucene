@@ -177,7 +177,11 @@ where
         Ok(self.comparator.bottom.total_cmp(&v).to_int())
     }
 
-    fn compare_top(&mut self, doc: i32) -> Result<i32> {
+    fn compare_top<S1, S2>(&mut self, doc: i32, _scorer: &ScorerEnum<S1, S2>) -> Result<i32>
+    where
+        S1: Scorer,
+        S2: Scorable,
+    {
         let v = self.get_value_for_doc(doc)?;
         Ok(self.comparator.top_value.total_cmp(&v).to_int())
     }
