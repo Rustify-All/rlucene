@@ -22,3 +22,10 @@ mod long_comparator;
 pub mod min_doc_iterator;
 pub mod numeric_comparator;
 mod term_ord_val_comparator;
+
+pub use double_comparator::DoubleLeafComparator;
+pub use float_comparator::FloatLeafComparator;
+pub use long_comparator::LongLeafComparator;
+pub use term_ord_val_comparator::{
+    CompetitiveIterator as TermOrdValCompetitiveIterator, TermOrdValLeafComparator,
+};

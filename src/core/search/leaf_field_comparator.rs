@@ -14,8 +14,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use crate::core::index::doc_values::Numeric;
+use crate::core::index::leaf_reader::LeafReader;
+use crate::core::search::comparators::doc_comparator::{DocComparatorIterator, DocLeafComparator};
+use crate::core::search::comparators::int_comparator::IntLeafComparator;
+use crate::core::search::comparators::numeric_comparator::{
+    CompetitiveIterator as NumericCompetitiveIterator, CompetitiveIteratorType,
+};
+use crate::core::search::comparators::{
+    DoubleLeafComparator, FloatLeafComparator, LongLeafComparator, TermOrdValCompetitiveIterator,
+    TermOrdValLeafComparator,
+};
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
+use crate::core::search::dummy::dummy_disi::DummyDISI;
 use crate::core::search::dummy::dummy_doc_id_set_iterator::DummyDocIdSetIterator;
+use crate::core::search::dummy::dummy_leaf_field_comparator::DummyLeafFieldComparator;
+use crate::core::search::field_comparator::{RelevanceLeafComparator, TermValLeafComparator};
 use crate::core::search::scorable::{Scorable, ScorerEnum};
 use crate::core::search::scorer::Scorer;
 use crate::core::util::error::lucene_error::Result;
@@ -165,56 +179,252 @@ pub trait LeafFieldComparator {
         Ok(())
     }
 }
-pub enum LeafFieldComparatorEnum {}
-impl LeafFieldComparator for LeafFieldComparatorEnum {
-    fn set_bottom(&mut self, _slot: usize) -> Result<()> {
-        todo!()
+type NumericComparatorIterator<LR> =
+    NumericCompetitiveIterator<CompetitiveIteratorType<Numeric<LR>>>;
+
+pub enum LeafFieldComparatorDocIdSetIteratorEnum<LR>
+where
+    LR: LeafReader,
+{
+    Dummy(DummyDocIdSetIterator),
+    DummyLeaf(DummyDISI),
+    Doc(DocComparatorIterator),
+    Numeric(NumericComparatorIterator<LR>),
+    TermOrdVal(TermOrdValCompetitiveIterator<LR>),
+}
+
+impl<LR> DocIdSetIterator for LeafFieldComparatorDocIdSetIteratorEnum<LR>
+where
+    LR: LeafReader,
+{
+    fn doc_id(&self) -> i32 {
+        match self {
+            Self::Dummy(iterator) => iterator.doc_id(),
+            Self::DummyLeaf(iterator) => iterator.doc_id(),
+            Self::Doc(iterator) => iterator.doc_id(),
+            Self::Numeric(iterator) => iterator.doc_id(),
+            Self::TermOrdVal(iterator) => iterator.doc_id(),
+        }
     }
 
-    fn compare_bottom<S1, S2>(&mut self, _doc: i32, _scorer: &mut ScorerEnum<S1, S2>) -> Result<i32>
+    fn next_doc(&mut self) -> Result<i32> {
+        match self {
+            Self::Dummy(iterator) => iterator.next_doc(),
+            Self::DummyLeaf(iterator) => iterator.next_doc(),
+            Self::Doc(iterator) => iterator.next_doc(),
+            Self::Numeric(iterator) => iterator.next_doc(),
+            Self::TermOrdVal(iterator) => iterator.next_doc(),
+        }
+    }
+
+    fn advance(&mut self, target: i32) -> Result<i32> {
+        match self {
+            Self::Dummy(iterator) => iterator.advance(target),
+            Self::DummyLeaf(iterator) => iterator.advance(target),
+            Self::Doc(iterator) => iterator.advance(target),
+            Self::Numeric(iterator) => iterator.advance(target),
+            Self::TermOrdVal(iterator) => iterator.advance(target),
+        }
+    }
+
+    fn slow_advance(&mut self, target: i32) -> Result<i32> {
+        match self {
+            Self::Dummy(iterator) => iterator.slow_advance(target),
+            Self::DummyLeaf(iterator) => iterator.slow_advance(target),
+            Self::Doc(iterator) => iterator.slow_advance(target),
+            Self::Numeric(iterator) => iterator.slow_advance(target),
+            Self::TermOrdVal(iterator) => iterator.slow_advance(target),
+        }
+    }
+
+    fn cost(&self) -> Result<i64> {
+        match self {
+            Self::Dummy(iterator) => iterator.cost(),
+            Self::DummyLeaf(iterator) => iterator.cost(),
+            Self::Doc(iterator) => iterator.cost(),
+            Self::Numeric(iterator) => iterator.cost(),
+            Self::TermOrdVal(iterator) => iterator.cost(),
+        }
+    }
+}
+
+impl<LR> From<DummyDocIdSetIterator> for LeafFieldComparatorDocIdSetIteratorEnum<LR>
+where
+    LR: LeafReader,
+{
+    fn from(iterator: DummyDocIdSetIterator) -> Self {
+        Self::Dummy(iterator)
+    }
+}
+
+impl<LR> From<DummyDISI> for LeafFieldComparatorDocIdSetIteratorEnum<LR>
+where
+    LR: LeafReader,
+{
+    fn from(iterator: DummyDISI) -> Self {
+        Self::DummyLeaf(iterator)
+    }
+}
+
+impl<LR> From<DocComparatorIterator> for LeafFieldComparatorDocIdSetIteratorEnum<LR>
+where
+    LR: LeafReader,
+{
+    fn from(iterator: DocComparatorIterator) -> Self {
+        Self::Doc(iterator)
+    }
+}
+
+impl<LR> From<NumericComparatorIterator<LR>> for LeafFieldComparatorDocIdSetIteratorEnum<LR>
+where
+    LR: LeafReader,
+{
+    fn from(iterator: NumericComparatorIterator<LR>) -> Self {
+        Self::Numeric(iterator)
+    }
+}
+
+impl<LR> From<TermOrdValCompetitiveIterator<LR>> for LeafFieldComparatorDocIdSetIteratorEnum<LR>
+where
+    LR: LeafReader,
+{
+    fn from(iterator: TermOrdValCompetitiveIterator<LR>) -> Self {
+        Self::TermOrdVal(iterator)
+    }
+}
+
+pub enum LeafFieldComparatorEnum<LR>
+where
+    LR: LeafReader,
+{
+    Dummy(DummyLeafFieldComparator),
+    Relevance(RelevanceLeafComparator),
+    Doc(DocLeafComparator),
+    Float(FloatLeafComparator<LR>),
+    Int(IntLeafComparator<LR>),
+    Long(LongLeafComparator<LR>),
+    Double(DoubleLeafComparator<LR>),
+    TermOrdVal(TermOrdValLeafComparator<LR>),
+    TermVal(TermValLeafComparator<LR>),
+}
+
+impl<LR> LeafFieldComparator for LeafFieldComparatorEnum<LR>
+where
+    LR: LeafReader,
+{
+    fn set_bottom(&mut self, slot: usize) -> Result<()> {
+        match self {
+            Self::Dummy(comparator) => comparator.set_bottom(slot),
+            Self::Relevance(comparator) => comparator.set_bottom(slot),
+            Self::Doc(comparator) => comparator.set_bottom(slot),
+            Self::Float(comparator) => comparator.set_bottom(slot),
+            Self::Int(comparator) => comparator.set_bottom(slot),
+            Self::Long(comparator) => comparator.set_bottom(slot),
+            Self::Double(comparator) => comparator.set_bottom(slot),
+            Self::TermOrdVal(comparator) => comparator.set_bottom(slot),
+            Self::TermVal(comparator) => comparator.set_bottom(slot),
+        }
+    }
+
+    fn compare_bottom<S1, S2>(&mut self, doc: i32, scorer: &mut ScorerEnum<S1, S2>) -> Result<i32>
     where
         S1: Scorer,
         S2: Scorable,
     {
-        todo!()
+        match self {
+            Self::Dummy(comparator) => comparator.compare_bottom(doc, scorer),
+            Self::Relevance(comparator) => comparator.compare_bottom(doc, scorer),
+            Self::Doc(comparator) => comparator.compare_bottom(doc, scorer),
+            Self::Float(comparator) => comparator.compare_bottom(doc, scorer),
+            Self::Int(comparator) => comparator.compare_bottom(doc, scorer),
+            Self::Long(comparator) => comparator.compare_bottom(doc, scorer),
+            Self::Double(comparator) => comparator.compare_bottom(doc, scorer),
+            Self::TermOrdVal(comparator) => comparator.compare_bottom(doc, scorer),
+            Self::TermVal(comparator) => comparator.compare_bottom(doc, scorer),
+        }
     }
 
-    fn compare_top<S1, S2>(&mut self, _doc: i32, _scorer: &mut ScorerEnum<S1, S2>) -> Result<i32>
+    fn compare_top<S1, S2>(&mut self, doc: i32, scorer: &mut ScorerEnum<S1, S2>) -> Result<i32>
     where
         S1: Scorer,
         S2: Scorable,
     {
-        todo!()
+        match self {
+            Self::Dummy(comparator) => comparator.compare_top(doc, scorer),
+            Self::Relevance(comparator) => comparator.compare_top(doc, scorer),
+            Self::Doc(comparator) => comparator.compare_top(doc, scorer),
+            Self::Float(comparator) => comparator.compare_top(doc, scorer),
+            Self::Int(comparator) => comparator.compare_top(doc, scorer),
+            Self::Long(comparator) => comparator.compare_top(doc, scorer),
+            Self::Double(comparator) => comparator.compare_top(doc, scorer),
+            Self::TermOrdVal(comparator) => comparator.compare_top(doc, scorer),
+            Self::TermVal(comparator) => comparator.compare_top(doc, scorer),
+        }
     }
 
-    fn copy<S1, S2>(
-        &mut self,
-        _slot: usize,
-        _doc: i32,
-        _scorer: &mut ScorerEnum<S1, S2>,
-    ) -> Result<()>
+    fn copy<S1, S2>(&mut self, slot: usize, doc: i32, scorer: &mut ScorerEnum<S1, S2>) -> Result<()>
     where
         S1: Scorer,
         S2: Scorable,
     {
-        todo!()
+        match self {
+            Self::Dummy(comparator) => comparator.copy(slot, doc, scorer),
+            Self::Relevance(comparator) => comparator.copy(slot, doc, scorer),
+            Self::Doc(comparator) => comparator.copy(slot, doc, scorer),
+            Self::Float(comparator) => comparator.copy(slot, doc, scorer),
+            Self::Int(comparator) => comparator.copy(slot, doc, scorer),
+            Self::Long(comparator) => comparator.copy(slot, doc, scorer),
+            Self::Double(comparator) => comparator.copy(slot, doc, scorer),
+            Self::TermOrdVal(comparator) => comparator.copy(slot, doc, scorer),
+            Self::TermVal(comparator) => comparator.copy(slot, doc, scorer),
+        }
     }
 
-    fn set_scorer<S1, S2>(&mut self, _scorer: &mut ScorerEnum<S1, S2>) -> Result<()>
+    fn set_scorer<S1, S2>(&mut self, scorer: &mut ScorerEnum<S1, S2>) -> Result<()>
     where
         S1: Scorer,
         S2: Scorable,
     {
-        todo!()
+        match self {
+            Self::Dummy(comparator) => comparator.set_scorer(scorer),
+            Self::Relevance(comparator) => comparator.set_scorer(scorer),
+            Self::Doc(comparator) => comparator.set_scorer(scorer),
+            Self::Float(comparator) => comparator.set_scorer(scorer),
+            Self::Int(comparator) => comparator.set_scorer(scorer),
+            Self::Long(comparator) => comparator.set_scorer(scorer),
+            Self::Double(comparator) => comparator.set_scorer(scorer),
+            Self::TermOrdVal(comparator) => comparator.set_scorer(scorer),
+            Self::TermVal(comparator) => comparator.set_scorer(scorer),
+        }
     }
 
-    type DocIdSetIterator = DummyDocIdSetIterator;
+    type DocIdSetIterator = LeafFieldComparatorDocIdSetIteratorEnum<LR>;
 
     fn competitive_iterator(&mut self) -> Option<Self::DocIdSetIterator> {
-        todo!()
+        match self {
+            Self::Dummy(comparator) => comparator.competitive_iterator().map(Into::into),
+            Self::Relevance(comparator) => comparator.competitive_iterator().map(Into::into),
+            Self::Doc(comparator) => comparator.competitive_iterator().map(Into::into),
+            Self::Float(comparator) => comparator.competitive_iterator().map(Into::into),
+            Self::Int(comparator) => comparator.competitive_iterator().map(Into::into),
+            Self::Long(comparator) => comparator.competitive_iterator().map(Into::into),
+            Self::Double(comparator) => comparator.competitive_iterator().map(Into::into),
+            Self::TermOrdVal(comparator) => comparator.competitive_iterator().map(Into::into),
+            Self::TermVal(comparator) => comparator.competitive_iterator().map(Into::into),
+        }
     }
 
     fn set_hits_threshold_reached(&mut self) -> Result<()> {
-        todo!()
+        match self {
+            Self::Dummy(comparator) => comparator.set_hits_threshold_reached(),
+            Self::Relevance(comparator) => comparator.set_hits_threshold_reached(),
+            Self::Doc(comparator) => comparator.set_hits_threshold_reached(),
+            Self::Float(comparator) => comparator.set_hits_threshold_reached(),
+            Self::Int(comparator) => comparator.set_hits_threshold_reached(),
+            Self::Long(comparator) => comparator.set_hits_threshold_reached(),
+            Self::Double(comparator) => comparator.set_hits_threshold_reached(),
+            Self::TermOrdVal(comparator) => comparator.set_hits_threshold_reached(),
+            Self::TermVal(comparator) => comparator.set_hits_threshold_reached(),
+        }
     }
 }

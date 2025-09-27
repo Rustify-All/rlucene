@@ -14,14 +14,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use crate::core::index::leaf_reader::LeafReader;
 use crate::core::search::leaf_field_comparator::LeafFieldComparatorEnum;
 use crate::core::search::score_doc::{ScoreDoc, ScoreDocLike};
 use crate::core::search::sort_field::SortField;
 use std::fmt;
 
-pub struct FieldValueHitQueue {
+pub struct FieldValueHitQueue<LR>
+where
+    LR: LeafReader,
+{
     pub(crate) fields: Vec<SortField>,
-    comparators: Vec<LeafFieldComparatorEnum>,
+    comparators: Vec<LeafFieldComparatorEnum<LR>>,
     reverse_mul: Vec<i32>,
 }
 
