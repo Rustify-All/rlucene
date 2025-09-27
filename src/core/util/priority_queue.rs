@@ -229,20 +229,12 @@ where
         if self.size < self.max_size {
             self.add(element)?;
             Ok(None)
-        } else if self.size > 0 {
-            if let Some(top) = self.top() {
-                if self.compare.less_than(top, &element)? {
-                    let ret = self.heap[1]
-                        .replace(element)
-                        .expect("priority queue top element should exist");
-                    self.update_top()?;
-                    Ok(Some(ret))
-                } else {
-                    Ok(Some(element))
-                }
-            } else {
-                Ok(Some(element))
-            }
+        } else if self.size > 0 && self.compare.less_than(self.heap[1].as_ref().unwrap(), &element)? {
+            let ret = self.heap[1]
+                .replace(element)
+                .expect("priority queue top element should exist");
+            self.update_top()?;
+            Ok(Some(ret))
         } else {
             Ok(Some(element))
         }
