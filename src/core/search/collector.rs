@@ -43,15 +43,17 @@ use crate::core::util::error::lucene_error::Result;
 use std::rc::Rc;
 
 pub trait Collector {
-    type LeafCollector: LeafCollector;
+    type LeafCollector<'a>: LeafCollector
+    where
+        Self: 'a;
     /// Create a new [`LeafCollector`] to collect the given context.
     ///
     /// # Arguments
     /// * `context` - next atomic reader context
-    fn get_leaf_collector<LR>(
-        &self,
+    fn get_leaf_collector<'a, LR>(
+        &'a mut self,
         context: &LeafReaderContext<LR>,
-    ) -> Result<Self::LeafCollector>
+    ) -> Result<Self::LeafCollector<'a>>
     where
         LR: LeafReader;
 

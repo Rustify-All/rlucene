@@ -17,7 +17,6 @@
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::leaf_reader_context::LeafReaderContext;
 use crate::core::search::collector::Collector;
-use crate::core::search::doc_id_stream::DocIdStream;
 use crate::core::search::dummy::dummy_doc_id_set_iterator::DummyDocIdSetIterator;
 use crate::core::search::dummy::dummy_scorer::DummyScorer;
 use crate::core::search::leaf_collector::LeafCollector;
@@ -50,13 +49,20 @@ impl<W> Collector for TotalHitCountCollector<W>
 where
     W: Weight,
 {
-    type LeafCollector = TotalHitCountLeafCollector;
+    type LeafCollector<'a>
+        = TotalHitCountLeafCollector<'a, W>
+    where
+        Self: 'a;
 
-    fn get_leaf_collector<LR>(&self, context: &LeafReaderContext<LR>) -> Result<Self::LeafCollector>
+    fn get_leaf_collector<'a, LR>(
+        &'a mut self,
+        context: &LeafReaderContext<LR>,
+    ) -> Result<Self::LeafCollector<'a>>
     where
         LR: LeafReader,
     {
-        Ok(TotalHitCountLeafCollector)
+        let _ = context;
+        Ok(TotalHitCountLeafCollector::new(self))
     }
 
     fn score_mode(&self) -> &ScoreMode {
@@ -70,28 +76,39 @@ where
     }
 }
 
-pub struct TotalHitCountLeafCollector;
+pub struct TotalHitCountLeafCollector<'a, W>
+where
+    W: Weight,
+{
+    collector: &'a mut TotalHitCountCollector<W>,
+}
 
-impl LeafCollector for TotalHitCountLeafCollector {
-    fn set_scorer<S, C>(&mut self, scorer: ScorerEnum<S, C>) -> Result<()>
+impl<'a, W> TotalHitCountLeafCollector<'a, W>
+where
+    W: Weight,
+{
+    fn new(collector: &'a mut TotalHitCountCollector<W>) -> Self {
+        Self { collector }
+    }
+}
+
+impl<'a, W> LeafCollector for TotalHitCountLeafCollector<'a, W>
+where
+    W: Weight,
+{
+    fn set_scorer<S, C>(&mut self, _scorer: ScorerEnum<S, C>) -> Result<()>
     where
         S: Scorer,
         C: Scorable,
     {
-        todo!()
+        Ok(())
     }
 
     type Scorer = DummyScorer;
 
-    fn collect(&mut self, doc: i32) -> Result<()> {
-        todo!()
-    }
-
-    fn collect_stream<DS>(&mut self, stream: &mut DS) -> Result<()>
-    where
-        DS: DocIdStream,
-    {
-        todo!()
+    fn collect(&mut self, _doc: i32) -> Result<()> {
+        self.collector.total_hit += 1;
+        Ok(())
     }
 
     type DocIdSetIterator = DummyDocIdSetIterator;
