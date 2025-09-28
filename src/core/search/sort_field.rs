@@ -24,7 +24,17 @@ use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::numeric_doc_values::Either2NumericDocValues;
 use crate::core::index::sort_field_provider::SortFieldProvider;
 use crate::core::index::sorted_doc_values::Either2SortedDocValues;
+use crate::core::search::comparators::doc_comparator::DocComparator;
+use crate::core::search::comparators::double_comparator::DoubleComparator;
+use crate::core::search::comparators::float_comparator::FloatComparator;
+use crate::core::search::comparators::int_comparator::IntComparator;
+use crate::core::search::comparators::long_comparator::LongComparator;
+use crate::core::search::comparators::term_ord_val_comparator::TermOrdValComparator;
+use crate::core::search::field_comparator::{
+    FieldComparator, FieldComparatorEnum, RelevanceComparator, TermValComparator,
+};
 use crate::core::search::field_comparator_source::FieldComparatorSourceEnum;
+use crate::core::search::pruning::Pruning;
 use crate::core::search::sort_field_enum::SortFieldEnum;
 use crate::core::search::sorted_numeric_sort_field::NumericProvider;
 use crate::core::store::{DataInput, DataOutput};
@@ -48,8 +58,8 @@ use std::hash::Hash;
 /// term index and doc values.
 #[derive(Clone)]
 pub struct SortField {
-    fields: Option<String>,
-    pub(crate) sort_field_type: SortFieldType,
+    field: Option<String>,
+    pub(crate) type_: SortFieldType,
     comparator_source: Option<FieldComparatorSourceEnum>,
     /// defaults to natural order
     pub(crate) reverse: bool,
@@ -192,8 +202,8 @@ impl SortField {
             ));
         }
         Ok(Self {
-            fields: field,
-            sort_field_type: field_type,
+            field,
+            type_: field_type,
             comparator_source: None,
             reverse: false,
             missing_value: None,
@@ -213,14 +223,14 @@ impl SortField {
     /// # Returns
     /// The name of the field, or `None` if the sort is by `SCORE` or `DOC`.
     pub fn get_field(&self) -> Option<&String> {
-        self.fields.as_ref()
+        self.field.as_ref()
     }
     /// Returns the type of contents in the field.
     ///
     /// # Returns
     /// One of the constants: `SCORE`, `DOC`, `STRING`, `INT`, or `FLOAT`.
     pub fn get_type(&self) -> &SortFieldType {
-        &self.sort_field_type
+        &self.type_
     }
     /// Returns whether the sort should be reversed.
     ///
@@ -229,11 +239,15 @@ impl SortField {
     pub fn get_reverse(&self) -> bool {
         self.reverse
     }
+
+    pub fn get_optimize_sort_with_indexed_data(&self) -> bool {
+        self.optimize_sort_with_indexed_data
+    }
 }
 impl SortFiledBase for SortField {
     /// Set the value to use for documents that don't have a value.
     fn set_missing_value(&mut self, missing_value: Option<MissingValueEnum>) -> Result<()> {
-        match self.sort_field_type {
+        match self.type_ {
             SortFieldType::String | SortFieldType::StringVal => {
                 if let Some(MissingValueEnum::StringFirst | MissingValueEnum::StringLast) =
                     missing_value
@@ -294,17 +308,17 @@ impl SortFiledBase for SortField {
     }
 
     fn needs_scores(&self) -> bool {
-        self.sort_field_type == SortFieldType::Score
+        self.type_ == SortFieldType::Score
     }
 
     type IndexSort = IndexSorterEnumSorter;
 
     fn get_index_sorter(&self) -> Result<Option<Self::IndexSort>> {
-        debug_assert!(self.fields.is_some());
-        let field = self.fields.as_ref().unwrap();
+        debug_assert!(self.field.is_some());
+        let field = self.field.as_ref().unwrap();
         let get_value = NumericDocValuesProviderImpl1::new(field.to_string());
         let v1 = SortedDocValuesProviderImpl::new(field.to_string());
-        match self.sort_field_type {
+        match self.type_ {
             SortFieldType::String => Ok(Some(IndexSorterEnumSorter::String(StringSorter::new(
                 NumericProvider::NAME.to_string(),
                 self.missing_value.clone(),
@@ -340,13 +354,13 @@ impl SortFiledBase for SortField {
     }
 
     fn serialize(&self, out: &mut impl DataOutput) -> Result<()> {
-        debug_assert!(self.fields.is_some());
-        out.write_string(self.fields.as_ref().unwrap())?;
-        out.write_string(&self.sort_field_type.to_string())?;
+        debug_assert!(self.field.is_some());
+        out.write_string(self.field.as_ref().unwrap())?;
+        out.write_string(&self.type_.to_string())?;
         out.write_int(if self.reverse { 1 } else { 0 })?;
         if let Some(missing_value) = &self.missing_value {
             out.write_int(1)?;
-            match &self.sort_field_type {
+            match &self.type_ {
                 SortFieldType::String => match missing_value {
                     MissingValueEnum::StringLast => out.write_int(0)?,
                     MissingValueEnum::StringFirst => out.write_int(1)?,
@@ -399,7 +413,7 @@ impl SortFiledBase for SortField {
                 | SortFieldType::Score => {
                     return Err(LuceneError::illegal_argument(format!(
                         "Cannot serialize SortField of type {:?}",
-                        self.sort_field_type
+                        self.type_
                     )));
                 },
             }
@@ -409,51 +423,141 @@ impl SortFiledBase for SortField {
 
         Ok(())
     }
+
+    type FieldComparator = FieldComparatorEnum;
+
+    fn get_comparator(&self, num_hits: usize, pruning: Pruning) -> Result<Self::FieldComparator> {
+        let mut field_comparator: FieldComparatorEnum = match self.type_ {
+            SortFieldType::Score => RelevanceComparator::new(num_hits).into(),
+
+            SortFieldType::Doc => DocComparator::new(num_hits, self.reverse, pruning).into(),
+
+            SortFieldType::Int => {
+                let missing = self.missing_value.as_ref().map(|v| v.as_i32());
+                IntComparator::new(
+                    self.field.as_ref().unwrap().clone(),
+                    num_hits,
+                    missing,
+                    self.reverse,
+                    pruning,
+                )
+                .into()
+            },
+
+            SortFieldType::Float => {
+                let missing = self.missing_value.as_ref().map(|v| v.as_f32());
+                FloatComparator::new(
+                    self.field.as_ref().unwrap().clone(),
+                    num_hits,
+                    missing,
+                    self.reverse,
+                    pruning,
+                )
+                .into()
+            },
+
+            SortFieldType::Long => {
+                let missing = self.missing_value.as_ref().map(|v| v.as_i64());
+                LongComparator::new(
+                    self.field.as_ref().unwrap().clone(),
+                    num_hits,
+                    missing,
+                    self.reverse,
+                    pruning,
+                )
+                .into()
+            },
+
+            SortFieldType::Double => {
+                let missing = self.missing_value.as_ref().map(|v| v.as_f64());
+                DoubleComparator::new(
+                    self.field.as_ref().unwrap().clone(),
+                    num_hits,
+                    missing,
+                    self.reverse,
+                    pruning,
+                )
+                .into()
+            },
+
+            SortFieldType::String => TermOrdValComparator::new(
+                self.field.as_ref().unwrap().clone(),
+                num_hits,
+                matches!(self.missing_value, Some(MissingValueEnum::StringLast)),
+                self.reverse,
+                pruning,
+            )
+            .into(),
+
+            SortFieldType::StringVal => TermValComparator::new(
+                self.field.as_ref().unwrap().clone(),
+                num_hits,
+                matches!(self.missing_value, Some(MissingValueEnum::StringLast)),
+            )
+            .into(),
+
+            SortFieldType::Custom => {
+                return Err(LuceneError::unsupported_operation("not supported yet"));
+            },
+
+            SortFieldType::Rewritable => {
+                return Err(LuceneError::IllegalState(
+                    "SortField needs to be rewritten through Sort.rewrite(..) and SortField.rewrite(..)".into(),
+                ));
+            },
+        };
+
+        if !self.optimize_sort_with_indexed_data {
+            field_comparator.disable_skipping()
+        }
+
+        Ok(field_comparator)
+    }
 }
 impl Display for SortField {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut buffer = String::new();
-        match self.sort_field_type {
+        match self.type_ {
             SortFieldType::Score => buffer.push_str("<score>"),
             SortFieldType::Doc => buffer.push_str("<doc>"),
             SortFieldType::String => {
                 buffer.push_str("<string: \"");
-                if let Some(ref field) = self.fields {
+                if let Some(ref field) = self.field {
                     buffer.push_str(field);
                 }
                 buffer.push_str("\">");
             },
             SortFieldType::Int => {
                 buffer.push_str("<int: \"");
-                if let Some(ref field) = self.fields {
+                if let Some(ref field) = self.field {
                     buffer.push_str(field);
                 }
                 buffer.push_str("\">");
             },
             SortFieldType::Long => {
                 buffer.push_str("<long: \"");
-                if let Some(ref field) = self.fields {
+                if let Some(ref field) = self.field {
                     buffer.push_str(field);
                 }
                 buffer.push_str("\">");
             },
             SortFieldType::Float => {
                 buffer.push_str("<float: \"");
-                if let Some(ref field) = self.fields {
+                if let Some(ref field) = self.field {
                     buffer.push_str(field);
                 }
                 buffer.push_str("\">");
             },
             SortFieldType::Double => {
                 buffer.push_str("<double: \"");
-                if let Some(ref field) = self.fields {
+                if let Some(ref field) = self.field {
                     buffer.push_str(field);
                 }
                 buffer.push_str("\">");
             },
             SortFieldType::Custom => {
                 buffer.push_str("<custom: \"");
-                if let Some(ref field) = self.fields {
+                if let Some(ref field) = self.field {
                     buffer.push_str(field);
                 }
                 buffer.push_str("\": ");
@@ -464,14 +568,14 @@ impl Display for SortField {
             },
             SortFieldType::StringVal => {
                 buffer.push_str("<string_val: \"");
-                if let Some(ref field) = self.fields {
+                if let Some(ref field) = self.field {
                     buffer.push_str(field);
                 }
                 buffer.push_str("\">");
             },
             SortFieldType::Rewritable => {
                 buffer.push_str("<rewriteable: \"");
-                if let Some(ref field) = self.fields {
+                if let Some(ref field) = self.field {
                     buffer.push_str(field);
                 }
                 buffer.push_str("\">");
@@ -489,8 +593,8 @@ impl Display for SortField {
 }
 impl PartialEq for SortField {
     fn eq(&self, other: &Self) -> bool {
-        self.fields == other.fields
-            && self.sort_field_type == other.sort_field_type
+        self.field == other.field
+            && self.type_ == other.type_
             && self.comparator_source == other.comparator_source
             && self.reverse == other.reverse
             && self.missing_value == other.missing_value
@@ -499,8 +603,8 @@ impl PartialEq for SortField {
 impl Eq for SortField {}
 impl Hash for SortField {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.fields.hash(state);
-        self.sort_field_type.hash(state);
+        self.field.hash(state);
+        self.type_.hash(state);
         self.reverse.hash(state);
         self.comparator_source.hash(state);
         self.missing_value.hash(state);
@@ -547,7 +651,7 @@ impl SortFieldProvider for Provider {
         let reverse = data_input.read_int()? == 1;
         let mut sort_field = SortField::with_reverse(Some(field_name), field_type, reverse)?;
         if data_input.read_int()? == 1 {
-            match sort_field.sort_field_type {
+            match sort_field.type_ {
                 SortFieldType::String => {
                     let missing_string = data_input.read_int()?;
                     match missing_string {
@@ -578,7 +682,7 @@ impl SortFieldProvider for Provider {
                 | SortFieldType::Score => {
                     return Err(LuceneError::illegal_argument(format!(
                         "Cannot deserialize sort of type {:?}",
-                        sort_field.sort_field_type
+                        sort_field.type_
                     )));
                 },
             }
@@ -697,7 +801,35 @@ pub enum MissingValueEnum {
     Float(f32),
     Double(f64),
 }
+impl MissingValueEnum {
+    pub fn as_i32(&self) -> i32 {
+        match self {
+            MissingValueEnum::Int(v) => *v,
+            _ => unreachable!("should not be here"),
+        }
+    }
 
+    pub fn as_i64(&self) -> i64 {
+        match self {
+            MissingValueEnum::Long(v) => *v,
+            _ => unreachable!("should not be here"),
+        }
+    }
+
+    pub fn as_f32(&self) -> f32 {
+        match self {
+            MissingValueEnum::Float(v) => *v,
+            _ => unreachable!("should not be here"),
+        }
+    }
+
+    pub fn as_f64(&self) -> f64 {
+        match self {
+            MissingValueEnum::Double(v) => *v,
+            _ => unreachable!("should not be here"),
+        }
+    }
+}
 impl PartialEq<Self> for MissingValueEnum {
     fn eq(&self, other: &Self) -> bool {
         match self {
@@ -901,4 +1033,8 @@ pub trait SortFiledBase: Display {
     /// serialize and deserialize the sort in index segment headers.
     fn get_index_sorter(&self) -> Result<Option<Self::IndexSort>>;
     fn serialize(&self, out: &mut impl DataOutput) -> Result<()>;
+    type FieldComparator: FieldComparator;
+    fn get_comparator(&self, num_hits: usize, pruning: Pruning) -> Result<Self::FieldComparator> {
+        todo!()
+    }
 }

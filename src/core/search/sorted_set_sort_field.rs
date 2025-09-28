@@ -18,6 +18,7 @@ use crate::core::index::doc_values::{DocValues, SortedSet};
 use crate::core::index::index_sorter::{SortedDocValuesProvider, StringSorter};
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::sort_field_provider::SortFieldProvider;
+use crate::core::search::field_comparator::FieldComparatorEnum;
 use crate::core::search::sort_field::{MissingValueEnum, SortField, SortFieldType, SortFiledBase};
 use crate::core::search::sort_field_enum::SortFieldEnum;
 use crate::core::search::sorted_set_selector::{
@@ -153,6 +154,8 @@ impl SortFiledBase for SortedSetSortField {
         }
         Ok(())
     }
+
+    type FieldComparator = FieldComparatorEnum;
 }
 impl Hash for SortedSetSortField {
     fn hash<H: Hasher>(&self, state: &mut H) {

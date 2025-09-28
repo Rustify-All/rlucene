@@ -160,9 +160,9 @@ pub struct RelevanceComparator {
     pub(crate) top_value: f32,
 }
 impl RelevanceComparator {
-    pub fn new(num_hits: i32) -> Self {
+    pub fn new(num_hits: usize) -> Self {
         Self {
-            scores: vec![0.0; num_hits as usize],
+            scores: vec![0.0; num_hits],
             bottom: 0.0,
             top_value: 0.0,
         }
@@ -692,9 +692,9 @@ pub struct TermValComparator {
 }
 
 impl TermValComparator {
-    pub fn new(num_hits: i32, field: String, sort_missing_last: bool) -> Self {
+    pub fn new(field: String, num_hits: usize, sort_missing_last: bool) -> Self {
         Self {
-            values: vec![None; num_hits as usize],
+            values: vec![None; num_hits],
             field,
             bottom: 0,
             top_value: None,

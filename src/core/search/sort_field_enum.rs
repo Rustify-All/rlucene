@@ -16,6 +16,8 @@
  */
 use crate::core::index::index_sorter::{DocComparatorEnum, IndexSorter, StringSorter};
 use crate::core::index::leaf_reader::LeafReader;
+use crate::core::search::field_comparator::FieldComparatorEnum;
+use crate::core::search::pruning::Pruning;
 use crate::core::search::sort_field::{
     IndexSorterEnumSorter, MissingValueEnum, SortField, SortFiledBase,
 };
@@ -75,6 +77,18 @@ impl SortFiledBase for SortFieldEnum {
             SortFieldEnum::SortedNumeric(sort_field) => sort_field.serialize(out),
             SortFieldEnum::SortedSet(sort_field) => sort_field.serialize(out),
             SortFieldEnum::Sorter(sort_field) => sort_field.serialize(out),
+        }
+    }
+
+    type FieldComparator = FieldComparatorEnum;
+
+    fn get_comparator(&self, num_hits: usize, pruning: Pruning) -> Result<Self::FieldComparator> {
+        match self {
+            SortFieldEnum::SortedNumeric(sort_field) => {
+                sort_field.get_comparator(num_hits, pruning)
+            },
+            SortFieldEnum::SortedSet(sort_field) => sort_field.get_comparator(num_hits, pruning),
+            SortFieldEnum::Sorter(sort_field) => sort_field.get_comparator(num_hits, pruning),
         }
     }
 }

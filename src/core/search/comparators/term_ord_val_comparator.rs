@@ -83,17 +83,17 @@ pub struct TermOrdValComparator {
 }
 impl TermOrdValComparator {
     pub fn new(
-        num_hits: i32,
         field: String,
+        num_hits: usize,
         sort_missing_last: bool,
         reverse: bool,
         pruning: Pruning,
     ) -> Self {
         let can_skip_documents = pruning != Pruning::None;
         Self {
-            ords: vec![0; num_hits as usize],
-            values: vec![None; num_hits as usize],
-            reader_gen: vec![0; num_hits as usize],
+            ords: vec![0; num_hits],
+            values: vec![None; num_hits],
+            reader_gen: vec![0; num_hits],
             current_reader_gen: -1,
             field,
             reverse,
