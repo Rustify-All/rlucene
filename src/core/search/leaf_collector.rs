@@ -31,9 +31,12 @@ pub trait LeafCollector {
         S: Scorer,
         C: Scorable;
 
+    type Scorer: Scorer;
     /// Returns the scorer that was most recently provided via
     /// [`LeafCollector::set_scorer`].
-    fn scorer_mut(&mut self) -> Result<&mut impl Scorer>;
+    fn scorer_mut(&mut self) -> Result<&mut Self::Scorer> {
+        unimplemented!()
+    }
 
     /// Called once for every document matching a query, with the unbased document number.
     ///

@@ -70,6 +70,7 @@ pub mod top_docs_collector;
 pub mod top_field_collector;
 pub mod top_knn_collector;
 mod top_score_doc_collector;
+mod total_hit_count_collector;
 mod total_hits;
 pub mod two_phase_iterator;
 mod vector_scorer;
