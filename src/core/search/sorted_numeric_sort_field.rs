@@ -29,6 +29,7 @@ use crate::core::search::comparators::float_comparator::{FloatComparator, FloatL
 use crate::core::search::comparators::int_comparator::{IntComparator, IntLeafComparator};
 use crate::core::search::comparators::long_comparator::{LongComparator, LongLeafComparator};
 use crate::core::search::field_comparator::{FieldComparator, FieldComparatorEnum};
+use crate::core::search::pruning::Pruning;
 use crate::core::search::sort_field::{MissingValueEnum, SortField, SortFieldType, SortFiledBase};
 use crate::core::search::sort_field_enum::SortFieldEnum;
 use crate::core::search::sorted_numeric_selector::{
@@ -43,7 +44,7 @@ use std::hash::{Hash, Hasher};
 #[derive(Clone)]
 pub struct SortedNumericSortField {
     selector: SortedNumericSelectorType,
-    parent_sort: SortField,
+    base: SortField,
 }
 impl SortedNumericSortField {
     /// Creates a sort by the minimum value in the set for the document.
@@ -100,7 +101,7 @@ impl SortedNumericSortField {
         let sort_field = SortField::with_reverse(Some(field), sort_field_type, reverse)?;
         Ok(SortedNumericSortField {
             selector,
-            parent_sort: sort_field,
+            base: sort_field,
         })
     }
     pub fn read_selector_type(
@@ -120,46 +121,46 @@ impl SortedNumericSortField {
 
 impl SortFiledBase for SortedNumericSortField {
     fn set_missing_value(&mut self, missing_value: Option<MissingValueEnum>) -> Result<()> {
-        self.parent_sort.missing_value = missing_value;
+        self.base.missing_value = missing_value;
         Ok(())
     }
 
     fn needs_scores(&self) -> bool {
-        self.parent_sort.needs_scores()
+        self.base.needs_scores()
     }
 
     type IndexSort = IndexSorterNumeric;
 
     fn get_index_sorter(&self) -> Result<Option<Self::IndexSort>> {
-        debug_assert!(self.parent_sort.get_field().is_some());
+        debug_assert!(self.base.get_field().is_some());
         let get_value = NumericDocValuesProviderImpl::new(
             self.selector,
-            self.parent_sort.type_,
-            self.parent_sort.get_field().unwrap().to_string(),
+            self.base.type_,
+            self.base.get_field().unwrap().to_string(),
         );
-        match self.parent_sort.type_ {
+        match self.base.type_ {
             SortFieldType::Int => Ok(Some(IndexSorterNumeric::Int(IntSorter::new(
                 NumericProvider::NAME.to_string(),
-                self.parent_sort.missing_value.clone(),
-                self.parent_sort.reverse,
+                self.base.missing_value.clone(),
+                self.base.reverse,
                 get_value,
             )?))),
             SortFieldType::Long => Ok(Some(IndexSorterNumeric::Long(LongSorter::new(
                 NumericProvider::NAME.to_string(),
-                self.parent_sort.missing_value.clone(),
-                self.parent_sort.reverse,
+                self.base.missing_value.clone(),
+                self.base.reverse,
                 get_value,
             )?))),
             SortFieldType::Double => Ok(Some(IndexSorterNumeric::Double(DoubleSorter::new(
                 NumericProvider::NAME.to_string(),
-                self.parent_sort.missing_value.clone(),
-                self.parent_sort.reverse,
+                self.base.missing_value.clone(),
+                self.base.reverse,
                 get_value,
             )?))),
             SortFieldType::Float => Ok(Some(IndexSorterNumeric::Float(FloatSorter::new(
                 NumericProvider::NAME.to_string(),
-                self.parent_sort.missing_value.clone(),
-                self.parent_sort.reverse,
+                self.base.missing_value.clone(),
+                self.base.reverse,
                 get_value,
             )?))),
             _ => Ok(None),
@@ -167,14 +168,14 @@ impl SortFiledBase for SortedNumericSortField {
     }
 
     fn serialize(&self, out: &mut impl DataOutput) -> Result<()> {
-        debug_assert!(self.parent_sort.get_field().is_some());
-        out.write_string(self.parent_sort.get_field().unwrap())?;
-        out.write_string(&self.parent_sort.type_.to_string())?;
-        out.write_int(if self.parent_sort.reverse { 1 } else { 0 })?;
+        debug_assert!(self.base.get_field().is_some());
+        out.write_string(self.base.get_field().unwrap())?;
+        out.write_string(&self.base.type_.to_string())?;
+        out.write_int(if self.base.reverse { 1 } else { 0 })?;
         out.write_int(self.selector as i32)?;
-        if let Some(missing_value) = &self.parent_sort.missing_value {
+        if let Some(missing_value) = &self.base.missing_value {
             out.write_int(1)?;
-            match self.parent_sort.type_ {
+            match self.base.type_ {
                 SortFieldType::Int => {
                     if let MissingValueEnum::Int(value) = missing_value {
                         out.write_int(*value)?;
@@ -219,7 +220,7 @@ impl SortFiledBase for SortedNumericSortField {
                 | SortFieldType::String => {
                     return Err(LuceneError::illegal_state(format!(
                         "Cannot serialize field of type {:?}.",
-                        self.parent_sort.type_
+                        self.base.type_
                     )));
                 },
             }
@@ -231,31 +232,82 @@ impl SortFiledBase for SortedNumericSortField {
     }
 
     type FieldComparator = FieldComparatorEnum;
+
+    fn get_comparator(&self, num_hits: usize, pruning: Pruning) -> Result<Self::FieldComparator> {
+        // we can use sort optimization with points if selector is MIN or MAX,
+        // because we can still build successful iterator over points in this case.
+        let is_min_or_max = matches!(
+            self.selector,
+            SortedNumericSelectorType::Max | SortedNumericSelectorType::Min
+        );
+        let field = self
+            .base
+            .get_field()
+            .expect("field must not be None")
+            .clone();
+        let reverse = self.base.reverse;
+        let mut field_comparator: FieldComparatorEnum = match self.base.type_ {
+            SortFieldType::Int => {
+                let missing = self.base.missing_value.as_ref().map(|v| v.as_i32());
+                let base = IntComparator::new(field, num_hits, missing, reverse, pruning);
+                SortedNumericIntComparator::new(base, self.selector, self.base.type_).into()
+            },
+
+            SortFieldType::Float => {
+                let missing = self.base.missing_value.as_ref().map(|v| v.as_f32());
+                let base = FloatComparator::new(field, num_hits, missing, reverse, pruning);
+                SortedNumericFloatComparator::new(base, self.selector, self.base.type_).into()
+            },
+
+            SortFieldType::Long => {
+                let missing = self.base.missing_value.as_ref().map(|v| v.as_i64());
+                let base = LongComparator::new(field, num_hits, missing, reverse, pruning);
+                SortedNumericLongComparator::new(base, self.selector, self.base.type_).into()
+            },
+
+            SortFieldType::Double => {
+                let missing = self.base.missing_value.as_ref().map(|v| v.as_f64());
+                let base = DoubleComparator::new(field, num_hits, missing, reverse, pruning);
+                SortedNumericDoubleComparator::new(base, self.selector, self.base.type_).into()
+            },
+            _ => {
+                return Err(LuceneError::illegal_state(format!(
+                    "Cannot create comparator for type {:?}",
+                    self.base.type_
+                )));
+            },
+        };
+
+        if !self.base.optimize_sort_with_indexed_data {
+            field_comparator.disable_skipping()
+        }
+        Ok(field_comparator)
+    }
 }
 impl Display for SortedNumericSortField {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut buffer = String::new();
-        debug_assert!(self.parent_sort.get_field().is_some());
+        debug_assert!(self.base.get_field().is_some());
         buffer.push_str(&format!(
             "<sortednumeric: \"{}\">",
-            self.parent_sort.get_field().unwrap()
+            self.base.get_field().unwrap()
         ));
-        if self.parent_sort.reverse {
+        if self.base.reverse {
             buffer.push('!');
         }
-        if let Some(missing_value) = &self.parent_sort.missing_value {
+        if let Some(missing_value) = &self.base.missing_value {
             buffer.push_str(&format!(" missingValue={missing_value}"));
         }
         buffer.push_str(&format!(" selector={:?}", self.selector));
-        buffer.push_str(&format!(" type={:?}", self.parent_sort.type_));
+        buffer.push_str(&format!(" type={:?}", self.base.type_));
         write!(f, "{buffer}")
     }
 }
 impl Hash for SortedNumericSortField {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.parent_sort.type_.hash(state);
+        self.base.type_.hash(state);
         self.selector.hash(state);
-        self.parent_sort.hash(state);
+        self.base.hash(state);
     }
 }
 
@@ -319,10 +371,10 @@ impl SortFieldProvider for NumericProvider {
 }
 impl PartialEq for SortedNumericSortField {
     fn eq(&self, other: &Self) -> bool {
-        if self.parent_sort != other.parent_sort {
+        if self.base != other.base {
             return false;
         }
-        self.selector == other.selector && self.parent_sort.type_ == other.parent_sort.type_
+        self.selector == other.selector && self.base.type_ == other.base.type_
     }
 }
 impl Eq for SortedNumericSortField {}
@@ -405,7 +457,6 @@ macro_rules! impl_sorted_numeric_comparator {
     ($name:ident, $base:ty, $leaf:ident) => {
         pub struct $name {
             base: $base,
-            field: String,
             selector: SortedNumericSelectorType,
             type_: SortFieldType,
         }
@@ -413,13 +464,11 @@ macro_rules! impl_sorted_numeric_comparator {
         impl $name {
             pub fn new(
                 base: $base,
-                field: String,
                 selector: SortedNumericSelectorType,
                 type_: SortFieldType,
             ) -> Self {
                 Self {
                     base,
-                    field,
                     selector,
                     type_,
                 }
@@ -459,7 +508,7 @@ macro_rules! impl_sorted_numeric_comparator {
                     SortedNumericSelectorWrap<SortedNumeric<LR>>,
                     Numeric<LR>,
                 > = Either2NumericDocValues::A(SortedNumericSelector::wrap(
-                    DocValues::get_sorted_numeric(context.reader(), &self.field)?,
+                    DocValues::get_sorted_numeric(context.reader(), &self.base.base.field)?,
                     self.selector,
                     self.type_,
                 )?);
@@ -468,7 +517,7 @@ macro_rules! impl_sorted_numeric_comparator {
                     SortedNumericSelectorWrap<SortedNumeric<LR>>,
                     Numeric<LR>,
                 > = Either2NumericDocValues::A(SortedNumericSelector::wrap(
-                    DocValues::get_sorted_numeric(context.reader(), &self.field)?,
+                    DocValues::get_sorted_numeric(context.reader(), &self.base.base.field)?,
                     self.selector,
                     self.type_,
                 )?);
