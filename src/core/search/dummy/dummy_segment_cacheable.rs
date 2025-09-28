@@ -20,10 +20,8 @@ use crate::core::search::segment_cacheable::SegmentCacheable;
 
 pub struct DummySegmentCacheable;
 
-impl SegmentCacheable for DummySegmentCacheable {
-    type LeafReader = DummyLeafReader;
-
-    fn is_cacheable(&self, _ctx: &LeafReaderContext<Self::LeafReader>) -> bool {
+impl SegmentCacheable<DummyLeafReader> for DummySegmentCacheable {
+    fn is_cacheable(&self, _ctx: &LeafReaderContext<DummyLeafReader>) -> bool {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 }

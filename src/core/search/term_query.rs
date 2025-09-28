@@ -304,19 +304,17 @@ where
     }
 }
 
-impl<S, IRC> SegmentCacheable for TermWeight<S, IRC>
+impl<S, IRC> SegmentCacheable<IRC::LeafReader> for TermWeight<S, IRC>
 where
     S: Similarity,
     IRC: IndexReaderContext,
 {
-    type LeafReader = IRC::LeafReader;
-
-    fn is_cacheable(&self, _ctx: &LeafReaderContext<Self::LeafReader>) -> bool {
+    fn is_cacheable(&self, _ctx: &LeafReaderContext<IRC::LeafReader>) -> bool {
         true
     }
 }
 
-impl<S, IRC> Weight for TermWeight<S, IRC>
+impl<S, IRC> Weight<IRC::LeafReader> for TermWeight<S, IRC>
 where
     S: Similarity,
     IRC: IndexReaderContext,
@@ -325,7 +323,7 @@ where
 
     fn matches(
         &self,
-        _context: &LeafReaderContext<Self::LeafReader>,
+        _context: &LeafReaderContext<IRC::LeafReader>,
         _doc: i32,
     ) -> Result<Option<Self::Matches>> {
         todo!()
@@ -333,7 +331,7 @@ where
 
     fn explain(
         &self,
-        context: &LeafReaderContext<Self::LeafReader>,
+        context: &LeafReaderContext<IRC::LeafReader>,
         doc: i32,
     ) -> Result<Explanation> {
         let mut scorer_opt = self.scorer(context)?;
@@ -392,7 +390,7 @@ where
 
     fn scorer_supplier(
         &self,
-        context: &LeafReaderContext<Self::LeafReader>,
+        context: &LeafReaderContext<IRC::LeafReader>,
     ) -> Result<Option<Self::ScorerSupplier>> {
         // TODO
         // debug_assert!(self.term_states.is_some() || self.term_states.as_ref().unwrap().was_built_for(&_context.get_top_level_context()),);
@@ -427,7 +425,7 @@ where
         }
     }
 
-    fn count(&self, context: &LeafReaderContext<Self::LeafReader>) -> Result<i32> {
+    fn count(&self, context: &LeafReaderContext<IRC::LeafReader>) -> Result<i32> {
         if !context.reader().has_deletions()? {
             if let Some(mut terms_enum) = self.get_terms_enum(context)? {
                 terms_enum.doc_freq()

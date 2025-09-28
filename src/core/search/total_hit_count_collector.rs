@@ -26,42 +26,46 @@ use crate::core::search::score_mode::ScoreMode;
 use crate::core::search::scorer::Scorer;
 use crate::core::search::weight::Weight;
 use crate::core::util::error::lucene_error::Result;
+use std::marker::PhantomData;
 use std::rc::Rc;
 
-pub struct TotalHitCountCollector<W>
+pub struct TotalHitCountCollector<W, LR>
 where
-    W: Weight,
+    LR: LeafReader,
+    W: Weight<LR>,
 {
     weight: Option<Rc<W>>,
     total_hit: i32,
+    marker: PhantomData<LR>,
 }
-impl<W> TotalHitCountCollector<W>
+impl<W, LR> TotalHitCountCollector<W, LR>
 where
-    W: Weight,
+    LR: LeafReader,
+    W: Weight<LR>,
 {
     pub fn new() -> Self {
         Self {
             weight: None,
             total_hit: 0,
+            marker: PhantomData,
         }
     }
 }
-impl<W> Collector for TotalHitCountCollector<W>
+impl<W, LR> Collector for TotalHitCountCollector<W, LR>
 where
-    W: Weight,
+    LR: LeafReader,
+    W: Weight<LR>,
 {
+    type LeafReader = LR;
     type LeafCollector<'a>
-        = TotalHitCountLeafCollector<'a, W>
+        = TotalHitCountLeafCollector<'a, W, LR>
     where
         Self: 'a;
 
-    fn get_leaf_collector<'a, LR>(
+    fn get_leaf_collector<'a>(
         &'a mut self,
-        context: &LeafReaderContext<LR>,
-    ) -> Result<Self::LeafCollector<'a>>
-    where
-        LR: LeafReader,
-    {
+        _context: &LeafReaderContext<Self::LeafReader>,
+    ) -> Result<Self::LeafCollector<'a>> {
         Ok(TotalHitCountLeafCollector::new(self))
     }
 
@@ -76,25 +80,28 @@ where
     }
 }
 
-pub struct TotalHitCountLeafCollector<'a, W>
+pub struct TotalHitCountLeafCollector<'a, W, LR>
 where
-    W: Weight,
+    LR: LeafReader,
+    W: Weight<LR>,
 {
-    collector: &'a mut TotalHitCountCollector<W>,
+    collector: &'a mut TotalHitCountCollector<W, LR>,
 }
 
-impl<'a, W> TotalHitCountLeafCollector<'a, W>
+impl<'a, W, LR> TotalHitCountLeafCollector<'a, W, LR>
 where
-    W: Weight,
+    LR: LeafReader,
+    W: Weight<LR>,
 {
-    fn new(collector: &'a mut TotalHitCountCollector<W>) -> Self {
+    fn new(collector: &'a mut TotalHitCountCollector<W, LR>) -> Self {
         Self { collector }
     }
 }
 
-impl<'a, W> LeafCollector for TotalHitCountLeafCollector<'a, W>
+impl<'a, W, LR> LeafCollector for TotalHitCountLeafCollector<'a, W, LR>
 where
-    W: Weight,
+    LR: LeafReader,
+    W: Weight<LR>,
 {
     fn set_scorer<S, C>(&mut self, _scorer: ScorerEnum<S, C>) -> Result<()>
     where

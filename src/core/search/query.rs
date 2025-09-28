@@ -31,7 +31,7 @@ use std::hash::{Hash, Hasher};
 
 pub trait Query: Eq + Hash + Display + Debug {
     fn as_string(&self, field: &str) -> String;
-    type Weight<S>: Weight
+    type Weight<S>: Weight<<Self::IndexReaderContext as IndexReaderContext>::LeafReader>
     where
         S: Similarity;
     type IndexReaderContext: IndexReaderContext;

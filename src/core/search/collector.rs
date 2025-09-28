@@ -43,6 +43,7 @@ use crate::core::util::error::lucene_error::Result;
 use std::rc::Rc;
 
 pub trait Collector {
+    type LeafReader: LeafReader;
     type LeafCollector<'a>: LeafCollector
     where
         Self: 'a;
@@ -50,17 +51,15 @@ pub trait Collector {
     ///
     /// # Arguments
     /// * `context` - next atomic reader context
-    fn get_leaf_collector<'a, LR>(
+    fn get_leaf_collector<'a>(
         &'a mut self,
-        context: &LeafReaderContext<LR>,
-    ) -> Result<Self::LeafCollector<'a>>
-    where
-        LR: LeafReader;
+        context: &LeafReaderContext<Self::LeafReader>,
+    ) -> Result<Self::LeafCollector<'a>>;
 
     /// Indicates what features are required from the scorer.
     fn score_mode(&self) -> &ScoreMode;
 
-    type Weight: Weight;
+    type Weight: Weight<Self::LeafReader>;
     /// Set the [`Weight`] that will be used to produce scorers that will feed [`LeafCollector`]s.
     /// This is typically useful to have access to [`Weight::count`] from [`Collector::get_leaf_collector`].
     fn set_weight(&mut self, _weight: Rc<Self::Weight>) {}
