@@ -31,6 +31,10 @@ use crate::core::search::dummy::dummy_doc_id_set_iterator::DummyDocIdSetIterator
 use crate::core::search::leaf_field_comparator::{LeafFieldComparator, LeafFieldComparatorEnum};
 use crate::core::search::scorable::{Scorable, ScorerEnum};
 use crate::core::search::scorer::Scorer;
+use crate::core::search::sorted_numeric_sort_field::{
+    SortedNumericDoubleComparator, SortedNumericFloatComparator, SortedNumericIntComparator,
+    SortedNumericLongComparator,
+};
 use crate::core::util::ToInt;
 use crate::core::util::error::lucene_error::Result;
 use std::borrow::Cow;
@@ -426,6 +430,10 @@ pub enum FieldComparatorEnum {
     Long(LongComparator),
     TermVal(TermValComparator),
     TermOrdValue(TermOrdValComparator),
+    SortedNumericInt(SortedNumericIntComparator),
+    SortedNumericLong(SortedNumericLongComparator),
+    SortedNumericFloat(SortedNumericFloatComparator),
+    SortedNumericDouble(SortedNumericDoubleComparator),
 }
 impl From<RelevanceComparator> for FieldComparatorEnum {
     fn from(comparator: RelevanceComparator) -> Self {
@@ -473,6 +481,30 @@ impl From<TermOrdValComparator> for FieldComparatorEnum {
     }
 }
 
+impl From<SortedNumericIntComparator> for FieldComparatorEnum {
+    fn from(comparator: SortedNumericIntComparator) -> Self {
+        FieldComparatorEnum::SortedNumericInt(comparator)
+    }
+}
+
+impl From<SortedNumericLongComparator> for FieldComparatorEnum {
+    fn from(comparator: SortedNumericLongComparator) -> Self {
+        FieldComparatorEnum::SortedNumericLong(comparator)
+    }
+}
+
+impl From<SortedNumericFloatComparator> for FieldComparatorEnum {
+    fn from(comparator: SortedNumericFloatComparator) -> Self {
+        FieldComparatorEnum::SortedNumericFloat(comparator)
+    }
+}
+
+impl From<SortedNumericDoubleComparator> for FieldComparatorEnum {
+    fn from(comparator: SortedNumericDoubleComparator) -> Self {
+        FieldComparatorEnum::SortedNumericDouble(comparator)
+    }
+}
+
 impl FieldComparator for FieldComparatorEnum {
     type V = FieldComparatorValue;
 
@@ -486,6 +518,12 @@ impl FieldComparator for FieldComparatorEnum {
             FieldComparatorEnum::Long(comparator) => comparator.compare(slot1, slot2),
             FieldComparatorEnum::TermVal(comparator) => comparator.compare(slot1, slot2),
             FieldComparatorEnum::TermOrdValue(comparator) => comparator.compare(slot1, slot2),
+            FieldComparatorEnum::SortedNumericInt(comparator) => comparator.compare(slot1, slot2),
+            FieldComparatorEnum::SortedNumericLong(comparator) => comparator.compare(slot1, slot2),
+            FieldComparatorEnum::SortedNumericFloat(comparator) => comparator.compare(slot1, slot2),
+            FieldComparatorEnum::SortedNumericDouble(comparator) => {
+                comparator.compare(slot1, slot2)
+            },
         }
     }
 
@@ -529,6 +567,30 @@ impl FieldComparator for FieldComparatorEnum {
                     .expect("expected term ord value comparator value");
                 comparator.set_top_value(v);
             },
+            FieldComparatorEnum::SortedNumericInt(comparator) => {
+                let v = value
+                    .into_i32()
+                    .expect("expected sorted numeric int comparator value");
+                comparator.set_top_value(v);
+            },
+            FieldComparatorEnum::SortedNumericLong(comparator) => {
+                let v = value
+                    .into_i64()
+                    .expect("expected sorted numeric long comparator value");
+                comparator.set_top_value(v);
+            },
+            FieldComparatorEnum::SortedNumericFloat(comparator) => {
+                let v = value
+                    .into_f32()
+                    .expect("expected sorted numeric float comparator value");
+                comparator.set_top_value(v);
+            },
+            FieldComparatorEnum::SortedNumericDouble(comparator) => {
+                let v = value
+                    .into_f64()
+                    .expect("expected sorted numeric double comparator value");
+                comparator.set_top_value(v);
+            },
         }
     }
 
@@ -557,6 +619,18 @@ impl FieldComparator for FieldComparatorEnum {
             },
             FieldComparatorEnum::TermOrdValue(comparator) => {
                 FieldComparatorValue::TermVal(comparator.value(slot))
+            },
+            FieldComparatorEnum::SortedNumericInt(comparator) => {
+                FieldComparatorValue::Int(comparator.value(slot))
+            },
+            FieldComparatorEnum::SortedNumericLong(comparator) => {
+                FieldComparatorValue::Long(comparator.value(slot))
+            },
+            FieldComparatorEnum::SortedNumericFloat(comparator) => {
+                FieldComparatorValue::Float(comparator.value(slot))
+            },
+            FieldComparatorEnum::SortedNumericDouble(comparator) => {
+                FieldComparatorValue::Double(comparator.value(slot))
             },
         }
     }
@@ -598,6 +672,18 @@ impl FieldComparator for FieldComparatorEnum {
             FieldComparatorEnum::TermOrdValue(comparator) => comparator
                 .get_leaf_comparator(context)
                 .map(LeafFieldComparatorEnum::TermOrdVal),
+            FieldComparatorEnum::SortedNumericInt(comparator) => comparator
+                .get_leaf_comparator(context)
+                .map(LeafFieldComparatorEnum::Int),
+            FieldComparatorEnum::SortedNumericLong(comparator) => comparator
+                .get_leaf_comparator(context)
+                .map(LeafFieldComparatorEnum::Long),
+            FieldComparatorEnum::SortedNumericFloat(comparator) => comparator
+                .get_leaf_comparator(context)
+                .map(LeafFieldComparatorEnum::Float),
+            FieldComparatorEnum::SortedNumericDouble(comparator) => comparator
+                .get_leaf_comparator(context)
+                .map(LeafFieldComparatorEnum::Double),
         }
     }
 
@@ -635,6 +721,22 @@ impl FieldComparator for FieldComparatorEnum {
                 first.and_then(FieldComparatorValue::as_term_val),
                 second.and_then(FieldComparatorValue::as_term_val),
             ),
+            FieldComparatorEnum::SortedNumericInt(comparator) => comparator.compare_values(
+                first.and_then(FieldComparatorValue::as_i32),
+                second.and_then(FieldComparatorValue::as_i32),
+            ),
+            FieldComparatorEnum::SortedNumericLong(comparator) => comparator.compare_values(
+                first.and_then(FieldComparatorValue::as_i64),
+                second.and_then(FieldComparatorValue::as_i64),
+            ),
+            FieldComparatorEnum::SortedNumericFloat(comparator) => comparator.compare_values(
+                first.and_then(FieldComparatorValue::as_f32),
+                second.and_then(FieldComparatorValue::as_f32),
+            ),
+            FieldComparatorEnum::SortedNumericDouble(comparator) => comparator.compare_values(
+                first.and_then(FieldComparatorValue::as_f64),
+                second.and_then(FieldComparatorValue::as_f64),
+            ),
         }
     }
 
@@ -647,6 +749,22 @@ impl FieldComparator for FieldComparatorEnum {
             FieldComparatorEnum::Float(comparator) => comparator.fallback_compare(
                 first.as_f32().expect("expected float comparator value"),
                 second.as_f32().expect("expected float comparator value"),
+            ),
+            FieldComparatorEnum::SortedNumericDouble(comparator) => comparator.fallback_compare(
+                first
+                    .as_f64()
+                    .expect("expected sorted numeric double comparator value"),
+                second
+                    .as_f64()
+                    .expect("expected sorted numeric double comparator value"),
+            ),
+            FieldComparatorEnum::SortedNumericFloat(comparator) => comparator.fallback_compare(
+                first
+                    .as_f32()
+                    .expect("expected sorted numeric float comparator value"),
+                second
+                    .as_f32()
+                    .expect("expected sorted numeric float comparator value"),
             ),
             _ => 0,
         }
@@ -662,6 +780,10 @@ impl FieldComparator for FieldComparatorEnum {
             FieldComparatorEnum::Long(comparator) => comparator.set_single_sort(),
             FieldComparatorEnum::TermVal(comparator) => comparator.set_single_sort(),
             FieldComparatorEnum::TermOrdValue(comparator) => comparator.set_single_sort(),
+            FieldComparatorEnum::SortedNumericInt(comparator) => comparator.set_single_sort(),
+            FieldComparatorEnum::SortedNumericLong(comparator) => comparator.set_single_sort(),
+            FieldComparatorEnum::SortedNumericFloat(comparator) => comparator.set_single_sort(),
+            FieldComparatorEnum::SortedNumericDouble(comparator) => comparator.set_single_sort(),
         }
     }
 
@@ -675,6 +797,10 @@ impl FieldComparator for FieldComparatorEnum {
             FieldComparatorEnum::Long(comparator) => comparator.disable_skipping(),
             FieldComparatorEnum::TermVal(comparator) => comparator.disable_skipping(),
             FieldComparatorEnum::TermOrdValue(comparator) => comparator.disable_skipping(),
+            FieldComparatorEnum::SortedNumericInt(comparator) => comparator.disable_skipping(),
+            FieldComparatorEnum::SortedNumericLong(comparator) => comparator.disable_skipping(),
+            FieldComparatorEnum::SortedNumericFloat(comparator) => comparator.disable_skipping(),
+            FieldComparatorEnum::SortedNumericDouble(comparator) => comparator.disable_skipping(),
         }
     }
 }
