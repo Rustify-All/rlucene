@@ -310,15 +310,12 @@ where
     }
 }
 
-impl<S, IRC> SegmentCacheable for TermWeight<S, IRC>
+impl<S, IRC> SegmentCacheable<IRC::LeafReader> for TermWeight<S, IRC>
 where
     S: Similarity,
     IRC: IndexReaderContext,
 {
-    fn is_cacheable<LR>(&self, _ctx: &LeafReaderContext<LR>) -> bool
-    where
-        LR: LeafReader,
-    {
+    fn is_cacheable(&self, _ctx: &LeafReaderContext<IRC::LeafReader>) -> bool {
         true
     }
 }

@@ -49,7 +49,9 @@ use crate::core::util::error::lucene_error::{LuceneError, Result};
 /// 1. A `Weight` is constructed by a top-level query, given an [`IndexSearcher`](crate::core::search::index_searcher::IndexSearcher)
 ///    (see [`Query::create_weight`]).
 /// 2. A [`Scorer`] is constructed by [`Weight::scorer`].
-pub trait Weight: SegmentCacheable {
+pub trait Weight:
+    SegmentCacheable<<Self::IndexReaderContext as IndexReaderContext>::LeafReader>
+{
     type IndexReaderContext: IndexReaderContext;
     type Matches: Matches;
     /// Returns [`Matches`] for a specific document, or `None` if the document

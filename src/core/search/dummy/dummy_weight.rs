@@ -16,7 +16,6 @@
  */
 use crate::core::index::dummy::dummy_index_reader_context::DummyIndexReaderContext;
 use crate::core::index::dummy::dummy_leaf_reader::DummyLeafReader;
-use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::leaf_reader_context::LeafReaderContext;
 use crate::core::search::dummy::dummy_matches::DummyMatches;
 use crate::core::search::dummy::dummy_query::DummyQuery;
@@ -30,11 +29,8 @@ use crate::core::util::error::lucene_error::Result;
 
 pub struct DummyWeight;
 
-impl SegmentCacheable for DummyWeight {
-    fn is_cacheable<LR>(&self, _ctx: &LeafReaderContext<LR>) -> bool
-    where
-        LR: LeafReader,
-    {
+impl SegmentCacheable<DummyLeafReader> for DummyWeight {
+    fn is_cacheable(&self, _ctx: &LeafReaderContext<DummyLeafReader>) -> bool {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 }
