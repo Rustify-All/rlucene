@@ -315,9 +315,10 @@ where
     S: Similarity,
     IRC: IndexReaderContext,
 {
-    type LeafReader = IRC::LeafReader;
-
-    fn is_cacheable(&self, _ctx: &LeafReaderContext<Self::LeafReader>) -> bool {
+    fn is_cacheable<LR>(&self, _ctx: &LeafReaderContext<LR>) -> bool
+    where
+        LR: LeafReader,
+    {
         true
     }
 }
@@ -327,11 +328,12 @@ where
     S: Similarity,
     IRC: IndexReaderContext,
 {
+    type IndexReaderContext = IRC;
     type Matches = DummyMatches;
 
     fn matches(
         &self,
-        _context: &LeafReaderContext<Self::LeafReader>,
+        _context: &LeafReaderContext<IRC::LeafReader>,
         _doc: i32,
     ) -> Result<Option<Self::Matches>> {
         todo!()
@@ -339,7 +341,7 @@ where
 
     fn explain(
         &mut self,
-        context: &LeafReaderContext<Self::LeafReader>,
+        context: &LeafReaderContext<IRC::LeafReader>,
         doc: i32,
     ) -> Result<Explanation> {
         let mut scorer_opt = self.scorer(context)?;
@@ -398,7 +400,7 @@ where
 
     fn scorer_supplier(
         &mut self,
-        context: &LeafReaderContext<Self::LeafReader>,
+        context: &LeafReaderContext<IRC::LeafReader>,
     ) -> Result<Option<Self::ScorerSupplier>> {
         // TODO
         // debug_assert!(self.term_states.is_some() || self.term_states.as_ref().unwrap().was_built_for(&_context.get_top_level_context()),);
@@ -433,7 +435,7 @@ where
         }
     }
 
-    fn count(&mut self, context: &LeafReaderContext<Self::LeafReader>) -> Result<i32> {
+    fn count(&mut self, context: &LeafReaderContext<IRC::LeafReader>) -> Result<i32> {
         if !context.reader().has_deletions()? {
             if let Some(mut terms_enum) = self.get_terms_enum(context)? {
                 terms_enum.doc_freq()
