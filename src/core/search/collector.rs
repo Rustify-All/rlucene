@@ -53,9 +53,7 @@ pub trait Collector {
     /// * `context` - next atomic reader context
     fn get_leaf_collector<'a, W>(
         &'a mut self,
-        context: &LeafReaderContext<
-            <W::IndexReaderContext as IndexReaderContext>::LeafReader,
-        >,
+        context: &LeafReaderContext<<W::IndexReaderContext as IndexReaderContext>::LeafReader>,
         weight: Option<&mut W>,
     ) -> Result<Self::LeafCollector<'a>>
     where
