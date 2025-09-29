@@ -22,6 +22,7 @@ pub mod collector;
 pub mod collector_manager;
 pub mod comparators;
 mod constant_score_scorer;
+mod constant_score_weight;
 mod disjunction_matches_iterator;
 pub mod doc_id_set;
 pub mod doc_id_set_iterator;
