@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use crate::core::index::index_reader_context::IndexReaderContext;
 use crate::core::index::leaf_reader_context::LeafReaderContext;
 use crate::core::search::bulk_scorer::BulkScorer;
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
@@ -49,6 +50,7 @@ use crate::core::util::error::lucene_error::{LuceneError, Result};
 ///    (see [`Query::create_weight`]).
 /// 2. A [`Scorer`] is constructed by [`Weight::scorer`].
 pub trait Weight: SegmentCacheable {
+    type IndexReaderContext: IndexReaderContext;
     type Matches: Matches;
     /// Returns [`Matches`] for a specific document, or `None` if the document
     /// does not match the parent query.
@@ -62,12 +64,12 @@ pub trait Weight: SegmentCacheable {
     /// - `doc`: the document's id relative to the given context's reader
     fn matches(
         &self,
-        context: &LeafReaderContext<Self::LeafReader>,
+        context: &LeafReaderContext<<Self::IndexReaderContext as IndexReaderContext>::LeafReader>,
         doc: i32,
     ) -> Result<Option<Self::Matches>>;
     fn default_matches(
         &mut self,
-        context: &LeafReaderContext<Self::LeafReader>,
+        context: &LeafReaderContext<<Self::IndexReaderContext as IndexReaderContext>::LeafReader>,
         doc: i32,
     ) -> Result<Option<MatchWithNoTerms>> {
         let scorer_supplier = self.scorer_supplier(context)?;
@@ -103,7 +105,7 @@ pub trait Weight: SegmentCacheable {
     /// - `doc`: the document's id relative to the given context's reader
     fn explain(
         &mut self,
-        context: &LeafReaderContext<Self::LeafReader>,
+        context: &LeafReaderContext<<Self::IndexReaderContext as IndexReaderContext>::LeafReader>,
         doc: i32,
     ) -> Result<Explanation>;
 
@@ -136,7 +138,7 @@ pub trait Weight: SegmentCacheable {
     /// Returns an error if a low-level I/O error occurs.
     fn scorer(
         &mut self,
-        context: &LeafReaderContext<Self::LeafReader>,
+        context: &LeafReaderContext<<Self::IndexReaderContext as IndexReaderContext>::LeafReader>,
     ) -> Result<Option<<Self::ScorerSupplier as ScorerSupplier>::Scorer>> {
         let mut scorer_supplier = match self.scorer_supplier(context)? {
             None => return Ok(None),
@@ -174,7 +176,7 @@ pub trait Weight: SegmentCacheable {
     /// - [`DefaultScorerSupplier`]
     fn scorer_supplier(
         &mut self,
-        context: &LeafReaderContext<Self::LeafReader>,
+        context: &LeafReaderContext<<Self::IndexReaderContext as IndexReaderContext>::LeafReader>,
     ) -> Result<Option<Self::ScorerSupplier>>;
     /// Helper method that delegates to [`Weight::scorer_supplier`].
     ///
@@ -182,7 +184,7 @@ pub trait Weight: SegmentCacheable {
     /// multiple times as part of a single search call.
     fn bulk_scorer(
         &mut self,
-        context: &LeafReaderContext<Self::LeafReader>,
+        context: &LeafReaderContext<<Self::IndexReaderContext as IndexReaderContext>::LeafReader>,
     ) -> Result<Option<<Self::ScorerSupplier as ScorerSupplier>::BulkScorer>> {
         let mut scorer_supplier = match self.scorer_supplier(context)? {
             None => return Ok(None),
@@ -220,10 +222,16 @@ pub trait Weight: SegmentCacheable {
     /// # Errors
     ///
     /// Returns an error if a low-level I/O error occurs.
-    fn count(&mut self, context: &LeafReaderContext<Self::LeafReader>) -> Result<i32> {
+    fn count(
+        &mut self,
+        context: &LeafReaderContext<<Self::IndexReaderContext as IndexReaderContext>::LeafReader>,
+    ) -> Result<i32> {
         self.default_count(context)
     }
-    fn default_count(&self, _context: &LeafReaderContext<Self::LeafReader>) -> Result<i32> {
+    fn default_count(
+        &self,
+        _context: &LeafReaderContext<<Self::IndexReaderContext as IndexReaderContext>::LeafReader>,
+    ) -> Result<i32> {
         Ok(-1)
     }
 }

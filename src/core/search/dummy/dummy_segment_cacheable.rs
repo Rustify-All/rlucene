@@ -14,16 +14,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::core::index::dummy::dummy_leaf_reader::DummyLeafReader;
+use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::leaf_reader_context::LeafReaderContext;
 use crate::core::search::segment_cacheable::SegmentCacheable;
 
 pub struct DummySegmentCacheable;
 
 impl SegmentCacheable for DummySegmentCacheable {
-    type LeafReader = DummyLeafReader;
-
-    fn is_cacheable(&self, _ctx: &LeafReaderContext<Self::LeafReader>) -> bool {
+    fn is_cacheable<LR>(&self, _ctx: &LeafReaderContext<LR>) -> bool
+    where
+        LR: LeafReader,
+    {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 }
