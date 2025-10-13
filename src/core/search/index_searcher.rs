@@ -29,8 +29,9 @@ use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI32, Ordering};
 
-pub(crate) const MAX_CLAUSE_COUNT: i32 = 1024;
+pub(crate) static MAX_CLAUSE_COUNT: AtomicI32 = AtomicI32::new(1024);
 /// Thresholds for index slice allocation logic.
 /// To change the default, extend IndexSearcher and use custom values
 const MAX_DOCS_PER_SLICE: i32 = 250000;
@@ -152,7 +153,11 @@ where
 ///
 /// See also [`set_max_clause_count()`].
 pub fn get_max_clause_count() -> i32 {
-    MAX_CLAUSE_COUNT
+    MAX_CLAUSE_COUNT.load(Ordering::Relaxed)
+}
+
+pub fn set_max_clause_count(value: i32) {
+    MAX_CLAUSE_COUNT.store(value, Ordering::Relaxed);
 }
 pub fn do_slices<LR>(
     leaves: &[LeafReaderContext<LR>],
@@ -323,7 +328,10 @@ fn enforce_distinct_leaves(leaf_slice: &LeafSlice) -> Result<()> {
 pub struct TooManyClauses;
 impl TooManyClauses {
     pub fn new() -> LuceneError {
-        Self::with_msg(format!("maxClauseCount is set to {}", MAX_CLAUSE_COUNT))
+        Self::with_msg(format!(
+            "maxClauseCount is set to {}",
+            get_max_clause_count()
+        ))
     }
     pub fn with_msg(msg: String) -> LuceneError {
         LuceneError::too_many_clauses(msg)
@@ -334,7 +342,7 @@ impl TooManyNestedClauses {
     pub fn new() -> LuceneError {
         LuceneError::too_many_nested_clauses(format!(
             "Query contains too many nested clauses; maxClauseCount is set to {}",
-            MAX_CLAUSE_COUNT
+            get_max_clause_count()
         ))
     }
 }
