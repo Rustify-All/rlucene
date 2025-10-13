@@ -155,7 +155,7 @@ where
 pub fn get_max_clause_count() -> i32 {
     MAX_CLAUSE_COUNT.load(Ordering::Relaxed)
 }
-
+/// Set the maximum number of clauses permitted per Query. Default value is 1024.
 pub fn set_max_clause_count(value: i32) {
     MAX_CLAUSE_COUNT.store(value, Ordering::Relaxed);
 }
