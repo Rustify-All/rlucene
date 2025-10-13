@@ -25,6 +25,7 @@ use crate::core::index::term_state::{Either2TermState, TermState};
 use crate::core::index::terms::Terms;
 use crate::core::index::terms_enum::TermsEnum;
 use crate::core::search::index_searcher::IndexSearcher;
+use crate::core::search::query_caching_policy::QueryCachingPolicy;
 use crate::core::search::similarities_impl::similarities::Similarity;
 use crate::core::util::array_util::ArrayUtil;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
@@ -320,8 +321,8 @@ where
 
 pub type TermStateTerm<T> =
     Either2TermState<LRTermState<T>, Either2TermState<TermStateImpl1, DummyTermState>>;
-pub fn build<IRC, S, QT>(
-    index_searcher: &IndexSearcher<IRC, S, QT>,
+pub fn build<IRC, S, QT, QCP>(
+    index_searcher: &IndexSearcher<IRC, S, QT, QCP>,
     term: Arc<Term>,
     needs_stats: bool,
 ) -> Result<TermStates<IRCTermState<IRC>>>
@@ -329,6 +330,7 @@ where
     IRC: IndexReaderContext,
     S: Similarity,
     QT: QueryTimeout,
+    QCP: QueryCachingPolicy,
 {
     let context = index_searcher.get_top_reader_context();
     let mut per_reader_term_state = TermStates::new(

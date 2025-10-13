@@ -38,6 +38,7 @@ use crate::core::search::field_comparator::{
 use crate::core::search::field_comparator_source::FieldComparatorSourceEnum;
 use crate::core::search::index_searcher::IndexSearcher;
 use crate::core::search::pruning::Pruning;
+use crate::core::search::query_caching_policy::QueryCachingPolicy;
 use crate::core::search::similarities_impl::similarities::Similarity;
 use crate::core::search::sort_field_enum::SortFieldEnum;
 use crate::core::search::sorted_numeric_sort_field::NumericProvider;
@@ -1090,14 +1091,15 @@ pub trait SortFiledBase: Display {
     ///
     /// * `Some(SortField)` – if a rewritten sort field was created.
     /// * `None` – if no rewriting is needed and the current sort field should be kept as is.
-    fn rewrite<IRC, S, QT>(
+    fn rewrite<IRC, S, QT, QCP>(
         &self,
-        _reader: &IndexSearcher<IRC, S, QT>,
+        _reader: &IndexSearcher<IRC, S, QT, QCP>,
     ) -> Result<Option<SortFieldEnum>>
     where
         IRC: IndexReaderContext,
         S: Similarity,
         QT: QueryTimeout,
+        QCP: QueryCachingPolicy,
     {
         Ok(None)
     }

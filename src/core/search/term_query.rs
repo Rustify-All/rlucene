@@ -36,6 +36,7 @@ use crate::core::search::dummy::dummy_two_phase_iterator::DummyTwoPhaseIterator;
 use crate::core::search::explanation::Explanation;
 use crate::core::search::index_searcher::IndexSearcher;
 use crate::core::search::query::Query;
+use crate::core::search::query_caching_policy::QueryCachingPolicy;
 use crate::core::search::query_visitor::QueryVisitor;
 use crate::core::search::score_mode::ScoreMode;
 use crate::core::search::scorer::{Either2Scorer, Scorer};
@@ -123,9 +124,9 @@ impl Query for TermQuery {
         S: Similarity,
         IRC: IndexReaderContext;
 
-    fn create_weight<S, IRC, QT>(
+    fn create_weight<S, IRC, QT, QCP>(
         self,
-        search: &IndexSearcher<IRC, S, QT>,
+        search: &IndexSearcher<IRC, S, QT, QCP>,
         score_mode: &ScoreMode,
         boost: f32,
         per_reader_term_state: Option<TermStates<IRCTermState<IRC>>>,
@@ -134,6 +135,7 @@ impl Query for TermQuery {
         IRC: IndexReaderContext,
         S: Similarity,
         QT: QueryTimeout,
+        QCP: QueryCachingPolicy,
         Self: Sized,
     {
         let context = search.get_top_reader_context();
@@ -176,8 +178,8 @@ where
     S: Similarity,
     IRC: IndexReaderContext,
 {
-    pub fn new<I, QT>(
-        searcher: &IndexSearcher<I, S, QT>,
+    pub fn new<I, QT, QCP>(
+        searcher: &IndexSearcher<I, S, QT, QCP>,
         score_mode: ScoreMode,
         boost: f32,
         term_states: TermStates<IRCTermState<IRC>>,
@@ -186,6 +188,7 @@ where
     where
         I: IndexReaderContext,
         QT: QueryTimeout,
+        QCP: QueryCachingPolicy,
     {
         let similarity = searcher.get_similarity();
 
