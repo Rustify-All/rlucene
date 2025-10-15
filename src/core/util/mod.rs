@@ -55,6 +55,7 @@ pub mod dummy;
 pub mod error;
 pub mod file_deleter;
 pub mod fixed_bit_set;
+pub mod frequency_tracking_ring_buffer;
 pub mod fst_impl;
 pub mod function;
 pub mod group_vint_util;
