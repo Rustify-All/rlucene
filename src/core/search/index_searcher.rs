@@ -355,10 +355,7 @@ where
         leaf_collector.finish()?;
         Ok(())
     }
-    pub(crate) fn rewrite_if_needed_scores(
-        original: Query,
-        _needs_scores: bool,
-    ) -> Result<Query> {
+    pub(crate) fn rewrite_if_needed_scores(original: Query, _needs_scores: bool) -> Result<Query> {
         // TODO
         Ok(original)
     }
