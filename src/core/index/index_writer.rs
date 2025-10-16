@@ -613,7 +613,7 @@ where
     /// @lucene.experimental
     pub fn update_documents_with_query<DI, DF>(
         &self,
-        del_query: Option<QueryEnum>,
+        del_query: Option<Query>,
         docs: DI,
     ) -> Result<i64>
     where
@@ -2634,7 +2634,7 @@ use crate::core::index::segment_commit_info::SegmentCommitInfo;
 use crate::core::index::sort::Sort;
 use crate::core::index::sorter::DocMapImpl;
 use crate::core::index::term::Term;
-use crate::core::search::query::QueryEnum;
+use crate::core::search::query::Query;
 use crate::core::store::IOContext;
 use crate::core::store::lock_validating_directory_wrapper::LockValidatingDirectoryWrapper;
 use crate::core::store::tracking_directory_wrapper::TrackingDirectoryWrapper;

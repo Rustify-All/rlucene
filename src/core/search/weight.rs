@@ -23,7 +23,7 @@ use crate::core::search::explanation::Explanation;
 use crate::core::search::leaf_collector::LeafCollector;
 use crate::core::search::matches::{Either2Matches, Matches};
 use crate::core::search::matches_utils::MatchWithNoTerms;
-use crate::core::search::query::QueryEnum;
+use crate::core::search::query::Query;
 use crate::core::search::scorer::{Either2Scorer, Scorer};
 use crate::core::search::scorer_supplier::{Either2ScorerSupplier, ScorerSupplier};
 use crate::core::search::segment_cacheable::SegmentCacheable;
@@ -104,7 +104,7 @@ where
     /// - `doc`: the document's id relative to the given context's reader
     fn explain(&self, context: &LeafReaderContext<LR>, doc: i32) -> Result<Explanation>;
 
-    fn get_query(&self) -> Arc<QueryEnum>;
+    fn get_query(&self) -> Arc<Query>;
 
     /// Optional method that delegates to [`Weight::scorer_supplier`].
     ///
@@ -548,7 +548,7 @@ macro_rules! define_either_weight {
                 }
             }
 
-            fn get_query(&self) -> Arc<QueryEnum> {
+            fn get_query(&self) -> Arc<Query> {
                 match self {
                     Self::$A(inner) => inner.get_query(),
                     $( Self::$T(inner) => inner.get_query(), )+

@@ -36,7 +36,7 @@ use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-pub trait Query: Eq + Hash + Debug {
+pub trait QueryBase: Eq + Hash + Debug {
     fn as_string(&self, field: &str) -> String;
     type Weight<S, IRC>: Weight<IRC::LeafReader>
     where
@@ -62,7 +62,7 @@ pub trait Query: Eq + Hash + Debug {
             std::any::type_name::<Self>()
         )))
     }
-    type RewriteQuery: Query;
+    type RewriteQuery: QueryBase;
     fn rewrite<IRC, S, QT, QCP, QC>(
         &self,
         _searcher: &IndexSearcher<IRC, S, QT, QCP, QC>,
@@ -81,85 +81,85 @@ pub trait Query: Eq + Hash + Debug {
         QV: QueryVisitor;
 }
 
-pub enum QueryEnum {
+pub enum Query {
     Term(TermQuery),
     MatchAll(MatchAllDocsQuery),
     MatchNoDoc(MatchNoDocsQuery),
     Dummy(DummyQuery),
     Boost(BoostQuery),
 }
-impl Default for QueryEnum {
+impl Default for Query {
     fn default() -> Self {
-        QueryEnum::Dummy(DummyQuery::default())
+        Query::Dummy(DummyQuery::default())
     }
 }
 
-impl Eq for QueryEnum {}
+impl Eq for Query {}
 
-impl PartialEq for QueryEnum {
+impl PartialEq for Query {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (QueryEnum::Term(t1), QueryEnum::Term(t2)) => t1 == t2,
-            (QueryEnum::MatchAll(m1), QueryEnum::MatchAll(m2)) => m1 == m2,
-            (QueryEnum::MatchNoDoc(m1), QueryEnum::MatchNoDoc(m2)) => m1 == m2,
-            (QueryEnum::Dummy(d1), QueryEnum::Dummy(d2)) => d1 == d2,
-            (QueryEnum::Boost(b1), QueryEnum::Boost(b2)) => b1 == b2,
+            (Query::Term(t1), Query::Term(t2)) => t1 == t2,
+            (Query::MatchAll(m1), Query::MatchAll(m2)) => m1 == m2,
+            (Query::MatchNoDoc(m1), Query::MatchNoDoc(m2)) => m1 == m2,
+            (Query::Dummy(d1), Query::Dummy(d2)) => d1 == d2,
+            (Query::Boost(b1), Query::Boost(b2)) => b1 == b2,
             _ => false,
         }
     }
 }
 
-impl Hash for QueryEnum {
+impl Hash for Query {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self {
-            QueryEnum::Term(t) => {
+            Query::Term(t) => {
                 t.hash(state);
             },
-            QueryEnum::MatchAll(m) => {
+            Query::MatchAll(m) => {
                 m.hash(state);
             },
-            QueryEnum::MatchNoDoc(m) => {
+            Query::MatchNoDoc(m) => {
                 m.hash(state);
             },
-            QueryEnum::Dummy(d) => {
+            Query::Dummy(d) => {
                 d.hash(state);
             },
-            QueryEnum::Boost(b) => {
+            Query::Boost(b) => {
                 b.hash(state);
             },
         }
     }
 }
-impl Debug for QueryEnum {
+impl Debug for Query {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            QueryEnum::Term(t) => {
-                write!(f, "QueryEnum::Term({:?})", t)
+            Query::Term(t) => {
+                write!(f, "Query::Term({:?})", t)
             },
-            QueryEnum::MatchAll(m) => {
-                write!(f, "QueryEnum::MatchAll({:?})", m)
+            Query::MatchAll(m) => {
+                write!(f, "Query::MatchAll({:?})", m)
             },
-            QueryEnum::MatchNoDoc(m) => {
-                write!(f, "QueryEnum::MatchNoDoc({:?})", m)
+            Query::MatchNoDoc(m) => {
+                write!(f, "Query::MatchNoDoc({:?})", m)
             },
-            QueryEnum::Dummy(d) => {
-                write!(f, "QueryEnum::Dummy({:?})", d)
+            Query::Dummy(d) => {
+                write!(f, "Query::Dummy({:?})", d)
             },
-            QueryEnum::Boost(b) => {
-                write!(f, "QueryEnum::Boost({:?})", b)
+            Query::Boost(b) => {
+                write!(f, "Query::Boost({:?})", b)
             },
         }
     }
 }
 
-impl Query for QueryEnum {
+impl QueryBase for Query {
     fn as_string(&self, field: &str) -> String {
         match self {
-            QueryEnum::Term(t) => t.as_string(field),
-            QueryEnum::MatchAll(m) => m.as_string(field),
-            QueryEnum::MatchNoDoc(m) => m.as_string(field),
-            QueryEnum::Dummy(d) => d.as_string(field),
-            QueryEnum::Boost(b) => b.as_string(field),
+            Query::Term(t) => t.as_string(field),
+            Query::MatchAll(m) => m.as_string(field),
+            Query::MatchNoDoc(m) => m.as_string(field),
+            Query::Dummy(d) => d.as_string(field),
+            Query::Boost(b) => b.as_string(field),
         }
     }
 
@@ -211,37 +211,37 @@ impl Query for QueryEnum {
     }
 }
 
-impl From<TermQuery> for QueryEnum {
+impl From<TermQuery> for Query {
     fn from(value: TermQuery) -> Self {
-        QueryEnum::Term(value)
+        Query::Term(value)
     }
 }
-impl From<MatchAllDocsQuery> for QueryEnum {
+impl From<MatchAllDocsQuery> for Query {
     fn from(value: MatchAllDocsQuery) -> Self {
-        QueryEnum::MatchAll(value)
+        Query::MatchAll(value)
     }
 }
-impl From<MatchNoDocsQuery> for QueryEnum {
+impl From<MatchNoDocsQuery> for Query {
     fn from(value: MatchNoDocsQuery) -> Self {
-        QueryEnum::MatchNoDoc(value)
+        Query::MatchNoDoc(value)
     }
 }
-impl From<DummyQuery> for QueryEnum {
+impl From<DummyQuery> for Query {
     fn from(value: DummyQuery) -> Self {
-        QueryEnum::Dummy(value)
+        Query::Dummy(value)
     }
 }
-impl From<BoostQuery> for QueryEnum {
+impl From<BoostQuery> for Query {
     fn from(value: BoostQuery) -> Self {
-        QueryEnum::Boost(value)
+        Query::Boost(value)
     }
 }
 #[derive(Clone, Debug)]
 pub struct IdentityQuery {
-    pub(crate) query: Arc<QueryEnum>,
+    pub(crate) query: Arc<Query>,
 }
 impl IdentityQuery {
-    pub fn new(query: Arc<QueryEnum>) -> Self {
+    pub fn new(query: Arc<Query>) -> Self {
         Self { query }
     }
 }
@@ -258,9 +258,9 @@ impl Hash for IdentityQuery {
         Arc::as_ptr(&self.query).hash(state);
     }
 }
-impl<Q> Query for Arc<Q>
+impl<Q> QueryBase for Arc<Q>
 where
-    Q: Query + ?Sized,
+    Q: QueryBase + ?Sized,
 {
     fn as_string(&self, field: &str) -> String {
         (**self).as_string(field)
@@ -288,7 +288,7 @@ where
         Self: Sized,
     {
         Err(LuceneError::unsupported_operation(format!(
-            "Arc<Query> cannot be used to create_weight directly: {}",
+            "Arc<QueryBase> cannot be used to create_weight directly: {}",
             std::any::type_name::<Q>()
         )))
     }

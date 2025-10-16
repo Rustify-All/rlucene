@@ -20,7 +20,7 @@ use crate::core::index::term_states::TermStates;
 use crate::core::search::QueryCache;
 use crate::core::search::dummy::dummy_weight::DummyWeight;
 use crate::core::search::index_searcher::IndexSearcher;
-use crate::core::search::query::Query;
+use crate::core::search::query::QueryBase;
 use crate::core::search::query_caching_policy::QueryCachingPolicy;
 use crate::core::search::query_visitor::QueryVisitor;
 use crate::core::search::score_mode::ScoreMode;
@@ -28,7 +28,7 @@ use crate::core::search::similarities_impl::similarities::Similarity;
 
 #[derive(Eq, Hash, PartialEq, Debug, Default)]
 pub struct DummyQuery {}
-impl Query for DummyQuery {
+impl QueryBase for DummyQuery {
     fn as_string(&self, _field: &str) -> String {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }

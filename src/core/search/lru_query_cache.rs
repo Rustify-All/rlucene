@@ -30,7 +30,7 @@ use crate::core::search::dummy::dummy_doc_id_set_iterator::DummyDocIdSetIterator
 use crate::core::search::dummy::dummy_two_phase_iterator::DummyTwoPhaseIterator;
 use crate::core::search::explanation::Explanation;
 use crate::core::search::leaf_collector::LeafCollector;
-use crate::core::search::query::{IdentityQuery, Query, QueryEnum};
+use crate::core::search::query::{IdentityQuery, Query, QueryBase};
 use crate::core::search::query_cache::QueryCache;
 use crate::core::search::query_caching_policy::QueryCachingPolicy;
 use crate::core::search::scorable::Scorable;
@@ -111,7 +111,7 @@ where
     leaves_to_cache: P,
 }
 pub struct Inner {
-    unique_queries: Mutex<LinkedHashMap<Arc<QueryEnum>, IdentityQuery>>,
+    unique_queries: Mutex<LinkedHashMap<Arc<Query>, IdentityQuery>>,
     cache: HashMap<CacheKey, LeafCache>,
 }
 impl<LR> LRUQueryCache<MinSegmentSizePredicate<LR>>
@@ -174,7 +174,7 @@ where
     /// See also [`on_miss`](Self::on_miss).
     ///
     /// Experimental: this API follows the original Lucene experimental status.
-    pub(crate) fn on_hit(&self, _reader_core_key: &CacheKey, _query: &QueryEnum) {
+    pub(crate) fn on_hit(&self, _reader_core_key: &CacheKey, _query: &Query) {
         self.hit_count.fetch_add(1, Ordering::Relaxed);
     }
     /// Expert: callback when there is a cache miss on a given query.
@@ -182,7 +182,7 @@ where
     /// See also [`on_hit`](Self::on_hit).
     ///
     /// Experimental: this API follows the original Lucene experimental status.
-    pub(crate) fn on_miss(&self, _reader_core_key: &CacheKey, _query: &QueryEnum) {
+    pub(crate) fn on_miss(&self, _reader_core_key: &CacheKey, _query: &Query) {
         self.miss_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
@@ -195,7 +195,7 @@ where
     /// Experimental: this API follows the original Lucene experimental status.
     pub(crate) fn on_query_cache(
         &self,
-        _query: &QueryEnum,
+        _query: &Query,
         ram_bytes_used: i64,
         _rwlock: &RwLockWriteGuard<Inner>,
     ) {
@@ -209,7 +209,7 @@ where
     /// Experimental: this API follows the original Lucene experimental status.
     pub(crate) fn on_query_eviction(
         &self,
-        _query: &QueryEnum,
+        _query: &Query,
         ram_bytes_used: i64,
         _guard: &RwLockWriteGuard<Inner>,
     ) {
@@ -263,7 +263,7 @@ where
     }
     pub(crate) fn get<C>(
         &self,
-        key: &QueryEnum,
+        key: &Query,
         cache_helper: &C,
         inner: &RwLockReadGuard<Inner>,
     ) -> Option<Arc<CacheAndCountEnum>>
@@ -305,7 +305,7 @@ where
 
     pub(crate) fn put_if_absent<C>(
         &self,
-        query: Arc<QueryEnum>,
+        query: Arc<Query>,
         cached: CacheAndCountEnum,
         cache_helper: &C,
     ) where
@@ -402,7 +402,7 @@ where
         }
     }
     /// Remove all cache entries for the given query.
-    pub fn clear_query(&self, query: &QueryEnum) {
+    pub fn clear_query(&self, query: &Query) {
         let mut inner = self.inner.write();
         let v = {
             let mut unique_queries = inner.unique_queries.lock();
@@ -435,7 +435,7 @@ where
         inner.unique_queries.lock().clear();
         self.on_clear(&inner);
     }
-    fn get_ram_bytes_used(&self, _query: &QueryEnum) -> i64 {
+    fn get_ram_bytes_used(&self, _query: &Query) -> i64 {
         // TODO: memory calculation not implemented
         0
     }
@@ -562,7 +562,7 @@ where
     }
 
     #[cfg(test)]
-    pub(crate) fn cached_queries(&self) -> Vec<Arc<QueryEnum>> {
+    pub(crate) fn cached_queries(&self) -> Vec<Arc<Query>> {
         let inner = self.inner.read();
         let uq = inner.unique_queries.lock();
         uq.keys().cloned().collect()
@@ -748,7 +748,7 @@ where
         self.base
             .explain(scorer, doc, self.get_query().as_string(""))
     }
-    fn get_query(&self) -> Arc<QueryEnum> {
+    fn get_query(&self) -> Arc<Query> {
         self.in_.get_query()
     }
 
@@ -896,7 +896,7 @@ where
     supplier: S,
     max_doc: i32,
     lru_query_cache: Arc<LRUQueryCache<P>>,
-    query: Arc<QueryEnum>,
+    query: Arc<Query>,
     cache_helper: C,
     _marker: PhantomData<LR>,
 }
@@ -913,7 +913,7 @@ where
         supplier: S,
         max_doc: i32,
         lru_query_cache: Arc<LRUQueryCache<P>>,
-        query: Arc<QueryEnum>,
+        query: Arc<Query>,
         cache_helper: C,
     ) -> Result<Self> {
         Ok(Self {

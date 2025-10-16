@@ -16,7 +16,7 @@
  */
 use crate::core::index::terms_enum::TermsEnum;
 use crate::core::search::matches_iterator::MatchesIterator;
-use crate::core::search::query::{Query, QueryEnum};
+use crate::core::search::query::{Query, QueryBase};
 use crate::core::util::bytes_ref_iterator::BytesRefIterator;
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::priority_queue::{Compare, PriorityQueue};
@@ -128,7 +128,7 @@ where
             .get_sub_matches()
     }
 
-    fn get_query(&self) -> Arc<QueryEnum> {
+    fn get_query(&self) -> Arc<Query> {
         self.queue
             .top()
             .expect("priority queue top element should exist")
@@ -165,7 +165,7 @@ where
 // waiting until the iterator is actually used before it loads all other matching terms.
 pub(crate) struct TermsEnumDisjunctionMatchesIterator<Q, MI, TE, BRI>
 where
-    Q: Query,
+    Q: QueryBase,
     MI: MatchesIterator,
     TE: TermsEnum,
     BRI: BytesRefIterator,
@@ -179,7 +179,7 @@ where
 }
 impl<Q, MI, TE, BRI> TermsEnumDisjunctionMatchesIterator<Q, MI, TE, BRI>
 where
-    Q: Query,
+    Q: QueryBase,
     MI: MatchesIterator,
     TE: TermsEnum,
     BRI: BytesRefIterator,

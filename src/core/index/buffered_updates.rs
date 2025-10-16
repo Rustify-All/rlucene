@@ -29,7 +29,7 @@ use crate::core::index::BytesRef;
 use crate::core::index::doc_values_update::DocValuesUpdate;
 use crate::core::index::field_updates_buffer::FieldUpdatesBuffer;
 use crate::core::index::term::Term;
-use crate::core::search::query::QueryEnum;
+use crate::core::search::query::Query;
 use crate::core::util::access::SharedAccess;
 use crate::core::util::accountable::Accountable;
 use crate::core::util::allocator_byte::{AllocatorByteEnum, DirectTrackingAllocatorByte};
@@ -61,7 +61,7 @@ where
 {
     pub(crate) num_field_updates: AtomicI32,
     pub delete_terms: DeletedTerms<C, B>,
-    pub(crate) delete_queries: HashMap<Arc<QueryEnum>, i32>,
+    pub(crate) delete_queries: HashMap<Arc<Query>, i32>,
     pub(crate) field_updates: HashMap<String, FieldUpdatesBuffer>,
     bytes_used: C,
     field_updates_bytes_used: C,
@@ -192,7 +192,7 @@ where
     C: SharedAccess<CounterEnum>,
     B: SharedAccess<ByteBlockPool<C>>,
 {
-    pub(crate) fn add_query(&mut self, query: Arc<QueryEnum>, doc_id_upto: i32) {
+    pub(crate) fn add_query(&mut self, query: Arc<Query>, doc_id_upto: i32) {
         if self
             .delete_queries
             .insert(query.clone(), doc_id_upto)
@@ -592,7 +592,7 @@ mod tests {
     use crate::core::index::BytesRef;
     use crate::core::index::buffered_updates::{BufferedUpdates, DeletedTerms};
     use crate::core::index::term::Term;
-    use crate::core::search::query::QueryEnum;
+    use crate::core::search::query::Query;
     use crate::core::search::term_query::TermQuery;
     use crate::core::util::accountable::Accountable;
     use crate::core::util::error::lucene_error::Result;
@@ -620,7 +620,7 @@ mod tests {
             let value = format!("{}", random.random_range(0..100));
             let term = Term::new("id", BytesRef::from_string(&value));
             bu.add_query(
-                Arc::new(QueryEnum::Term(TermQuery::new(term.clone()))),
+                Arc::new(Query::Term(TermQuery::new(term.clone()))),
                 doc_id_upto,
             );
         }

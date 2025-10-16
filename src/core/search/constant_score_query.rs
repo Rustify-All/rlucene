@@ -28,7 +28,7 @@ use crate::core::search::filter_leaf_collector::{FilterLeafCollectorRef, FilterS
 use crate::core::search::filter_scorable::FilterScorable;
 use crate::core::search::index_searcher::IndexSearcher;
 use crate::core::search::leaf_collector::LeafCollector;
-use crate::core::search::query::{Query, QueryEnum};
+use crate::core::search::query::{Query, QueryBase};
 use crate::core::search::query_caching_policy::QueryCachingPolicy;
 use crate::core::search::query_visitor::QueryVisitor;
 use crate::core::search::scorable::{ChildScorable, Scorable};
@@ -43,10 +43,10 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 pub struct ConstantScoreQuery {
-    query: Box<QueryEnum>,
+    query: Box<Query>,
 }
 impl ConstantScoreQuery {
-    pub fn new(query: QueryEnum) -> Self {
+    pub fn new(query: Query) -> Self {
         Self {
             query: Box::new(query),
         }
@@ -74,7 +74,7 @@ impl Debug for ConstantScoreQuery {
     }
 }
 
-impl Query for ConstantScoreQuery {
+impl QueryBase for ConstantScoreQuery {
     fn as_string(&self, field: &str) -> String {
         let inner = self.query.as_string(field);
         format!("ConstantScore({})", inner)
@@ -128,7 +128,7 @@ impl Query for ConstantScoreQuery {
 
 pub struct ConstantScoreQueryWeight {
     base: ConstantScoreWeight,
-    parent_query: Arc<QueryEnum>,
+    parent_query: Arc<Query>,
 }
 
 pub struct ConstantBulkScorer<BS, W, LR>

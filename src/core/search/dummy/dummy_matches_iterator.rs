@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 use crate::core::search::matches_iterator::MatchesIterator;
-use crate::core::search::query::QueryEnum;
+use crate::core::search::query::Query;
 use crate::core::util::error::lucene_error::Result;
 use std::sync::Arc;
 
@@ -50,7 +50,7 @@ impl MatchesIterator for DummyMatchesIterator {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    fn get_query(&self) -> Arc<QueryEnum> {
+    fn get_query(&self) -> Arc<Query> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 }

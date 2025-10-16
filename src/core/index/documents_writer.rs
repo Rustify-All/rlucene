@@ -28,7 +28,7 @@ use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
 use crate::core::index::lockable_concurrent_approximate_priority_queue::Lock;
 use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::term::Term;
-use crate::core::search::query::QueryEnum;
+use crate::core::search::query::Query;
 use crate::core::store::directory::Directory;
 use crate::core::store::lock_validating_directory_wrapper::LockValidatingDirectoryWrapper;
 use crate::core::util::accountable::Accountable;
@@ -147,7 +147,7 @@ where
             flush_notifications,
         })
     }
-    pub(crate) fn delete_queries(&self, queries: Vec<QueryEnum>) -> Result<i64> {
+    pub(crate) fn delete_queries(&self, queries: Vec<Query>) -> Result<i64> {
         self.apply_delete_or_update(|upd| {
             upd.add_delete_query(queries.into_iter().map(Arc::new).collect())
         })

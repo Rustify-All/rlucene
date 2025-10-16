@@ -29,7 +29,7 @@ use crate::core::search::QueryCache;
 use crate::core::search::dummy::dummy_query::DummyQuery;
 use crate::core::search::dummy::dummy_weight::DummyWeight;
 use crate::core::search::index_searcher::IndexSearcher;
-use crate::core::search::query::{Query, QueryEnum};
+use crate::core::search::query::{Query, QueryBase};
 use crate::core::search::query_caching_policy::QueryCachingPolicy;
 use crate::core::search::query_visitor::QueryVisitor;
 use crate::core::search::score_mode::ScoreMode;
@@ -39,11 +39,11 @@ use std::hash::{Hash, Hasher};
 
 #[derive(Debug)]
 pub struct BoostQuery {
-    query: Box<QueryEnum>,
+    query: Box<Query>,
     boost: f32,
 }
 impl BoostQuery {
-    pub fn new(query: QueryEnum, boost: f32) -> Result<Self> {
+    pub fn new(query: Query, boost: f32) -> Result<Self> {
         if !boost.is_finite() || boost < 0.0 {
             return Err(LuceneError::illegal_argument(format!(
                 "boost must be a positive float, got {}",
@@ -55,10 +55,10 @@ impl BoostQuery {
             boost,
         })
     }
-    pub fn get_query(&self) -> &QueryEnum {
+    pub fn get_query(&self) -> &Query {
         &self.query
     }
-    pub fn take_query(&mut self) -> QueryEnum {
+    pub fn take_query(&mut self) -> Query {
         std::mem::take(&mut self.query)
     }
     pub fn get_boost(&self) -> f32 {
@@ -71,7 +71,7 @@ impl PartialEq for BoostQuery {
     }
 }
 impl Eq for BoostQuery {}
-impl Query for BoostQuery {
+impl QueryBase for BoostQuery {
     fn as_string(&self, field: &str) -> String {
         let inner = self.query.as_string(field);
         let mut s = String::new();

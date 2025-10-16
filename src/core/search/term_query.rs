@@ -36,7 +36,7 @@ use crate::core::search::dummy::dummy_matches::DummyMatches;
 use crate::core::search::dummy::dummy_two_phase_iterator::DummyTwoPhaseIterator;
 use crate::core::search::explanation::Explanation;
 use crate::core::search::index_searcher::IndexSearcher;
-use crate::core::search::query::{Query, QueryEnum};
+use crate::core::search::query::{Query, QueryBase};
 use crate::core::search::query_caching_policy::QueryCachingPolicy;
 use crate::core::search::query_visitor::QueryVisitor;
 use crate::core::search::score_mode::ScoreMode;
@@ -101,7 +101,7 @@ impl Debug for TermQuery {
     }
 }
 
-impl Query for TermQuery {
+impl QueryBase for TermQuery {
     fn as_string(&self, field: &str) -> String {
         let mut buffer = String::new();
         if self.term.field != field {
@@ -166,7 +166,7 @@ where
     sim_scorer: Option<Arc<TermQuerySimScorer<S::SimScorer>>>,
     term_states: Arc<Mutex<TermStates<IRCTermState<IRC>>>>,
     score_mode: ScoreMode,
-    parent_query: Arc<QueryEnum>,
+    parent_query: Arc<Query>,
 }
 impl<S, IRC> TermWeight<S, IRC>
 where
@@ -256,7 +256,7 @@ where
             Some(s) => term_states.resolve(s)?,
             None => None,
         };
-        let QueryEnum::Term(parent_query) = self.parent_query.as_ref() else {
+        let Query::Term(parent_query) = self.parent_query.as_ref() else {
             unreachable!("should never happen");
         };
 
@@ -330,7 +330,7 @@ where
                 let freq = scorer.freq()?;
 
                 let mut norm: i64 = 1;
-                let QueryEnum::Term(parent_query) = self.parent_query.as_ref() else {
+                let Query::Term(parent_query) = self.parent_query.as_ref() else {
                     unreachable!("should never happen");
                 };
                 if let Some(mut norms) =
@@ -371,7 +371,7 @@ where
         ))
     }
 
-    fn get_query(&self) -> Arc<QueryEnum> {
+    fn get_query(&self) -> Arc<Query> {
         self.parent_query.clone()
     }
 
@@ -386,7 +386,7 @@ where
         //     "The top-reader used to create Weight is not the same as the current reader's top-reader"
         // );
         let state_supplier = self.term_states.lock().get(context)?;
-        let QueryEnum::Term(parent_query) = self.parent_query.as_ref() else {
+        let Query::Term(parent_query) = self.parent_query.as_ref() else {
             unreachable!("should never happen");
         };
         let term_enum = context

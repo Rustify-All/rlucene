@@ -30,7 +30,7 @@ use crate::core::search::explanation::Explanation;
 use crate::core::search::index_searcher::IndexSearcher;
 use crate::core::search::leaf_collector::LeafCollector;
 use crate::core::search::matches_utils::MatchWithNoTerms;
-use crate::core::search::query::{Query, QueryEnum};
+use crate::core::search::query::{Query, QueryBase};
 use crate::core::search::query_caching_policy::QueryCachingPolicy;
 use crate::core::search::query_visitor::QueryVisitor;
 use crate::core::search::score::Score;
@@ -61,7 +61,7 @@ impl MatchAllDocsQuery {
     }
 }
 
-impl Query for MatchAllDocsQuery {
+impl QueryBase for MatchAllDocsQuery {
     fn as_string(&self, _field: &str) -> String {
         "*:*".to_string()
     }
@@ -105,7 +105,7 @@ where
     LR: LeafReader,
 {
     base: ConstantScoreWeight,
-    parent_query: Arc<QueryEnum>,
+    parent_query: Arc<Query>,
     score_mode: ScoreMode,
     _leaf_reader: PhantomData<LR>,
 }
@@ -148,7 +148,7 @@ where
             .explain(scorer, doc, self.parent_query.as_string(""))
     }
 
-    fn get_query(&self) -> Arc<QueryEnum> {
+    fn get_query(&self) -> Arc<Query> {
         self.parent_query.clone()
     }
 

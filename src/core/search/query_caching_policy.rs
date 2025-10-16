@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::core::search::query::Query;
+use crate::core::search::query::QueryBase;
 use crate::core::util::error::lucene_error::Result;
 
 /// A policy defining which filters should be cached.
@@ -30,7 +30,7 @@ pub trait QueryCachingPolicy {
     /// in order to make decisions.
     fn on_use<Q>(&self, query: &Q)
     where
-        Q: Query;
+        Q: QueryBase;
 
     /// Whether the given [`Query`] is worth caching.
     ///
@@ -40,5 +40,5 @@ pub trait QueryCachingPolicy {
     /// Otherwise an uncached scorer will be returned.
     fn should_cache<Q>(&self, query: &Q) -> Result<bool>
     where
-        Q: Query;
+        Q: QueryBase;
 }

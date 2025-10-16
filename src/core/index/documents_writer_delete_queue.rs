@@ -25,7 +25,7 @@ use crate::core::index::doc_values_type::DocValuesType;
 use crate::core::index::doc_values_update::{DocValuesUpdate, DocValuesUpdateBase};
 use crate::core::index::frozen_buffered_updates::FrozenBufferedUpdates;
 use crate::core::index::term::Term;
-use crate::core::search::query::{Query, QueryEnum};
+use crate::core::search::query::{Query, QueryBase};
 use crate::core::util::accountable::Accountable;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::info_stream::InfoStreamMT;
@@ -148,7 +148,7 @@ impl DocumentsWriterDeleteQueue {
             max_seq_no: AtomicI64::new(i64::MAX),
         }
     }
-    pub(crate) fn add_delete_query(&self, queries: Vec<Arc<QueryEnum>>) -> Result<i64> {
+    pub(crate) fn add_delete_query(&self, queries: Vec<Arc<Query>>) -> Result<i64> {
         let query_array_node = Node::new(NodeEnum::QueryNodeArray(QueryNodeArray::new(queries)));
         let seq_no = self.add_node(Arc::new(query_array_node))?;
         self.try_apply_global_slice()?;
@@ -172,7 +172,7 @@ impl DocumentsWriterDeleteQueue {
         Node::new(NodeEnum::TermNode(TermNode::new(term)))
     }
 
-    pub(crate) fn new_node_with_query(query: QueryEnum) -> Node {
+    pub(crate) fn new_node_with_query(query: Query) -> Node {
         Node::new(NodeEnum::QueryNode(QueryNode::new(Arc::new(query))))
     }
 
@@ -651,10 +651,10 @@ impl Display for TermNode {
 }
 // query node
 pub(crate) struct QueryNode {
-    item: Arc<QueryEnum>,
+    item: Arc<Query>,
 }
 impl QueryNode {
-    pub(crate) fn new(query: Arc<QueryEnum>) -> Self {
+    pub(crate) fn new(query: Arc<Query>) -> Self {
         Self { item: query }
     }
 }
@@ -671,10 +671,10 @@ impl Display for QueryNode {
 }
 // query node array
 pub(crate) struct QueryNodeArray {
-    item: Vec<Arc<QueryEnum>>,
+    item: Vec<Arc<Query>>,
 }
 impl QueryNodeArray {
-    pub(crate) fn new(nodes: Vec<Arc<QueryEnum>>) -> Self {
+    pub(crate) fn new(nodes: Vec<Arc<Query>>) -> Self {
         Self { item: nodes }
     }
 }

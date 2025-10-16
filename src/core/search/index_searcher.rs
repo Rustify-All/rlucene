@@ -30,7 +30,7 @@ use crate::core::search::collector_manager::CollectorManager;
 use crate::core::search::doc_id_set_iterator::disi_const::NO_MORE_DOCS;
 use crate::core::search::field_doc::FieldDoc;
 use crate::core::search::leaf_collector::LeafCollector;
-use crate::core::search::query::{Query, QueryEnum};
+use crate::core::search::query::{Query, QueryBase};
 use crate::core::search::query_caching_policy::QueryCachingPolicy;
 use crate::core::search::score_doc::ScoreDoc;
 use crate::core::search::score_mode::ScoreMode;
@@ -131,7 +131,7 @@ where
     pub fn search_after_score(
         &mut self,
         after: Option<ScoreDoc>,
-        query: QueryEnum,
+        query: Query,
         num_hits: i32,
     ) -> Result<TopDocs<ScoreDoc>> {
         let limit = std::cmp::max(1, self.reader_context.reader().max_doc()?);
@@ -151,7 +151,7 @@ where
 
         self.search_with_collector_manager(query, &manager)
     }
-    pub fn search(&mut self, query: QueryEnum, n: i32) -> Result<TopDocs<ScoreDoc>> {
+    pub fn search(&mut self, query: Query, n: i32) -> Result<TopDocs<ScoreDoc>> {
         self.search_after_score(None, query, n)
     }
     pub fn get_top_reader_context(&self) -> &IRC {
@@ -163,7 +163,7 @@ where
     pub fn search_after_field_with_score(
         &mut self,
         after: Option<FieldDoc>,
-        query: QueryEnum,
+        query: Query,
         num_hits: i32,
         sort: Sort,
         do_doc_scores: bool,
@@ -173,7 +173,7 @@ where
     pub fn search_after_field(
         &mut self,
         after: Option<FieldDoc>,
-        query: QueryEnum,
+        query: Query,
         num_hits: i32,
         sort: Sort,
     ) -> Result<TopFieldDocs> {
@@ -183,7 +183,7 @@ where
     fn do_search_after_field(
         &mut self,
         after: Option<FieldDoc>,
-        query: QueryEnum,
+        query: Query,
         num_hits: i32,
         sort: Sort,
         do_doc_scores: bool,
@@ -221,7 +221,7 @@ where
 
     pub fn search_with_collector_manager<CM>(
         &mut self,
-        mut query: QueryEnum,
+        mut query: Query,
         collector_manager: &CM,
     ) -> Result<CM::T>
     where
@@ -356,9 +356,9 @@ where
         Ok(())
     }
     pub(crate) fn rewrite_if_needed_scores(
-        original: QueryEnum,
+        original: Query,
         _needs_scores: bool,
-    ) -> Result<QueryEnum> {
+    ) -> Result<Query> {
         // TODO
         Ok(original)
     }
@@ -369,7 +369,7 @@ where
         boost: f32,
     ) -> Result<WeightEnum<Q, S, IRC, QCP, QC>>
     where
-        Q: Query,
+        Q: QueryBase,
     {
         let weight = query.create_weight(self, &score_mode, boost, None)?;
         let v = if !score_mode.needs_scores() {
@@ -441,11 +441,11 @@ where
 }
 pub type WeightEnum<Q, S, IRC, QCP, QC> = Either2Weight<
     <QC as QueryCache>::Weight<
-        <Q as Query>::Weight<S, IRC>,
+        <Q as QueryBase>::Weight<S, IRC>,
         QCP,
         <IRC as IndexReaderContext>::LeafReader,
     >,
-    <Q as Query>::Weight<S, IRC>,
+    <Q as QueryBase>::Weight<S, IRC>,
 >;
 
 /// Returns the maximum number of clauses permitted, `1024` by default.

@@ -37,7 +37,7 @@ use crate::core::index::terms::Terms;
 use crate::core::index::terms_enum::{SeekStatus, TermsEnum};
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
 use crate::core::search::doc_id_set_iterator::disi_const::NO_MORE_DOCS;
-use crate::core::search::query::QueryEnum;
+use crate::core::search::query::Query;
 use crate::core::store::directory::Directory;
 use crate::core::util::access::SharedAccess;
 use crate::core::util::accountable::Accountable;
@@ -76,7 +76,7 @@ pub(crate) struct FrozenBufferedUpdates {
     // Terms, in sorted order:
     pub delete_terms: PrefixCodedTerms,
     // Parallel array of deleted query, and the docIDUpto for each
-    pub delete_queries: Vec<Arc<QueryEnum>>,
+    pub delete_queries: Vec<Arc<Query>>,
     delete_query_limits: Vec<i32>,
     // Counts down once all deletes/updates have been applied
     pub(crate) applied: AtomicBool,

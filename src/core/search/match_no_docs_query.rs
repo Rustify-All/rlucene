@@ -24,7 +24,7 @@ use crate::core::search::dummy::dummy_scorer_supplier::DummyScorerSupplier;
 use crate::core::search::explanation::Explanation;
 use crate::core::search::index_searcher::IndexSearcher;
 use crate::core::search::matches_utils::MatchWithNoTerms;
-use crate::core::search::query::{Query, QueryEnum};
+use crate::core::search::query::{Query, QueryBase};
 use crate::core::search::query_caching_policy::QueryCachingPolicy;
 use crate::core::search::query_visitor::QueryVisitor;
 use crate::core::search::score_mode::ScoreMode;
@@ -61,7 +61,7 @@ impl MatchNoDocsQuery {
     }
 }
 
-impl Query for MatchNoDocsQuery {
+impl QueryBase for MatchNoDocsQuery {
     fn as_string(&self, _field: &str) -> String {
         format!("MatchNoDocsQuery(\"{}\")", self.reason)
     }
@@ -104,7 +104,7 @@ pub struct MatchNoDocsWeight<LR>
 where
     LR: LeafReader,
 {
-    parent_query: Arc<QueryEnum>,
+    parent_query: Arc<Query>,
     _leaf_reader: PhantomData<LR>,
 }
 
@@ -144,13 +144,13 @@ where
     }
 
     fn explain(&self, _context: &LeafReaderContext<LR>, _doc: i32) -> Result<Explanation> {
-        let QueryEnum::MatchNoDoc(parent_query) = self.parent_query.as_ref() else {
+        let Query::MatchNoDoc(parent_query) = self.parent_query.as_ref() else {
             unreachable!("should never happen");
         };
         Ok(Explanation::no_match(parent_query.reason.clone(), vec![]))
     }
 
-    fn get_query(&self) -> Arc<QueryEnum> {
+    fn get_query(&self) -> Arc<Query> {
         self.parent_query.clone()
     }
 

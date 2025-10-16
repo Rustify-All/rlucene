@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::core::search::query::QueryEnum;
+use crate::core::search::query::Query;
 use crate::core::util::error::lucene_error::Result;
 use std::sync::Arc;
 /// An iterator over match positions (and optionally offsets) for a single document and field.
@@ -74,7 +74,7 @@ pub trait MatchesIterator {
     /// then returns a `TermQuery` equivalent to the current match.
     ///
     /// Should only be called after [`MatchesIterator::next`] has returned `true`.
-    fn get_query(&self) -> Arc<QueryEnum>;
+    fn get_query(&self) -> Arc<Query>;
 }
 macro_rules! either_matches_iterator {
     (
@@ -133,7 +133,7 @@ macro_rules! either_matches_iterator {
             }
 
             #[inline]
-            fn get_query(&self) -> Arc<QueryEnum> {
+            fn get_query(&self) -> Arc<Query> {
                 match self { $( Self::$Variant(inner) => inner.get_query(), )+ }
             }
         }

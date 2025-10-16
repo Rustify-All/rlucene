@@ -17,7 +17,7 @@
 use crate::core::index::postings_enum::PostingsEnum;
 use crate::core::search::dummy::dummy_matches_iterator::DummyMatchesIterator;
 use crate::core::search::matches_iterator::MatchesIterator;
-use crate::core::search::query::QueryEnum;
+use crate::core::search::query::Query;
 use crate::core::util::error::lucene_error::Result;
 use std::sync::Arc;
 
@@ -29,13 +29,13 @@ where
     upto: i32,
     pos: i32,
     pe: PE,
-    query: Arc<QueryEnum>,
+    query: Arc<Query>,
 }
 impl<PE> TermMatchesIterator<PE>
 where
     PE: PostingsEnum,
 {
-    pub fn new(mut pe: PE, query: Arc<QueryEnum>) -> Result<Self> {
+    pub fn new(mut pe: PE, query: Arc<Query>) -> Result<Self> {
         Ok(TermMatchesIterator {
             upto: pe.freq()?,
             pos: 0,
@@ -84,7 +84,7 @@ where
         Ok(None)
     }
 
-    fn get_query(&self) -> Arc<QueryEnum> {
+    fn get_query(&self) -> Arc<Query> {
         self.query.clone()
     }
 }
