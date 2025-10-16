@@ -119,11 +119,13 @@ impl QueryBase for TermQuery {
         buffer
     }
 
-    type Weight<S, IRC>
+    type Weight<S, IRC, QCP, QC>
         = TermWeight<S, IRC>
     where
         S: Similarity,
-        IRC: IndexReaderContext;
+        IRC: IndexReaderContext,
+        QCP: QueryCachingPolicy,
+        QC: QueryCache;
 
     fn create_weight<S, IRC, QT, QCP, QC>(
         self,
@@ -131,7 +133,7 @@ impl QueryBase for TermQuery {
         score_mode: &ScoreMode,
         boost: f32,
         per_reader_term_state: Option<TermStates<IRCTermState<IRC>>>,
-    ) -> Result<Self::Weight<S, IRC>>
+    ) -> Result<Self::Weight<S, IRC, QCP, QC>>
     where
         IRC: IndexReaderContext,
         S: Similarity,

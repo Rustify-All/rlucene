@@ -80,11 +80,13 @@ impl QueryBase for ConstantScoreQuery {
         format!("ConstantScore({})", inner)
     }
 
-    type Weight<S, IRC>
+    type Weight<S, IRC, QCP, QC>
         = DummyWeight<IRC::LeafReader>
     where
         S: Similarity,
-        IRC: IndexReaderContext;
+        IRC: IndexReaderContext,
+        QCP: QueryCachingPolicy,
+        QC: QueryCache;
 
     fn create_weight<S, IRC, QT, QCP, QC>(
         self,
@@ -92,7 +94,7 @@ impl QueryBase for ConstantScoreQuery {
         score_mode: &ScoreMode,
         boost: f32,
         _per_reader_term_state: Option<TermStates<IRCTermState<IRC>>>,
-    ) -> Result<Self::Weight<S, IRC>>
+    ) -> Result<Self::Weight<S, IRC, QCP, QC>>
     where
         IRC: IndexReaderContext,
         S: Similarity,

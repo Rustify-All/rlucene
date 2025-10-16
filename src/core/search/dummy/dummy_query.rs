@@ -33,11 +33,13 @@ impl QueryBase for DummyQuery {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    type Weight<S, IRC>
+    type Weight<S, IRC, QCP, QC>
         = DummyWeight<IRC::LeafReader>
     where
         S: Similarity,
-        IRC: IndexReaderContext;
+        IRC: IndexReaderContext,
+        QCP: QueryCachingPolicy,
+        QC: QueryCache;
 
     fn create_weight<S, IRC, QT, QCP, QC>(
         self,
@@ -45,7 +47,7 @@ impl QueryBase for DummyQuery {
         _score_mode: &ScoreMode,
         _boost: f32,
         _per_reader_term_state: Option<TermStates<IRCTermState<IRC>>>,
-    ) -> crate::core::util::error::lucene_error::Result<Self::Weight<S, IRC>>
+    ) -> crate::core::util::error::lucene_error::Result<Self::Weight<S, IRC, QCP, QC>>
     where
         IRC: IndexReaderContext,
         S: Similarity,

@@ -38,17 +38,19 @@ use std::sync::Arc;
 
 pub trait QueryBase: Eq + Hash + Debug {
     fn as_string(&self, field: &str) -> String;
-    type Weight<S, IRC>: Weight<IRC::LeafReader>
+    type Weight<S, IRC, QCP, QC>: Weight<IRC::LeafReader>
     where
         S: Similarity,
-        IRC: IndexReaderContext;
+        IRC: IndexReaderContext,
+        QCP: QueryCachingPolicy,
+        QC: QueryCache;
     fn create_weight<S, IRC, QT, QCP, QC>(
         self,
         _searcher: &IndexSearcher<IRC, S, QT, QCP, QC>,
         _score_mode: &ScoreMode,
         _boost: f32,
         _per_reader_term_state: Option<TermStates<IRCTermState<IRC>>>,
-    ) -> Result<Self::Weight<S, IRC>>
+    ) -> Result<Self::Weight<S, IRC, QCP, QC>>
     where
         IRC: IndexReaderContext,
         S: Similarity,
@@ -163,11 +165,13 @@ impl QueryBase for Query {
         }
     }
 
-    type Weight<S, IRC>
+    type Weight<S, IRC, QCP, QC>
         = DummyWeight<IRC::LeafReader>
     where
         S: Similarity,
-        IRC: IndexReaderContext;
+        IRC: IndexReaderContext,
+        QCP: QueryCachingPolicy,
+        QC: QueryCache;
 
     fn create_weight<S, IRC, QT, QCP, QC>(
         self,
@@ -175,7 +179,7 @@ impl QueryBase for Query {
         _score_mode: &ScoreMode,
         _boost: f32,
         _per_reader_term_state: Option<TermStates<IRCTermState<IRC>>>,
-    ) -> Result<Self::Weight<S, IRC>>
+    ) -> Result<Self::Weight<S, IRC, QCP, QC>>
     where
         IRC: IndexReaderContext,
         S: Similarity,
@@ -266,11 +270,13 @@ where
         (**self).as_string(field)
     }
 
-    type Weight<S, IRC>
-        = Q::Weight<S, IRC>
+    type Weight<S, IRC, QCP, QC>
+        = Q::Weight<S, IRC, QCP, QC>
     where
         S: Similarity,
-        IRC: IndexReaderContext;
+        IRC: IndexReaderContext,
+        QCP: QueryCachingPolicy,
+        QC: QueryCache;
 
     fn create_weight<S, IRC, QT, QCP, QC>(
         self,
@@ -278,7 +284,7 @@ where
         _score_mode: &ScoreMode,
         _boost: f32,
         _per_reader_term_state: Option<TermStates<IRCTermState<IRC>>>,
-    ) -> Result<Self::Weight<S, IRC>>
+    ) -> Result<Self::Weight<S, IRC, QCP, QC>>
     where
         IRC: IndexReaderContext,
         S: Similarity,

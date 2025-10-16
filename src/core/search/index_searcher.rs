@@ -438,11 +438,11 @@ where
 }
 pub type WeightEnum<Q, S, IRC, QCP, QC> = Either2Weight<
     <QC as QueryCache>::Weight<
-        <Q as QueryBase>::Weight<S, IRC>,
+        <Q as QueryBase>::Weight<S, IRC, QCP, QC>,
         QCP,
         <IRC as IndexReaderContext>::LeafReader,
     >,
-    <Q as QueryBase>::Weight<S, IRC>,
+    <Q as QueryBase>::Weight<S, IRC, QCP, QC>,
 >;
 
 /// Returns the maximum number of clauses permitted, `1024` by default.

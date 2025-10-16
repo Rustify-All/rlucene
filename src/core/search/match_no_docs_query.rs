@@ -66,11 +66,13 @@ impl QueryBase for MatchNoDocsQuery {
         format!("MatchNoDocsQuery(\"{}\")", self.reason)
     }
 
-    type Weight<S, IRC>
+    type Weight<S, IRC, QCP, QC>
         = MatchNoDocsWeight<IRC::LeafReader>
     where
         S: Similarity,
-        IRC: IndexReaderContext;
+        IRC: IndexReaderContext,
+        QCP: QueryCachingPolicy,
+        QC: QueryCache;
 
     fn create_weight<S, IRC, QT, QCP, QC>(
         self,
@@ -78,7 +80,7 @@ impl QueryBase for MatchNoDocsQuery {
         _score_mode: &ScoreMode,
         _boost: f32,
         _per_reader_term_state: Option<TermStates<IRCTermState<IRC>>>,
-    ) -> Result<Self::Weight<S, IRC>>
+    ) -> Result<Self::Weight<S, IRC, QCP, QC>>
     where
         IRC: IndexReaderContext,
         S: Similarity,
