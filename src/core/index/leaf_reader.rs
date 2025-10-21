@@ -198,3 +198,113 @@ pub type LRImpactsEnum<LR> =
 pub type LRPosting<LR> =
     <<<LR as LeafReader>::Terms as Terms>::TermsEnum as TermsEnum>::PostingsEnum;
 pub type LRNormNumericDocValues<LR> = <LR as LeafReader>::NormNumericDocValues;
+
+impl<LR> LeafReader for Arc<LR>
+where
+    LR: LeafReader,
+{
+    type CacheHelper = LR::CacheHelper;
+
+    fn get_core_cache_helper_ref(&self) -> Result<Option<&Self::CacheHelper>> {
+        <LR as LeafReader>::get_core_cache_helper_ref(self.as_ref())
+    }
+
+    fn get_core_cache_helper(&self) -> Result<Option<Self::CacheHelper>> {
+        <LR as LeafReader>::get_core_cache_helper(self.as_ref())
+    }
+
+    fn doc_freq(&self, term: &Term) -> Result<i32> {
+        <LR as LeafReader>::doc_freq(self.as_ref(), term)
+    }
+
+    fn total_term_freq(&self, term: &Term) -> Result<i64> {
+        <LR as LeafReader>::total_term_freq(self.as_ref(), term)
+    }
+
+    fn sum_doc_freq(&self, field: &str) -> Result<i64> {
+        <LR as LeafReader>::sum_doc_freq(self.as_ref(), field)
+    }
+
+    fn doc_count(&self, field: &str) -> Result<i32> {
+        <LR as LeafReader>::doc_count(self.as_ref(), field)
+    }
+
+    fn sum_total_term_freq(&self, field: &str) -> Result<i64> {
+        <LR as LeafReader>::sum_total_term_freq(self.as_ref(), field)
+    }
+
+    type Terms = LR::Terms;
+
+    fn terms(&self, field: &str) -> Result<Option<Self::Terms>> {
+        <LR as LeafReader>::terms(self.as_ref(), field)
+    }
+
+    type NumericDocValues = LR::NumericDocValues;
+
+    fn get_numeric_doc_values(&self, field: &str) -> Result<Option<Self::NumericDocValues>> {
+        <LR as LeafReader>::get_numeric_doc_values(self.as_ref(), field)
+    }
+
+    type BinaryDocValues = LR::BinaryDocValues;
+
+    fn get_binary_doc_values(&self, field: &str) -> Result<Option<Self::BinaryDocValues>> {
+        <LR as LeafReader>::get_binary_doc_values(self.as_ref(), field)
+    }
+
+    type SortedDocValues = LR::SortedDocValues;
+
+    fn get_sorted_doc_values(&self, field: &str) -> Result<Option<Self::SortedDocValues>> {
+        <LR as LeafReader>::get_sorted_doc_values(self.as_ref(), field)
+    }
+
+    type SortedNumericDocValues = LR::SortedNumericDocValues;
+
+    fn get_sorted_numeric_doc_values(
+        &self,
+        field: &str,
+    ) -> Result<Option<Self::SortedNumericDocValues>> {
+        <LR as LeafReader>::get_sorted_numeric_doc_values(self.as_ref(), field)
+    }
+
+    type SortedSetDocValues = LR::SortedSetDocValues;
+
+    fn get_sorted_set_doc_values(&self, field: &str) -> Result<Option<Self::SortedSetDocValues>> {
+        <LR as LeafReader>::get_sorted_set_doc_values(self.as_ref(), field)
+    }
+
+    type NormNumericDocValues = LR::NormNumericDocValues;
+
+    fn get_norm_values(&self, field: &str) -> Result<Option<Self::NormNumericDocValues>> {
+        <LR as LeafReader>::get_norm_values(self.as_ref(), field)
+    }
+
+    type DocValuesSkipper = LR::DocValuesSkipper;
+
+    fn get_doc_values_skipper(&self, field: &str) -> Result<Option<Self::DocValuesSkipper>> {
+        <LR as LeafReader>::get_doc_values_skipper(self.as_ref(), field)
+    }
+
+    fn get_field_infos(&self) -> Result<Arc<FieldInfos>> {
+        <LR as LeafReader>::get_field_infos(self.as_ref())
+    }
+
+    type Bits = LR::Bits;
+
+    fn get_live_docs(&self) -> Result<Option<Self::Bits>> {
+        <LR as LeafReader>::get_live_docs(self.as_ref())
+    }
+
+    type PointValues = LR::PointValues;
+
+    fn get_point_values(&self, field: &str) -> Result<Option<Self::PointValues>> {
+        <LR as LeafReader>::get_point_values(self.as_ref(), field)
+    }
+
+    fn check_integrity(&self) -> Result<()> {
+        <LR as LeafReader>::check_integrity(self.as_ref())
+    }
+
+    fn get_metadata(&self) -> Result<&LeafMetaData> {
+        <LR as LeafReader>::get_metadata(self.as_ref())
+    }
+}

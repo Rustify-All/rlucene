@@ -14,11 +14,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::core::index::index_reader::IndexReader;
+use crate::core::index::index_reader::{IndexReader, IndexReaderEnum};
+use crate::core::index::leaf_reader::LeafReader;
+use std::sync::Arc;
 
 pub trait CompositeReader: IndexReader {
-    type IndexReader: IndexReader;
-    fn get_sequential_sub_readers(&self) -> &[Self::IndexReader];
+    type IndexReader: LeafReader;
+    type SubCompositeReader: CompositeReader;
+
+    fn get_sequential_sub_readers(
+        &self,
+    ) -> Vec<IndexReaderEnum<Arc<Self::IndexReader>, Self::SubCompositeReader>>;
     fn to_string(&self) -> String {
         todo!()
     }

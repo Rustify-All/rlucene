@@ -21,9 +21,8 @@ use crate::core::index::composite_reader::CompositeReader;
 use crate::core::index::directory_reader::{DirectoryReader, DirectoryReaderBase};
 use crate::core::index::dummy::dummy_directory_reader::DummyDirectoryReader;
 use crate::core::index::dummy::dummy_index_commit::DummyIndexCommit;
-use crate::core::index::dummy::dummy_index_reader::DummyIndexReader;
 use crate::core::index::index_commit::IndexCommit;
-use crate::core::index::index_reader::IndexReader;
+use crate::core::index::index_reader::{IndexReader, IndexReaderEnum};
 use crate::core::index::index_writer::{IndexWriter, IndexWriterBase, Inner};
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
@@ -46,7 +45,7 @@ where
     C: Comparator<LR>,
     D: Directory,
 {
-    base_composite_reader_base: BaseCompositeReaderBase<LR, C>,
+    base_composite_reader_base: BaseCompositeReaderBase<LR, StandardDirectoryReader<LR, C, D>, C>,
     directory_reader_base: DirectoryReaderBase<D>,
     apply_all_deletes: bool,
     write_all_deletes: bool,
@@ -207,12 +206,12 @@ where
     D: Directory,
     LR: LeafReader,
 {
-    type Comparator = DummyComparator<Self::IndexReader>;
+    type Comparator = C;
 
     fn base_composite_reader_base(
         &self,
-    ) -> &BaseCompositeReaderBase<Self::IndexReader, Self::Comparator> {
-        todo!()
+    ) -> &BaseCompositeReaderBase<Self::IndexReader, Self, Self::Comparator> {
+        &self.base_composite_reader_base
     }
 }
 
@@ -222,10 +221,13 @@ where
     D: Directory,
     LR: LeafReader,
 {
-    type IndexReader = DummyIndexReader;
+    type IndexReader = LR;
+    type SubCompositeReader = StandardDirectoryReader<LR, C, D>;
 
-    fn get_sequential_sub_readers(&self) -> &[Self::IndexReader] {
-        todo!()
+    fn get_sequential_sub_readers(
+        &self,
+    ) -> Vec<IndexReaderEnum<Arc<Self::IndexReader>, Self::SubCompositeReader>> {
+        self.base_composite_reader_base.get_sequential_sub_readers()
     }
 }
 

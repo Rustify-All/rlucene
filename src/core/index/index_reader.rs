@@ -14,13 +14,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::core::index::codec_reader::CodecReader;
 use crate::core::index::composite_reader::CompositeReader;
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::stored_fields::{Either2StoredFields, StoredFields};
 use crate::core::index::term::Term;
 use crate::core::index::term_vectors::{Either2TermVectors, TermVectors};
-use crate::core::util::error::lucene_error::Result;
+use crate::core::util::error::lucene_error::{LuceneError, Result};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
@@ -264,5 +263,79 @@ where
             IndexReaderEnum::Leaf(leaf) => leaf.get_sum_total_term_freq(field),
             IndexReaderEnum::Composite(comp) => comp.get_sum_total_term_freq(field),
         }
+    }
+}
+
+impl<IR> IndexReader for Arc<IR>
+where
+    IR: IndexReader,
+{
+    type TermVectors = IR::TermVectors;
+
+    fn term_vectors(&self) -> Result<Self::TermVectors> {
+        (**self).term_vectors()
+    }
+
+    fn max_doc(&self) -> Result<i32> {
+        (**self).max_doc()
+    }
+
+    fn num_docs(&self) -> Result<i32> {
+        (**self).num_docs()
+    }
+
+    fn num_deleted_docs(&self) -> Result<i32> {
+        (**self).num_deleted_docs()
+    }
+
+    fn inc_ref(&self) -> Result<()> {
+        (**self).inc_ref()
+    }
+
+    fn dec_ref(&self) -> Result<()> {
+        (**self).dec_ref()
+    }
+
+    fn ensure_open(&self) -> Result<()> {
+        (**self).ensure_open()
+    }
+
+    type StoredFields = IR::StoredFields;
+
+    fn stored_fields(&self) -> Result<Self::StoredFields> {
+        (**self).stored_fields()
+    }
+
+    fn has_deletions(&self) -> Result<bool> {
+        (**self).has_deletions()
+    }
+
+    fn do_close(&mut self) -> Result<()> {
+        match Arc::get_mut(self) {
+            Some(inner) => inner.do_close(),
+            None => Err(LuceneError::illegal_state(
+                "Cannot close shared Arc<IndexReader> because it has multiple references",
+            )),
+        }
+    }
+
+    fn doc_freq(&self, term: &Term) -> Result<i32> {
+        (**self).doc_freq(term)
+    }
+
+    fn total_term_freq(&self, term: &Term) -> Result<i64> {
+        (**self).total_term_freq(term)
+    }
+
+    fn get_sum_doc_freq(&self, field: &str) -> Result<i64> {
+        (**self).get_sum_doc_freq(field)
+    }
+
+    fn get_doc_count(&self, field: &str) -> Result<i32> {
+        (**self).get_doc_count(field)
+    }
+
+    fn get_sum_total_term_freq(&self, field: &str) -> Result<i64> {
+        (**self).get_sum_total_term_freq(field)
     }
 }

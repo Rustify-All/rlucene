@@ -22,7 +22,7 @@ use crate::core::index::dummy::dummy_index_reader::DummyIndexReader;
 use crate::core::index::dummy::dummy_stored_fields::DummyStoredFields;
 use crate::core::index::dummy::dummy_term_vectors::DummyTermVectors;
 use crate::core::index::index_commit::IndexCommit;
-use crate::core::index::index_reader::IndexReader;
+use crate::core::index::index_reader::{IndexReader, IndexReaderEnum};
 use crate::core::index::index_writer::{IndexWriter, IndexWriterBase};
 use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
 use crate::core::index::term::Term;
@@ -31,6 +31,7 @@ use crate::core::store::dummy::dummy_directory::DummyDirectory;
 use crate::core::util::dummy::dummy_comparator::DummyComparator;
 use crate::core::util::error::lucene_error::Result;
 use std::fmt::{Display, Formatter};
+use std::sync::Arc;
 
 pub struct DummyDirectoryReader<D>
 where
@@ -47,7 +48,7 @@ where
 
     fn base_composite_reader_base(
         &self,
-    ) -> &BaseCompositeReaderBase<Self::IndexReader, Self::Comparator> {
+    ) -> &BaseCompositeReaderBase<Self::IndexReader, Self, Self::Comparator> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 }
@@ -57,8 +58,11 @@ where
     D: Directory,
 {
     type IndexReader = DummyIndexReader;
+    type SubCompositeReader = DummyDirectoryReader<D>;
 
-    fn get_sequential_sub_readers(&self) -> &[Self::IndexReader] {
+    fn get_sequential_sub_readers(
+        &self,
+    ) -> Vec<IndexReaderEnum<Arc<Self::IndexReader>, Self::SubCompositeReader>> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 }
