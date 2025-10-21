@@ -16,8 +16,9 @@
  */
 use crate::core::codecs::stored_fields_writer::StoredFieldsWriter;
 use crate::core::index::composite_reader::CompositeReader;
-use crate::core::index::index_reader::IndexReader;
+use crate::core::index::index_reader::{IndexReader, IndexReaderEnum};
 use crate::core::index::index_writer::get_actual_max_docs;
+use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::reader_util::ReaderUtil;
 use crate::core::index::stored_field_visitor::StoredFieldVisitor;
 use crate::core::index::stored_fields::StoredFields;
@@ -25,6 +26,7 @@ use crate::core::index::term::Term;
 use crate::core::index::term_vectors::TermVectors;
 use crate::core::util::Comparator;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
+use std::marker::PhantomData;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI32, Ordering};
 /// Base trait for implementing [`CompositeReader`]s based on an array of sub-readers.
@@ -51,16 +53,17 @@ use std::sync::atomic::{AtomicI32, Ordering};
 /// See also: `MultiReader`
 ///
 /// *Lucene internal API*
-pub trait BaseCompositeReader: CompositeReader {
+pub trait BaseCompositeReader: CompositeReader + Sized {
     type Comparator: Comparator<Self::IndexReader>;
     fn base_composite_reader_base(
         &self,
-    ) -> &BaseCompositeReaderBase<Self::IndexReader, Self::Comparator>;
+    ) -> &BaseCompositeReaderBase<Self::IndexReader, Self, Self::Comparator>;
 }
 
-pub struct BaseCompositeReaderBase<IR, C>
+pub struct BaseCompositeReaderBase<IR, CR, C>
 where
-    IR: IndexReader,
+    IR: LeafReader,
+    CR: CompositeReader,
     C: Comparator<IR>,
 {
     sub_reader: Vec<Arc<IR>>,
@@ -69,10 +72,12 @@ where
     starts: Arc<Vec<i32>>,
     max_doc: i32,
     num_docs: AtomicI32,
+    _composite_marker: PhantomData<CR>,
 }
-impl<IR, C> BaseCompositeReaderBase<IR, C>
+impl<IR, CR, C> BaseCompositeReaderBase<IR, CR, C>
 where
-    IR: IndexReader,
+    IR: LeafReader,
+    CR: CompositeReader,
     C: Comparator<IR>,
 {
     /// Constructs a [`BaseCompositeReader`] on the given sub-readers.
@@ -89,7 +94,7 @@ where
     ///   If not `None`, this comparator is used to sort sub-readers before resolving doc IDs.
     pub fn new(mut sub_readers: Vec<Arc<IR>>, sub_reader_sorter: Option<Arc<C>>) -> Result<Self> {
         if let Some(sorter) = &sub_reader_sorter {
-            sub_readers.sort_by(|a, b| sorter.compare_unchecked(a, b).cmp(&0));
+            sub_readers.sort_by(|a, b| sorter.compare_unchecked(a.as_ref(), b.as_ref()).cmp(&0));
         }
 
         let mut starts = vec![0i32; sub_readers.len() + 1];
@@ -117,6 +122,7 @@ where
             starts: Arc::new(starts),
             max_doc: max_doc_i32,
             num_docs: AtomicI32::new(-1),
+            _composite_marker: PhantomData,
         })
     }
 
@@ -171,7 +177,7 @@ where
 
         let mut total: i32 = 0;
         for sub_reader in self.sub_reader.iter() {
-            let sub = sub_reader.doc_freq(term)?;
+            let sub = IndexReader::doc_freq(sub_reader, term)?;
             debug_assert!(sub >= 0);
             debug_assert!(sub <= sub_reader.get_doc_count(term.field())?);
             total += sub;
@@ -183,7 +189,7 @@ where
 
         let mut total: i64 = 0;
         for sub_reader in self.sub_reader.iter() {
-            let sub = sub_reader.total_term_freq(term)?;
+            let sub = IndexReader::total_term_freq(sub_reader, term)?;
             debug_assert!(sub >= 0);
             debug_assert!(sub <= sub_reader.get_sum_total_term_freq(term.field())?);
             total += sub;
@@ -196,7 +202,7 @@ where
 
         let mut total: i64 = 0;
         for sub_reader in self.sub_reader.iter() {
-            let sub = sub_reader.get_sum_doc_freq(field)?;
+            let sub = IndexReader::get_sum_doc_freq(sub_reader, field)?;
             debug_assert!(sub >= 0);
             debug_assert!(sub <= sub_reader.get_sum_total_term_freq(field)?);
             total += sub;
@@ -209,7 +215,7 @@ where
 
         let mut total: i32 = 0;
         for sub_reader in self.sub_reader.iter() {
-            let sub = sub_reader.get_doc_count(field)?;
+            let sub = IndexReader::get_doc_count(sub_reader, field)?;
             debug_assert!(sub >= 0);
             debug_assert!(sub <= sub_reader.max_doc()?);
             total += sub;
@@ -225,7 +231,7 @@ where
 
         let mut total: i64 = 0;
         for sub_reader in self.sub_reader.iter() {
-            let sub = sub_reader.get_sum_total_term_freq(field)?;
+            let sub = IndexReader::get_sum_total_term_freq(sub_reader, field)?;
             debug_assert!(sub >= 0);
             debug_assert!(sub >= sub_reader.get_sum_doc_freq(field)?);
             total += sub;
@@ -239,8 +245,12 @@ where
         }
         self.starts[reader_index]
     }
-    pub fn get_sequential_sub_readers(&self) -> &[IR] {
-        todo!()
+    pub fn get_sequential_sub_readers(&self) -> Vec<IndexReaderEnum<Arc<IR>, CR>> {
+        self.sub_reader
+            .iter()
+            .cloned()
+            .map(IndexReaderEnum::Leaf)
+            .collect()
     }
 }
 pub type BCRTermVectorsImpl<IR> = TermVectorsImpl<IR>;
