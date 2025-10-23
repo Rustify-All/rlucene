@@ -319,7 +319,7 @@ where
         Ok(Some(self.default_bulk_scorer(context)?))
     }
 
-    fn cost(&mut self) -> Result<i64> {
+    fn cost(&mut self, _context: &LeafReaderContext<LR>) -> Result<i64> {
         self.scorer.as_mut().unwrap().iterator().cost()
     }
 }

@@ -809,7 +809,7 @@ where
                         );
                         return Ok(None);
                     };
-                    let cost = supplier.cost()?;
+                    let cost = supplier.cost(context)?;
                     let max_doc = reader.max_doc()?;
                     debug_assert!(reader.get_core_cache_helper()?.is_some());
                     let ss = ScorerSupplierImpl1::new(
@@ -974,7 +974,7 @@ where
         Ok(Some(self.default_bulk_scorer(context)?))
     }
 
-    fn cost(&mut self) -> Result<i64> {
+    fn cost(&mut self, _context: &LeafReaderContext<LR>) -> Result<i64> {
         Ok(self.cost)
     }
 }
@@ -1012,7 +1012,7 @@ where
         Ok(Some(self.default_bulk_scorer(context)?))
     }
 
-    fn cost(&mut self) -> Result<i64> {
+    fn cost(&mut self, _context: &LeafReaderContext<LR>) -> Result<i64> {
         Ok(self.cost)
     }
 }

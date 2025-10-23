@@ -228,7 +228,7 @@ where
         }
     }
 
-    fn cost(&mut self) -> Result<i64> {
+    fn cost(&mut self, _context: &LeafReaderContext<LR>) -> Result<i64> {
         Ok(self.max_doc as i64)
     }
 }

@@ -69,7 +69,7 @@ where
     /// This may be a costly operation, so it should only be called if necessary.
     ///
     /// Corresponds to [`DocIdSetIterator::cost`](crate::core::search::doc_id_set_iterator::DocIdSetIterator::cost).
-    fn cost(&mut self) -> Result<i64>;
+    fn cost(&mut self, context: &LeafReaderContext<LR>) -> Result<i64>;
 
     /// Inform this [`ScorerSupplier`] that its returned scorers produce scores that get passed
     /// to the collector, as opposed to partial scores that then need to get combined (e.g. summed up).
@@ -134,9 +134,9 @@ macro_rules! either_scorer_supplier {
             }
 
             #[inline]
-            fn cost(&mut self) -> Result<i64> {
+            fn cost(&mut self, context: &LeafReaderContext<LR>) -> Result<i64> {
                 match self {
-                    $( Self::$Variant(inner) => inner.cost(), )+
+                    $( Self::$Variant(inner) => inner.cost(context), )+
                 }
             }
 

@@ -45,7 +45,7 @@ where
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    fn cost(&mut self) -> Result<i64> {
+    fn cost(&mut self, _context: &LeafReaderContext<LR>) -> Result<i64> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 

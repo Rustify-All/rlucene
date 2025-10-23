@@ -351,8 +351,8 @@ where
         }
     }
 
-    fn cost(&mut self) -> Result<i64> {
-        self.inner_scorer_supplier.cost()
+    fn cost(&mut self, context: &LeafReaderContext<IRC::LeafReader>) -> Result<i64> {
+        self.inner_scorer_supplier.cost(context)
     }
 }
 /// We return this as our BulkScorer so that if the CSQ wraps a query with its own optimized top-level scorer (e.g. BooleanScorer) we can use that top-level scorer.

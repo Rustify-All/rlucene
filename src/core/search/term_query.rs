@@ -562,7 +562,7 @@ where
         Ok(Some(self.default_bulk_scorer(context)?))
     }
 
-    fn cost(&mut self) -> Result<i64> {
+    fn cost(&mut self, _context: &LeafReaderContext<IRC::LeafReader>) -> Result<i64> {
         let result: Result<i32> = (|| match self.get_terms_enum()? {
             None => Ok(0),
             Some(_) => Ok(self.terms_enum.doc_freq()?),
