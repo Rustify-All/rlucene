@@ -554,9 +554,9 @@ impl IndexableField for Field {
         }
     }
 
-    fn binary_value(&self) -> Result<Option<&BytesRef<Vec<u8>>>> {
+    fn binary_value(&self) -> Result<Option<Cow<'_, BytesRef<Vec<u8>>>>> {
         if let FieldDataEnum::Binary(bytes) = &self.fields_data {
-            Ok(Some(bytes))
+            Ok(Some(Cow::Borrowed(bytes)))
         } else {
             Ok(None)
         }

@@ -954,10 +954,13 @@ where
 
         // points
         if field_type.point_dimension_count() != 0 {
+            let binary_value = field
+                .binary_value()?
+                .ok_or_else(|| LuceneError::illegal_argument("point field missing binary value"))?;
             pf.point_values_writer
                 .as_mut()
                 .unwrap()
-                .add_packed_value(doc_id, field.binary_value()?.as_ref().unwrap())?;
+                .add_packed_value(doc_id, binary_value.as_ref())?;
         }
 
         // TODO:
@@ -1173,7 +1176,7 @@ where
                         fp.field_info.as_ref().unwrap().name
                     ))
                 })?;
-                writer.add_value(doc_id, bytes)?;
+                writer.add_value(doc_id, bytes.as_ref())?;
             },
             Some(DocValuesWriterEnum::Sorted(writer)) => {
                 debug_assert_eq!(dv_type, DocValuesType::Sorted);
@@ -1183,7 +1186,7 @@ where
                         fp.field_info.as_ref().unwrap().name
                     ))
                 })?;
-                writer.add_value(doc_id, bytes)?;
+                writer.add_value(doc_id, bytes.as_ref())?;
             },
             Some(DocValuesWriterEnum::SortedNumeric(writer)) => {
                 debug_assert_eq!(dv_type, DocValuesType::SortedNumeric);
@@ -1218,7 +1221,7 @@ where
                         fp.field_info.as_ref().unwrap().name
                     ))
                 })?;
-                writer.add_value(doc_id, bytes)?;
+                writer.add_value(doc_id, bytes.as_ref())?;
             },
             None => {
                 return Err(LuceneError::illegal_state(format!(
@@ -1650,7 +1653,7 @@ impl PerField {
         }
         let mut attribute_source = EmptyAttributeSource;
         if let Err(e) = terms_hash_per_field.add_with_bytes_ref(
-            Some(binary_value),
+            Some(binary_value.as_ref()),
             doc_id,
             state,
             &mut attribute_source,
@@ -2509,7 +2512,7 @@ where
         self.delegate.token_stream(token_stream)
     }
 
-    fn binary_value(&self) -> Result<Option<&BytesRef<Vec<u8>>>> {
+    fn binary_value(&self) -> Result<Option<Cow<'_, BytesRef<Vec<u8>>>>> {
         self.delegate.binary_value()
     }
 

@@ -124,7 +124,7 @@ impl IndexableField for DoublePoint {
         self.parent_field.token_stream(token_stream)
     }
 
-    fn binary_value(&self) -> Result<Option<&BytesRef<Vec<u8>>>> {
+    fn binary_value(&self) -> Result<Option<Cow<'_, BytesRef<Vec<u8>>>>> {
         self.parent_field.binary_value()
     }
 

@@ -170,9 +170,9 @@ impl IndexableField for StringField {
     {
         self.parent_field.token_stream(token_stream)
     }
-    fn binary_value(&self) -> Result<Option<&BytesRef<Vec<u8>>>> {
+    fn binary_value(&self) -> Result<Option<Cow<'_, BytesRef<Vec<u8>>>>> {
         match self.binary_value {
-            Some(ref b) => Ok(Some(b)),
+            Some(ref b) => Ok(Some(Cow::Borrowed(b))),
             None => self.parent_field.binary_value(),
         }
     }

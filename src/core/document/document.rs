@@ -96,8 +96,8 @@ impl Document {
     /// - `name`: the name of the field
     ///
     /// # Returns
-    /// A `Vec<BytesRef>` of binary field values.
-    pub fn get_binary_values(&self, name: &str) -> Result<Vec<&BytesRef<Vec<u8>>>> {
+    /// A `Vec<Cow<BytesRef>>` of binary field values.
+    pub fn get_binary_values(&self, name: &str) -> Result<Vec<Cow<'_, BytesRef<Vec<u8>>>>> {
         let mut result = Vec::new();
 
         for field in &self.fields {
@@ -120,9 +120,9 @@ impl Document {
     /// - `name`: the name of the field.
     ///
     /// # Returns
-    /// A `Option<BytesRef>` containing the binary field value, or `None`
+    /// A `Option<Cow<BytesRef>>` containing the binary field value, or `None`
     /// if no matching field is found.
-    pub fn get_binary_value(&self, name: &str) -> Result<Option<&BytesRef<Vec<u8>>>> {
+    pub fn get_binary_value(&self, name: &str) -> Result<Option<Cow<'_, BytesRef<Vec<u8>>>>> {
         for field in &self.fields {
             if field.name() == name {
                 return match field.binary_value() {
@@ -299,7 +299,7 @@ mod tests {
 
         match doc.get_binary_value("binary")? {
             Some(bf) => {
-                let bf_value = bf.utf8_to_string()?;
+                let bf_value = bf.as_ref().utf8_to_string()?;
                 assert_eq!(bf_value, binary_val);
             },
             None => {
@@ -321,8 +321,8 @@ mod tests {
         let binary_tests = doc.get_binary_values("binary")?;
         assert_eq!(binary_tests.len(), 2);
 
-        let binary_test = binary_tests[0].utf8_to_string()?;
-        let binary_test2 = binary_tests[1].utf8_to_string()?;
+        let binary_test = binary_tests[0].as_ref().utf8_to_string()?;
+        let binary_test2 = binary_tests[1].as_ref().utf8_to_string()?;
 
         assert_ne!(binary_test, binary_test2);
         assert_eq!(binary_test, binary_val);

@@ -61,7 +61,7 @@ pub trait IndexableField: Display {
         token_stream: Option<&'a mut InnerTokenStreams>,
     ) -> Result<Option<Either2TokenStream<&'a mut InnerTokenStreams, &'a mut Self::TokenStream>>>;
     /// Non-null if this field has a binary value.
-    fn binary_value(&self) -> Result<Option<&BytesRef<Vec<u8>>>>;
+    fn binary_value(&self) -> Result<Option<Cow<'_, BytesRef<Vec<u8>>>>>;
     fn take_binary_value(&mut self) -> Result<Option<BytesRef<Vec<u8>>>>;
 
     /// Non-null if this field has a string value.
