@@ -152,7 +152,7 @@ where
             drop(slice);
             let num_values_last_block = (self.num_values - index) as usize;
             for i in 0..num_values_last_block {
-                self.buffer[i].store(slow_instance.get_immutable(index + i as i64)?, SeqCst);
+                self.buffer[i].store(slow_instance.get(index + i as i64)?, SeqCst);
             }
         } else if (self.bits_per_value & 0x07) == 0 {
             // bitsPerValue is a multiple of 8
@@ -215,7 +215,7 @@ impl<R> LongValues for LongValuesImpl<R>
 where
     R: RandomAccessInput,
 {
-    fn get_immutable(&self, index: i64) -> Result<i64> {
+    fn get(&self, index: i64) -> Result<i64> {
         debug_assert!(index >= 0);
         debug_assert!(index < self.num_values);
         let block_index = index >> DirectReader::MERGE_BUFFER_SHIFT;
@@ -246,7 +246,7 @@ impl<R> LongValues for DirectPackedReader1<R>
 where
     R: RandomAccessInput,
 {
-    fn get_immutable(&self, index: i64) -> Result<i64> {
+    fn get(&self, index: i64) -> Result<i64> {
         let shift = (index & 7) as i32;
         let mut slice = self.input.lock();
         let result = (slice.read_byte(self.offset + (index >> 3))? >> shift) & 0x1;
@@ -275,7 +275,7 @@ impl<R> LongValues for DirectPackedReader2<R>
 where
     R: RandomAccessInput,
 {
-    fn get_immutable(&self, index: i64) -> Result<i64> {
+    fn get(&self, index: i64) -> Result<i64> {
         debug_assert!(index >= 0);
         let shift = ((index & 3) as i32) << 1;
         let mut slice = self.input.lock();
@@ -306,7 +306,7 @@ impl<R> LongValues for DirectPackedReader4<R>
 where
     R: RandomAccessInput,
 {
-    fn get_immutable(&self, index: i64) -> Result<i64> {
+    fn get(&self, index: i64) -> Result<i64> {
         debug_assert!(index >= 0);
         let shift = ((index & 1) as i32) << 2;
         let mut slice = self.input.lock();
@@ -338,7 +338,7 @@ impl<R> LongValues for DirectPackedReader8<R>
 where
     R: RandomAccessInput,
 {
-    fn get_immutable(&self, index: i64) -> Result<i64> {
+    fn get(&self, index: i64) -> Result<i64> {
         debug_assert!(index >= 0);
         let mut slice = self.input.lock();
 
@@ -369,7 +369,7 @@ impl<R> LongValues for DirectPackedReader12<R>
 where
     R: RandomAccessInput,
 {
-    fn get_immutable(&self, index: i64) -> Result<i64> {
+    fn get(&self, index: i64) -> Result<i64> {
         debug_assert!(index >= 0);
         let off = (index * 12) >> 3;
         let shift = ((index & 1) as i32) << 2;
@@ -402,7 +402,7 @@ impl<R> LongValues for DirectPackedReader16<R>
 where
     R: RandomAccessInput,
 {
-    fn get_immutable(&self, index: i64) -> Result<i64> {
+    fn get(&self, index: i64) -> Result<i64> {
         debug_assert!(index >= 0);
         let mut slice = self.input.lock();
 
@@ -431,7 +431,7 @@ impl<R> LongValues for DirectPackedReader20<R>
 where
     R: RandomAccessInput,
 {
-    fn get_immutable(&self, index: i64) -> Result<i64> {
+    fn get(&self, index: i64) -> Result<i64> {
         debug_assert!(index >= 0);
         let off = (index * 20) >> 3;
         let shift = ((index & 1) as i32) << 2;
@@ -464,7 +464,7 @@ impl<R> LongValues for DirectPackedReader24<R>
 where
     R: RandomAccessInput,
 {
-    fn get_immutable(&self, index: i64) -> Result<i64> {
+    fn get(&self, index: i64) -> Result<i64> {
         debug_assert!(index >= 0);
         let mut slice = self.input.lock();
 
@@ -495,7 +495,7 @@ impl<R> LongValues for DirectPackedReader28<R>
 where
     R: RandomAccessInput,
 {
-    fn get_immutable(&self, index: i64) -> Result<i64> {
+    fn get(&self, index: i64) -> Result<i64> {
         debug_assert!(index >= 0);
         let off = (index * 28) >> 3;
         let shift = ((index & 1) as i32) << 2;
@@ -528,7 +528,7 @@ impl<R> LongValues for DirectPackedReader32<R>
 where
     R: RandomAccessInput,
 {
-    fn get_immutable(&self, index: i64) -> Result<i64> {
+    fn get(&self, index: i64) -> Result<i64> {
         debug_assert!(index >= 0);
         let mut slice = self.input.lock();
 
@@ -559,7 +559,7 @@ impl<R> LongValues for DirectPackedReader40<R>
 where
     R: RandomAccessInput,
 {
-    fn get_immutable(&self, index: i64) -> Result<i64> {
+    fn get(&self, index: i64) -> Result<i64> {
         debug_assert!(index >= 0);
         let mut slice = self.input.lock();
 
@@ -590,7 +590,7 @@ impl<R> LongValues for DirectPackedReader48<R>
 where
     R: RandomAccessInput,
 {
-    fn get_immutable(&self, index: i64) -> Result<i64> {
+    fn get(&self, index: i64) -> Result<i64> {
         debug_assert!(index >= 0);
         let mut slice = self.input.lock();
 
@@ -621,7 +621,7 @@ impl<R> LongValues for DirectPackedReader56<R>
 where
     R: RandomAccessInput,
 {
-    fn get_immutable(&self, index: i64) -> Result<i64> {
+    fn get(&self, index: i64) -> Result<i64> {
         debug_assert!(index >= 0);
         let mut slice = self.input.lock();
 
@@ -652,7 +652,7 @@ impl<R> LongValues for DirectPackedReader64<R>
 where
     R: RandomAccessInput,
 {
-    fn get_immutable(&self, index: i64) -> Result<i64> {
+    fn get(&self, index: i64) -> Result<i64> {
         debug_assert!(index >= 0);
         let mut slice = self.input.lock();
 

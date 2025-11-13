@@ -1858,10 +1858,10 @@ mod tests {
 
         let values = buf.build()?;
         for i in (0..size).rev() {
-            writer.set(i, values.get_immutable(i)?);
+            writer.set(i, values.get(i)?);
         }
         for i in 0..size {
-            assert_eq!(values.get_immutable(i)?, writer.get_immutable(i)?);
+            assert_eq!(values.get(i)?, writer.get(i)?);
         }
 
         // TODO
@@ -1873,9 +1873,9 @@ mod tests {
         let copy = writer.resize(new_size)?;
         for i in 0..copy.size() {
             if i < writer.size() {
-                assert_eq!(writer.get_immutable(i)?, copy.get_immutable(i)?);
+                assert_eq!(writer.get(i)?, copy.get(i)?);
             } else {
-                assert_eq!(copy.get_immutable(i)?, 0);
+                assert_eq!(copy.get(i)?, 0);
             }
         }
 
@@ -1884,11 +1884,10 @@ mod tests {
         let grow_len;
         if let Some(new_writer) = grow {
             grow_len = new_writer.size();
-            for (i, val) in
-                (0..grow_len).map(|i| (i, new_writer.get_immutable(i).expect("should not fail")))
+            for (i, val) in (0..grow_len).map(|i| (i, new_writer.get(i).expect("should not fail")))
             {
                 if i < writer.size() {
-                    assert_eq!(val, writer.get_immutable(i)?);
+                    assert_eq!(val, writer.get(i)?);
                 } else {
                     assert_eq!(val, 0);
                 }
@@ -1936,10 +1935,10 @@ mod tests {
 
         let values = buf.build()?;
         for i in (0..size).rev() {
-            writer.set(i, values.get_immutable(i)?);
+            writer.set(i, values.get(i)?);
         }
         for i in 0..size {
-            assert_eq!(values.get_immutable(i)?, writer.get_immutable(i)?);
+            assert_eq!(values.get(i)?, writer.get(i)?);
         }
 
         // TODO
@@ -1952,9 +1951,9 @@ mod tests {
         let copy = writer.resize(new_size)?;
         for i in 0..copy.size() {
             if i < writer.size() {
-                assert_eq!(writer.get_immutable(i)?, copy.get_immutable(i)?);
+                assert_eq!(writer.get(i)?, copy.get(i)?);
             } else {
-                assert_eq!(copy.get_immutable(i)?, 0);
+                assert_eq!(copy.get(i)?, 0);
             }
         }
 
@@ -1966,9 +1965,9 @@ mod tests {
             grow_len = grow.size();
             for i in 0..grow_len {
                 if i < writer.size() {
-                    assert_eq!(grow.get_immutable(i)?, writer.get_immutable(i)?);
+                    assert_eq!(grow.get(i)?, writer.get(i)?);
                 } else {
-                    assert_eq!(grow.get_immutable(i)?, 0);
+                    assert_eq!(grow.get(i)?, 0);
                 }
             }
         }
@@ -2262,7 +2261,7 @@ mod tests {
                 assert_eq!(arr.len(), values.size() as usize);
 
                 for (i, &value) in arr.iter().enumerate() {
-                    assert_eq!(value, values.get_immutable(i as i64)?);
+                    assert_eq!(value, values.get(i as i64)?);
                 }
 
                 let mut it = values.iterator();
@@ -2502,7 +2501,7 @@ mod tests {
             )?;
             assert_eq!(file_pointer, input.get_file_pointer());
             for (i, &value) in values.iter().enumerate().take(value_count) {
-                assert_eq!(value, reader.get_immutable(i as i64)?);
+                assert_eq!(value, reader.get(i as i64)?);
             }
         }
 

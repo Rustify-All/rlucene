@@ -531,11 +531,7 @@ where
         self.upto = self.values.offsets[self.doc_id as usize];
 
         if self.upto > 0 {
-            self.num_values = self
-                .values
-                .values
-                .get_immutable(self.upto - 1)?
-                .try_into()?;
+            self.num_values = self.values.values.get(self.upto - 1)?.try_into()?;
             Ok(true)
         } else {
             Ok(false)
@@ -561,11 +557,7 @@ where
             let offset = self.values.offsets[self.doc_id as usize];
             if offset > 0 {
                 self.upto = offset;
-                self.num_values = self
-                    .values
-                    .values
-                    .get_immutable(self.upto - 1)?
-                    .try_into()?;
+                self.num_values = self.values.values.get(self.upto - 1)?.try_into()?;
                 return Ok(self.doc_id);
             }
         }
@@ -585,7 +577,7 @@ where
     S: SortedNumericDocValues,
 {
     fn next_value(&mut self) -> Result<i64> {
-        let v = self.values.values.get_immutable(self.upto)?;
+        let v = self.values.values.get(self.upto)?;
         self.upto += 1;
         Ok(v)
     }

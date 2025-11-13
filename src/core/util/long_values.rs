@@ -18,15 +18,13 @@ use crate::core::util::error::lucene_error::{LuceneError, Result};
 
 /// Abstraction over an array of longs.
 pub trait LongValues {
-    fn get(&mut self, _index: i64) -> Result<i64> {
-        Err(LuceneError::not_implemented(
-            "Mutable get method not implemented",
-        ))
+    fn get_mut(&mut self, index: i64) -> Result<i64> {
+        self.get(index)
     }
 
     /// Add an extra, immutable version of the method.
     /// If you need to call get in an immutable context, you can implement this method.
-    fn get_immutable(&self, _index: i64) -> Result<i64> {
+    fn get(&self, _index: i64) -> Result<i64> {
         Err(LuceneError::not_implemented(
             "Immutable get method not implemented",
         ))
@@ -35,7 +33,7 @@ pub trait LongValues {
 
 pub struct Zeroes;
 impl LongValues for Zeroes {
-    fn get_immutable(&self, _index: i64) -> Result<i64> {
+    fn get(&self, _index: i64) -> Result<i64> {
         Ok(0)
     }
 }
@@ -50,15 +48,15 @@ macro_rules! either_long_values {
         where
             $( $T: LongValues ),+
         {
-            fn get(&mut self, index: i64) -> Result<i64> {
+            fn get_mut(&mut self, index: i64) -> Result<i64> {
                 match self {
-                    $( Self::$Variant(inner) => inner.get(index), )+
+                    $( Self::$Variant(inner) => inner.get_mut(index), )+
                 }
             }
 
-            fn get_immutable(&self, index: i64) -> Result<i64> {
+            fn get(&self, index: i64) -> Result<i64> {
                 match self {
-                    $( Self::$Variant(inner) => inner.get_immutable(index), )+
+                    $( Self::$Variant(inner) => inner.get(index), )+
                 }
             }
         }

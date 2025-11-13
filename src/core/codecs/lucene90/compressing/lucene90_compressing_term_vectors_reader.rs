@@ -356,12 +356,12 @@ where
         let mut position_index = vec![Vec::new(); num_fields];
         let mut term_index = 0;
         for i in 0..skip {
-            let term_count = num_terms.get_immutable(i as i64)?;
+            let term_count = num_terms.get(i as i64)?;
             term_index += term_count;
         }
         let mut term_index = term_index as usize;
         for (i, slot) in position_index.iter_mut().enumerate().take(num_fields) {
-            let term_count = num_terms.get_immutable(skip as i64 + i as i64)? as usize;
+            let term_count = num_terms.get(skip as i64 + i as i64)? as usize;
             let mut arr = vec![0i32; term_count + 1];
             for j in 0..term_count {
                 let freq = term_freqs[term_index + j];
@@ -395,8 +395,8 @@ where
         let mut to_skip = 0;
         let mut term_index = 0;
         for i in 0..skip {
-            let f = flags.get_immutable(i as i64)? as i32;
-            let term_count = num_terms.get_immutable(i as i64)? as usize;
+            let f = flags.get(i as i64)? as i32;
+            let term_count = num_terms.get(i as i64)? as usize;
             if (f & flag) != 0 {
                 for j in 0..term_count {
                     to_skip += term_freqs[term_index + j];
@@ -407,8 +407,8 @@ where
         reader.skip(to_skip as i64, &mut self.vectors_stream)?;
         // read doc positions
         for i in 0..num_fields {
-            let f = flags.get_immutable(skip as i64 + i as i64)? as i32;
-            let term_count = num_terms.get_immutable(skip as i64 + i as i64)? as usize;
+            let f = flags.get(skip as i64 + i as i64)? as i32;
+            let term_count = num_terms.get(skip as i64 + i as i64)? as usize;
             if (f & flag) != 0 {
                 let total_freq = position_index[i][term_count];
                 let mut field_positions = Vec::with_capacity(total_freq as usize);
@@ -545,11 +545,11 @@ where
                     let mut writer =
                         DirectWriter::get_instance(&mut out, total_fields as i64, *FLAGS_BITS)?;
                     for i in 0..total_fields {
-                        let field_num_off = all_field_num_offs.get_immutable(i as i64)?;
+                        let field_num_off = all_field_num_offs.get(i as i64)?;
                         debug_assert!(
                             field_num_off >= 0 && (field_num_off as usize) < field_nums.len()
                         );
-                        writer.add(field_flags.get_immutable(field_num_off)?)?;
+                        writer.add(field_flags.get(field_num_off)?)?;
                     }
                     writer.finish()?;
                     DirectReader::get_instance(
@@ -568,7 +568,7 @@ where
                 },
             };
             for (slot, off) in field_num_offs.iter_mut().zip((skip..).take(num_fields)) {
-                *slot = all_field_num_offs.get_immutable(off as i64)? as i32;
+                *slot = all_field_num_offs.get(off as i64)? as i32;
             }
             flags
         };
@@ -582,7 +582,7 @@ where
             );
             let mut sum = 0;
             for i in 0..total_fields {
-                sum += num_terms.get_immutable(i as i64)?;
+                sum += num_terms.get(i as i64)?;
             }
             (num_terms, sum)
         };
@@ -601,13 +601,13 @@ where
             // skip
             let mut to_skip = 0;
             for i in 0..skip {
-                to_skip += num_terms.get_immutable(i as i64)? as usize;
+                to_skip += num_terms.get(i as i64)? as usize;
             }
             reader.skip(to_skip as i64, &mut self.vectors_stream)?;
 
             // read prefix lengths
             for (i, slot) in prefix_lengths.iter_mut().enumerate().take(num_fields) {
-                let term_count = num_terms.get_immutable((skip + i) as i64)? as usize;
+                let term_count = num_terms.get((skip + i) as i64)? as usize;
                 let mut field_prefix_lengths = vec![0i32; term_count];
                 let mut j = 0;
 
@@ -629,14 +629,14 @@ where
             reader.reset(total_terms);
 
             for i in 0..skip {
-                let term_count = num_terms.get_immutable(i as i64)? as usize;
+                let term_count = num_terms.get(i as i64)? as usize;
                 for _ in 0..term_count {
                     doc_off += reader.next_value(&mut self.vectors_stream)? as i32;
                 }
             }
 
             for i in 0..num_fields {
-                let term_count = num_terms.get_immutable((skip + i) as i64)? as usize;
+                let term_count = num_terms.get((skip + i) as i64)? as usize;
                 let mut field_suffix_lengths = vec![0i32; term_count];
                 let mut j = 0;
                 while j < term_count {
@@ -654,7 +654,7 @@ where
 
             total_len = doc_off + doc_len;
             for i in (skip + num_fields)..total_fields {
-                let term_count = num_terms.get_immutable(i as i64)? as usize;
+                let term_count = num_terms.get(i as i64)? as usize;
                 for _ in 0..term_count {
                     total_len += reader.next_value(&mut self.vectors_stream)? as i32;
                 }
@@ -686,8 +686,8 @@ where
         let mut total_payloads = 0;
         let mut term_index = 0;
         for i in 0..total_fields {
-            let f = flags.get_immutable(i as i64)? as i32;
-            let term_count = num_terms.get_immutable(i as i64)? as usize;
+            let f = flags.get(i as i64)? as i32;
+            let term_count = num_terms.get(i as i64)? as usize;
             for _ in 0..term_count {
                 let freq = term_freqs[term_index];
                 term_index += 1;
@@ -767,7 +767,7 @@ where
                     let f_prefix_lengths = &prefix_lengths[i];
                     let f_suffix_lengths = &suffix_lengths[i];
                     let f_lengths = &mut lengths[i];
-                    let term_count = num_terms.get_immutable((skip + i) as i64)? as usize;
+                    let term_count = num_terms.get((skip + i) as i64)? as usize;
                     for j in 0..term_count {
                         // delta-decode start offsets and  patch lengths using term lengths
                         let term_length = f_prefix_lengths[j] + f_suffix_lengths[j];
@@ -793,7 +793,7 @@ where
                 let f_positions = &mut positions[i];
                 let f_position_index = &position_index[i];
                 if !f_positions.is_empty() {
-                    let term_count = num_terms.get_immutable((skip + i) as i64)? as usize;
+                    let term_count = num_terms.get((skip + i) as i64)? as usize;
                     for j in 0..term_count {
                         // delta-decode start offsets
                         for k in
@@ -815,8 +815,8 @@ where
             // skip
             let mut term_index = 0;
             for i in 0..skip {
-                let f = flags.get_immutable(i as i64)? as i32;
-                let term_count = num_terms.get_immutable(i as i64)? as usize;
+                let f = flags.get(i as i64)? as i32;
+                let term_count = num_terms.get(i as i64)? as usize;
                 if (f & PAYLOADS) != 0 {
                     for j in 0..term_count {
                         let freq = term_freqs[term_index + j];
@@ -832,8 +832,8 @@ where
 
             // read doc payload lengths
             for i in 0..num_fields {
-                let f = flags.get_immutable((skip + i) as i64)? as i32;
-                let term_count = num_terms.get_immutable((skip + i) as i64)? as usize;
+                let f = flags.get((skip + i) as i64)? as i32;
+                let term_count = num_terms.get((skip + i) as i64)? as usize;
                 if (f & PAYLOADS) != 0 {
                     let total_freq = position_index[i][term_count];
                     let mut field_payload_index = vec![0i32; (total_freq + 1) as usize];
@@ -856,8 +856,8 @@ where
             }
             total_payload_length += payload_len;
             for i in (skip + num_fields)..total_fields {
-                let f = flags.get_immutable(i as i64)? as i32;
-                let term_count = num_terms.get_immutable(i as i64)? as usize;
+                let f = flags.get(i as i64)? as i32;
+                let term_count = num_terms.get(i as i64)? as usize;
                 if (f & PAYLOADS) != 0 {
                     for j in 0..term_count {
                         let freq = term_freqs[term_index + j];
@@ -901,19 +901,19 @@ where
             .zip(field_num_terms.iter_mut())
             .enumerate()
         {
-            *flag_slot = flags.get_immutable((skip + i) as i64)? as i32;
-            *term_slot = num_terms.get_immutable((skip + i) as i64)? as i32;
+            *flag_slot = flags.get((skip + i) as i64)? as i32;
+            *term_slot = num_terms.get((skip + i) as i64)? as i32;
         }
 
         let mut field_term_freqs = vec![Vec::new(); num_fields];
         {
             let mut term_idx = 0;
             for n in 0..skip {
-                term_idx += num_terms.get_immutable(n as i64)? as usize;
+                term_idx += num_terms.get(n as i64)? as usize;
             }
 
             for (i, slot) in field_term_freqs.iter_mut().enumerate().take(num_fields) {
-                let term_count = num_terms.get_immutable((skip + i) as i64)? as usize;
+                let term_count = num_terms.get((skip + i) as i64)? as usize;
                 let mut v = Vec::with_capacity(term_count);
                 for _ in 0..term_count {
                     v.push(term_freqs[term_idx]);

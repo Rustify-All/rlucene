@@ -113,13 +113,13 @@ impl DocValuesFieldUpdatesBase for BinaryDocValuesFieldUpdates {
         ))
     }
     fn swap(&mut self, i: i32, j: i32) -> Result<()> {
-        let temp_offset = self.offsets.get_immutable(j as i64)?;
-        let value = self.offsets.get_immutable(i as i64)?;
+        let temp_offset = self.offsets.get_mut(j as i64)?;
+        let value = self.offsets.get_mut(i as i64)?;
         self.offsets.set(j as i64, value);
         self.offsets.set(i as i64, temp_offset);
 
-        let tem_length = self.lengths.get_immutable(j as i64)?;
-        let length = self.lengths.get_immutable(i as i64)?;
+        let tem_length = self.lengths.get_mut(j as i64)?;
+        let length = self.lengths.get_mut(i as i64)?;
         self.lengths.set(j as i64, length);
         self.lengths.set(i as i64, tem_length);
         Ok(())
@@ -176,10 +176,10 @@ impl AbstractIteratorBinary {
 }
 impl AbstractIteratorBase for AbstractIteratorBinary {
     fn set(&mut self, idx: i64) -> Result<()> {
-        debug_assert!(self.offsets.get_immutable(idx)? <= i32::MAX as i64);
-        self.offset = self.offsets.get_immutable(idx)? as i32;
-        debug_assert!(self.lengths.get_immutable(idx)? <= i32::MAX as i64);
-        self.length = self.lengths.get_immutable(idx)? as i32;
+        debug_assert!(self.offsets.get(idx)? <= i32::MAX as i64);
+        self.offset = self.offsets.get(idx)? as i32;
+        debug_assert!(self.lengths.get(idx)? <= i32::MAX as i64);
+        self.length = self.lengths.get(idx)? as i32;
         Ok(())
     }
 

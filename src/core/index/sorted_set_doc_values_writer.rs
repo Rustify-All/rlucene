@@ -697,7 +697,7 @@ where
     S: SortedSetDocValues,
 {
     fn next_ord(&mut self) -> Result<i64> {
-        let ord = self.ords.ords.get_immutable(self.ord_upto)?;
+        let ord = self.ords.ords.get(self.ord_upto)?;
         self.ord_upto += 1;
         Ok(ord)
     }

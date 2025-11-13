@@ -357,11 +357,8 @@ impl Inner {
         node_address: i64,
         hash_slot: i64,
     ) -> Result<&mut ByteBlockPoolReverseBytesReader> {
-        debug_assert_eq!(
-            self.fst_node_address.get_immutable(hash_slot)?,
-            node_address
-        );
-        let local_address = self.copied_node_address.get_immutable(hash_slot)?;
+        debug_assert_eq!(self.fst_node_address.get_mut(hash_slot)?, node_address);
+        let local_address = self.copied_node_address.get_mut(hash_slot)?;
         self.bytes_reader
             .set_pos_delta(node_address - local_address);
         Ok(&mut self.bytes_reader)
@@ -433,7 +430,7 @@ where
     ///
     /// The copied byte array
     pub fn get_bytes(&mut self, hash_slot: i64, length: i32) -> Result<Vec<u8>> {
-        let address = self.inner.copied_node_address.get_immutable(hash_slot)?;
+        let address = self.inner.copied_node_address.get_mut(hash_slot)?;
         debug_assert!(address - length as i64 + 1 >= 0);
 
         let mut buf = vec![0u8; length as usize];
@@ -445,14 +442,14 @@ where
     }
     /// Get the node address from the provided hash slot.
     pub fn get_node_address(&mut self, hash_slot: i64) -> Result<i64> {
-        self.inner.fst_node_address.get_immutable(hash_slot)
+        self.inner.fst_node_address.get_mut(hash_slot)
     }
     /// Set the node address for the given hash slot.
     pub fn set_node_address(&mut self, hash_slot: i64, node_address: i64) {
         debug_assert_eq!(
             self.inner
                 .fst_node_address
-                .get_immutable(hash_slot)
+                .get_mut(hash_slot)
                 .expect("should not fail"),
             0
         );
@@ -469,7 +466,7 @@ where
         debug_assert_eq!(
             self.inner
                 .copied_node_address
-                .get_immutable(hash_slot)
+                .get_mut(hash_slot)
                 .expect("shoudl not faield"),
             0
         );
@@ -490,12 +487,12 @@ where
         fallback_hash_slot: i64,
         node_length: i32,
     ) -> Result<()> {
-        debug_assert_eq!(self.inner.copied_node_address.get_immutable(hash_slot)?, 0);
+        debug_assert_eq!(self.inner.copied_node_address.get_mut(hash_slot)?, 0);
 
         let fallback_address = fallback_table
             .inner
             .copied_node_address
-            .get_immutable(fallback_hash_slot)?;
+            .get_mut(fallback_hash_slot)?;
         // fallbackAddress is the last offset of the node, but we need to copy
         // the bytes from the start address
         let fallback_start_address = fallback_address - node_length as i64 + 1;
@@ -541,17 +538,15 @@ where
         let new_mask = new_fst_node_address.size() - 1;
 
         for idx in 0..self.inner.fst_node_address.size() {
-            let address = self.inner.fst_node_address.get_immutable(idx)?;
+            let address = self.inner.fst_node_address.get_mut(idx)?;
             if address != 0 {
                 let mut hash_slot = self.hash(address, idx, fst)? & new_mask;
                 let mut c = 0;
                 loop {
-                    if new_fst_node_address.get_immutable(hash_slot)? == 0 {
+                    if new_fst_node_address.get_mut(hash_slot)? == 0 {
                         new_fst_node_address.set(hash_slot, address);
-                        new_copied_node_address.set(
-                            hash_slot,
-                            self.inner.copied_node_address.get_immutable(idx)?,
-                        );
+                        new_copied_node_address
+                            .set(hash_slot, self.inner.copied_node_address.get_mut(idx)?);
                         break;
                     }
                     // quadratic probe

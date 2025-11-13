@@ -161,7 +161,7 @@ impl Accountable for PackedLongValues {
     }
 }
 impl LongValues for PackedLongValues {
-    fn get_immutable(&self, index: i64) -> Result<i64> {
+    fn get(&self, index: i64) -> Result<i64> {
         debug_assert!(index >= 0);
         debug_assert!(index < self.size());
         let block = (index >> self.page_shift) as i32;

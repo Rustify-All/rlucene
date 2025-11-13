@@ -186,14 +186,14 @@ where
     }
 
     fn get_block_start_pointer(&self, block_id: i64) -> Result<i64> {
-        self.start_pointers.get_immutable(block_id)
+        self.start_pointers.get(block_id)
     }
 
     fn get_block_length(&self, block_id: i64) -> Result<i64> {
         let end_pointer = if block_id == (self.num_chunks - 1) as i64 {
             self.max_pointer
         } else {
-            self.start_pointers.get_immutable(block_id + 1)?
+            self.start_pointers.get(block_id + 1)?
         };
         Ok(end_pointer - self.get_block_start_pointer(block_id)?)
     }

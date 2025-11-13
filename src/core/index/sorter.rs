@@ -104,7 +104,7 @@ impl Sorter {
 
         // invert the docs mapping:
         for i in 0..max_doc {
-            let old = new_to_old.get_immutable(i as i64)?;
+            let old = new_to_old.get(i as i64)?;
             docs[old as usize] = i;
         } // docs is now the oldToNew mapping
 
@@ -247,15 +247,11 @@ impl DocMapImpl {
 }
 impl DocMap for DocMapImpl {
     fn old_to_new(&self, doc_id: i32) -> i32 {
-        self.old_to_new
-            .get_immutable(doc_id as i64)
-            .expect("should not fail") as i32
+        self.old_to_new.get(doc_id as i64).expect("should not fail") as i32
     }
 
     fn new_to_old(&self, doc_id: i32) -> i32 {
-        self.new_to_old
-            .get_immutable(doc_id as i64)
-            .expect("should not fail") as i32
+        self.new_to_old.get(doc_id as i64).expect("should not fail") as i32
     }
 
     fn size(&self) -> i32 {
