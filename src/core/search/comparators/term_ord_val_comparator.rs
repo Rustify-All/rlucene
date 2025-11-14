@@ -135,12 +135,9 @@ impl FieldComparator for TermOrdValComparator {
         self.top_value = Some(value);
     }
 
-    fn value(&self, slot: i32) -> Self::V {
+    fn value(&self, slot: i32) -> Option<Self::V> {
         // TODO: IMPORTANT: avoid the clone here
-        self.values[slot as usize]
-            .as_ref()
-            .expect("value in slot must be present")
-            .clone()
+        self.values[slot as usize].clone()
     }
 
     type LeafFieldComparator<LR>

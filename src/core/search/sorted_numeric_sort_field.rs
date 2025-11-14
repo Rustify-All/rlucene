@@ -501,7 +501,7 @@ macro_rules! impl_sorted_numeric_comparator {
                 self.base.set_top_value(value);
             }
 
-            fn value(&self, slot: i32) -> Self::V {
+            fn value(&self, slot: i32) -> Option<Self::V> {
                 self.base.value(slot)
             }
 

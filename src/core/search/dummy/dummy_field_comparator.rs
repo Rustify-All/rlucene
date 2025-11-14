@@ -31,7 +31,7 @@ impl FieldComparator for DummyFieldComparator {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    fn value(&self, _slot: i32) -> Self::V {
+    fn value(&self, _slot: i32) -> Option<Self::V> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 

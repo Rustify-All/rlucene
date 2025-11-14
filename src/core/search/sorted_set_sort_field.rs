@@ -297,7 +297,7 @@ impl FieldComparator for SortedDocValuesTermOrdValComparator {
         self.base.set_top_value(value);
     }
 
-    fn value(&self, slot: i32) -> Self::V {
+    fn value(&self, slot: i32) -> Option<Self::V> {
         self.base.value(slot)
     }
 
@@ -349,7 +349,6 @@ mod tests {
     use crate::core::index::sort::Sort;
     use crate::core::index::stored_fields::StoredFields;
     use crate::core::search::match_all_docs_query::MatchAllDocsQuery;
-    use crate::core::search::score_doc::ScoreDocLike;
     use crate::core::search::sorted_set_selector::SortedSetSelectorType::Max;
     use crate::core::search::sorted_set_sort_field::SortedSetSortField;
     use crate::core::search::top_docs::TopDocsLike;

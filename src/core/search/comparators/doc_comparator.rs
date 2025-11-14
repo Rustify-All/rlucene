@@ -68,8 +68,8 @@ impl FieldComparator for DocComparator {
         self.top_value_set = true;
     }
 
-    fn value(&self, slot: i32) -> Self::V {
-        self.doc_ids[slot as usize]
+    fn value(&self, slot: i32) -> Option<Self::V> {
+        Some(self.doc_ids[slot as usize])
     }
 
     type LeafFieldComparator<LR>

@@ -16,7 +16,9 @@
  */
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::leaf_reader_context::LeafReaderContext;
-use crate::core::search::field_comparator::{FieldComparator, FieldComparatorEnum};
+use crate::core::search::field_comparator::{
+    FieldComparator, FieldComparatorEnum, FieldComparatorValue,
+};
 use crate::core::search::field_doc::{FieldDoc, FieldsValue};
 use crate::core::search::leaf_field_comparator::LeafFieldComparatorEnum;
 use crate::core::search::pruning::Pruning;
@@ -266,7 +268,10 @@ impl PriorityQueue<TopFieldScoreDoc, FieldValueHitQueueComparator> {
                 let n = comparators.len();
                 let mut fields = Vec::with_capacity(n);
                 for comp in comparators {
-                    fields.push(comp.value(entry.slot));
+                    let value = comp
+                        .value(entry.slot)
+                        .unwrap_or_else(FieldComparatorValue::missing);
+                    fields.push(value);
                 }
                 Ok(FieldDoc::with_fields(entry.base.doc, entry.base.score, fields).into())
             },

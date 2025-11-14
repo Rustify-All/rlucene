@@ -23,7 +23,9 @@ use crate::core::search::collector::Collector;
 use crate::core::search::doc_id_set_iterator::Either2DocIdSetIterator;
 use crate::core::search::doc_id_stream::DocIdStream;
 use crate::core::search::dummy::dummy_leaf_collector::DummyLeafCollector;
-use crate::core::search::field_comparator::{FieldComparator, FieldComparatorEnum};
+use crate::core::search::field_comparator::{
+    FieldComparator, FieldComparatorEnum, FieldComparatorValue,
+};
 use crate::core::search::field_doc::FieldDoc;
 use crate::core::search::field_value_hit_queue::{
     Entry, FieldValueHitQueueComparator, TopFieldScoreDoc,
@@ -159,9 +161,9 @@ impl TopFieldCollector {
             let bottom = self.bottom()?;
 
             let first_comparator = &self.base.pq.get_comparators()[0];
-            let min_score = *first_comparator
+            let min_score = first_comparator
                 .value(bottom.slot()?)
-                .as_f32()
+                .and_then(FieldComparatorValue::into_f32)
                 .expect("first comparator is not a float");
 
             if min_score > self.min_competitive_score {

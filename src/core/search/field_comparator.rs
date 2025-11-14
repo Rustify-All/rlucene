@@ -38,7 +38,6 @@ use crate::core::search::sorted_numeric_sort_field::{
 use crate::core::search::sorted_set_sort_field::SortedDocValuesTermOrdValComparator;
 use crate::core::util::ToInt;
 use crate::core::util::error::lucene_error::Result;
-use num_traits::float::TotalOrder;
 use std::borrow::Cow;
 use std::cmp::Ordering;
 
@@ -90,8 +89,8 @@ pub trait FieldComparator {
     /// - `slot`: the slot index
     ///
     /// # Returns
-    /// The value stored in this slot.
-    fn value(&self, slot: i32) -> Self::V;
+    /// The value stored in this slot if it exists, otherwise [`None`].
+    fn value(&self, slot: i32) -> Option<Self::V>;
 
     type LeafFieldComparator<LR>: LeafFieldComparator
     where
@@ -187,8 +186,8 @@ impl FieldComparator for RelevanceComparator {
         self.top_value = value
     }
 
-    fn value(&self, slot: i32) -> Self::V {
-        self.scores[slot as usize]
+    fn value(&self, slot: i32) -> Option<Self::V> {
+        Some(self.scores[slot as usize])
     }
 
     type LeafFieldComparator<LR>
@@ -657,46 +656,46 @@ impl FieldComparator for FieldComparatorEnum {
         }
     }
 
-    fn value(&self, slot: i32) -> Self::V {
+    fn value(&self, slot: i32) -> Option<Self::V> {
         match self {
             FieldComparatorEnum::Relevance(comparator) => {
-                FieldComparatorValue::Float(comparator.value(slot))
+                comparator.value(slot).map(FieldComparatorValue::Float)
             },
             FieldComparatorEnum::Doc(comparator) => {
-                FieldComparatorValue::Doc(comparator.value(slot))
+                comparator.value(slot).map(FieldComparatorValue::Doc)
             },
             FieldComparatorEnum::Double(comparator) => {
-                FieldComparatorValue::Double(comparator.value(slot))
+                comparator.value(slot).map(FieldComparatorValue::Double)
             },
             FieldComparatorEnum::Float(comparator) => {
-                FieldComparatorValue::Float(comparator.value(slot))
+                comparator.value(slot).map(FieldComparatorValue::Float)
             },
             FieldComparatorEnum::Int(comparator) => {
-                FieldComparatorValue::Int(comparator.value(slot))
+                comparator.value(slot).map(FieldComparatorValue::Int)
             },
             FieldComparatorEnum::Long(comparator) => {
-                FieldComparatorValue::Long(comparator.value(slot))
+                comparator.value(slot).map(FieldComparatorValue::Long)
             },
             FieldComparatorEnum::TermVal(comparator) => {
-                FieldComparatorValue::TermVal(comparator.value(slot))
+                comparator.value(slot).map(FieldComparatorValue::TermVal)
             },
             FieldComparatorEnum::TermOrdValue(comparator) => {
-                FieldComparatorValue::TermVal(comparator.value(slot))
+                comparator.value(slot).map(FieldComparatorValue::TermVal)
             },
             FieldComparatorEnum::SortedNumericInt(comparator) => {
-                FieldComparatorValue::Int(comparator.value(slot))
+                comparator.value(slot).map(FieldComparatorValue::Int)
             },
             FieldComparatorEnum::SortedNumericLong(comparator) => {
-                FieldComparatorValue::Long(comparator.value(slot))
+                comparator.value(slot).map(FieldComparatorValue::Long)
             },
             FieldComparatorEnum::SortedNumericFloat(comparator) => {
-                FieldComparatorValue::Float(comparator.value(slot))
+                comparator.value(slot).map(FieldComparatorValue::Float)
             },
             FieldComparatorEnum::SortedNumericDouble(comparator) => {
-                FieldComparatorValue::Double(comparator.value(slot))
+                comparator.value(slot).map(FieldComparatorValue::Double)
             },
             FieldComparatorEnum::SortedDocValuesTermOrdVal(comparator) => {
-                FieldComparatorValue::TermVal(comparator.value(slot))
+                comparator.value(slot).map(FieldComparatorValue::TermVal)
             },
             FieldComparatorEnum::Dummy(_comparator) => {
                 unreachable!(
@@ -957,12 +956,9 @@ impl FieldComparator for TermValComparator {
         self.top_value = Some(value);
     }
 
-    fn value(&self, slot: i32) -> Self::V {
+    fn value(&self, slot: i32) -> Option<Self::V> {
         // TODO: IMPORTANT - avoid clone here
-        self.values[slot as usize]
-            .as_ref()
-            .expect("value in slot must be present")
-            .clone()
+        self.values[slot as usize].clone()
     }
 
     type LeafFieldComparator<LR>
