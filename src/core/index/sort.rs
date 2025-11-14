@@ -95,7 +95,11 @@ impl Sort {
     /// let sort = Sort::with_fields(fileds);
     /// assert!(sort.is_ok());
     /// ```
-    pub fn with_fields(fields: Vec<SortFieldEnum>) -> Result<Self> {
+    pub fn with_fields<T>(fields: Vec<T>) -> Result<Self>
+    where
+        T: Into<SortFieldEnum>,
+    {
+        let fields: Vec<SortFieldEnum> = fields.into_iter().map(Into::into).collect();
         if fields.is_empty() {
             Err(LuceneError::illegal_argument(
                 "There must be at least 1 sort field".to_string(),
@@ -197,39 +201,39 @@ mod tests {
 
         let mut sort_field2 = SortField::new("foo".into(), SortFieldType::String)?;
         assert_equals_sort(
-            &Sort::with_fields(vec![sort_field1.clone().into()])?,
-            &Sort::with_fields(vec![sort_field2.into()])?,
+            &Sort::with_fields(vec![sort_field1.clone()])?,
+            &Sort::with_fields(vec![sort_field2])?,
         );
 
         sort_field2 = SortField::new("bar".into(), SortFieldType::String)?;
         assert_different_sort(
-            &Sort::with_fields(vec![sort_field1.clone().into()])?,
-            &Sort::with_fields(vec![sort_field2.into()])?,
+            &Sort::with_fields(vec![sort_field1.clone()])?,
+            &Sort::with_fields(vec![sort_field2])?,
         );
 
         sort_field2 = SortField::new("foo".into(), SortFieldType::Long)?;
         assert_different_sort(
-            &Sort::with_fields(vec![sort_field1.clone().into()])?,
-            &Sort::with_fields(vec![sort_field2.into()])?,
+            &Sort::with_fields(vec![sort_field1.clone()])?,
+            &Sort::with_fields(vec![sort_field2])?,
         );
 
         sort_field2 = SortField::new("foo".into(), SortFieldType::String)?;
         sort_field2.set_missing_value(StringFirst)?;
         assert_different_sort(
-            &Sort::with_fields(vec![sort_field1.clone().into()])?,
-            &Sort::with_fields(vec![sort_field2.into()])?,
+            &Sort::with_fields(vec![sort_field1.clone()])?,
+            &Sort::with_fields(vec![sort_field2])?,
         );
 
         sort_field2 = SortField::with_reverse("foo".into(), SortFieldType::String, false)?;
         assert_equals_sort(
-            &Sort::with_fields(vec![sort_field1.clone().into()])?,
-            &Sort::with_fields(vec![sort_field2.into()])?,
+            &Sort::with_fields(vec![sort_field1.clone()])?,
+            &Sort::with_fields(vec![sort_field2])?,
         );
 
         sort_field2 = SortField::with_reverse("foo".into(), SortFieldType::String, true)?;
         assert_different_sort(
-            &Sort::with_fields(vec![sort_field1.into()])?,
-            &Sort::with_fields(vec![sort_field2.into()])?,
+            &Sort::with_fields(vec![sort_field1])?,
+            &Sort::with_fields(vec![sort_field2])?,
         );
 
         Ok(())
@@ -261,9 +265,7 @@ mod tests {
         writer.close()?;
 
         let mut searcher = new_searcher_with_reader(Arc::new(ir))?;
-        let sort = Sort::with_fields(vec![
-            SortField::new("value".into(), SortFieldType::String)?.into(),
-        ])?;
+        let sort = Sort::with_fields(vec![SortField::new(Some("value"), SortFieldType::String)?])?;
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort)?;
         assert_eq!(2, td.total_hits().value);
@@ -309,9 +311,11 @@ mod tests {
         writer.close()?;
 
         let mut searcher = new_searcher_with_reader(Arc::new(ir))?;
-        let sort = Sort::with_fields(vec![
-            SortField::with_reverse("value".into(), SortFieldType::String, true)?.into(),
-        ])?;
+        let sort = Sort::with_fields(vec![SortField::with_reverse(
+            Some("value"),
+            SortFieldType::String,
+            true,
+        )?])?;
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort)?;
         assert_eq!(2, td.total_hits().value);
@@ -355,9 +359,10 @@ mod tests {
         writer.close()?;
 
         let mut searcher = new_searcher_with_reader(Arc::new(ir))?;
-        let sort = Sort::with_fields(vec![
-            SortField::new("value".into(), SortFieldType::StringVal)?.into(),
-        ])?;
+        let sort = Sort::with_fields(vec![SortField::new(
+            Some("value"),
+            SortFieldType::StringVal,
+        )?])?;
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort)?;
         assert_eq!(2, td.total_hits().value);
@@ -400,9 +405,11 @@ mod tests {
         writer.close()?;
 
         let mut searcher = new_searcher_with_reader(Arc::new(ir))?;
-        let sort = Sort::with_fields(vec![
-            SortField::with_reverse("value".into(), SortFieldType::StringVal, true)?.into(),
-        ])?;
+        let sort = Sort::with_fields(vec![SortField::with_reverse(
+            Some("value"),
+            SortFieldType::StringVal,
+            true,
+        )?])?;
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort)?;
         assert_eq!(2, td.total_hits().value);
@@ -446,9 +453,7 @@ mod tests {
         writer.close()?;
 
         let mut searcher = new_searcher_with_reader(Arc::new(ir))?;
-        let sort = Sort::with_fields(vec![
-            SortField::new("value".into(), SortFieldType::Int)?.into(),
-        ])?;
+        let sort = Sort::with_fields(vec![SortField::new(Some("value"), SortFieldType::Int)?])?;
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort)?;
         assert_eq!(3, td.total_hits().value);
@@ -496,9 +501,11 @@ mod tests {
         writer.close()?;
 
         let mut searcher = new_searcher_with_reader(Arc::new(ir))?;
-        let sort = Sort::with_fields(vec![
-            SortField::with_reverse("value".into(), SortFieldType::Int, true)?.into(),
-        ])?;
+        let sort = Sort::with_fields(vec![SortField::with_reverse(
+            Some("value"),
+            SortFieldType::Int,
+            true,
+        )?])?;
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort)?;
         assert_eq!(3, td.total_hits().value);
@@ -544,9 +551,7 @@ mod tests {
         writer.close()?;
 
         let mut searcher = new_searcher_with_reader(Arc::new(ir))?;
-        let sort = Sort::with_fields(vec![
-            SortField::new("value".into(), SortFieldType::Int)?.into(),
-        ])?;
+        let sort = Sort::with_fields(vec![SortField::new(Some("value"), SortFieldType::Int)?])?;
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort)?;
         assert_eq!(3, td.total_hits().value);
@@ -595,7 +600,7 @@ mod tests {
 
         let mut sort_field = SortField::new("value".into(), SortFieldType::Int)?;
         sort_field.set_missing_value(i32::MAX)?;
-        let sort = Sort::with_fields(vec![sort_field.into()])?;
+        let sort = Sort::with_fields(vec![sort_field])?;
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort)?;
         assert_eq!(3, td.total_hits().value);
@@ -644,9 +649,7 @@ mod tests {
         writer.close()?;
 
         let mut searcher = new_searcher_with_reader(Arc::new(ir))?;
-        let sort = Sort::with_fields(vec![
-            SortField::new("value".into(), SortFieldType::Long)?.into(),
-        ])?;
+        let sort = Sort::with_fields(vec![SortField::new(Some("value"), SortFieldType::Long)?])?;
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort)?;
         assert_eq!(3, td.total_hits().value);
@@ -698,9 +701,11 @@ mod tests {
         writer.close()?;
 
         let mut searcher = new_searcher_with_reader(Arc::new(ir))?;
-        let sort = Sort::with_fields(vec![
-            SortField::with_reverse("value".into(), SortFieldType::Long, true)?.into(),
-        ])?;
+        let sort = Sort::with_fields(vec![SortField::with_reverse(
+            Some("value"),
+            SortFieldType::Long,
+            true,
+        )?])?;
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort)?;
         assert_eq!(3, td.total_hits().value);
@@ -747,9 +752,7 @@ mod tests {
         writer.close()?;
 
         let mut searcher = new_searcher_with_reader(Arc::new(ir))?;
-        let sort = Sort::with_fields(vec![
-            SortField::new("value".into(), SortFieldType::Long)?.into(),
-        ])?;
+        let sort = Sort::with_fields(vec![SortField::new(Some("value"), SortFieldType::Long)?])?;
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort)?;
         assert_eq!(3, td.total_hits().value);
@@ -799,7 +802,7 @@ mod tests {
 
         let mut sort_field = SortField::new("value".into(), SortFieldType::Long)?;
         sort_field.set_missing_value(i64::MAX)?;
-        let sort = Sort::with_fields(vec![sort_field.into()])?;
+        let sort = Sort::with_fields(vec![sort_field])?;
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort)?;
         assert_eq!(3, td.total_hits().value);
@@ -850,9 +853,7 @@ mod tests {
         writer.close()?;
 
         let mut searcher = new_searcher_with_reader(Arc::new(ir))?;
-        let sort = Sort::with_fields(vec![
-            SortField::new("value".into(), SortFieldType::Float)?.into(),
-        ])?;
+        let sort = Sort::with_fields(vec![SortField::new(Some("value"), SortFieldType::Float)?])?;
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort)?;
         assert_eq!(3, td.total_hits().value);
@@ -904,9 +905,11 @@ mod tests {
         writer.close()?;
 
         let mut searcher = new_searcher_with_reader(Arc::new(ir))?;
-        let sort = Sort::with_fields(vec![
-            SortField::with_reverse("value".into(), SortFieldType::Float, true)?.into(),
-        ])?;
+        let sort = Sort::with_fields(vec![SortField::with_reverse(
+            Some("value"),
+            SortFieldType::Float,
+            true,
+        )?])?;
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort)?;
         assert_eq!(3, td.total_hits().value);
@@ -955,9 +958,7 @@ mod tests {
         writer.close()?;
 
         let mut searcher = new_searcher_with_reader(Arc::new(ir))?;
-        let sort = Sort::with_fields(vec![
-            SortField::new("value".into(), SortFieldType::Float)?.into(),
-        ])?;
+        let sort = Sort::with_fields(vec![SortField::new(Some("value"), SortFieldType::Float)?])?;
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort)?;
         assert_eq!(3, td.total_hits().value);
@@ -1009,7 +1010,7 @@ mod tests {
 
         let mut sort_field = SortField::new("value".into(), SortFieldType::Float)?;
         sort_field.set_missing_value(f32::MAX)?;
-        let sort = Sort::with_fields(vec![sort_field.into()])?;
+        let sort = Sort::with_fields(vec![sort_field])?;
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort)?;
         assert_eq!(3, td.total_hits().value);
@@ -1075,9 +1076,7 @@ mod tests {
         writer.close()?;
 
         let mut searcher = new_searcher_with_reader(Arc::new(ir))?;
-        let sort = Sort::with_fields(vec![
-            SortField::new("value".into(), SortFieldType::Double)?.into(),
-        ])?;
+        let sort = Sort::with_fields(vec![SortField::new(Some("value"), SortFieldType::Double)?])?;
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort)?;
         assert_eq!(4, td.total_hits().value);
@@ -1128,9 +1127,7 @@ mod tests {
         writer.close()?;
 
         let mut searcher = new_searcher_with_reader(Arc::new(ir))?;
-        let sort = Sort::with_fields(vec![
-            SortField::new("value".into(), SortFieldType::Double)?.into(),
-        ])?;
+        let sort = Sort::with_fields(vec![SortField::new(Some("value"), SortFieldType::Double)?])?;
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort)?;
         assert_eq!(2, td.total_hits().value);
@@ -1191,9 +1188,11 @@ mod tests {
         writer.close()?;
 
         let mut searcher = new_searcher_with_reader(Arc::new(ir))?;
-        let sort = Sort::with_fields(vec![
-            SortField::with_reverse("value".into(), SortFieldType::Double, true)?.into(),
-        ])?;
+        let sort = Sort::with_fields(vec![SortField::with_reverse(
+            Some("value"),
+            SortFieldType::Double,
+            true,
+        )?])?;
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort)?;
         assert_eq!(4, td.total_hits().value);
@@ -1261,9 +1260,7 @@ mod tests {
         writer.close()?;
 
         let mut searcher = new_searcher_with_reader(Arc::new(ir))?;
-        let sort = Sort::with_fields(vec![
-            SortField::new("value".into(), SortFieldType::Double)?.into(),
-        ])?;
+        let sort = Sort::with_fields(vec![SortField::new(Some("value"), SortFieldType::Double)?])?;
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort)?;
         assert_eq!(4, td.total_hits().value);
@@ -1335,7 +1332,7 @@ mod tests {
 
         let mut sort_field = SortField::new("value".into(), SortFieldType::Double)?;
         sort_field.set_missing_value(f64::MAX)?;
-        let sort = Sort::with_fields(vec![sort_field.into()])?;
+        let sort = Sort::with_fields(vec![sort_field])?;
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort)?;
         assert_eq!(4, td.total_hits().value);
@@ -1418,8 +1415,8 @@ mod tests {
 
         let mut searcher = new_searcher_with_reader(Arc::new(ir))?;
         let sort = Arc::new(Sort::with_fields(vec![
-            SortField::new("value1".into(), SortFieldType::String)?.into(),
-            SortField::new("value2".into(), SortFieldType::Long)?.into(),
+            SortField::new(Some("value1"), SortFieldType::String)?,
+            SortField::new(Some("value2"), SortFieldType::Long)?,
         ])?);
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort.clone())?;

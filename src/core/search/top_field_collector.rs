@@ -1389,7 +1389,7 @@ mod tests {
     fn test_sort_without_fill_fields() -> Result<()> {
         let (_ir, mut is) = setup()?;
         let sorts = vec![
-            Sort::with_fields(vec![SortField::get_field_doc()?.into()])?,
+            Sort::with_fields(vec![SortField::get_field_doc()?])?,
             Sort::new()?,
         ];
         for sort in sorts {
@@ -1411,7 +1411,7 @@ mod tests {
         let (_ir, mut is) = setup()?;
         // Two Sort criteria to instantiate the multi/single comparators.
         let sorts = [
-            Sort::with_fields(vec![SortField::get_field_doc()?.into()])?,
+            Sort::with_fields(vec![SortField::get_field_doc()?])?,
             Sort::new()?,
         ];
 
@@ -1441,7 +1441,7 @@ mod tests {
 
         // Two Sort criteria to instantiate the multi/single comparators.
         let sorts = [
-            Arc::new(Sort::with_fields(vec![SortField::get_field_doc()?.into()])?),
+            Arc::new(Sort::with_fields(vec![SortField::get_field_doc()?])?),
             Arc::new(Sort::new()?),
         ];
 
@@ -1471,7 +1471,7 @@ mod tests {
     #[test]
     fn test_sort_without_total_hit_tracking() -> Result<()> {
         let (_ir, mut is) = setup()?;
-        let sort = Arc::new(Sort::with_fields(vec![SortField::get_field_doc()?.into()])?);
+        let sort = Arc::new(Sort::with_fields(vec![SortField::get_field_doc()?])?);
 
         for i in 0..2 {
             let query = MatchAllDocsQuery::new();
@@ -1505,9 +1505,10 @@ mod tests {
     fn test_total_hits() -> Result<()> {
         let mut random = random();
         let dir = Arc::new(new_directory(&mut random)?);
-        let sort = Arc::new(Sort::with_fields(vec![
-            SortField::new("foo".into(), SortFieldType::Long)?.into(),
-        ])?);
+        let sort = Arc::new(Sort::with_fields(vec![SortField::new(
+            Some("foo"),
+            SortFieldType::Long,
+        )?])?);
         // TODO 没有定义 合并策略
         let mut config = IndexWriterConfig::new();
         config
@@ -1623,8 +1624,8 @@ mod tests {
         let dummy_weight = DummyWeight::new(reader.leaves()?[0].reader().clone());
 
         let sort = Sort::with_fields(vec![
-            SortField::get_field_score()?.into(),
-            SortField::new("foo".into(), SortFieldType::Long)?.into(),
+            SortField::get_field_score()?,
+            SortField::new(Some("foo"), SortFieldType::Long)?,
         ])?;
 
         let mut collector = TopFieldCollectorManager::new(sort, 2, 2)?.new_collector()?;
@@ -1697,8 +1698,8 @@ mod tests {
         let dummy_weight = DummyWeight::new(reader.leaves()?[0].reader().clone());
         for total_hits_threshold in 0..20 {
             let sort = Sort::with_fields(vec![
-                SortField::get_field_score()?.into(),
-                SortField::new("foo".into(), SortFieldType::Long)?.into(),
+                SortField::get_field_score()?,
+                SortField::new(Some("foo"), SortFieldType::Long)?,
             ])?;
 
             let mut collector =
@@ -1744,7 +1745,7 @@ mod tests {
     fn test_sort_no_results() -> Result<()> {
         // Two Sort criteria to instantiate the multi/single comparators.
         let sorts = [
-            Sort::with_fields(vec![SortField::get_field_doc()?.into()])?,
+            Sort::with_fields(vec![SortField::get_field_doc()?])?,
             Sort::new()?,
         ];
 
@@ -1790,8 +1791,8 @@ mod tests {
         w.close()?;
 
         let sort = Sort::with_fields(vec![
-            SortField::get_field_score()?.into(),
-            SortField::get_field_doc()?.into(),
+            SortField::get_field_score()?,
+            SortField::get_field_doc()?,
         ])?;
         DEFAULT_INTERVAL.store(0, std::sync::atomic::Ordering::Relaxed);
         let manager = TopFieldCollectorManager::new(sort, 2, 0)?;
@@ -1922,8 +1923,8 @@ mod tests {
     fn test_relation_vs_top_docs_count() -> Result<()> {
         let mut random = random();
         let sort = Arc::new(Sort::with_fields(vec![
-            SortField::get_field_score()?.into(),
-            SortField::get_field_doc()?.into(),
+            SortField::get_field_score()?,
+            SortField::get_field_doc()?,
         ])?);
 
         let dir = Arc::new(new_directory(&mut random)?);

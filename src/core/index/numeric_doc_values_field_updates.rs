@@ -302,9 +302,7 @@ mod tests {
         let td = searcher.search_with_sort(
             TermQuery::new(Term::from_text("id", "doc-1")),
             1,
-            Sort::with_fields(vec![
-                SortField::new(Some("val"), SortFieldType::Long)?.into(),
-            ])?,
+            Sort::with_fields(vec![SortField::new(Some("val"), SortFieldType::Long)?])?,
         )?;
         assert_eq!(td.score_docs().len(), 1, "doc-1 missing?");
         assert_eq!(
@@ -316,9 +314,7 @@ mod tests {
         let td = searcher.search_with_sort(
             TermQuery::new(Term::from_text("id", "doc-2")),
             1,
-            Sort::with_fields(vec![
-                SortField::new(Some("val"), SortFieldType::Long)?.into(),
-            ])?,
+            Sort::with_fields(vec![SortField::new(Some("val"), SortFieldType::Long)?])?,
         )?;
         assert_eq!(td.score_docs().len(), 1, "doc-2 missing?");
         assert_eq!(
@@ -391,9 +387,7 @@ mod tests {
             let td = searcher.search_with_sort(
                 TermQuery::new(Term::from_text("id", &format!("doc-{}", id))),
                 1,
-                Sort::with_fields(vec![
-                    SortField::new(Some("val"), SortFieldType::Long)?.into(),
-                ])?,
+                Sort::with_fields(vec![SortField::new(Some("val"), SortFieldType::Long)?])?,
             )?;
             assert_eq!(td.total_hits().value, 1, "{}", format!("{} missing?", id));
             assert_eq!(

@@ -649,9 +649,10 @@ mod tests {
         writer.close()?;
 
         let mut searcher = new_searcher_with_reader(reader.clone())?;
-        let sort = Sort::with_fields(vec![
-            SortedNumericSortField::new("value", SortFieldType::Int)?.into(),
-        ])?;
+        let sort = Sort::with_fields(vec![SortedNumericSortField::new(
+            "value",
+            SortFieldType::Int,
+        )?])?;
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort)?;
         assert_eq!(2, td.total_hits().value());
@@ -690,9 +691,11 @@ mod tests {
         writer.close()?;
 
         let mut searcher = new_searcher_with_reader(reader.clone())?;
-        let sort = Sort::with_fields(vec![
-            SortedNumericSortField::with_reverse("value", SortFieldType::Int, true)?.into(),
-        ])?;
+        let sort = Sort::with_fields(vec![SortedNumericSortField::with_reverse(
+            "value",
+            SortFieldType::Int,
+            true,
+        )?])?;
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort)?;
         assert_eq!(2, td.total_hits().value());
@@ -738,7 +741,7 @@ mod tests {
 
         let mut sort_field = SortedNumericSortField::new("value", SortFieldType::Int)?;
         sort_field.set_missing_value(i32::MIN)?;
-        let sort = Sort::with_fields(vec![sort_field.into()])?;
+        let sort = Sort::with_fields(vec![sort_field])?;
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort)?;
         assert_eq!(3, td.total_hits().value());
@@ -789,7 +792,7 @@ mod tests {
 
         let mut sort_field = SortedNumericSortField::new("value", SortFieldType::Int)?;
         sort_field.set_missing_value(i32::MAX)?;
-        let sort = Sort::with_fields(vec![sort_field.into()])?;
+        let sort = Sort::with_fields(vec![sort_field])?;
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort)?;
         assert_eq!(3, td.total_hits().value());
@@ -834,9 +837,10 @@ mod tests {
         writer.close()?;
 
         let mut searcher = new_searcher_with_reader(reader.clone())?;
-        let sort = Sort::with_fields(vec![
-            SortedNumericSortField::new("value", SortFieldType::Int)?.into(),
-        ])?;
+        let sort = Sort::with_fields(vec![SortedNumericSortField::new(
+            "value",
+            SortFieldType::Int,
+        )?])?;
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort)?;
         assert_eq!(2, td.total_hits().value());
@@ -874,9 +878,10 @@ mod tests {
         writer.close()?;
 
         let mut searcher = new_searcher_with_reader(reader.clone())?;
-        let sort = Sort::with_fields(vec![
-            SortedNumericSortField::new("value", SortFieldType::Float)?.into(),
-        ])?;
+        let sort = Sort::with_fields(vec![SortedNumericSortField::new(
+            "value",
+            SortFieldType::Float,
+        )?])?;
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort)?;
         assert_eq!(2, td.total_hits().value());
@@ -915,9 +920,10 @@ mod tests {
         writer.close()?;
 
         let mut searcher = new_searcher_with_reader(reader.clone())?;
-        let sort = Sort::with_fields(vec![
-            SortedNumericSortField::new("value", SortFieldType::Double)?.into(),
-        ])?;
+        let sort = Sort::with_fields(vec![SortedNumericSortField::new(
+            "value",
+            SortFieldType::Double,
+        )?])?;
 
         let td = searcher.search_with_sort(MatchAllDocsQuery::new(), 10, sort)?;
         assert_eq!(2, td.total_hits().value());
