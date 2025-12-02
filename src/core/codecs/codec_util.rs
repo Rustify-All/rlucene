@@ -810,7 +810,7 @@ mod tests {
             output.write_string("this is the data")?;
         }
 
-        let mut input = ByteBuffersIndexInput::new(out.get_data_input(), "temp");
+        let mut input = ByteBuffersIndexInput::new(out.get_data_input_ref(), "temp");
         input.seek(CodecUtil::header_length("FooBar") as i64)?;
         assert_eq!(input.read_string()?, "this is the data");
         Ok(())
@@ -849,7 +849,7 @@ mod tests {
         }
 
         // 创建输入对象
-        let input_data = output.get_data_input();
+        let input_data = output.get_data_input_ref();
         let mut input = ByteBuffersIndexInput::new(input_data, "temp");
 
         let result = CodecUtil::check_header(&mut input, "bogus", 1, 1);
@@ -867,7 +867,7 @@ mod tests {
             CodecUtil::write_footer(&mut index_output)?;
         }
 
-        let input_data = ByteBuffersIndexInput::new(output.get_data_input(), "temp");
+        let input_data = ByteBuffersIndexInput::new(output.get_data_input_ref(), "temp");
         CodecUtil::checksum_entire_file(&input_data)?;
         Ok(())
     }
@@ -884,7 +884,7 @@ mod tests {
         }
 
         let mut input = BufferedChecksumIndexInput::new(ByteBuffersIndexInput::new(
-            out.get_data_input(),
+            out.get_data_input_ref(),
             "temp",
         ));
         let mine = LuceneError::illegal_argument("fake exception");
@@ -906,7 +906,7 @@ mod tests {
         }
 
         let mut input = BufferedChecksumIndexInput::new(ByteBuffersIndexInput::new(
-            out.get_data_input(),
+            out.get_data_input_ref(),
             "temp",
         ));
         CodecUtil::check_header(&mut input, "FooBar", 5, 5)?;
@@ -932,7 +932,7 @@ mod tests {
         }
 
         let mut input = BufferedChecksumIndexInput::new(ByteBuffersIndexInput::new(
-            out.get_data_input(),
+            out.get_data_input_ref(),
             "temp",
         ));
 
@@ -966,7 +966,7 @@ mod tests {
             // checksum
         }
         let mut input = BufferedChecksumIndexInput::new(ByteBuffersIndexInput::new(
-            out.get_data_input(),
+            out.get_data_input_ref(),
             "temp",
         ));
         CodecUtil::check_header(&mut input, "FooBar", 5, 5)?;
@@ -989,7 +989,7 @@ mod tests {
             CodecUtil::write_index_header(&mut output, "FooBar", 5, &id, "xyz")?;
             output.write_string("this is the data")?;
         }
-        let mut input = ByteBuffersIndexInput::new(out.get_data_input(), "temp");
+        let mut input = ByteBuffersIndexInput::new(out.get_data_input_ref(), "temp");
 
         input.seek(CodecUtil::index_header_length("FooBar", "xyz") as i64)?;
 
@@ -1024,7 +1024,7 @@ mod tests {
             CodecUtil::write_index_header(&mut output, "foobar", 5, &id, &just_long_enough)?;
         }
 
-        let mut input = ByteBuffersIndexInput::new(out.get_data_input(), "temp");
+        let mut input = ByteBuffersIndexInput::new(out.get_data_input_ref(), "temp");
         CodecUtil::check_index_header(&mut input, "foobar", 5, 5, &id, &just_long_enough)?;
 
         assert_eq!(input.get_file_pointer(), input.length());
@@ -1064,7 +1064,7 @@ mod tests {
         }
 
         let mut input = BufferedChecksumIndexInput::new(ByteBuffersIndexInput::new(
-            out.get_data_input(),
+            out.get_data_input_ref(),
             "temp",
         ));
 
@@ -1114,7 +1114,7 @@ mod tests {
         let mut out = ByteBuffersDataOutput::new();
         let _output = ByteBuffersIndexOutput::new(&mut out, "temp", "temp");
 
-        let mut input = ByteBuffersIndexInput::new(out.get_data_input(), "temp");
+        let mut input = ByteBuffersIndexInput::new(out.get_data_input_ref(), "temp");
 
         let result = CodecUtil::checksum_entire_file(&input);
         assert!(matches!(result, Err(LuceneError::CorruptIndex(_))));

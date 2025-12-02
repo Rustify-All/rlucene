@@ -230,7 +230,7 @@ where
         let dirty_chunk = force;
 
         self.write_header(sliced, dirty_chunk)?;
-        let mut byte_buffers = self.buffered_docs.get_data_input();
+        let mut byte_buffers = self.buffered_docs.get_data_input_ref();
         // compress stored fields to fieldsStream.
         if sliced {
             let capacity = byte_buffers.length() as i32;

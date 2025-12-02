@@ -263,7 +263,7 @@ where
 
             // compress terms and payloads and write them to the output
             // using ByteBuffersDataInput reduce memory copy
-            let mut input = self.term_suffixes.get_data_input();
+            let mut input = self.term_suffixes.get_data_input_ref();
             self.compressor
                 .compress(&mut input, &mut self.vectors_stream)?;
         }

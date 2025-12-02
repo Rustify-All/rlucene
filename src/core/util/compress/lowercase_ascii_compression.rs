@@ -195,7 +195,7 @@ mod tests {
             assert!(compressed.size() < len as i64);
 
             let mut restored = vec![0u8; len + random.random_range(0..10)];
-            let mut input = compressed.get_data_input();
+            let mut input = compressed.get_data_input_ref();
             LowercaseAsciiCompression::decompress(&mut input, &mut restored, len)?;
 
             assert_eq!(&restored[..len], &bytes[..len]);
