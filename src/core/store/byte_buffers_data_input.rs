@@ -173,8 +173,11 @@ impl<'a, B: AsRef<[u8]>> ByteBuffersDataInput<'a, B> {
         self.pos - self.offset
     }
 }
-impl<'a> ByteBuffersDataInput<'a, &'a [u8]> {
-    pub fn slice(&self, offset: i64, length: i64) -> Result<ByteBuffersDataInput<'a, &'a [u8]>> {
+impl<'a, B> ByteBuffersDataInput<'a, B>
+where
+    B: AsRef<[u8]> + Clone,
+{
+    pub fn slice(&self, offset: i64, length: i64) -> Result<ByteBuffersDataInput<'a, B>> {
         if offset < 0 || length < 0 || offset + length > self.length {
             return Err(LuceneError::illegal_argument(format!(
                 "slice(offset={}, length={}) is out of bounds: {}",
@@ -184,17 +187,13 @@ impl<'a> ByteBuffersDataInput<'a, &'a [u8]> {
         let blocks = Self::slice_buffer_list(&self.blocks, offset, length);
         Ok(Self::new(blocks, length))
     }
-    pub fn slice_buffer_list(
-        blocks: &[Cursor<&'a [u8]>],
-        offset: i64,
-        length: i64,
-    ) -> Vec<Cursor<&'a [u8]>> {
+    pub fn slice_buffer_list(blocks: &[Cursor<B>], offset: i64, length: i64) -> Vec<Cursor<B>> {
         debug_assert!(!blocks.is_empty(), "blocks cannot be empty");
 
         let abs_start = blocks[0].position() + offset as u64;
         let abs_end = abs_start + length as u64;
 
-        let block_bytes = blocks[0].get_ref().len() as u64;
+        let block_bytes = blocks[0].get_ref().as_ref().len() as u64;
         debug_assert!(block_bytes.is_power_of_two());
         let block_bits = block_bytes.trailing_zeros() as u64;
         let block_mask = (1u64 << block_bits) - 1;
@@ -208,7 +207,7 @@ impl<'a> ByteBuffersDataInput<'a, &'a [u8]> {
             .iter()
             .enumerate()
             .map(|(i, block)| {
-                let vec_data = *block.get_ref();
+                let vec_data = block.get_ref().clone();
 
                 let mut new_cursor = Cursor::new(vec_data);
                 if i == 0 {

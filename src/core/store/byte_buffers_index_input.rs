@@ -18,19 +18,25 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 
 use crate::core::store::DataInput;
-use crate::core::store::byte_buffers_data_input::ByteBuffersDataInputRef;
+use crate::core::store::byte_buffers_data_input::ByteBuffersDataInput;
 use crate::core::store::index_input::IndexInput;
 use crate::core::store::random_access_input::RandomAccessInput;
 use crate::core::util::error::lucene_error::Result;
 
 /// An [`IndexInput`] implementing [`RandomAccessInput`]
 /// and backed by a [`ByteBuffersDataInput`](crate::core::store::byte_buffers_data_input::ByteBuffersDataInput).
-pub struct ByteBuffersIndexInput<'a> {
-    data_input: ByteBuffersDataInputRef<'a>,
+pub type ByteBuffersIndexInputRef<'a> = ByteBuffersIndexInput<'a, &'a [u8]>;
+pub type ByteBuffersIndexInputOwned = ByteBuffersIndexInput<'static, Vec<u8>>;
+
+pub struct ByteBuffersIndexInput<'a, B: AsRef<[u8]>> {
+    data_input: ByteBuffersDataInput<'a, B>,
     resource_description: String,
 }
-impl<'a> ByteBuffersIndexInput<'a> {
-    pub fn new(data_input: ByteBuffersDataInputRef<'a>, resource_description: &str) -> Self {
+impl<'a, B> ByteBuffersIndexInput<'a, B>
+where
+    B: AsRef<[u8]> + Clone,
+{
+    pub fn new(data_input: ByteBuffersDataInput<'a, B>, resource_description: &str) -> Self {
         Self {
             data_input,
             resource_description: resource_description.to_string(),
@@ -38,7 +44,10 @@ impl<'a> ByteBuffersIndexInput<'a> {
     }
 }
 
-impl DataInput for ByteBuffersIndexInput<'_> {
+impl<B> DataInput for ByteBuffersIndexInput<'_, B>
+where
+    B: AsRef<[u8]> + Clone,
+{
     fn read_byte(&mut self) -> Result<u8> {
         DataInput::read_byte(&mut self.data_input)
     }
@@ -128,7 +137,10 @@ impl DataInput for ByteBuffersIndexInput<'_> {
         IndexInput::get_file_pointer(self)
     }
 }
-impl RandomAccessInput for ByteBuffersIndexInput<'_> {
+impl<B> RandomAccessInput for ByteBuffersIndexInput<'_, B>
+where
+    B: AsRef<[u8]> + Clone,
+{
     fn length(&self) -> i64 {
         RandomAccessInput::length(&self.data_input)
     }
@@ -154,13 +166,19 @@ impl RandomAccessInput for ByteBuffersIndexInput<'_> {
     }
 }
 
-impl Display for ByteBuffersIndexInput<'_> {
+impl<B> Display for ByteBuffersIndexInput<'_, B>
+where
+    B: AsRef<[u8]> + Clone,
+{
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.resource_description)
     }
 }
 
-impl crate::core::util::clone::TryClone for ByteBuffersIndexInput<'_> {
+impl<B> crate::core::util::clone::TryClone for ByteBuffersIndexInput<'_, B>
+where
+    B: AsRef<[u8]> + Clone,
+{
     fn try_clone(&self) -> Result<Self>
     where
         Self: Sized,
@@ -173,7 +191,10 @@ impl crate::core::util::clone::TryClone for ByteBuffersIndexInput<'_> {
     }
 }
 
-impl<'a> IndexInput for ByteBuffersIndexInput<'a> {
+impl<'a, B> IndexInput for ByteBuffersIndexInput<'a, B>
+where
+    B: AsRef<[u8]> + Clone,
+{
     fn get_file_pointer(&self) -> i64 {
         self.data_input.position()
     }
@@ -186,7 +207,7 @@ impl<'a> IndexInput for ByteBuffersIndexInput<'a> {
         self.data_input.length()
     }
 
-    type Slice = ByteBuffersIndexInput<'a>;
+    type Slice = ByteBuffersIndexInput<'a, B>;
 
     fn slice(&self, slice_description: &str, offset: i64, length: i64) -> Result<Self::Slice> {
         Ok(ByteBuffersIndexInput::new(
