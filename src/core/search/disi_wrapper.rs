@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
+use crate::core::search::doc_id_set_iterator::{DocIdSetIterator, Either2DocIdSetIterator};
 use crate::core::search::scorable::{ChildScorable, Scorable};
 use crate::core::search::scorer::Scorer;
 use crate::core::search::two_phase_iterator::TwoPhaseIterator;
@@ -36,6 +36,11 @@ where
     // for MaxScoreBulkScorer
     pub(crate) max_window_score: f32,
 }
+
+pub type DisiWrapperDocIdSetIterator<'a, S> = Either2DocIdSetIterator<
+    <S as Scorer>::DocIdSetIteratorRef<'a>,
+    <<S as Scorer>::TwoPhaseIterRef<'a> as TwoPhaseIterator>::DocIdSetIteratorMut<'a>,
+>;
 impl<S> DisiWrapper<S>
 where
     S: Scorer,
@@ -58,37 +63,24 @@ where
     }
 
     pub fn advance(&mut self, doc: i32) -> Result<i32> {
-        let has_two_phase_iterator = self.scorer.two_phase_iterator().is_some();
-        match has_two_phase_iterator {
-            true => {
-                let mut tpi = self.scorer.two_phase_iterator();
-                let mut v = tpi.as_mut().unwrap().approximation_mut();
-                v.advance(doc)
-            },
-            false => {
-                let mut v = self.scorer.iterator();
-                v.advance(doc)
-            },
-        }
+        let mut disi = self.doc_id_set_iterator();
+        disi.advance(doc)
     }
     pub fn next_doc(&mut self) -> Result<i32> {
-        let has_two_phase_iterator = self.scorer.two_phase_iterator().is_some();
-        match has_two_phase_iterator {
-            true => {
-                let mut tpi = self.scorer.two_phase_iterator();
-                let mut v = tpi.as_mut().unwrap().approximation_mut();
-                v.next_doc()
-            },
-            false => {
-                let mut v = self.scorer.iterator();
-                v.next_doc()
-            },
-        }
+        let mut disi = self.doc_id_set_iterator();
+        disi.next_doc()
     }
     pub fn matches(&mut self) -> Result<bool> {
         match self.scorer.two_phase_iterator() {
             Some(mut tpi) => tpi.matches(),
             None => Ok(true),
+        }
+    }
+
+    pub fn doc_id_set_iterator(&mut self) -> DisiWrapperDocIdSetIterator<'_, S> {
+        match self.scorer.two_phase_iterator() {
+            Some(mut tpi) => DisiWrapperDocIdSetIterator::B(tpi.approximation_mut()),
+            None => DisiWrapperDocIdSetIterator::A(self.scorer.iterator()),
         }
     }
 }
