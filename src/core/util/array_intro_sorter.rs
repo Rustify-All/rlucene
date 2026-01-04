@@ -46,9 +46,8 @@ impl<T, C> Sorter for ArrayIntroSorter<'_, T, C>
 where
     C: Comparator<T>,
 {
-    fn compare(&mut self, i: i32, j: i32) -> Result<i32> {
-        self.comparator
-            .compare(&self.arr[i as usize], &self.arr[j as usize])
+    fn compare(&mut self, i: usize, j: usize) -> Result<i32> {
+        self.comparator.compare(&self.arr[i], &self.arr[j])
     }
 
     fn swap(&mut self, i: usize, j: usize) -> Result<()> {

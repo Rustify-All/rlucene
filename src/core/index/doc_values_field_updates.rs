@@ -539,7 +539,7 @@ impl<D> Sorter for IntroSorterImpl<'_, D>
 where
     D: DocValuesFieldUpdatesBase,
 {
-    fn compare(&mut self, i: i32, j: i32) -> Result<i32> {
+    fn compare(&mut self, i: usize, j: usize) -> Result<i32> {
         // increasing docID order:
         // NOTE: we can have ties here, when the same docID was updated in the
         // same segment, in which case we rely on sort being
@@ -548,7 +548,7 @@ where
         let cmp = (self.inner.docs.get(i as i64)? >> 1).cmp(&(self.inner.docs.get(j as i64)? >> 1));
 
         if cmp == std::cmp::Ordering::Equal {
-            Ok((self.ords.get(i as usize) - self.ords.get(j as usize)) as i32)
+            Ok((self.ords.get(i) - self.ords.get(j)) as i32)
         } else {
             Ok(cmp.to_int())
         }

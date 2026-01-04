@@ -35,7 +35,7 @@ use crate::core::util::error::lucene_error::{LuceneError, Result};
 /// This is an internal API.
 pub trait Sorter {
     /// Compare entries found in slots i and j
-    fn compare(&mut self, _i: i32, _j: i32) -> Result<i32> {
+    fn compare(&mut self, _i: usize, _j: usize) -> Result<i32> {
         Err(LuceneError::illegal_state(
             "compare() must be implemented if it needs to be used",
         ))
@@ -73,17 +73,17 @@ pub trait Sorter {
     }
 
     fn merge_in_place(&mut self, mut from: i32, mid: i32, mut to: i32) -> Result<()> {
-        if from == mid || mid == to || self.compare(mid - 1, mid)? <= 0 {
+        if from == mid || mid == to || self.compare((mid - 1) as usize, mid as usize)? <= 0 {
             return Ok(());
         } else if to - from == 2 {
             self.swap((mid - 1) as usize, mid as usize)?;
             return Ok(());
         }
 
-        while self.compare(from, mid)? <= 0 {
+        while self.compare(from as usize, mid as usize)? <= 0 {
             from += 1;
         }
-        while self.compare(mid - 1, to - 1)? <= 0 {
+        while self.compare((mid - 1) as usize, (to - 1) as usize)? <= 0 {
             to -= 1;
         }
 
@@ -113,7 +113,7 @@ pub trait Sorter {
         while len > 0 {
             let half = len >> 1;
             let mid = from + half;
-            if self.compare(mid, val)? < 0 {
+            if self.compare(mid as usize, val as usize)? < 0 {
                 from = mid + 1;
                 len = len - half - 1;
             } else {
@@ -128,7 +128,7 @@ pub trait Sorter {
         while len > 0 {
             let half = len >> 1;
             let mid = from + half;
-            if self.compare(val, mid)? < 0 {
+            if self.compare(val as usize, mid as usize)? < 0 {
                 len = half;
             } else {
                 from = mid + 1;
@@ -143,7 +143,7 @@ pub trait Sorter {
         let mut t = to;
 
         while f > from {
-            if self.compare(f, val)? < 0 {
+            if self.compare(f as usize, val as usize)? < 0 {
                 return self.lower(f, t, val);
             }
             let delta = t - f;
@@ -160,7 +160,7 @@ pub trait Sorter {
         let mut t = f + 1;
 
         while t < to {
-            if self.compare(t, val)? > 0 {
+            if self.compare(t as usize, val as usize)? > 0 {
                 return self.upper(f, t, val);
             }
             let delta = t - f;
@@ -251,7 +251,7 @@ pub trait Sorter {
             i += 1;
             loop {
                 let previous = current - 1;
-                if self.compare(previous, current)? > 0 {
+                if self.compare(previous as usize, current as usize)? > 0 {
                     self.swap(previous as usize, current as usize)?;
                     if previous == from {
                         break;
@@ -295,15 +295,16 @@ pub trait Sorter {
         let mut left_child = Self::heap_child(from, i);
         while left_child < to {
             let right_child = left_child + 1;
-            if self.compare(i, left_child)? < 0 {
-                if right_child < to && self.compare(left_child, right_child)? < 0 {
+            if self.compare(i as usize, left_child as usize)? < 0 {
+                if right_child < to && self.compare(left_child as usize, right_child as usize)? < 0
+                {
                     self.swap(i as usize, right_child as usize)?;
                     i = right_child;
                 } else {
                     self.swap(i as usize, left_child as usize)?;
                     i = left_child;
                 }
-            } else if right_child < to && self.compare(i, right_child)? < 0 {
+            } else if right_child < to && self.compare(i as usize, right_child as usize)? < 0 {
                 self.swap(i as usize, right_child as usize)?;
                 i = right_child;
             } else {

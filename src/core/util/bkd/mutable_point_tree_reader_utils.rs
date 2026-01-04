@@ -220,9 +220,9 @@ impl<M> Sorter for IntroSorterImpl<'_, M>
 where
     M: MutablePointTree,
 {
-    fn compare(&mut self, i: i32, j: i32) -> Result<i32> {
-        self.set_pivot(i)?;
-        self.compare_pivot(j)
+    fn compare(&mut self, i: usize, j: usize) -> Result<i32> {
+        self.set_pivot(i as i32)?;
+        self.compare_pivot(j as i32)
     }
 
     fn swap(&mut self, i: usize, j: usize) -> Result<()> {

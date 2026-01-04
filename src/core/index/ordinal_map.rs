@@ -498,9 +498,9 @@ impl<'a> InPlaceMergeSorterSorter<'a> {
     }
 }
 impl<'a> Sorter for InPlaceMergeSorterSorter<'a> {
-    fn compare(&mut self, i: i32, j: i32) -> Result<i32> {
-        let wi = self.weights[self.new_to_old[i as usize] as usize];
-        let wj = self.weights[self.new_to_old[j as usize] as usize];
+    fn compare(&mut self, i: usize, j: usize) -> Result<i32> {
+        let wi = self.weights[self.new_to_old[i] as usize];
+        let wj = self.weights[self.new_to_old[j] as usize];
         Ok(wj.cmp(&wi) as i32)
     }
 

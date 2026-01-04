@@ -832,9 +832,7 @@ impl<O> Sorter for IntroSorterImpl<'_, O>
 where
     O: IndexOutput,
 {
-    fn compare(&mut self, i: i32, j: i32) -> Result<i32> {
-        let i = i as usize;
-        let j = j as usize;
+    fn compare(&mut self, i: usize, j: usize) -> Result<i32> {
         match self.points {
             PointWriterEnum::Heap(heap_writer) => {
                 if self.skyped_bytes < self.bytes_per_dim {

@@ -109,9 +109,8 @@ impl<T, C: Comparator<T>> Sorter for ListTimSorter<'_, T, C>
 where
     T: Copy,
 {
-    fn compare(&mut self, i: i32, j: i32) -> Result<i32> {
-        self.comp
-            .compare(&self.arr[i as usize], &self.arr[j as usize])
+    fn compare(&mut self, i: usize, j: usize) -> Result<i32> {
+        self.comp.compare(&self.arr[i], &self.arr[j])
     }
 
     fn swap(&mut self, i: usize, j: usize) -> Result<()> {
@@ -125,7 +124,7 @@ where
     }
 
     fn compare_pivot(&mut self, j: i32) -> Result<i32> {
-        self.compare(self.pivot, j)
+        self.compare(self.pivot as usize, j as usize)
     }
 }
 impl<T, C: Comparator<T>> TimSorterBase for ListTimSorter<'_, T, C>
@@ -177,9 +176,8 @@ where
 }
 
 impl<T, C: Comparator<T>> Sorter for ListIntroSorter<'_, T, C> {
-    fn compare(&mut self, i: i32, j: i32) -> Result<i32> {
-        self.comp
-            .compare(&self.list[i as usize], &self.list[j as usize])
+    fn compare(&mut self, i: usize, j: usize) -> Result<i32> {
+        self.comp.compare(&self.list[i], &self.list[j])
     }
 
     fn swap(&mut self, i: usize, j: usize) -> Result<()> {

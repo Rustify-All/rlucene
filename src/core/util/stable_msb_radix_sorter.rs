@@ -131,14 +131,20 @@ where
             "Invalid indices: to={to}, mid={mid}, from={from}"
         );
         // If already sorted, return early
-        if self.delegate.compare(mid - 1, mid)? <= 0 {
+        if self
+            .delegate
+            .compare((mid - 1) as usize, mid as usize)?
+            <= 0
+        {
             return Ok(());
         }
         let mut left = from;
         let mut right = mid;
         let mut index = from;
         loop {
-            let cmp = self.delegate.compare(left, right)?;
+            let cmp = self
+                .delegate
+                .compare(left as usize, right as usize)?;
 
             if cmp <= 0 {
                 self.delegate.save(left, index);
@@ -176,7 +182,7 @@ impl<T> Sorter for MergeSorter<T>
 where
     T: StableMSBRadixSorterBase,
 {
-    fn compare(&mut self, i: i32, j: i32) -> Result<i32> {
+    fn compare(&mut self, i: usize, j: usize) -> Result<i32> {
         self.delegate.compare(i, j)
     }
 
@@ -190,7 +196,7 @@ where
     }
 
     fn compare_pivot(&mut self, i: i32) -> Result<i32> {
-        self.compare(self.pivot_index, i)
+        self.compare(self.pivot_index as usize, i as usize)
     }
 
     fn sort(&mut self, from: i32, to: i32) -> Result<()> {
@@ -227,10 +233,10 @@ impl<T> Sorter for MergeSorterImpl<'_, T>
 where
     T: StableMSBRadixSorterBase,
 {
-    fn compare(&mut self, i: i32, j: i32) -> Result<i32> {
+    fn compare(&mut self, i: usize, j: usize) -> Result<i32> {
         for o in self.k..self.max_length {
-            let b1 = self.delegate.byte_at(i, o.try_into()?)?;
-            let b2 = self.delegate.byte_at(j, o.try_into()?)?;
+            let b1 = self.delegate.byte_at(i as i32, o.try_into()?)?;
+            let b2 = self.delegate.byte_at(j as i32, o.try_into()?)?;
             if b1 != b2 {
                 return Ok(b1 - b2);
             } else if b1 == -1 {

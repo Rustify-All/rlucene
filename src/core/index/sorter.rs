@@ -212,10 +212,8 @@ impl<'a, DC> crate::core::util::Sorter for DocValueSorter<'a, DC>
 where
     DC: DocComparator,
 {
-    fn compare(&mut self, i: i32, j: i32) -> Result<i32> {
-        Ok(self
-            .comparator
-            .compare(self.docs[i as usize], self.docs[j as usize]))
+    fn compare(&mut self, i: usize, j: usize) -> Result<i32> {
+        Ok(self.comparator.compare(self.docs[i], self.docs[j]))
     }
 
     fn swap(&mut self, i: usize, j: usize) -> Result<()> {
@@ -229,7 +227,7 @@ where
     }
 
     fn compare_pivot(&mut self, j: i32) -> Result<i32> {
-        self.compare(self.pivot_index, j)
+        self.compare(self.pivot_index as usize, j as usize)
     }
 }
 pub struct DocMapImpl {

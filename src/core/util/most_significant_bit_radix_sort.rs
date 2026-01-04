@@ -328,10 +328,10 @@ impl<T> Sorter for MSBRadixIntroSorterImpl<'_, T>
 where
     T: MSBRadixSorterBase,
 {
-    fn compare(&mut self, i: i32, j: i32) -> Result<i32> {
+    fn compare(&mut self, i: usize, j: usize) -> Result<i32> {
         for o in self.k..self.max_length {
-            let b1 = self.delegate.byte_at(i, o)?;
-            let b2 = self.delegate.byte_at(j, o)?;
+            let b1 = self.delegate.byte_at(i as i32, o)?;
+            let b2 = self.delegate.byte_at(j as i32, o)?;
 
             if b1 != b2 {
                 return Ok(b1 - b2);

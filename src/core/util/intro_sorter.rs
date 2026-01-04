@@ -157,20 +157,20 @@ pub trait IntroSorter: Sorter {
     /// Returns the index of the median element among three elements at provided
     /// indices.
     fn median(&mut self, i: i32, j: i32, k: i32) -> Result<i32> {
-        if self.compare(i, j)? < 0 {
-            if self.compare(j, k)? <= 0 {
+        if self.compare(i as usize, j as usize)? < 0 {
+            if self.compare(j as usize, k as usize)? <= 0 {
                 return Ok(j);
             }
-            return if self.compare(i, k)? < 0 {
+            return if self.compare(i as usize, k as usize)? < 0 {
                 Ok(k)
             } else {
                 Ok(i)
             };
         }
-        if self.compare(j, k)? >= 0 {
+        if self.compare(j as usize, k as usize)? >= 0 {
             return Ok(j);
         }
-        if self.compare(i, k)? < 0 {
+        if self.compare(i as usize, k as usize)? < 0 {
             Ok(i)
         } else {
             Ok(k)

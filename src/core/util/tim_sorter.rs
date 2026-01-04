@@ -105,13 +105,13 @@ impl<T: TimSorterBase> TimSorter<T> {
             return Ok(1);
         }
         let mut o = run_base + 2;
-        if self.compare(run_base, run_base + 1)? > 0 {
-            while o < self.to && self.compare(o - 1, o)? > 0 {
+        if self.compare(run_base as usize, (run_base + 1) as usize)? > 0 {
+            while o < self.to && self.compare((o - 1) as usize, o as usize)? > 0 {
                 o += 1;
             }
             self.reverse(run_base, o)?;
         } else {
-            while o < self.to && self.compare(o - 1, o)? <= 0 {
+            while o < self.to && self.compare((o - 1) as usize, o as usize)? <= 0 {
                 o += 1;
             }
         }
@@ -180,7 +180,7 @@ impl<T: TimSorterBase> TimSorter<T> {
     }
 
     fn merge(&mut self, mut lo: i32, mid: i32, mut hi: i32) -> Result<()> {
-        if self.compare(mid - 1, mid)? <= 0 {
+        if self.compare((mid - 1) as usize, mid as usize)? <= 0 {
             return Ok(());
         }
 
@@ -197,7 +197,7 @@ impl<T: TimSorterBase> TimSorter<T> {
     }
 
     fn merge_lo(&mut self, lo: i32, mid: i32, hi: i32) -> Result<()> {
-        debug_assert!(self.delegate.compare(lo, mid)? > 0);
+        debug_assert!(self.delegate.compare(lo as usize, mid as usize)? > 0);
 
         let len1 = mid - lo;
         self.delegate.save(lo, len1);
@@ -248,7 +248,9 @@ impl<T: TimSorterBase> TimSorter<T> {
     }
 
     pub fn merge_hi(&mut self, lo: i32, mid: i32, hi: i32) -> Result<()> {
-        debug_assert!(self.compare(mid - 1, hi - 1)? > 0);
+        debug_assert!(
+            self.compare((mid - 1) as usize, (hi - 1) as usize)? > 0
+        );
 
         let len2 = hi - mid;
         self.delegate.save(mid, len2);
@@ -364,7 +366,7 @@ impl<T> Sorter for TimSorter<T>
 where
     T: TimSorterBase,
 {
-    fn compare(&mut self, i: i32, j: i32) -> Result<i32> {
+    fn compare(&mut self, i: usize, j: usize) -> Result<i32> {
         self.delegate.compare(i, j)
     }
 

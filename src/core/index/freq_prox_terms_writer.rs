@@ -664,8 +664,8 @@ impl<'a> DocOffsetSorter<'a> {
 }
 
 impl Sorter for DocOffsetSorter<'_> {
-    fn compare(&mut self, i: i32, j: i32) -> Result<i32> {
-        Ok(self.docs[i as usize] - self.docs[j as usize])
+    fn compare(&mut self, i: usize, j: usize) -> Result<i32> {
+        Ok(self.docs[i] - self.docs[j])
     }
 
     fn swap(&mut self, i: usize, j: usize) -> Result<()> {
@@ -680,7 +680,7 @@ impl Sorter for DocOffsetSorter<'_> {
     }
 
     fn compare_pivot(&mut self, j: i32) -> Result<i32> {
-        self.compare(self.pivot_index, j)
+        self.compare(self.pivot_index as usize, j as usize)
     }
 }
 

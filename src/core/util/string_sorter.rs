@@ -65,11 +65,11 @@ where
     T: StringSorterBase,
     C: BytesRefComparator,
 {
-    fn compare(&mut self, i: i32, j: i32) -> Result<i32> {
+    fn compare(&mut self, i: usize, j: usize) -> Result<i32> {
         self.delegate
-            .get(&mut self.scratch1, &mut self.scratch_bytes1, i)?;
+            .get(&mut self.scratch1, &mut self.scratch_bytes1, i as i32)?;
         self.delegate
-            .get(&mut self.scratch2, &mut self.scratch_bytes2, j)?;
+            .get(&mut self.scratch2, &mut self.scratch_bytes2, j as i32)?;
         self.cmp.compare(&self.scratch_bytes1, &self.scratch_bytes2)
     }
 
@@ -181,11 +181,11 @@ where
     T: StringSorterBase,
     C: BytesRefComparator,
 {
-    fn compare(&mut self, i: i32, j: i32) -> Result<i32> {
+    fn compare(&mut self, i: usize, j: usize) -> Result<i32> {
         self.delegate
-            .get(&mut self.scratch1, &mut self.scratch_bytes1, i)?;
+            .get(&mut self.scratch1, &mut self.scratch_bytes1, i as i32)?;
         self.delegate
-            .get(&mut self.scratch2, &mut self.scratch_bytes2, j)?;
+            .get(&mut self.scratch2, &mut self.scratch_bytes2, j as i32)?;
         if self.k.is_some() {
             self.cmp.compare_with_offset(
                 &self.scratch_bytes1,

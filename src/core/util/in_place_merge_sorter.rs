@@ -49,7 +49,7 @@ impl<S> Sorter for InPlaceMergeSorter<S>
 where
     S: Sorter,
 {
-    fn compare(&mut self, i: i32, j: i32) -> Result<i32> {
+    fn compare(&mut self, i: usize, j: usize) -> Result<i32> {
         self.sub.compare(i, j)
     }
 
@@ -63,7 +63,7 @@ where
     }
 
     fn compare_pivot(&mut self, j: i32) -> Result<i32> {
-        self.compare(self.pivot_index, j)
+        self.compare(self.pivot_index as usize, j as usize)
     }
 
     fn sort(&mut self, from: i32, to: i32) -> Result<()> {
