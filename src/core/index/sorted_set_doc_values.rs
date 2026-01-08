@@ -103,11 +103,13 @@ pub trait SortedSetDocValues: DocValuesIterator {
     type TermsEnumRef<'a>: TermsEnum
     where
         Self: 'a;
+    type TermsEnum: TermsEnum;
     /// Returns a [`TermsEnum`] over the
     /// values. The enum supports
     /// [`TermsEnum::ord()`] and
     /// [`TermsEnum::seek_exact_with_ord()`].
     fn terms_enum(&mut self) -> Result<Self::TermsEnumRef<'_>>;
+    fn take_terms_enum(self) -> Result<Self::TermsEnum>;
 
     fn default_terms_enum(&mut self) -> Result<SortedSetDocValuesTermsEnum<&mut Self>>
     where
@@ -164,6 +166,12 @@ where
 
     fn terms_enum(&mut self) -> Result<Self::TermsEnumRef<'_>> {
         (**self).terms_enum()
+    }
+
+    type TermsEnum = SortedSetDocValuesTermsEnum<Self>;
+
+    fn take_terms_enum(self) -> Result<Self::TermsEnum> {
+        self.default_take_terms_enum()
     }
 
     fn is_single_valued(&self) -> bool {

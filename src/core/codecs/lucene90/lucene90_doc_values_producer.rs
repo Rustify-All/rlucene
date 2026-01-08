@@ -2505,7 +2505,15 @@ where
     where
         R: 'a;
 
+    type TermsEnum = DummyTermsEnum;
+
     fn terms_enum(&mut self) -> Result<Self::TermsEnumRef<'_>> {
+        Err(LuceneError::unsupported_operation(
+            "Bug! should not be here",
+        ))
+    }
+
+    fn take_terms_enum(self) -> Result<Self::TermsEnum> {
         Err(LuceneError::unsupported_operation(
             "Bug! should not be here",
         ))
@@ -2609,7 +2617,15 @@ where
     where
         I: 'a;
 
+    type TermsEnum = DummyTermsEnum;
+
     fn terms_enum(&mut self) -> Result<Self::TermsEnumRef<'_>> {
+        Err(LuceneError::unsupported_operation(
+            "Bug! should not be here",
+        ))
+    }
+
+    fn take_terms_enum(self) -> Result<Self::TermsEnum> {
         Err(LuceneError::unsupported_operation(
             "Bug! should not be here",
         ))
@@ -2679,7 +2695,15 @@ where
     where
         I: 'a;
 
+    type TermsEnum = DummyTermsEnum;
+
     fn terms_enum(&mut self) -> Result<Self::TermsEnumRef<'_>> {
+        Err(LuceneError::unsupported_operation(
+            "Bug! should not be here",
+        ))
+    }
+
+    fn take_terms_enum(self) -> Result<Self::TermsEnum> {
         Err(LuceneError::unsupported_operation(
             "Bug! should not be here",
         ))
@@ -2799,7 +2823,21 @@ where
     where
         I: 'a;
 
+    type TermsEnum = BaseTermsEnum<TermsDict<I>>;
+
     fn terms_enum(&mut self) -> Result<Self::TermsEnumRef<'_>> {
+        let terms_dict_entry = match self.entry.terms_dict_entry {
+            Some(ref entry) => entry.clone(),
+            None => {
+                return Err(LuceneError::illegal_state(
+                    "TermsDictEntry's terms_dict_entry is None",
+                ));
+            },
+        };
+        TermsDict::new(terms_dict_entry, self.data.as_ref(), self.merging)
+    }
+
+    fn take_terms_enum(self) -> Result<Self::TermsEnum> {
         let terms_dict_entry = match self.entry.terms_dict_entry {
             Some(ref entry) => entry.clone(),
             None => {

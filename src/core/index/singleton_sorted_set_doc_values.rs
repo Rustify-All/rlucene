@@ -137,8 +137,14 @@ where
     where
         S: 'a;
 
+    type TermsEnum = <S as SortedDocValues>::TermsEnum1;
+
     fn terms_enum(&mut self) -> Result<Self::TermsEnumRef<'_>> {
         self.inner.as_mut().unwrap().terms_enum()
+    }
+
+    fn take_terms_enum(self) -> Result<Self::TermsEnum> {
+        self.inner.unwrap().take_terms_enum()
     }
 
     fn is_single_valued(&self) -> bool {
