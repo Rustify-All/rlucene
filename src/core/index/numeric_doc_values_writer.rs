@@ -348,7 +348,7 @@ where
 
     fn advance_exact(&self, target: i32) -> bool {
         match &self.docs_with_field {
-            Some(bits) => bits.get(target as usize),
+            Some(bits) => bits.get(target as usize).unwrap_or(false),
             None => true,
         }
     }

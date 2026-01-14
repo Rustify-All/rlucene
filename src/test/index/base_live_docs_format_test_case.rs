@@ -71,7 +71,7 @@ pub trait BaseLiveDocsFormatTestCase {
                 let mut clear_bit;
                 loop {
                     clear_bit = random.random_range(0..max_doc);
-                    if live_docs.get(clear_bit as usize) {
+                    if live_docs.get(clear_bit as usize)? {
                         break;
                     }
                 }
@@ -82,7 +82,7 @@ pub trait BaseLiveDocsFormatTestCase {
                 let mut set_bit;
                 loop {
                     set_bit = random.random_range(0..max_doc);
-                    if !live_docs.get(set_bit as usize) {
+                    if !live_docs.get(set_bit as usize)? {
                         break;
                     }
                 }
@@ -135,7 +135,7 @@ pub trait BaseLiveDocsFormatTestCase {
 
         assert_eq!(max_doc as usize, bits2.length());
         for i in 0..max_doc as usize {
-            assert_eq!(bits.get(i), bits2.get(i));
+            assert_eq!(bits.get(i)?, bits2.get(i)?);
         }
         Ok(())
     }
@@ -150,7 +150,7 @@ impl TestBits {
     }
 }
 impl Bits for TestBits {
-    fn get(&self, index: usize) -> bool {
+    fn get(&self, index: usize) -> Result<bool> {
         self.live_docs.get(index)
     }
 
@@ -164,7 +164,7 @@ enum TestBitsEnum {
     Fixed(FixedBitSet),
 }
 impl Bits for TestBitsEnum {
-    fn get(&self, index: usize) -> bool {
+    fn get(&self, index: usize) -> Result<bool> {
         match self {
             TestBitsEnum::Test(test) => test.get(index),
             TestBitsEnum::Fixed(fixed) => fixed.get(index),

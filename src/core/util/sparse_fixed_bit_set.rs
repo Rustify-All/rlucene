@@ -391,7 +391,7 @@ fn long_bits(index: usize, bits: &[u64], i64: usize) -> i64 {
 }
 
 impl Bits for SparseFixedBitSet {
-    fn get(&self, i: usize) -> bool {
+    fn get(&self, i: usize) -> Result<bool> {
         debug_assert!(self.consistent(i));
         let i4096 = i >> 12;
         let index = self.indices[i4096];
@@ -401,14 +401,14 @@ impl Bits for SparseFixedBitSet {
         // set note: this relies on the fact that shifts are mod 64 in
         // java
         if index as u64 & i64bit == 0 {
-            return false;
+            return Ok(false);
         }
         // if it is set, then we count the number of bits that are set on the
         // right of i64, and that gives us the index of the long that
         // stores the bits we are interested in
         let bits =
             self.bits[i4096].as_ref().unwrap()[(index as u64 & (i64bit - 1)).count_ones() as usize];
-        (bits & (1_u64 << (i % 64))) != 0
+        Ok((bits & (1_u64 << (i % 64))) != 0)
     }
 
     fn length(&self) -> usize {

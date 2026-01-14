@@ -88,8 +88,8 @@ impl<B: Bits> NotDocIdBits<B> {
 }
 
 impl<B: Bits> Bits for NotDocIdBits<B> {
-    fn get(&self, index: usize) -> bool {
-        !self.in_bit.get(index)
+    fn get(&self, index: usize) -> Result<bool> {
+        Ok(!self.in_bit.get(index)?)
     }
 
     fn length(&self) -> usize {
@@ -192,7 +192,7 @@ mod tests {
             let bits = bits2_wrap.unwrap();
             assert_eq!(num_bits, bits.length());
             for i in 0..num_bits {
-                assert_eq!(ds1.contains(i), bits.get(i));
+                assert_eq!(ds1.contains(i), bits.get(i)?);
             }
             BaseDocIdSetTestCaseSupperImpl::assert_equals(self, random, num_bits, ds1, ds2)
         }
