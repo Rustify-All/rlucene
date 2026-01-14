@@ -122,11 +122,11 @@ where
             if doc >= max {
                 break;
             }
-            if let Some(bits) = accept_docs {
-                if !bits.get(doc as usize)? {
-                    doc = self.scorers[0].iterator_mut().next_doc()?;
-                    continue;
-                }
+            if let Some(bits) = accept_docs
+                && !bits.get(doc as usize)?
+            {
+                doc = self.scorers[0].iterator_mut().next_doc()?;
+                continue;
             }
             // Compute the score as we find more matching clauses, in order to skip advancing other
             // clauses if the total score has no chance of being competitive. This works well because

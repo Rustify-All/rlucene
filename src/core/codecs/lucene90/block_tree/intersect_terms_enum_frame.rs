@@ -244,7 +244,7 @@ impl IntersectTermsEnumFrame {
 
                 // If current state is not accept and has transitions,
                 // process first block in case it has empty suffix
-                if !ite.run_automation.is_accept(frame.state) && frame.transition_count != 0 {
+                if !ite.run_automation.is_accept(frame.state)? && frame.transition_count != 0 {
                     // Maybe skip floor blocks:
                     debug_assert!(
                         frame.transition_index == 0,

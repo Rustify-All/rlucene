@@ -523,7 +523,7 @@ pub mod tests {
     impl DocMap for DocMapMock2 {
         fn get(&self, doc_id: i32) -> Result<i32> {
             let mapped = self.doc_map[doc_id as usize];
-            if self.live_docs.is_none() || self.live_docs.as_ref().unwrap().get(mapped as usize) {
+            if self.live_docs.is_none() || self.live_docs.as_ref().unwrap().get(mapped as usize)? {
                 Ok(mapped)
             } else {
                 Ok(-1)

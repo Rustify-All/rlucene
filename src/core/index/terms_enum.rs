@@ -676,7 +676,7 @@ mod tests {
         terms.clear();
         Ok(())
     }
-    fn accepts(c: &CompiledAutomaton, b: &BytesRef<Vec<u8>>) -> bool {
+    fn accepts(c: &CompiledAutomaton, b: &BytesRef<Vec<u8>>) -> Result<bool> {
         let mut state: i32 = 0;
 
         for idx in 0..b.length {
@@ -781,7 +781,7 @@ mod tests {
 
             for s in &accept_terms {
                 let b = new_bytes_ref_from_string(&mut random, s)?;
-                assert!(accepts(&c, &b));
+                assert!(accepts(&c, &b)?);
                 accept_terms_array.push(b.clone());
                 accept_terms_set.insert(b);
             }

@@ -1531,7 +1531,7 @@ mod tests {
 
             let br: BytesRef<Vec<u8>> = BytesRef::from_string(doc_value);
             assert!(
-                matcher.run(&br.bytes, br.offset, br.length),
+                matcher.run(&br.bytes, br.offset, br.length)?,
                 "[{}] should match [{}] {}-{}/{}",
                 regex_pattern,
                 doc_value,
@@ -1547,7 +1547,7 @@ mod tests {
                     Operations::determinize(&v, Operations::DEFAULT_DETERMINIZE_WORK_LIMIT)?;
                 let cs_matcher = ByteRunAutomaton::new(cs_automaton.into_owned())?;
                 assert!(
-                    !cs_matcher.run(&br.bytes, br.offset, br.length),
+                    !cs_matcher.run(&br.bytes, br.offset, br.length)?,
                     "[{}] (case-sensitive) should not match [{}]",
                     regex_pattern,
                     doc_value
@@ -1566,9 +1566,9 @@ mod tests {
         assert!(a.is_deterministic());
 
         let run = CharacterRunAutomaton::new(a)?;
-        assert!(run.run_str("abbbbbd"));
-        assert!(run.run_str("acd"));
-        assert!(!run.run_str("ad"));
+        assert!(run.run_str("abbbbbd")?);
+        assert!(run.run_str("acd")?);
+        assert!(!run.run_str("ad")?);
 
         Ok(())
     }

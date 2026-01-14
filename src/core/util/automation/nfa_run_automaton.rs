@@ -28,6 +28,7 @@ use crate::core::util::automation::operations::PointTransitionSet;
 use crate::core::util::automation::state_set::StateSet;
 use crate::core::util::automation::transition::Transition;
 use crate::core::util::automation::transition_accessor::TransitionAccessor;
+use crate::core::util::error::lucene_error::Result;
 /// A [`RunAutomaton`](crate::core::util::automation::run_automaton::RunAutomaton)
 /// that does not require a precomputed DFA. It will lazily determinize
 /// on-demand, memorizing the DFA states that have been explored.
@@ -408,9 +409,9 @@ impl ByteRunnable for NFARunAutomaton {
         self.step_with_dstate_index(state as usize, c)
     }
 
-    fn is_accept(&self, state: i32) -> bool {
+    fn is_accept(&self, state: i32) -> Result<bool> {
         debug_assert!(self.dstates.borrow().get(state as usize).is_some());
-        self.dstates.borrow()[state as usize].is_accept
+        Ok(self.dstates.borrow()[state as usize].is_accept)
     }
 
     fn get_size(&self) -> i32 {

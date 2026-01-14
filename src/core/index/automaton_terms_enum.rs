@@ -194,7 +194,7 @@ impl AutomatonTermsEnum {
     /// Returns:
     /// - `true` if more possible solutions exist for the DFA; otherwise,
     ///   `false`.
-    pub fn next_string(&mut self) -> bool {
+    pub fn next_string(&mut self) -> Result<bool> {
         let mut state;
         let mut pos: usize = 0;
 
@@ -234,14 +234,14 @@ impl AutomatonTermsEnum {
 
             // take the useful portion, and the last non-reject state, and attempt to
             // append characters that will match.
-            if self.next_string_with_position(state, pos) {
-                return true;
+            if self.next_string_with_position(state, pos)? {
+                return Ok(true);
             } else {
                 /* no more solutions exist from this useful portion, backtrack  */
                 let v = self.backtrack(pos);
                 if v < 0 {
                     /* no more solutions at all  */
-                    return false;
+                    return Ok(false);
                 }
                 pos = v as usize;
 
@@ -249,9 +249,9 @@ impl AutomatonTermsEnum {
                 let byte = self.seek_bytes_ref.byte_at(pos) as i32;
                 let new_state = self.byte_runnable.step(prev_state, byte);
 
-                if new_state >= 0 && self.byte_runnable.is_accept(new_state) {
+                if new_state >= 0 && self.byte_runnable.is_accept(new_state)? {
                     /* String is good to go as-is  */
-                    return true;
+                    return Ok(true);
                 }
 
                 if !self.finite {
@@ -282,7 +282,7 @@ impl AutomatonTermsEnum {
     /// Returns:
     /// - `true` if more possible solutions exist for the DFA from this
     ///   position.
-    fn next_string_with_position(&mut self, mut state: i32, position: usize) -> bool {
+    fn next_string_with_position(&mut self, mut state: i32, position: usize) -> Result<bool> {
         // The next lexicographic character must be greater than the existing character.
         let mut c = 0;
         if position < self.seek_bytes_ref.length() {
@@ -291,7 +291,7 @@ impl AutomatonTermsEnum {
             // then by definition it puts us in a reject state, and therefore this
             // path is dead. there cannot be any higher transitions. backtrack.
             if c == 0xFF {
-                return false;
+                return Ok(false);
             }
             c += 1;
         }
@@ -318,7 +318,7 @@ impl AutomatonTermsEnum {
                 // as long as is possible, continue down the minimal path in
                 // lexicographic order. if a loop or accept state is encountered, stop.
                 // descend minimal lex path until loop or accept state
-                while !self.is_visited(state) && !self.byte_runnable.is_accept(state) {
+                while !self.is_visited(state) && !self.byte_runnable.is_accept(state)? {
                     self.set_visited(state);
                     // Note: we work with a DFA with no transitions to dead states.
                     // so the below is ok, if it is not an accept state,
@@ -335,11 +335,11 @@ impl AutomatonTermsEnum {
                         self.set_linear(self.seek_bytes_ref.length() - 1);
                     }
                 }
-                return true;
+                return Ok(true);
             }
         }
 
-        false
+        Ok(false)
     }
 
     /// Attempts to backtrack through the string after encountering a dead end
@@ -378,7 +378,7 @@ impl FilteredTermsEnumBase for AutomatonTermsEnum {
         let v = if suffix_ok {
             if self
                 .byte_runnable
-                .run(&term.bytes, term.offset, term.length)
+                .run(&term.bytes, term.offset, term.length)?
             {
                 if self.linear {
                     AcceptStatus::Yes
@@ -410,14 +410,14 @@ impl FilteredTermsEnumBase for AutomatonTermsEnum {
                 None => {
                     debug_assert_eq!(self.seek_bytes_ref.length(), 0);
                     // return the empty term, as it's valid
-                    if self.byte_runnable.is_accept(0) {
+                    if self.byte_runnable.is_accept(0)? {
                         return Ok(Some(self.seek_bytes_ref.get_bytes_owner()));
                     }
                 },
             }
         }
 
-        let v = if self.next_string() {
+        let v = if self.next_string()? {
             Some(self.seek_bytes_ref.get_bytes_owner())
         } else {
             None

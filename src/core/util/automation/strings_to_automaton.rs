@@ -554,7 +554,7 @@ mod tests {
             };
 
             assert!(
-                run_automaton.run(&t.bytes, t.offset, t.length),
+                run_automaton.run(&t.bytes, t.offset, t.length)?,
                 "{} should be found but wasn't",
                 readable
             );

@@ -135,10 +135,8 @@ where
             doc
         };
         while doc < max {
-            let accepted = accept_docs
-                .map(|bits| bits.get(doc as usize))
-                .transpose()?
-                .unwrap_or(true);
+            let accepted =
+                accept_docs.is_none() || accept_docs.as_ref().unwrap().get(doc as usize)?;
             if accepted {
                 let i = doc as usize & MASK;
                 let idx = i >> 6;
@@ -320,7 +318,10 @@ where
             }
             collector.set_scorer(&mut w.scorer)?;
             while doc < end {
-                let accepted = accept_docs.map(|b| b.get(doc as usize)).unwrap_or(true);
+                let accepted = match accept_docs {
+                    None => true,
+                    Some(bits) => bits.get(doc as usize)?,
+                };
                 if accepted {
                     collector.collect(doc, &mut w.scorer)?;
                 }

@@ -16,6 +16,7 @@
  */
 use crate::core::util::automation::byte_run_automaton::ByteRunAutomaton;
 use crate::core::util::automation::nfa_run_automaton::NFARunAutomaton;
+use crate::core::util::error::lucene_error::Result;
 use std::rc::Rc;
 
 /// A runnable automaton accepting byte array as input
@@ -40,7 +41,7 @@ pub trait ByteRunnable {
     ///
     /// # Returns
     /// Whether the state is accepted.
-    fn is_accept(&self, state: i32) -> bool;
+    fn is_accept(&self, state: i32) -> Result<bool>;
 
     /// Returns number of states this automaton has.
     ///
@@ -59,13 +60,13 @@ pub trait ByteRunnable {
     ///
     /// # Returns
     /// Whether the automaton accepts the input.
-    fn run(&self, s: &[u8], offset: usize, length: usize) -> bool {
+    fn run(&self, s: &[u8], offset: usize, length: usize) -> Result<bool> {
         let mut p = 0;
         let end = offset + length;
         for &b in &s[offset..end] {
             p = self.step(p, b as i32);
             if p == -1 {
-                return false;
+                return Ok(false);
             }
         }
         self.is_accept(p)
@@ -84,7 +85,7 @@ impl ByteRunnable for ByteRunnableEnum {
         }
     }
 
-    fn is_accept(&self, state: i32) -> bool {
+    fn is_accept(&self, state: i32) -> Result<bool> {
         match self {
             ByteRunnableEnum::Byte(bra) => bra.is_accept(state),
             ByteRunnableEnum::NFA(nfa) => nfa.is_accept(state),
@@ -98,7 +99,7 @@ impl ByteRunnable for ByteRunnableEnum {
         }
     }
 
-    fn run(&self, s: &[u8], offset: usize, length: usize) -> bool {
+    fn run(&self, s: &[u8], offset: usize, length: usize) -> Result<bool> {
         match self {
             ByteRunnableEnum::Byte(bra) => bra.run(s, offset, length),
             ByteRunnableEnum::NFA(nfa) => nfa.run(s, offset, length),

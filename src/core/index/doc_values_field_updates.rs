@@ -604,7 +604,7 @@ pub trait DocValuesFieldIterator: DocValuesIterator {
     fn del_gen(&self) -> i64;
 
     /// Returns true if this document has a value.
-    fn has_value(&self) -> bool;
+    fn has_value(&self) -> Result<bool>;
 }
 pub enum DocValuesFieldIteratorEnum {
     AbstractBinary(AbstractIterator<AbstractIteratorBinary>),
@@ -691,7 +691,7 @@ impl DocValuesFieldIterator for DocValuesFieldIteratorEnum {
         }
     }
 
-    fn has_value(&self) -> bool {
+    fn has_value(&self) -> Result<bool> {
         match self {
             DocValuesFieldIteratorEnum::AbstractBinary(it) => it.has_value(),
             DocValuesFieldIteratorEnum::AbstractNumeric(it) => it.has_value(),
@@ -874,8 +874,13 @@ where
         unreachable!("del_gen is not supported")
     }
 
-    fn has_value(&self) -> bool {
-        self.queue.top().map(|top| top.has_value()).unwrap_or(false)
+    fn has_value(&self) -> Result<bool> {
+        match self.queue.top() {
+            Some(top) => top.has_value(),
+            None => Err(LuceneError::illegal_state(
+                "no top element in priority queue",
+            )),
+        }
     }
 }
 impl<T> DocIdSetIterator for MergedIterator<T>
@@ -1003,8 +1008,8 @@ where
         self.del_gen
     }
 
-    fn has_value(&self) -> bool {
-        self.has_value
+    fn has_value(&self) -> Result<bool> {
+        Ok(self.has_value)
     }
 }
 pub trait AbstractIteratorBase {
@@ -1216,15 +1221,15 @@ impl DocValuesFieldIterator for SingleValueDocValuesFieldUpdatesIterator {
         self.del_gen
     }
 
-    fn has_value(&self) -> bool {
+    fn has_value(&self) -> Result<bool> {
         if self.has_no_value.is_some() {
-            !self
+            Ok(!self
                 .has_no_value
                 .as_ref()
                 .unwrap()
-                .get(self.iterator.doc_id() as usize)
+                .get(self.iterator.doc_id() as usize)?)
         } else {
-            true
+            Ok(true)
         }
     }
 }
@@ -1383,7 +1388,7 @@ mod tests {
 
         let mut iterator = updates.iterator()?;
         assert_eq!(iterator.next_doc()?, 0);
-        assert!(!iterator.has_value());
+        assert!(!iterator.has_value()?);
         assert_eq!(iterator.next_doc()?, NO_MORE_DOCS);
 
         Ok(())
@@ -1401,7 +1406,7 @@ mod tests {
 
         let mut iterator = updates.iterator()?;
         assert_eq!(iterator.next_doc()?, 0);
-        assert!(iterator.has_value());
+        assert!(iterator.has_value()?);
         assert_eq!(iterator.long_value()?, 2);
         assert_eq!(iterator.next_doc()?, NO_MORE_DOCS);
 
@@ -1452,9 +1457,9 @@ mod tests {
             while iterator.next_doc()? != NO_MORE_DOCS {
                 assert_eq!(idx, iterator.doc_id() as usize);
                 if values[idx].is_none() {
-                    assert!(!iterator.has_value());
+                    assert!(!iterator.has_value()?);
                 } else {
-                    assert!(iterator.has_value());
+                    assert!(iterator.has_value()?);
                     assert_eq!(values[idx].unwrap() as i64, iterator.long_value()?);
                 }
                 idx += 1;
@@ -1530,9 +1535,9 @@ mod tests {
 
             if index == doc {
                 if values[index].is_none() {
-                    assert!(!iterator.has_value());
+                    assert!(!iterator.has_value()?);
                 } else {
-                    assert!(iterator.has_value());
+                    assert!(iterator.has_value()?);
                     assert_eq!(value, iterator.long_value()?);
                 }
                 index += 1;

@@ -946,8 +946,8 @@ where
                 if self.doc_id_out != NO_MORE_DOCS {
                     self.current_values_supplier = Some(CurrentSource::Update);
                     has_value = match self.update_doc_values {
-                        DocIdSetIteratorEnum2::A(ref mut dv) => dv.iterator.has_value(),
-                        DocIdSetIteratorEnum2::B(ref mut dv) => dv.iterator.has_value(),
+                        DocIdSetIteratorEnum2::A(ref mut dv) => dv.iterator.has_value()?,
+                        DocIdSetIteratorEnum2::B(ref mut dv) => dv.iterator.has_value()?,
                     };
                 } else {
                     has_value = true;

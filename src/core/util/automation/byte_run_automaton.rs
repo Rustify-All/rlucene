@@ -74,7 +74,7 @@ impl ByteRunnable for ByteRunAutomaton {
         self.base.step(state, c)
     }
 
-    fn is_accept(&self, state: i32) -> bool {
+    fn is_accept(&self, state: i32) -> Result<bool> {
         self.base.is_accept(state)
     }
 

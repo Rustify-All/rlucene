@@ -445,12 +445,12 @@ where
 
                 while beam.size() > 0 {
                     let c0node = beam.pop_node()?;
-                    if c0node == c.start || !not_fully_connected.as_ref().unwrap().get(c0node) {
+                    if c0node == c.start || !not_fully_connected.as_ref().unwrap().get(c0node)? {
                         continue;
                     }
 
                     let score = beam.minimum_score();
-                    debug_assert!(not_fully_connected.as_ref().unwrap().get(c0node));
+                    debug_assert!(not_fully_connected.as_ref().unwrap().get(c0node)?);
                     // link the nodes
                     self.link(
                         level,
@@ -499,7 +499,7 @@ where
         // We should have taken care of this check by searching for not-full nodes
         let max_conn = nbr0.nodes().len() - 1;
 
-        debug_assert!(not_fully_connected.get(n0));
+        debug_assert!(not_fully_connected.get(n0)?);
         debug_assert!(
             nbr0.size() < max_conn,
             "node {} is full, has {} friends",

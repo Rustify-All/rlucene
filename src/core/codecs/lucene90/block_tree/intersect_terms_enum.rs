@@ -566,7 +566,7 @@ where
                 self.current_frame = new_ord;
                 self.current_transition = self.current_frame;
                 self.stack[new_ord].last_state = last_state;
-            } else if self.run_automation.is_accept(state) {
+            } else if self.run_automation.is_accept(state)? {
                 self.copy_term();
                 debug_assert!(
                     self.saved_start_term

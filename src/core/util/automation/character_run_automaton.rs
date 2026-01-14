@@ -34,14 +34,14 @@ impl CharacterRunAutomaton {
     }
 
     /// Returns true if the given string is accepted by this automaton.
-    pub fn run_str(&self, s: &str) -> bool {
+    pub fn run_str(&self, s: &str) -> Result<bool> {
         let utf16_vec: Vec<u16> = s.encode_utf16().collect();
         let length = utf16_vec.len();
         self.run_chars(utf16_vec.as_slice(), 0, length)
     }
 
     /// Returns true if the given UTF-16 `char` buffer is accepted.
-    pub fn run_chars(&self, chars: &[u16], offset: usize, length: usize) -> bool {
+    pub fn run_chars(&self, chars: &[u16], offset: usize, length: usize) -> Result<bool> {
         let mut state: i32 = 0;
 
         let iter = decode_utf16(chars[offset..offset + length].iter().cloned());
@@ -51,10 +51,10 @@ impl CharacterRunAutomaton {
                 Ok(ch) => {
                     state = self.base.step(state, ch as i32);
                     if state == -1 {
-                        return false;
+                        return Ok(false);
                     }
                 },
-                Err(_) => return false,
+                Err(_) => return Ok(false),
             }
         }
 

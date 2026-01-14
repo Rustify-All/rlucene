@@ -161,7 +161,7 @@ impl HnswUtil {
         } else {
             let mut nodes = hnsw.get_nodes_on_level(level)?;
             for node in &mut nodes {
-                if connected_nodes.get(node) {
+                if connected_nodes.get(node)? {
                     continue;
                 }
                 let component = Self::mark_rooted(
@@ -215,7 +215,7 @@ impl HnswUtil {
         let mut count = 0;
 
         while let Some(node) = stack.pop_back() {
-            if connected_nodes.get(node) {
+            if connected_nodes.get(node)? {
                 continue;
             }
             count += 1;
@@ -465,7 +465,7 @@ mod tests {
 
             let mut graph = MockGraph::new(nodes.clone());
 
-            let expected = is_rooted(&nodes);
+            let expected = is_rooted(&nodes)?;
             let actual = HnswUtil::is_rooted(&mut graph)?;
             assert_eq!(expected, actual);
         }
@@ -473,16 +473,16 @@ mod tests {
         Ok(())
     }
 
-    fn is_rooted(nodes: &[Vec<Option<Vec<usize>>>]) -> bool {
+    fn is_rooted(nodes: &[Vec<Option<Vec<usize>>>]) -> Result<bool> {
         for level in (0..nodes.len()).rev() {
-            if !is_rooted_with_level(nodes, level) {
-                return false;
+            if !is_rooted_with_level(nodes, level)? {
+                return Ok(false);
             }
         }
-        true
+        Ok(true)
     }
 
-    fn is_rooted_with_level(nodes: &[Vec<Option<Vec<usize>>>], level: usize) -> bool {
+    fn is_rooted_with_level(nodes: &[Vec<Option<Vec<usize>>>], level: usize) -> Result<bool> {
         let entry_points: Vec<usize> = if level == nodes.len() - 1 {
             vec![0]
         } else {
@@ -509,7 +509,7 @@ mod tests {
             stack.push_back(entry_point);
 
             while let Some(node) = stack.pop_back() {
-                if connected.get(node) {
+                if connected.get(node)? {
                     continue;
                 }
                 connected.set(node);
@@ -523,7 +523,7 @@ mod tests {
             }
         }
 
-        count == level_size(&nodes[level])
+        Ok(count == level_size(&nodes[level]))
     }
 
     fn level_size(nodes: &[Option<Vec<usize>>]) -> usize {

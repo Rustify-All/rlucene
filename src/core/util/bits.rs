@@ -15,8 +15,8 @@
  * limitations under the License.
  */
 use crate::core::util::bit_set::BitSet;
-use crate::core::util::fixed_bit_set::FixedBitSet;
 use crate::core::util::error::lucene_error::Result;
+use crate::core::util::fixed_bit_set::FixedBitSet;
 use std::sync::Arc;
 /// Interface for `BitSet`-like structures.
 ///

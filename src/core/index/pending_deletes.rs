@@ -107,9 +107,7 @@ impl PendingDeletes {
             self.writeable_live_docs = true;
             self.live_docs = Some(match self.live_docs.take() {
                 Some(BitsEnum2::A(b)) => BitsEnum2::B(BitsEnum2::B(b.copy_of()?)),
-                Some(BitsEnum2::B(BitsEnum2::A(fb))) => {
-                    BitsEnum2::B(BitsEnum2::B(fb.copy_of()?))
-                },
+                Some(BitsEnum2::B(BitsEnum2::A(fb))) => BitsEnum2::B(BitsEnum2::B(fb.copy_of()?)),
                 Some(BitsEnum2::B(BitsEnum2::B(_))) => {
                     return Err(LuceneError::illegal_state("should not be here"));
                 },

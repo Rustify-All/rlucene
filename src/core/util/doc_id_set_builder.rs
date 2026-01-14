@@ -393,7 +393,7 @@ mod tests {
             let mut c = 0;
             while c < num_docs {
                 let d = random.random_range(0..max_doc);
-                if !docs.get(d as usize) {
+                if !docs.get(d as usize)? {
                     docs.set(d as usize);
                     c += 1
                 }

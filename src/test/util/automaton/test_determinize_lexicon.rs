@@ -73,7 +73,7 @@ mod tests {
             let lex_byte = ByteRunAutomaton::new(lex.into_owned())?;
             for s in terms {
                 let bytes = s.as_bytes();
-                assert!(lex_byte.run(bytes, 0, bytes.len()));
+                assert!(lex_byte.run(bytes, 0, bytes.len())?);
             }
         }
         Ok(())

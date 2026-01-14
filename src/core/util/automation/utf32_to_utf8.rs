@@ -406,7 +406,7 @@ mod tests {
         let len = UnicodeUtil::max_utf8_length(code)?;
         let mut buf = vec![0; len];
         let _ = ch.encode_utf8(&mut buf);
-        Ok(a.run(buf.as_slice(), 0, len))
+        a.run(buf.as_slice(), 0, len)
     }
     fn test_one<R: Rng + ?Sized>(
         random: &mut R,
@@ -531,13 +531,13 @@ mod tests {
         let bra = ByteRunAutomaton::new(automaton)?;
 
         // make sure character dfa accepts empty string
-        assert!(cra.base.is_accept(0));
-        assert!(cra.run_str(""));
-        assert!(cra.run_chars(&[], 0, 0));
+        assert!(cra.base.is_accept(0)?);
+        assert!(cra.run_str("")?);
+        assert!(cra.run_chars(&[], 0, 0)?);
 
         // make sure byte dfa accepts empty string
-        assert!(bra.is_accept(0));
-        assert!(bra.run(&[], 0, 0));
+        assert!(bra.is_accept(0)?);
+        assert!(bra.run(&[], 0, 0)?);
 
         Ok(())
     }
@@ -561,10 +561,10 @@ mod tests {
         let cra = CharacterRunAutomaton::new(automaton.clone())?;
         let bra = ByteRunAutomaton::new(automaton)?;
 
-        assert!(cra.run_str(&input));
+        assert!(cra.run_str(&input)?);
 
         let bytes = input.as_bytes();
-        assert!(bra.run(bytes, 0, bytes.len()));
+        assert!(bra.run(bytes, 0, bytes.len())?);
 
         Ok(())
     }
@@ -592,10 +592,10 @@ mod tests {
         let cra = CharacterRunAutomaton::new(automaton.clone())?;
         let bra = ByteRunAutomaton::new(automaton)?;
 
-        assert!(cra.run_str(&input));
+        assert!(cra.run_str(&input)?);
 
         let bytes = input.as_bytes();
-        assert!(bra.run(bytes, 0, bytes.len()));
+        assert!(bra.run(bytes, 0, bytes.len())?);
 
         Ok(())
     }
@@ -660,8 +660,8 @@ mod tests {
             };
 
             let bytes = string.as_bytes();
-            let cra_result = cra.run_str(&string);
-            let bra_result = bra.run(bytes, 0, bytes.len());
+            let cra_result = cra.run_str(&string)?;
+            let bra_result = bra.run(bytes, 0, bytes.len())?;
 
             assert_eq!(
                 cra_result, bra_result,

@@ -283,7 +283,7 @@ impl CompiledAutomaton {
             let num_transitions = automaton.get_num_transitions_with_state(state);
 
             if num_transitions == 0 {
-                debug_assert!(self.run_automaton.as_ref().unwrap().is_accept(state));
+                debug_assert!(self.run_automaton.as_ref().unwrap().is_accept(state)?);
                 term.set_length(idx);
                 return Ok(term.get_bytes_owner());
             }
@@ -313,7 +313,7 @@ impl CompiledAutomaton {
 
         // Special case: empty string
         if input.length == 0 {
-            return if run_automaton.is_accept(state) {
+            return if run_automaton.is_accept(state)? {
                 output.clear();
                 Ok(Some(output.get_bytes_owner()))
             } else {
@@ -329,7 +329,7 @@ impl CompiledAutomaton {
             let mut next_state = run_automaton.step(state, label);
 
             if idx == input.length - 1 {
-                if next_state != -1 && run_automaton.is_accept(next_state) {
+                if next_state != -1 && run_automaton.is_accept(next_state)? {
                     output.grow(idx + 1);
                     output.set_byte_at(idx, label as u8);
                     output.set_length(input.length);
@@ -344,13 +344,13 @@ impl CompiledAutomaton {
                 loop {
                     let num_transitions = automaton.get_num_transitions_with_state(state);
                     if num_transitions == 0 {
-                        debug_assert!(run_automaton.is_accept(state));
+                        debug_assert!(run_automaton.is_accept(state)?);
                         output.set_length(idx);
                         return Ok(Some(output.get_bytes_owner()));
                     } else {
                         automaton.get_transition(state, 0, &mut self.transition);
                         if label - 1 < self.transition.min {
-                            if run_automaton.is_accept(state) {
+                            if run_automaton.is_accept(state)? {
                                 output.set_length(idx);
                                 return Ok(Some(output.get_bytes_owner()));
                             }

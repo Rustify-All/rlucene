@@ -351,7 +351,7 @@ impl FrozenBufferedUpdates {
                         let v = if is_numeric {
                             if value.has_single_value() {
                                 let sub = SingleValueNumericDocValuesFieldUpdates::new(
-                                    value.get_numeric_value(0),
+                                    value.get_numeric_value(0)?,
                                 );
                                 let sub_type = sub.sub_type();
                                 let sub = SingleValueDocValuesFieldUpdates::new(
@@ -393,11 +393,8 @@ impl FrozenBufferedUpdates {
                             if doc == NO_MORE_DOCS {
                                 break;
                             }
-                            if accept_docs
-                                .as_ref()
-                                .map(|bits| bits.get(doc as usize))
-                                .transpose()?
-                                .unwrap_or(true)
+                            if accept_docs.is_none()
+                                || accept_docs.as_ref().unwrap().get(doc as usize)?
                             {
                                 // The limit is in the pre-sorted doc space:
                                 if sort_map.new_to_old(doc)? < limit {
@@ -415,11 +412,8 @@ impl FrozenBufferedUpdates {
                             if doc >= limit {
                                 break; // no more docs that can be updated for this term
                             }
-                            if accept_docs
-                                .as_ref()
-                                .map(|bits| bits.get(doc as usize))
-                                .transpose()?
-                                .unwrap_or(true)
+                            if accept_docs.is_none()
+                                || accept_docs.as_ref().unwrap().get(doc as usize)?
                             {
                                 doc_id_consumer.accept(doc)?;
                                 update_count += 1;

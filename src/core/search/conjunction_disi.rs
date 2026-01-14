@@ -215,7 +215,7 @@ where
 
             for bs_iter in &self.bit_set_iterators {
                 let bs = bs_iter.get_bit_set();
-                if !bs.get(doc as usize) {
+                if !bs.get(doc as usize)? {
                     doc = self.lead.next_doc()?;
                     continue 'advance_lead;
                 }

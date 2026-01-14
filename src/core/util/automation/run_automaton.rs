@@ -103,7 +103,7 @@ impl RunAutomaton {
     ///
     /// Returns:
     /// - `true` if the state is an accept state, otherwise `false`.
-    pub fn is_accept(&self, state: i32) -> bool {
+    pub fn is_accept(&self, state: i32) -> Result<bool> {
         self.accept.get(state as usize)
     }
 
@@ -149,10 +149,10 @@ impl fmt::Display for RunAutomaton {
         writeln!(f, "initial state: 0")?;
         for i in 0..self.size {
             write!(f, "state {i}")?;
-            if self.accept.get(i as usize) {
-                writeln!(f, " [accept]:")?;
-            } else {
-                writeln!(f, " [reject]:")?;
+            match self.accept.get(i as usize) {
+                Ok(true) => write!(f, " [accept]:")?,
+                Ok(false) => write!(f, " [reject]:")?,
+                Err(_) => return Err(fmt::Error),
             }
 
             for j in 0..self.points.len() {

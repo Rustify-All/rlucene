@@ -128,13 +128,10 @@ impl MultiSorter {
 
             builders[top.reader_index].add(mapped_doc_id)?;
 
-            if top
-                .live_docs
-                .as_ref()
-                .map(|bits| bits.get(top.doc_id as usize))
-                .transpose()?
-                .unwrap_or(true)
-            {
+            if match top.live_docs {
+                None => true,
+                Some(ref bits) => bits.get(top.doc_id as usize)?,
+            } {
                 mapped_doc_id += 1;
             }
             top.doc_id += 1;
@@ -189,13 +186,10 @@ where
     B: Bits,
 {
     fn get(&self, doc_id: i32) -> Result<i32> {
-        if self
-            .live_docs
-            .as_ref()
-            .map(|bits| bits.get(doc_id as usize))
-            .transpose()?
-            .unwrap_or(true)
-        {
+        if match self.live_docs {
+            None => true,
+            Some(ref bits) => bits.get(doc_id as usize)?,
+        } {
             Ok(self.remapped.get(doc_id as usize)? as i32)
         } else {
             Ok(-1)

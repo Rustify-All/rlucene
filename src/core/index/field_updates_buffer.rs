@@ -358,15 +358,15 @@ impl FieldUpdatesBuffer {
         // we only do this optimization for numerics so far.
         self.is_numeric && self.numeric_values.as_ref().unwrap().len() == 1
     }
-    pub(crate) fn get_numeric_value(&self, idx: usize) -> i64 {
+    pub(crate) fn get_numeric_value(&self, idx: usize) -> Result<i64> {
         if let Some(ref has_values) = self.has_values
-            && !has_values.get(idx)
+            && !has_values.get(idx)?
         {
-            return 0;
+            return Ok(0);
         }
         assert!(self.numeric_values.is_some());
         let length = self.numeric_values.as_ref().unwrap().len();
-        self.numeric_values.as_ref().unwrap()[Self::get_array_index(length, idx)]
+        Ok(self.numeric_values.as_ref().unwrap()[Self::get_array_index(length, idx)])
     }
     fn get_array_index(array_length: usize, index: usize) -> usize {
         assert!(
@@ -461,7 +461,7 @@ impl<'a> BufferedUpdateIterator<'a> {
             };
             self.buffered_update.term_value = Some(next.clone());
             buffered_update.term_value = Some(next);
-            buffered_update.has_value = self.updates_with_value.as_ref().unwrap().get(idx);
+            buffered_update.has_value = self.updates_with_value.as_ref().unwrap().get(idx)?;
             buffered_update.term_field = self.field_updates_buffer.fields
                 [FieldUpdatesBuffer::get_array_index(self.fields_length, idx)]
             .clone();
@@ -1067,7 +1067,7 @@ mod tests {
         let mut has_at_least_one_value = false;
 
         while let Some(value) = iterator.next_value()? {
-            let v = buffer.get_numeric_value(count);
+            let v = buffer.get_numeric_value(count)?;
             let expected_update = &updates[count];
             count += 1;
             assert_eq!(

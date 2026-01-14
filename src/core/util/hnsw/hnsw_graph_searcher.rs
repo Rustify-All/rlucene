@@ -202,7 +202,7 @@ where
                 let score = scorer.score(ep)?;
                 results.inc_visited_count(1);
                 self.candidates.add(ep, score);
-                if accept_ords.is_none() || accept_ords.as_ref().unwrap().get(ep) {
+                if accept_ords.is_none() || accept_ords.as_ref().unwrap().get(ep)? {
                     results.collect(ep, score);
                 }
             }
@@ -238,7 +238,7 @@ where
 
                 if friend_similarity > min_accepted_similarity {
                     self.candidates.add(friend_ord, friend_similarity);
-                    if (accept_ords.is_none() || accept_ords.as_ref().unwrap().get(friend_ord))
+                    if (accept_ords.is_none() || accept_ords.as_ref().unwrap().get(friend_ord)?)
                         && results.collect(friend_ord, friend_similarity)
                     {
                         min_accepted_similarity = results.min_competitive_similarity();

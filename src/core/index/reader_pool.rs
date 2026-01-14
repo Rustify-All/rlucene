@@ -967,7 +967,7 @@ mod tests {
                         .get_live_docs()?
                         .as_ref()
                         .unwrap()
-                        .get(doc as usize)
+                        .get(doc as usize)?
                 );
                 readers_and_updates.release(updated_reader.as_ref(), None)?;
                 assert!(!pool.release(
