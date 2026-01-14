@@ -2646,7 +2646,10 @@ where
         // what the segDocMap is build on.
         if let Some(current_hard_live_docs) = current_hard_live_docs {
             let carry_over_delete = |doc_id: i32| -> Result<bool> {
-                Ok(seg_doc_map.get(doc_id)? != -1 && !current_hard_live_docs.get(doc_id as usize))
+                Ok(
+                    seg_doc_map.get(doc_id)? != -1
+                        && !current_hard_live_docs.get(doc_id as usize)?,
+                )
             };
 
             if let Some(prev_hard_live_docs) = prev_hard_live_docs {
@@ -4086,8 +4089,10 @@ where
     B1: Bits,
     B2: Bits,
 {
-    fn get(&self, index: usize) -> bool {
-        self.hard_live_docs.get(index) && self.wrapped_live_docs.get(index)
+    fn get(&self, index: usize) -> Result<bool> {
+        Ok(
+            self.hard_live_docs.get(index)? && self.wrapped_live_docs.get(index)?,
+        )
     }
 
     fn length(&self) -> usize {

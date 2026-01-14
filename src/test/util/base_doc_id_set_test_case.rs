@@ -191,7 +191,7 @@ pub trait BaseDocIdSetTestCaseSupperImpl {
                     None => 0,
                 };
                 while i < max {
-                    assert!(!bits.get(i));
+                    assert!(!bits.get(i)?);
                     i += 1;
                 }
 
@@ -199,7 +199,7 @@ pub trait BaseDocIdSetTestCaseSupperImpl {
                     break;
                 }
                 previes_doc = Some(doc as usize);
-                assert!(bits.get(doc as usize));
+                assert!(bits.get(doc as usize)?);
             }
         }
         Ok(())

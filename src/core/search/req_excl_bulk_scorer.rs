@@ -328,7 +328,7 @@ mod tests {
             while doc < max {
                 let accept = match accept_docs {
                     None => true,
-                    Some(bits) => bits.get(doc as usize),
+                    Some(bits) => bits.get(doc as usize)?,
                 };
                 if accept {
                     collector.collect(doc, &mut DummyScorer)?;

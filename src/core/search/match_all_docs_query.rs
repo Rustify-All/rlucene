@@ -262,7 +262,11 @@ impl BulkScorer for MatchAllBulkScorer {
         let mut scorer = Score::new(self.score);
         collector.set_scorer(&mut scorer)?;
         for doc in min..max {
-            if accept_docs.is_none_or(|bits| bits.get(doc as usize)) {
+            if accept_docs
+                .map(|bits| bits.get(doc as usize))
+                .transpose()?
+                .unwrap_or(true)
+            {
                 collector.collect(doc, &mut scorer)?;
             }
         }

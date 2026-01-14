@@ -106,8 +106,10 @@ impl PendingDeletes {
         if !self.writeable_live_docs {
             self.writeable_live_docs = true;
             self.live_docs = Some(match self.live_docs.take() {
-                Some(BitsEnum2::A(b)) => BitsEnum2::B(BitsEnum2::B(b.copy_of())),
-                Some(BitsEnum2::B(BitsEnum2::A(fb))) => BitsEnum2::B(BitsEnum2::B(fb.copy_of())),
+                Some(BitsEnum2::A(b)) => BitsEnum2::B(BitsEnum2::B(b.copy_of()?)),
+                Some(BitsEnum2::B(BitsEnum2::A(fb))) => {
+                    BitsEnum2::B(BitsEnum2::B(fb.copy_of()?))
+                },
                 Some(BitsEnum2::B(BitsEnum2::B(_))) => {
                     return Err(LuceneError::illegal_state("should not be here"));
                 },
@@ -131,7 +133,7 @@ impl PendingDeletes {
         bits: &impl Bits,
         expected_length: i32,
         expected_delete_count: i32,
-    ) -> bool {
+    ) -> Result<bool> {
         debug_assert_eq!(
             bits.length(),
             expected_length as usize,
@@ -142,7 +144,7 @@ impl PendingDeletes {
 
         let mut deleted = 0;
         for i in 0..bits.length() {
-            if !bits.get(i) {
+            if !bits.get(i)? {
                 deleted += 1;
             }
         }
@@ -152,7 +154,7 @@ impl PendingDeletes {
             "deleted: {deleted} != expected: {expected_delete_count}"
         );
 
-        true
+        Ok(true)
     }
 }
 impl PendingDeletesBase for PendingDeletes {
@@ -237,7 +239,10 @@ impl PendingDeletesBase for PendingDeletes {
                 if let Some(BitsEnum2::A(bits)) = &self.live_docs {
                     let max_doc = info.info.max_doc()?;
                     let del_count = info.get_del_count();
-                    debug_assert!(self.assert_check_live_docs(&**bits, max_doc, del_count));
+                    debug_assert!(
+                        self.assert_check_live_docs(&**bits, max_doc, del_count)
+                            .unwrap_or(false)
+                    );
                 }
             }
             self.live_docs_initialized = true;
@@ -445,7 +450,7 @@ pub(crate) trait PendingDeletesBase: Display {
         match self.get_live_docs() {
             Some(bits) => {
                 for doc_id in 0..max_doc {
-                    if bits.get(doc_id as usize) {
+                    if bits.get(doc_id as usize)? {
                         count += 1;
                     }
                 }
@@ -743,22 +748,22 @@ mod tests {
         let mut live_docs = deletes.get_live_docs().unwrap();
         assert_eq!(deletes.num_pending_deletes(), 1);
 
-        assert!(!live_docs.get(doc_to_delete as usize));
+        assert!(!live_docs.get(doc_to_delete as usize)?);
         assert!(!deletes.delete(doc_to_delete, &commit_info)?);
 
-        assert!(live_docs.get(8));
+        assert!(live_docs.get(8)?);
         assert!(deletes.delete(8, &commit_info)?);
-        assert!(live_docs.get(8));
+        assert!(live_docs.get(8)?);
         assert_eq!(deletes.num_pending_deletes(), 2);
 
-        assert!(live_docs.get(9));
+        assert!(live_docs.get(9)?);
         assert!(deletes.delete(9, &commit_info)?);
-        assert!(live_docs.get(9));
+        assert!(live_docs.get(9)?);
 
         live_docs = deletes.get_live_docs().unwrap();
-        assert!(!live_docs.get(8));
-        assert!(!live_docs.get(9));
-        assert!(!live_docs.get(doc_to_delete as usize));
+        assert!(!live_docs.get(8)?);
+        assert!(!live_docs.get(9)?);
+        assert!(!live_docs.get(doc_to_delete as usize)?);
         assert_eq!(deletes.num_pending_deletes(), 3);
         Ok(())
     }
@@ -813,14 +818,14 @@ mod tests {
             &commit_info,
             &IOContext::default_io_context()?,
         )?;
-        assert!(!live_docs.get(5));
+        assert!(!live_docs.get(5)?);
         if second_doc_deletes {
-            assert!(!live_docs.get(2));
+            assert!(!live_docs.get(2)?);
         } else {
-            assert!(live_docs.get(2));
+            assert!(live_docs.get(2)?);
         }
         for doc in &[0, 1, 3, 4] {
-            assert!(live_docs.get(*doc));
+            assert!(live_docs.get(*doc)?);
         }
 
         assert_eq!(deletes.num_pending_deletes(), 0);
@@ -837,15 +842,15 @@ mod tests {
             &commit_info,
             &IOContext::default_io_context()?,
         )?;
-        assert!(!live_docs.get(5));
+        assert!(!live_docs.get(5)?);
         if second_doc_deletes {
-            assert!(!live_docs.get(2));
+            assert!(!live_docs.get(2)?);
         } else {
-            assert!(live_docs.get(2));
+            assert!(live_docs.get(2)?);
         }
-        assert!(!live_docs.get(0));
+        assert!(!live_docs.get(0)?);
         for doc in &[1, 3, 4] {
-            assert!(live_docs.get(*doc));
+            assert!(live_docs.get(*doc)?);
         }
 
         assert_eq!(deletes.num_pending_deletes(), 0);

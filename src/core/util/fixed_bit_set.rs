@@ -445,7 +445,7 @@ impl FixedBitSet {
 }
 
 impl Bits for FixedBitSet {
-    fn get(&self, index: usize) -> bool {
+    fn get(&self, index: usize) -> Result<bool> {
         debug_assert!(
             index < self.num_bits,
             "index = {}, num_bits = {}",
@@ -457,15 +457,15 @@ impl Bits for FixedBitSet {
         // array-index-out-of-bounds-exception, removing the need for an
         // explicit check.
         let bit_mask = 1_i64 << (index % 64);
-        (bit_mask & self.bits[i]) != 0
+        Ok((bit_mask & self.bits[i]) != 0)
     }
 
     fn length(&self) -> usize {
         self.num_bits
     }
 
-    fn copy_of(&self) -> FixedBitSet {
-        self.clone()
+    fn copy_of(&self) -> Result<FixedBitSet> {
+        Ok(self.clone())
     }
 }
 
@@ -671,7 +671,7 @@ impl BitSet for FixedBitSet {
 #[derive(Clone, Default)]
 pub struct FixedBit(FixedBitSet);
 impl Bits for FixedBit {
-    fn get(&self, index: usize) -> bool {
+    fn get(&self, index: usize) -> Result<bool> {
         self.0.get(index)
     }
 
@@ -679,8 +679,8 @@ impl Bits for FixedBit {
         self.0.length()
     }
 
-    fn copy_of(&self) -> FixedBitSet {
-        self.0.clone()
+    fn copy_of(&self) -> Result<FixedBitSet> {
+        self.0.copy_of()
     }
 }
 
@@ -841,7 +841,7 @@ mod tests {
         assert_eq!(a.len(), b.cardinality());
         let max = b.length();
         for i in 0..max {
-            assert_eq!(a.contains(i), b.get(i));
+            assert_eq!(a.contains(i), b.get(i).unwrap());
         }
     }
 
@@ -961,15 +961,15 @@ mod tests {
                 flip_bit(&mut a, idx);
                 b.flip(idx);
 
-                let val2 = b.get(idx);
+                let val2 = b.get(idx)?;
                 let val = b.get_and_set(idx);
                 assert_eq!(val2, val);
-                assert!(b.get(idx));
+                assert!(b.get(idx)?);
 
                 if !val {
                     b.clear_with_index(idx);
                 }
-                assert_eq!(b.get(idx), val);
+                assert_eq!(b.get(idx)?, val);
             }
 
             // test that the various ways of accessing the bits are equivalent
@@ -1078,7 +1078,7 @@ mod tests {
         assert!(b2.eq(&b1));
         for _i in 0..random.random_range(1000..5000) {
             let idx = random.random_range(0..num_bits);
-            if !b1.get(idx) {
+            if !b1.get(idx).unwrap() {
                 b1.set(idx);
                 assert!(!b1.eq(&b2));
                 assert!(!b2.eq(&b1));
@@ -1098,7 +1098,7 @@ mod tests {
         let mut b2 = FixedBitSet::new(num_bits);
         for _i in 0..random.random_range(1000..5000) {
             let idx = random.random_range(0..num_bits);
-            if !b1.get(idx) {
+            if !b1.get(idx).unwrap() {
                 b1.set(idx);
                 assert!(!b1.eq(&b2));
                 assert_ne!(calculate_hash(&b1), calculate_hash(&b2));
@@ -1193,25 +1193,25 @@ mod tests {
         bits.set(4);
         bits.ensure_capacity(8);
         let mut new_bits = bits.clone();
-        assert!(bits.get(1));
-        assert!(bits.get(4));
+        assert!(bits.get(1)?);
+        assert!(bits.get(4)?);
         bits.clear_with_index(1);
-        assert!(!bits.get(1));
-        assert!(new_bits.get(1));
+        assert!(!bits.get(1)?);
+        assert!(new_bits.get(1)?);
 
         new_bits.set(1);
         let length = bits.length();
         new_bits.ensure_capacity(length - 2);
-        assert!(new_bits.get(1));
+        assert!(new_bits.get(1)?);
 
         new_bits.set(1);
         new_bits.ensure_capacity(72);
-        assert!(new_bits.get(1));
-        assert!(new_bits.get(4));
+        assert!(new_bits.get(1)?);
+        assert!(new_bits.get(4)?);
         new_bits.clear_with_index(1);
         // we grew the long[], so it's not shared
-        assert!(!bits.get(1));
-        assert!(!new_bits.get(1));
+        assert!(!bits.get(1)?);
+        assert!(!new_bits.get(1)?);
         Ok(())
     }
 

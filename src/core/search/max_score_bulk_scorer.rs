@@ -212,7 +212,7 @@ where
                 let m = {
                     let accepted = match accept_docs {
                         None => true,
-                        Some(bits) => bits.get(doc as usize),
+                        Some(bits) => bits.get(doc as usize)?,
                     };
                     accepted && filter.matches_may_none()?
                 };
@@ -273,7 +273,7 @@ where
         while doc < up_to {
             let accepted = match accept_docs {
                 None => true,
-                Some(bits) => bits.get(doc as usize),
+                Some(bits) => bits.get(doc as usize)?,
             };
             if accepted {
                 self.score_non_essential_clauses(
@@ -343,7 +343,7 @@ where
 
                 let accepted = match accept_docs {
                     None => true,
-                    Some(bits) => bits.get(lead1.doc as usize),
+                    Some(bits) => bits.get(lead1.doc as usize)?,
                 };
 
                 if !accepted {
@@ -433,7 +433,7 @@ where
             while doc < inner_window_max {
                 let accepted = match accept_docs {
                     None => true,
-                    Some(bits) => bits.get(doc as usize),
+                    Some(bits) => bits.get(doc as usize)?,
                 };
 
                 if accepted {

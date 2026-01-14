@@ -1448,7 +1448,7 @@ mod tests {
                 dense_rank_power,
                 cardinality as i64,
             )?;
-            assert_eq!(v.bits.get(i), disi.advance_exact(i as i32)?);
+            assert_eq!(v.bits.get(i)?, disi.advance_exact(i as i32)?);
 
             let mut disi2 = IndexedDISI::new(
                 &input,
@@ -1460,7 +1460,7 @@ mod tests {
             )?;
             let doc = disi2.advance(i as i32)? as usize;
             assert!(i <= doc);
-            if v.bits.get(i) {
+            if v.bits.get(i)? {
                 assert_eq!(i, doc);
             } else {
                 assert_ne!(i, doc);

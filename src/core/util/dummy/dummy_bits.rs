@@ -15,11 +15,12 @@
  * limitations under the License.
  */
 use crate::core::util::bits::Bits;
+use crate::core::util::error::lucene_error::Result;
 
 #[derive(Clone)]
 pub struct DummyBits;
 impl Bits for DummyBits {
-    fn get(&self, _index: usize) -> bool {
+    fn get(&self, _index: usize) -> Result<bool> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
