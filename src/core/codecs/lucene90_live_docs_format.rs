@@ -85,7 +85,7 @@ impl Lucene90LiveDocsFormat {
             let end = std::cmp::min(start + 63, bits.length() - 1);
 
             for j in start..=end {
-                if bits.get(j) {
+                if bits.get(j)? {
                     current_bits |= 1i64 << (j % 64);
                 } else {
                     del_count += 1;

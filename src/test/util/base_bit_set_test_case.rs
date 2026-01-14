@@ -232,7 +232,12 @@ pub trait BaseBitSetTestCaseSupperImpl {
         _sfbs: &Option<SparseFixedBitSet>,
     ) {
         for i in 0..max_doc {
-            assert_eq!(set1.get(i), set2.get(i), "Different at: {}", i);
+            assert_eq!(
+                set1.get(i).unwrap(),
+                set2.get(i).unwrap(),
+                "Different at: {}",
+                i
+            );
         }
     }
 }
@@ -285,8 +290,8 @@ impl PartialEq for RustUtilBitSet {
 }
 
 impl Bits for RustUtilBitSet {
-    fn get(&self, index: usize) -> bool {
-        self.bitset.contains(index)
+    fn get(&self, index: usize) -> Result<bool> {
+        Ok(self.bitset.contains(index))
     }
 
     fn length(&self) -> usize {
@@ -310,7 +315,7 @@ impl BitSet for RustUtilBitSet {
     }
 
     fn get_and_set(&mut self, i: usize) -> bool {
-        let v = self.get(i);
+        let v = self.get(i).unwrap_or(false);
         self.set(i);
         v
     }

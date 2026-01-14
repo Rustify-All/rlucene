@@ -468,7 +468,7 @@ mod tests {
         let leaves = reader.leaves()?;
         let r = leaves[0].reader();
         let live_docs = r.get_live_docs()?.unwrap();
-        assert!(!live_docs.get(0));
+        assert!(!live_docs.get(0)?);
 
         let mut bdv = r.get_binary_doc_values("val")?.unwrap();
         assert_eq!(1, bdv.advance(1)?);

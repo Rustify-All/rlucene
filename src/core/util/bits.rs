@@ -16,6 +16,7 @@
  */
 use crate::core::util::bit_set::BitSet;
 use crate::core::util::fixed_bit_set::FixedBitSet;
+use crate::core::util::error::lucene_error::Result;
 use std::sync::Arc;
 /// Interface for `BitSet`-like structures.
 ///
@@ -29,23 +30,23 @@ pub trait Bits {
     ///   the bitset.
     ///
     /// # Returns
-    /// `true` if the bit is set, `false` otherwise.
-    fn get(&self, index: usize) -> bool;
+    /// `Ok(true)` if the bit is set, `Ok(false)` otherwise.
+    fn get(&self, index: usize) -> Result<bool>;
 
     /// Returns the number of bits in this set
     fn length(&self) -> usize;
 
     /// Make a copy of the given bits.
-    fn copy_of(&self) -> FixedBitSet {
+    fn copy_of(&self) -> Result<FixedBitSet> {
         let length = self.length();
         let mut bit_set = FixedBitSet::new(length);
         bit_set.set_with_range(0, length);
         for i in 0..length {
-            if !self.get(i) {
+            if !self.get(i)? {
                 bit_set.clear_with_index(i);
             }
         }
-        bit_set
+        Ok(bit_set)
     }
     fn as_string(&self) -> String {
         std::any::type_name::<Self>().to_string()
@@ -62,8 +63,8 @@ impl MatchAllBits {
     }
 }
 impl Bits for MatchAllBits {
-    fn get(&self, _index: usize) -> bool {
-        true
+    fn get(&self, _index: usize) -> Result<bool> {
+        Ok(true)
     }
 
     fn length(&self) -> usize {
@@ -77,8 +78,8 @@ pub struct MatchNoBits {
     len: usize,
 }
 impl Bits for MatchNoBits {
-    fn get(&self, _index: usize) -> bool {
-        false
+    fn get(&self, _index: usize) -> Result<bool> {
+        Ok(false)
     }
 
     fn length(&self) -> usize {
@@ -95,7 +96,7 @@ where
     A: Bits,
     B: Bits,
 {
-    fn get(&self, index: usize) -> bool {
+    fn get(&self, index: usize) -> Result<bool> {
         match self {
             BitsEnum2::A(t) => t.get(index),
             BitsEnum2::B(s) => s.get(index),
@@ -109,7 +110,7 @@ where
         }
     }
 
-    fn copy_of(&self) -> FixedBitSet {
+    fn copy_of(&self) -> Result<FixedBitSet> {
         match self {
             BitsEnum2::A(t) => t.copy_of(),
             BitsEnum2::B(s) => s.copy_of(),
@@ -126,7 +127,7 @@ where
 
 pub enum BitsEnum {}
 impl Bits for BitsEnum {
-    fn get(&self, _index: usize) -> bool {
+    fn get(&self, _index: usize) -> Result<bool> {
         todo!()
     }
 
@@ -139,7 +140,7 @@ impl<T> Bits for Arc<T>
 where
     T: Bits,
 {
-    fn get(&self, index: usize) -> bool {
+    fn get(&self, index: usize) -> Result<bool> {
         (**self).get(index)
     }
 
@@ -147,7 +148,7 @@ where
         (**self).length()
     }
 
-    fn copy_of(&self) -> FixedBitSet {
+    fn copy_of(&self) -> Result<FixedBitSet> {
         (**self).copy_of()
     }
     fn as_string(&self) -> String {
@@ -156,7 +157,7 @@ where
 }
 
 impl<T: Bits> Bits for &T {
-    fn get(&self, index: usize) -> bool {
+    fn get(&self, index: usize) -> Result<bool> {
         <T as Bits>::get(*self, index)
     }
 
@@ -164,7 +165,7 @@ impl<T: Bits> Bits for &T {
         <T as Bits>::length(*self)
     }
 
-    fn copy_of(&self) -> FixedBitSet {
+    fn copy_of(&self) -> Result<FixedBitSet> {
         <T as Bits>::copy_of(*self)
     }
 

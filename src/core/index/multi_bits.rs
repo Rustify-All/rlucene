@@ -65,14 +65,14 @@ impl<B> Bits for MultiBits<B>
 where
     B: Bits,
 {
-    fn get(&self, index: usize) -> bool {
+    fn get(&self, index: usize) -> Result<bool> {
         let reader = ReaderUtil::sub_index(index, &self.starts);
         debug_assert!(reader != -1);
 
         let reader = reader as usize;
         let bits = &self.subs[reader];
         match bits {
-            None => self.default_value,
+            None => Ok(self.default_value),
             Some(bits) => {
                 debug_assert!(self.check_length(reader, index));
                 bits.get(index - self.starts[reader])

@@ -221,7 +221,7 @@ pub trait DocValuesConsumer {
                         if doc_id == NO_MORE_DOCS {
                             break;
                         }
-                        if live_docs.get(doc_id as usize) {
+                        if live_docs.get(doc_id as usize)? {
                             let ord = dvs.ord_value()?;
                             if ord >= 0 {
                                 bitset.set(ord as usize);
@@ -299,7 +299,7 @@ pub trait DocValuesConsumer {
                         if doc_id == NO_MORE_DOCS {
                             break;
                         }
-                        if live_docs.get(doc_id as usize) {
+                        if live_docs.get(doc_id as usize)? {
                             let count = dv.doc_value_count()?;
                             for _ in 0..count {
                                 let ord = dv.next_ord()?;
