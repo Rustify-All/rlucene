@@ -246,7 +246,11 @@ pub(crate) fn count_soft_deletes(
             if doc == NO_MORE_DOCS {
                 break;
             }
-            if hard_deletes.is_none_or(|bits| bits.get(doc as usize)) {
+            let is_live = match hard_deletes {
+                Some(bits) => bits.get(doc as usize)?,
+                None => true,
+            };
+            if is_live {
                 count += 1;
             }
         }

@@ -782,7 +782,7 @@ where
         sorted_live_docs.set_with_range(0, live_docs_len);
 
         for i in 0..live_docs_len {
-            if !live_docs.get(i) {
+            if !live_docs.get(i)? {
                 let v: i32 = i.try_convert()?;
                 sorted_live_docs.clear_with_index(sort_map.old_to_new(v)? as usize);
             }

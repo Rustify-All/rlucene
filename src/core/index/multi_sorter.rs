@@ -132,6 +132,7 @@ impl MultiSorter {
                 .live_docs
                 .as_ref()
                 .map(|bits| bits.get(top.doc_id as usize))
+                .transpose()?
                 .unwrap_or(true)
             {
                 mapped_doc_id += 1;
@@ -192,6 +193,7 @@ where
             .live_docs
             .as_ref()
             .map(|bits| bits.get(doc_id as usize))
+            .transpose()?
             .unwrap_or(true)
         {
             Ok(self.remapped.get(doc_id as usize)? as i32)

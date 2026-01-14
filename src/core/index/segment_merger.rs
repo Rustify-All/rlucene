@@ -609,7 +609,7 @@ mod tests {
         for _ in 0..num_docs {
             loop {
                 let doc_id = random.random_range(0..max_doc);
-                if !live_docs.get(doc_id) {
+                if !live_docs.get(doc_id)? {
                     live_docs.set(doc_id);
                     break;
                 }
@@ -620,7 +620,7 @@ mod tests {
 
         let mut del = 0;
         for i in 0..max_doc {
-            if !live_docs.get(i) {
+            if !live_docs.get(i)? {
                 del += 1;
             } else {
                 assert_eq!(i - del, doc_map.get(i)? as usize);

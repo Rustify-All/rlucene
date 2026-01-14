@@ -137,6 +137,7 @@ where
         while doc < max {
             let accepted = accept_docs
                 .map(|bits| bits.get(doc as usize))
+                .transpose()?
                 .unwrap_or(true);
             if accepted {
                 let i = doc as usize & MASK;

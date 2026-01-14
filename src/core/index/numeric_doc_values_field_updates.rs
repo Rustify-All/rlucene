@@ -580,7 +580,7 @@ mod tests {
         let leaf = &reader.leaves()?[0];
         let r = leaf.reader();
         let live_docs = r.get_live_docs()?.unwrap();
-        assert!(!live_docs.get(0));
+        assert!(!live_docs.get(0)?);
         let mut ndv = r.get_numeric_doc_values("val")?.unwrap();
         assert_eq!(ndv.advance(1)?, 1);
         assert_eq!(ndv.long_value()?, 17);

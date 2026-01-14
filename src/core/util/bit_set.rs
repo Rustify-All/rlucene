@@ -105,7 +105,7 @@ where
     A: BitSet,
     B: BitSet,
 {
-    fn get(&self, index: usize) -> bool {
+    fn get(&self, index: usize) -> Result<bool> {
         match self {
             BitSetEnum2::A(t) => t.get(index),
             BitSetEnum2::B(s) => s.get(index),
@@ -119,7 +119,7 @@ where
         }
     }
 
-    fn copy_of(&self) -> FixedBitSet {
+    fn copy_of(&self) -> Result<FixedBitSet> {
         match self {
             BitSetEnum2::A(t) => t.copy_of(),
             BitSetEnum2::B(s) => s.copy_of(),
@@ -300,7 +300,7 @@ impl<T> Bits for Rc<T>
 where
     T: BitSet,
 {
-    fn get(&self, index: usize) -> bool {
+    fn get(&self, index: usize) -> Result<bool> {
         (**self).get(index)
     }
 

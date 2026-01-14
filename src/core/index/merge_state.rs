@@ -314,7 +314,7 @@ where
     let mut del = 0;
     for i in 0..max_doc {
         builder.add(i as i64 - del)?;
-        if !live_docs.get(i as usize) {
+        if !live_docs.get(i as usize)? {
             del += 1;
         }
     }
@@ -349,7 +349,7 @@ where
         match (&self.live_docs, &self.del_doc_map) {
             (None, None) => Ok(self.doc_base + doc_id),
             (Some(bits), Some(map)) => {
-                if bits.get(doc_id as usize) {
+                if bits.get(doc_id as usize)? {
                     Ok(self.doc_base + map.get(doc_id as usize)? as i32)
                 } else {
                     Ok(-1)

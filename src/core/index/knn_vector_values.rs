@@ -92,7 +92,7 @@ where
     B: Bits,
     T: OrdToDoc,
 {
-    fn get(&self, index: usize) -> bool {
+    fn get(&self, index: usize) -> Result<bool> {
         self.accept_docs.get(self.map.ord_to_doc(index) as usize)
     }
 
