@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::core::codecs::mutable_point_tree::MutablePointTree;
+use crate::core::codecs::mutable_point_tree::{MutablePointTree, MutablePointTreeEnum2};
 use crate::core::index::composite_reader::{CompositeReader, get_context};
 use crate::core::index::index_reader_context::IndexReaderContext;
 use crate::core::index::leaf_reader::LeafReader;
@@ -587,6 +587,180 @@ where
         match self {
             PointTreeEnum::Mutable(mpt) => mpt.visit_doc_values(_visitor),
             PointTreeEnum::Other(pt) => pt.visit_doc_values(_visitor),
+        }
+    }
+}
+
+pub enum PointTreeEnum2<A, B> {
+    A(A),
+    B(B),
+}
+
+impl<A, B> TryClone for PointTreeEnum2<A, B>
+where
+    A: PointTree,
+    B: PointTree,
+{
+    fn try_clone(&self) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        match self {
+            PointTreeEnum2::A(tree) => Ok(PointTreeEnum2::A(tree.try_clone()?)),
+            PointTreeEnum2::B(tree) => Ok(PointTreeEnum2::B(tree.try_clone()?)),
+        }
+    }
+}
+
+impl<A, B> PointTree for PointTreeEnum2<A, B>
+where
+    A: PointTree,
+    B: PointTree,
+{
+    fn move_to_child(&mut self) -> Result<bool> {
+        match self {
+            PointTreeEnum2::A(tree) => tree.move_to_child(),
+            PointTreeEnum2::B(tree) => tree.move_to_child(),
+        }
+    }
+
+    fn move_to_sibling(&mut self) -> Result<bool> {
+        match self {
+            PointTreeEnum2::A(tree) => tree.move_to_sibling(),
+            PointTreeEnum2::B(tree) => tree.move_to_sibling(),
+        }
+    }
+
+    fn move_to_parent(&mut self) -> Result<bool> {
+        match self {
+            PointTreeEnum2::A(tree) => tree.move_to_parent(),
+            PointTreeEnum2::B(tree) => tree.move_to_parent(),
+        }
+    }
+
+    fn get_min_packed_value(&self) -> Result<&[u8]> {
+        match self {
+            PointTreeEnum2::A(tree) => tree.get_min_packed_value(),
+            PointTreeEnum2::B(tree) => tree.get_min_packed_value(),
+        }
+    }
+
+    fn get_max_packed_value(&self) -> Result<&[u8]> {
+        match self {
+            PointTreeEnum2::A(tree) => tree.get_max_packed_value(),
+            PointTreeEnum2::B(tree) => tree.get_max_packed_value(),
+        }
+    }
+
+    fn size(&self) -> Result<usize> {
+        match self {
+            PointTreeEnum2::A(tree) => tree.size(),
+            PointTreeEnum2::B(tree) => tree.size(),
+        }
+    }
+
+    fn visit_doc_ids<IV>(&mut self, visitor: &mut IV) -> Result<()>
+    where
+        IV: IntersectVisitor,
+    {
+        match self {
+            PointTreeEnum2::A(tree) => tree.visit_doc_ids(visitor),
+            PointTreeEnum2::B(tree) => tree.visit_doc_ids(visitor),
+        }
+    }
+
+    fn visit_doc_values<IV>(&mut self, visitor: &mut IV) -> Result<()>
+    where
+        IV: IntersectVisitor,
+    {
+        match self {
+            PointTreeEnum2::A(tree) => tree.visit_doc_values(visitor),
+            PointTreeEnum2::B(tree) => tree.visit_doc_values(visitor),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum PointValuesEnum2<A, B> {
+    A(A),
+    B(B),
+}
+
+impl<A, B> PointValues for PointValuesEnum2<A, B>
+where
+    A: PointValues,
+    B: PointValues,
+{
+    fn get_min_packed_value(&self) -> Result<Option<Cow<'_, Vec<u8>>>> {
+        match self {
+            PointValuesEnum2::A(values) => values.get_min_packed_value(),
+            PointValuesEnum2::B(values) => values.get_min_packed_value(),
+        }
+    }
+
+    fn get_max_packed_value(&self) -> Result<Option<Cow<'_, Vec<u8>>>> {
+        match self {
+            PointValuesEnum2::A(values) => values.get_max_packed_value(),
+            PointValuesEnum2::B(values) => values.get_max_packed_value(),
+        }
+    }
+
+    fn get_num_dimensions(&self) -> Result<usize> {
+        match self {
+            PointValuesEnum2::A(values) => values.get_num_dimensions(),
+            PointValuesEnum2::B(values) => values.get_num_dimensions(),
+        }
+    }
+
+    fn get_num_index_dimensions(&self) -> Result<usize> {
+        match self {
+            PointValuesEnum2::A(values) => values.get_num_index_dimensions(),
+            PointValuesEnum2::B(values) => values.get_num_index_dimensions(),
+        }
+    }
+
+    fn get_bytes_per_dimension(&self) -> Result<usize> {
+        match self {
+            PointValuesEnum2::A(values) => values.get_bytes_per_dimension(),
+            PointValuesEnum2::B(values) => values.get_bytes_per_dimension(),
+        }
+    }
+
+    fn size(&self) -> Result<usize> {
+        match self {
+            PointValuesEnum2::A(values) => values.size(),
+            PointValuesEnum2::B(values) => values.size(),
+        }
+    }
+
+    fn get_doc_count(&self) -> Result<i32> {
+        match self {
+            PointValuesEnum2::A(values) => values.get_doc_count(),
+            PointValuesEnum2::B(values) => values.get_doc_count(),
+        }
+    }
+
+    type PointTree = PointTreeEnum2<A::PointTree, B::PointTree>;
+    type MutablePointTree = MutablePointTreeEnum2<A::MutablePointTree, B::MutablePointTree>;
+
+    fn get_point_tree(&self) -> Result<PointTreeEnum<Self::MutablePointTree, Self::PointTree>> {
+        match self {
+            PointValuesEnum2::A(values) => match values.get_point_tree()? {
+                PointTreeEnum::Mutable(tree) => {
+                    Ok(PointTreeEnum::Mutable(MutablePointTreeEnum2::A(tree)))
+                }
+                PointTreeEnum::Other(tree) => {
+                    Ok(PointTreeEnum::Other(PointTreeEnum2::A(tree)))
+                }
+            },
+            PointValuesEnum2::B(values) => match values.get_point_tree()? {
+                PointTreeEnum::Mutable(tree) => {
+                    Ok(PointTreeEnum::Mutable(MutablePointTreeEnum2::B(tree)))
+                }
+                PointTreeEnum::Other(tree) => {
+                    Ok(PointTreeEnum::Other(PointTreeEnum2::B(tree)))
+                }
+            },
         }
     }
 }
