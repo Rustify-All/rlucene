@@ -748,18 +748,14 @@ where
             PointValuesEnum2::A(values) => match values.get_point_tree()? {
                 PointTreeEnum::Mutable(tree) => {
                     Ok(PointTreeEnum::Mutable(MutablePointTreeEnum2::A(tree)))
-                }
-                PointTreeEnum::Other(tree) => {
-                    Ok(PointTreeEnum::Other(PointTreeEnum2::A(tree)))
-                }
+                },
+                PointTreeEnum::Other(tree) => Ok(PointTreeEnum::Other(PointTreeEnum2::A(tree))),
             },
             PointValuesEnum2::B(values) => match values.get_point_tree()? {
                 PointTreeEnum::Mutable(tree) => {
                     Ok(PointTreeEnum::Mutable(MutablePointTreeEnum2::B(tree)))
-                }
-                PointTreeEnum::Other(tree) => {
-                    Ok(PointTreeEnum::Other(PointTreeEnum2::B(tree)))
-                }
+                },
+                PointTreeEnum::Other(tree) => Ok(PointTreeEnum::Other(PointTreeEnum2::B(tree))),
             },
         }
     }
