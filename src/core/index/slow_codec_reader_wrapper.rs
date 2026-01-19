@@ -20,7 +20,7 @@ use crate::core::codecs::norms_producer::NormsProducer;
 use crate::core::codecs::points_reader::PointsReader;
 use crate::core::codecs::stored_fields_reader::{DefaultStoredFieldsReader, StoredFieldsReader};
 use crate::core::codecs::stored_fields_writer::StoredFieldsWriter;
-use crate::core::codecs::term_vectors_reader::TermVectorsReader;
+use crate::core::codecs::term_vectors_reader::{DefaultTermVectorsReader, TermVectorsReader};
 use crate::core::index::codec_reader::{CodecReader, StoredFieldsType, TermVectorsType};
 use crate::core::index::field_info::FieldInfo;
 use crate::core::index::field_infos::FieldInfos;
@@ -32,7 +32,7 @@ use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::stored_field_visitor::StoredFieldVisitor;
 use crate::core::index::stored_fields::{RawStoredFieldsReader, StoredFields};
 use crate::core::index::term::Term;
-use crate::core::index::term_vectors::TermVectors;
+use crate::core::index::term_vectors::{RawTermVectors, TermVectors};
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::iterator::{VecIter, VecIteratorExt};
 use std::fmt::{Display, Formatter};
@@ -545,6 +545,17 @@ where
         field: &str,
     ) -> Result<Option<<Self::Fields as Fields>::Terms>> {
         self.default_get_field_terms(doc, field)
+    }
+}
+
+impl<LR> RawTermVectors for TermVectorsReaderImpl<LR>
+where
+    LR: Clone + LeafReader,
+{
+    type IndexInput = <LR::TermVectors as RawTermVectors>::IndexInput;
+
+    fn raw_TermVectors(&mut self) -> Result<&mut DefaultTermVectorsReader<Self::IndexInput>> {
+        self.term_vectors.raw_TermVectors()
     }
 }
 

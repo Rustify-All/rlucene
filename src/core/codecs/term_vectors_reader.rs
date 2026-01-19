@@ -17,9 +17,10 @@
 use crate::core::codecs::DefaultTermVectorsFormat;
 use crate::core::codecs::term_vectors_format::TermVectorsFormat;
 use crate::core::index::fields::{Fields, FieldsEnum2};
-use crate::core::index::term_vectors::TermVectors;
+use crate::core::index::term_vectors::{RawTermVectors, TermVectors};
+use crate::core::store::dummy::dummy_index_input::DummyIndexInput;
 use crate::core::index::terms::TermsEnum2;
-use crate::core::util::error::lucene_error::Result;
+use crate::core::util::error::lucene_error::{LuceneError, Result};
 /// Codec API for reading term vectors:
 pub trait TermVectorsReader: TermVectors + Clone {
     /// Checks consistency of this reader.
@@ -127,6 +128,16 @@ macro_rules! either_term_vectors_reader {
 either_term_vectors_reader!(
     pub TermVectorsReaderEnum2 => { fe: FieldsEnum2, te: TermsEnum2 } { A: A, B: B }
 );
+
+impl<A, B> RawTermVectors for TermVectorsReaderEnum2<A, B> {
+    type IndexInput = DummyIndexInput;
+
+    fn raw_TermVectors(&mut self) -> Result<&mut DefaultTermVectorsReader<Self::IndexInput>> {
+        Err(LuceneError::illegal_state(
+            "raw term vectors reader is not available".to_string(),
+        ))
+    }
+}
 
 #[cfg(test)]
 mod tests {

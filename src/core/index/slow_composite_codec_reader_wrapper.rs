@@ -22,7 +22,7 @@ use crate::core::codecs::norms_producer::NormsProducer;
 use crate::core::codecs::points_reader::PointsReader;
 use crate::core::codecs::stored_fields_reader::{DefaultStoredFieldsReader, StoredFieldsReader};
 use crate::core::codecs::stored_fields_writer::StoredFieldsWriter;
-use crate::core::codecs::term_vectors_reader::TermVectorsReader;
+use crate::core::codecs::term_vectors_reader::{DefaultTermVectorsReader, TermVectorsReader};
 use crate::core::index::codec_reader::{
     CRDocValuesProducer, CRFieldsProducer, CRNormsProducer, CRPointsReader, CRStoredFieldsReader,
     CRTermVectorsReader, CodecReader, CodecReaderEnum2,
@@ -54,7 +54,9 @@ use crate::core::index::sorted_set_doc_values_writer::SortedSetDocValuesEnum2;
 use crate::core::index::stored_field_visitor::{Status, StoredFieldVisitor};
 use crate::core::index::stored_fields::{RawStoredFieldsReader, StoredFields};
 use crate::core::index::term::Term;
-use crate::core::index::term_vectors::{EmptyTermVectors, TermVectors, TermVectorsEnum2};
+use crate::core::index::term_vectors::{
+    EmptyTermVectors, RawTermVectors, TermVectors, TermVectorsEnum2,
+};
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
 use crate::core::util::array_util::{ArrayUtil, ByteArrayComparator};
 use crate::core::util::clone::TryClone;
@@ -261,12 +263,15 @@ impl<CR> IndexReader for SlowCompositeCodecReaderWrapper<CR>
 where
     CR: Clone + CodecReader,
 {
-    type TermVectors = TermVectorsEnum2<<Self as CodecReader>::TermVectorsReader, EmptyTermVectors>;
+    type TermVectors = TermVectorsEnum2<
+        <Self as CodecReader>::TermVectorsReader,
+        EmptyTermVectors<<<Self as CodecReader>::TermVectorsReader as RawTermVectors>::IndexInput>,
+    >;
 
     fn term_vectors(&self) -> Result<Self::TermVectors> {
         match self.get_term_vectors_reader()? {
             Some(tvr) => Ok(TermVectorsEnum2::A(tvr)),
-            None => Ok(TermVectorsEnum2::B(EmptyTermVectors)),
+            None => Ok(TermVectorsEnum2::B(EmptyTermVectors::default())),
         }
     }
 
@@ -732,6 +737,19 @@ where
             r.check_integrity()?;
         }
         Ok(())
+    }
+}
+
+impl<TVR> RawTermVectors for SlowCompositeTermVectorsReaderWrapper<TVR>
+where
+    TVR: TermVectorsReader,
+{
+    type IndexInput = <TVR as RawTermVectors>::IndexInput;
+
+    fn raw_TermVectors(&mut self) -> Result<&mut DefaultTermVectorsReader<Self::IndexInput>> {
+        Err(LuceneError::illegal_state(
+            "raw term vectors reader is not available".to_string(),
+        ))
     }
 }
 

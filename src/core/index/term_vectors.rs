@@ -14,15 +14,24 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use crate::core::codecs::term_vectors_reader::DefaultTermVectorsReader;
 use crate::core::index::dummy::dummy_fields::DummyFields;
 use crate::core::index::fields::{Fields, FieldsEnum2};
 use crate::core::index::terms::{Terms, TermsEnum2};
-use crate::core::util::error::lucene_error::Result;
+use crate::core::store::dummy::dummy_index_input::DummyIndexInput;
+use crate::core::store::index_input::IndexInput;
+use crate::core::util::error::lucene_error::{LuceneError, Result};
+use std::marker::PhantomData;
+
+pub trait RawTermVectors {
+    type IndexInput: IndexInput;
+    fn raw_TermVectors(&mut self) -> Result<&mut DefaultTermVectorsReader<Self::IndexInput>>;
+}
 /// API for reading term vectors.
 ///
 /// **NOTE**: This struct is not thread-safe and should only be consumed in the thread where it
 /// was acquired.
-pub trait TermVectors {
+pub trait TermVectors: RawTermVectors {
     /// Optional method: Give a hint to this [`TermVectors`] instance that the given document will
     /// be read in the near future. This typically delegates to [`IndexInput::prefetch`](crate::core::store::index_input::IndexInput::prefetch) and is
     /// useful to parallelize I/O across multiple documents.
@@ -63,9 +72,29 @@ pub trait TermVectors {
     }
 }
 /// Instance that never returns term vectors
-pub struct EmptyTermVectors;
+pub struct EmptyTermVectors<I: IndexInput = DummyIndexInput> {
+    _marker: PhantomData<I>,
+}
 
-impl TermVectors for EmptyTermVectors {
+impl<I: IndexInput> Default for EmptyTermVectors<I> {
+    fn default() -> Self {
+        Self {
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<I: IndexInput> RawTermVectors for EmptyTermVectors<I> {
+    type IndexInput = I;
+
+    fn raw_TermVectors(&mut self) -> Result<&mut DefaultTermVectorsReader<Self::IndexInput>> {
+        Err(LuceneError::illegal_state(
+            "raw term vectors reader is not available".to_string(),
+        ))
+    }
+}
+
+impl<I: IndexInput> TermVectors for EmptyTermVectors<I> {
     type Fields = DummyFields;
 
     fn get(&mut self, _doc: i32) -> Result<Option<Self::Fields>> {
@@ -132,6 +161,16 @@ macro_rules! either_term_vectors {
 either_term_vectors!(
     pub TermVectorsEnum2 => { fe: FieldsEnum2, te: TermsEnum2 } { A: A, B: B }
 );
+
+impl<A, B> RawTermVectors for TermVectorsEnum2<A, B> {
+    type IndexInput = DummyIndexInput;
+
+    fn raw_TermVectors(&mut self) -> Result<&mut DefaultTermVectorsReader<Self::IndexInput>> {
+        Err(LuceneError::illegal_state(
+            "raw term vectors reader is not available".to_string(),
+        ))
+    }
+}
 
 #[cfg(test)]
 mod tests {

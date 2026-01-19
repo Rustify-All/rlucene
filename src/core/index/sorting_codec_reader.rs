@@ -24,7 +24,9 @@ use crate::core::codecs::stored_fields_reader::{
     DefaultStoredFieldsReader, StoredFieldsReader, StoredFieldsReaderEnum2,
 };
 use crate::core::codecs::stored_fields_writer::StoredFieldsWriter;
-use crate::core::codecs::term_vectors_reader::{TermVectorsReader, TermVectorsReaderEnum2};
+use crate::core::codecs::term_vectors_reader::{
+    DefaultTermVectorsReader, TermVectorsReader, TermVectorsReaderEnum2,
+};
 use crate::core::index::binary_doc_values_writer::{BinaryDVs, SortingBinaryDocValues};
 use crate::core::index::codec_reader::{
     CRBits, CRDocValuesProducer, CRFieldsProducer, CRNormsProducer, CRPointsReader,
@@ -57,7 +59,7 @@ use crate::core::index::sorter::{DocMap, DocMapImpl, Sorter};
 use crate::core::index::stored_field_visitor::StoredFieldVisitor;
 use crate::core::index::stored_fields::{RawStoredFieldsReader, StoredFields};
 use crate::core::index::term::Term;
-use crate::core::index::term_vectors::TermVectors;
+use crate::core::index::term_vectors::{RawTermVectors, TermVectors};
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
 use crate::core::search::doc_id_set_iterator::disi_const::NO_MORE_DOCS;
 use crate::core::search::sort::Sort;
@@ -426,6 +428,18 @@ where
         field: &str,
     ) -> Result<Option<<Self::Fields as Fields>::Terms>> {
         self.default_get_field_terms(doc, field)
+    }
+}
+
+impl<T, DM> RawTermVectors for TermVectorsReaderImpl<T, DM>
+where
+    DM: DocMap + Clone,
+    T: TermVectorsReader,
+{
+    type IndexInput = <T as RawTermVectors>::IndexInput;
+
+    fn raw_TermVectors(&mut self) -> Result<&mut DefaultTermVectorsReader<Self::IndexInput>> {
+        self.delegate.raw_TermVectors()
     }
 }
 

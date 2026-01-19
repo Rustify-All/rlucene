@@ -27,7 +27,7 @@ use crate::core::codecs::compression::compression_mode::{
 use crate::core::codecs::compression::decompressor::Decompressor;
 use crate::core::codecs::lucene90::fields_index::{FieldsIndex, FieldsIndexEnum};
 use crate::core::codecs::lucene90::fields_index_reader::FieldsIndexReader;
-use crate::core::codecs::term_vectors_reader::TermVectorsReader;
+use crate::core::codecs::term_vectors_reader::{DefaultTermVectorsReader, TermVectorsReader};
 use crate::core::index::automaton_terms_enum::AutomatonTermsEnum;
 use crate::core::index::base_terms_enum::BaseTermsEnum;
 use crate::core::index::dummy::dummy_term_state_type::DummyTermState;
@@ -37,7 +37,7 @@ use crate::core::index::filtered_terms_enum::{FilteredTermsEnum, FilteredTermsEn
 use crate::core::index::postings_enum::{FREQS, PostingsEnum};
 use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::slow_impacts_enum::SlowImpactsEnum;
-use crate::core::index::term_vectors::TermVectors;
+use crate::core::index::term_vectors::{RawTermVectors, TermVectors};
 use crate::core::index::terms::Terms;
 use crate::core::index::terms_enum::{SeekStatus, TermsEnum};
 use crate::core::index::{BytesRef, IndexFileNames};
@@ -933,6 +933,17 @@ where
         field: &str,
     ) -> Result<Option<<Self::Fields as Fields>::Terms>> {
         self.default_get_field_terms(doc, field)
+    }
+}
+
+impl<I> RawTermVectors for Lucene90CompressingTermVectorsReader<I>
+where
+    I: IndexInput,
+{
+    type IndexInput = I;
+
+    fn raw_TermVectors(&mut self) -> Result<&mut DefaultTermVectorsReader<Self::IndexInput>> {
+        Ok(self)
     }
 }
 
