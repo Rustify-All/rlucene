@@ -746,7 +746,13 @@ where
 {
     type IndexInput = <TVR as RawTermVectors>::IndexInput;
 
-    fn raw_TermVectors(&mut self) -> Result<&mut DefaultTermVectorsReader<Self::IndexInput>> {
+    fn raw_term_vectors_mut(&mut self) -> Result<&mut DefaultTermVectorsReader<Self::IndexInput>> {
+        Err(LuceneError::illegal_state(
+            "raw term vectors reader is not available".to_string(),
+        ))
+    }
+
+    fn raw_term_vectors(&self) -> Result<&DefaultTermVectorsReader<Self::IndexInput>> {
         Err(LuceneError::illegal_state(
             "raw term vectors reader is not available".to_string(),
         ))

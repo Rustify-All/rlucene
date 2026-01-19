@@ -14,10 +14,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use crate::core::codecs::term_vectors_reader::DefaultTermVectorsReader;
 use crate::core::index::dummy::dummy_fields::DummyFields;
 use crate::core::index::dummy::dummy_terms::DummyTerms;
 use crate::core::index::fields::Fields;
-use crate::core::codecs::term_vectors_reader::DefaultTermVectorsReader;
 use crate::core::index::term_vectors::{RawTermVectors, TermVectors};
 use crate::core::store::dummy::dummy_index_input::DummyIndexInput;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
@@ -48,7 +48,13 @@ impl TermVectors for DummyTermVectors {
 impl RawTermVectors for DummyTermVectors {
     type IndexInput = DummyIndexInput;
 
-    fn raw_TermVectors(&mut self) -> Result<&mut DefaultTermVectorsReader<Self::IndexInput>> {
+    fn raw_term_vectors_mut(&mut self) -> Result<&mut DefaultTermVectorsReader<Self::IndexInput>> {
+        Err(LuceneError::illegal_state(
+            "raw term vectors reader is not available".to_string(),
+        ))
+    }
+
+    fn raw_term_vectors(&self) -> Result<&DefaultTermVectorsReader<Self::IndexInput>> {
         Err(LuceneError::illegal_state(
             "raw term vectors reader is not available".to_string(),
         ))

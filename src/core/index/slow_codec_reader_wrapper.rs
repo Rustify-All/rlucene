@@ -554,8 +554,12 @@ where
 {
     type IndexInput = <LR::TermVectors as RawTermVectors>::IndexInput;
 
-    fn raw_TermVectors(&mut self) -> Result<&mut DefaultTermVectorsReader<Self::IndexInput>> {
-        self.term_vectors.raw_TermVectors()
+    fn raw_term_vectors_mut(&mut self) -> Result<&mut DefaultTermVectorsReader<Self::IndexInput>> {
+        self.term_vectors.raw_term_vectors_mut()
+    }
+
+    fn raw_term_vectors(&self) -> Result<&DefaultTermVectorsReader<Self::IndexInput>> {
+        self.term_vectors.raw_term_vectors()
     }
 }
 

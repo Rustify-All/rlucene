@@ -942,7 +942,11 @@ where
 {
     type IndexInput = I;
 
-    fn raw_TermVectors(&mut self) -> Result<&mut DefaultTermVectorsReader<Self::IndexInput>> {
+    fn raw_term_vectors_mut(&mut self) -> Result<&mut DefaultTermVectorsReader<Self::IndexInput>> {
+        Ok(self)
+    }
+
+    fn raw_term_vectors(&self) -> Result<&DefaultTermVectorsReader<Self::IndexInput>> {
         Ok(self)
     }
 }

@@ -25,7 +25,8 @@ use std::marker::PhantomData;
 
 pub trait RawTermVectors {
     type IndexInput: IndexInput;
-    fn raw_TermVectors(&mut self) -> Result<&mut DefaultTermVectorsReader<Self::IndexInput>>;
+    fn raw_term_vectors_mut(&mut self) -> Result<&mut DefaultTermVectorsReader<Self::IndexInput>>;
+    fn raw_term_vectors(&self) -> Result<&DefaultTermVectorsReader<Self::IndexInput>>;
 }
 /// API for reading term vectors.
 ///
@@ -87,7 +88,13 @@ impl<I: IndexInput> Default for EmptyTermVectors<I> {
 impl<I: IndexInput> RawTermVectors for EmptyTermVectors<I> {
     type IndexInput = I;
 
-    fn raw_TermVectors(&mut self) -> Result<&mut DefaultTermVectorsReader<Self::IndexInput>> {
+    fn raw_term_vectors_mut(&mut self) -> Result<&mut DefaultTermVectorsReader<Self::IndexInput>> {
+        Err(LuceneError::illegal_state(
+            "raw term vectors reader is not available".to_string(),
+        ))
+    }
+
+    fn raw_term_vectors(&self) -> Result<&DefaultTermVectorsReader<Self::IndexInput>> {
         Err(LuceneError::illegal_state(
             "raw term vectors reader is not available".to_string(),
         ))
@@ -165,7 +172,13 @@ either_term_vectors!(
 impl<A, B> RawTermVectors for TermVectorsEnum2<A, B> {
     type IndexInput = DummyIndexInput;
 
-    fn raw_TermVectors(&mut self) -> Result<&mut DefaultTermVectorsReader<Self::IndexInput>> {
+    fn raw_term_vectors_mut(&mut self) -> Result<&mut DefaultTermVectorsReader<Self::IndexInput>> {
+        Err(LuceneError::illegal_state(
+            "raw term vectors reader is not available".to_string(),
+        ))
+    }
+
+    fn raw_term_vectors(&self) -> Result<&DefaultTermVectorsReader<Self::IndexInput>> {
         Err(LuceneError::illegal_state(
             "raw term vectors reader is not available".to_string(),
         ))
