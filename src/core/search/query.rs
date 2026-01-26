@@ -23,7 +23,7 @@ use crate::core::document::sorted_numeric_doc_values_set_query::{
 };
 use crate::core::document::sorted_set_doc_values_range_query::{
     SortedSetDocValuesRangeQuery, SortedSetDocValuesRangeQueryWeight, SortedSetDocValuesRangeSs,
-    SortedSetDocValuesRangeSsScorerDisi,
+    SortedSetDocValuesRangeSsScorerDisi, SortedSetDocValuesRangeSsScorerDisiRef,
 };
 use crate::core::index::index_reader_context::{IRCTermState, IndexReaderContext};
 use crate::core::index::leaf_reader_context::LeafReaderContext;
@@ -47,7 +47,7 @@ use crate::core::search::explanation::Explanation;
 use crate::core::search::field_exists_query::{FieldExistsQuery, FieldExistsSs, FieldExistsWeight};
 use crate::core::search::index_searcher::IndexSearcher;
 use crate::core::search::index_sort_sorted_numeric_doc_values_range_query::{
-    ISSNDVRSsScorerDisi, IndexSortSortedNumericDocValuesRangeQuery,
+    ISSNDVRSsScorerDisi, ISSNDVRSsScorerDisiRef, IndexSortSortedNumericDocValuesRangeQuery,
     IndexSortSortedNumericDocValuesRangeQueryWeight, IndexSortSortedNumericDocValuesRangeSs,
 };
 use crate::core::search::leaf_collector::LeafCollector;

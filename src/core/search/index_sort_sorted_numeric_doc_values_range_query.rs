@@ -236,6 +236,7 @@ pub type IndexSortSortedNumericDocValuesRangeSs<LR> = ScorerSupplierEnum2<
 pub type ISSNDVRSsScorer<LR> =
     <IndexSortSortedNumericDocValuesRangeSs<LR> as ScorerSupplier<LR>>::Scorer;
 pub type ISSNDVRSsScorerDisi<LR> = <ISSNDVRSsScorer<LR> as Scorer>::DocIdSetIterator;
+pub type ISSNDVRSsScorerDisiRef<'a, LR> = <ISSNDVRSsScorer<LR> as Scorer>::DocIdSetIteratorRef<'a>;
 
 impl<LR> Weight<LR> for IndexSortSortedNumericDocValuesRangeQueryWeight<LR>
 where
