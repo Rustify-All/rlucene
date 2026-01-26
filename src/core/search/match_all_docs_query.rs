@@ -73,7 +73,6 @@ impl QueryBase for MatchAllDocsQuery {
         IRC: IndexReaderContext,
         QCP: QueryCachingPolicy,
         QC: QueryCache;
-
     fn create_weight<S, IRC, QT, QCP, QC>(
         self,
         _searcher: &IndexSearcher<IRC, S, QT, QCP, QC>,
@@ -154,7 +153,7 @@ where
         self.parent_query.clone()
     }
 
-    type ScorerSupplier = MatchAllDocsScorerSupplier;
+    type ScorerSupplier = MatchAllSs;
 
     fn scorer_supplier(
         &self,
@@ -179,7 +178,7 @@ where
         write!(f, "weight({:?})", MatchAllDocsQuery)
     }
 }
-
+pub type MatchAllSs = MatchAllDocsScorerSupplier;
 pub struct MatchAllDocsScorerSupplier {
     score_mode: ScoreMode,
     weight: ConstantScoreWeight,

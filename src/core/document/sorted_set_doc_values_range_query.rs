@@ -41,7 +41,7 @@ use crate::core::search::query::{Query, QueryBase};
 use crate::core::search::query_caching_policy::QueryCachingPolicy;
 use crate::core::search::query_visitor::QueryVisitor;
 use crate::core::search::score_mode::ScoreMode;
-use crate::core::search::scorer::ScorerEnum5;
+use crate::core::search::scorer::{Scorer, ScorerEnum5};
 use crate::core::search::scorer_supplier::ScorerSupplier;
 use crate::core::search::segment_cacheable::SegmentCacheable;
 use crate::core::search::similarities_impl::similarities::Similarity;
@@ -197,7 +197,7 @@ where
         self.parent_query.clone()
     }
 
-    type ScorerSupplier = ScorerSupplierImpl3<LR>;
+    type ScorerSupplier = SortedSetDocValuesRangeSs<LR>;
 
     fn scorer_supplier(
         &self,
@@ -320,6 +320,11 @@ where
 
     Ok(doc)
 }
+pub type SortedSetDocValuesRangeSs<LR> = ScorerSupplierImpl3<LR>;
+pub type SortedSetDocValuesRangeSsScorer<LR> =
+    <ScorerSupplierImpl3<LR> as ScorerSupplier<LR>>::Scorer;
+pub type SortedSetDocValuesRangeSsScorerDisi<LR> =
+    <<ScorerSupplierImpl3<LR> as ScorerSupplier<LR>>::Scorer as Scorer>::DocIdSetIterator;
 pub struct ScorerSupplierImpl3<LR>
 where
     LR: LeafReader,

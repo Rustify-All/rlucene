@@ -93,7 +93,6 @@ impl QueryBase for FieldExistsQuery {
         IRC: IndexReaderContext,
         QCP: QueryCachingPolicy,
         QC: QueryCache;
-
     fn create_weight<S, IRC, QT, QCP, QC>(
         self,
         _searcher: &IndexSearcher<IRC, S, QT, QCP, QC>,
@@ -181,7 +180,8 @@ where
         Ok(true)
     }
 }
-
+pub type FieldExistsSs<LR> =
+    DefaultScorerSupplier<ConstantScoreScorer<Disi<LR>, DummyTwoPhaseIterator>>;
 pub type Disi<LR> = DocIdSetIteratorEnum3<LRNormNumericDocValues<LR>, DummyDISI, LRDisis<LR>>;
 impl<LR> Weight<LR> for FieldExistsWeight<LR>
 where
@@ -203,8 +203,7 @@ where
         self.parent_query.clone()
     }
 
-    type ScorerSupplier =
-        DefaultScorerSupplier<ConstantScoreScorer<Disi<LR>, DummyTwoPhaseIterator>>;
+    type ScorerSupplier = FieldExistsSs<LR>;
 
     fn scorer_supplier(
         &self,

@@ -21,7 +21,7 @@ use crate::core::search::QueryCache;
 use crate::core::search::boolean_clause::{BooleanClause, Occur};
 use crate::core::search::dummy::dummy_weight::DummyWeight;
 use crate::core::search::index_searcher::{IndexSearcher, get_max_clause_count};
-use crate::core::search::query::{BaseQuery, Query, QueryBase};
+use crate::core::search::query::{Query, QueryBase};
 use crate::core::search::query_caching_policy::QueryCachingPolicy;
 use crate::core::search::query_visitor::QueryVisitor;
 use crate::core::search::score_mode::ScoreMode;
@@ -30,6 +30,7 @@ use crate::core::util::error::lucene_error::{LuceneError, Result};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
+
 /// A query that matches documents matching boolean combinations of other queries, e.g.
 /// [`TermQuery`](crate::core::search::term_query::TermQuery)s, [`PhraseQuery`](crate::core::search::phrase_query::PhraseQuery)s or other [`BooleanQuery`]s.
 #[derive(Eq, PartialEq, Debug)]
@@ -86,8 +87,8 @@ impl BooleanQuery {
     pub(crate) fn is_two_clause_pure_disjunction_with_terms(&self) -> bool {
         self.clauses.len() == 2
             && self.is_pure_disjunction()
-            && matches!(self.clauses[0].query, Query::Base(BaseQuery::Term(_)))
-            && matches!(self.clauses[1].query, Query::Base(BaseQuery::Term(_)))
+            && matches!(self.clauses[0].query, Query::Term(_))
+            && matches!(self.clauses[1].query, Query::Term(_))
     }
 }
 impl Hash for BooleanQuery {
@@ -143,7 +144,6 @@ impl QueryBase for BooleanQuery {
         IRC: IndexReaderContext,
         QCP: QueryCachingPolicy,
         QC: QueryCache;
-
     fn create_weight<S, IRC, QT, QCP, QC>(
         self,
         _searcher: &IndexSearcher<IRC, S, QT, QCP, QC>,

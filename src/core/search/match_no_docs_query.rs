@@ -24,7 +24,7 @@ use crate::core::search::dummy::dummy_scorer_supplier::DummyScorerSupplier;
 use crate::core::search::explanation::Explanation;
 use crate::core::search::index_searcher::IndexSearcher;
 use crate::core::search::matches_utils::MatchWithNoTerms;
-use crate::core::search::query::{BaseQuery, Query, QueryBase};
+use crate::core::search::query::{Query, QueryBase};
 use crate::core::search::query_caching_policy::QueryCachingPolicy;
 use crate::core::search::query_visitor::QueryVisitor;
 use crate::core::search::score_mode::ScoreMode;
@@ -146,8 +146,7 @@ where
     }
 
     fn explain(&self, _context: &LeafReaderContext<LR>, _doc: i32) -> Result<Explanation> {
-        let parent_query = if let Query::Base(BaseQuery::MatchNoDoc(v)) = self.parent_query.as_ref()
-        {
+        let parent_query = if let Query::MatchNoDoc(v) = self.parent_query.as_ref() {
             v
         } else {
             return Err(LuceneError::illegal_state(""));
@@ -159,7 +158,7 @@ where
         self.parent_query.clone()
     }
 
-    type ScorerSupplier = DummyScorerSupplier;
+    type ScorerSupplier = MatchNoDocsSs;
 
     fn scorer_supplier(
         &self,
@@ -181,3 +180,4 @@ where
         write!(f, "weight({:?})", self.parent_query)
     }
 }
+pub type MatchNoDocsSs = DummyScorerSupplier;

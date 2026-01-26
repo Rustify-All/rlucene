@@ -601,7 +601,7 @@ where
 
         // LUCENE-6379: Specialize MatchAllDocsQuery
         for query in &queries {
-            if matches!(query, Query::Base(BaseQuery::MatchAll(_))) {
+            if matches!(query, Query::MatchAll(_)) {
                 // TODO
                 // return self.delete_all();
             }
@@ -5250,7 +5250,7 @@ use crate::core::index::term::Term;
 use crate::core::index::{BytesRef, IndexFileNames};
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
 use crate::core::search::doc_id_set_iterator::disi_const::NO_MORE_DOCS;
-use crate::core::search::query::{BaseQuery, Query};
+use crate::core::search::query::Query;
 use crate::core::search::sort::Sort;
 use crate::core::store::IOContext;
 use crate::core::store::lock_validating_directory_wrapper::LockValidatingDirectoryWrapper;

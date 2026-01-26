@@ -95,7 +95,6 @@ impl QueryBase for BoostQuery {
         IRC: IndexReaderContext,
         QCP: QueryCachingPolicy,
         QC: QueryCache;
-
     fn create_weight<S, IRC, QT, QCP, QC>(
         self,
         searcher: &IndexSearcher<IRC, S, QT, QCP, QC>,

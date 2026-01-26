@@ -20,7 +20,7 @@ use crate::core::document::float_point::FloatPointRangeQuery;
 use crate::core::document::int_point::IntPointRangeQuery;
 use crate::core::document::long_point::LongPointRangeQuery;
 use crate::core::index::index_reader_context::{IRCTermState, IndexReaderContext};
-use crate::core::index::leaf_reader::LeafReader;
+use crate::core::index::leaf_reader::{LRPointValues, LeafReader};
 use crate::core::index::leaf_reader_context::LeafReaderContext;
 use crate::core::index::point_values::{IntersectVisitor, PointTree, PointValues, Relation};
 use crate::core::index::query_timeout::QueryTimeout;
@@ -34,7 +34,7 @@ use crate::core::search::dummy::dummy_two_phase_iterator::DummyTwoPhaseIterator;
 use crate::core::search::explanation::Explanation;
 use crate::core::search::index_searcher::IndexSearcher;
 use crate::core::search::matches_utils::MatchWithNoTerms;
-use crate::core::search::query::{BaseQuery, Query, QueryBase};
+use crate::core::search::query::{Query, QueryBase};
 use crate::core::search::query_caching_policy::QueryCachingPolicy;
 use crate::core::search::query_visitor::QueryVisitor;
 use crate::core::search::score_mode::ScoreMode;
@@ -211,7 +211,6 @@ impl QueryBase for PointRangeQuery {
         IRC: IndexReaderContext,
         QCP: QueryCachingPolicy,
         QC: QueryCache;
-
     fn create_weight<S, IRC, QT, QCP, QC>(
         self,
         _searcher: &IndexSearcher<IRC, S, QT, QCP, QC>,
@@ -371,7 +370,7 @@ where
         }
     }
     fn point_range_query(&self) -> Result<&PointRangeQuery> {
-        if let Query::Base(BaseQuery::PointRange(v)) = self.parent_query.as_ref() {
+        if let Query::PointRange(v) = self.parent_query.as_ref() {
             Ok(v)
         } else {
             Err(LuceneError::illegal_state(""))
@@ -408,7 +407,7 @@ where
         self.parent_query.clone()
     }
 
-    type ScorerSupplier = PointRangeWeightScorerSupplier<LR::PointValues>;
+    type ScorerSupplier = PointRangeSs<LR>;
 
     fn scorer_supplier(
         &self,
@@ -714,7 +713,7 @@ where
         Ok(self.cost)
     }
 }
-
+pub type PointRangeSs<LR> = PointRangeWeightScorerSupplier<LRPointValues<LR>>;
 pub struct ScorerSupplierImpl {
     score_mode: ScoreMode,
     max_doc: i32,

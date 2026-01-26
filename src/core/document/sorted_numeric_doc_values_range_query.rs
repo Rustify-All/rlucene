@@ -88,7 +88,6 @@ impl QueryBase for SortedNumericDocValuesRangeQuery {
         IRC: IndexReaderContext,
         QCP: QueryCachingPolicy,
         QC: QueryCache;
-
     fn create_weight<S, IRC, QT, QCP, QC>(
         self,
         _searcher: &IndexSearcher<IRC, S, QT, QCP, QC>,
@@ -274,7 +273,7 @@ where
         self.parent_query.clone()
     }
 
-    type ScorerSupplier = ScorerSupplierAlias1<LR>;
+    type ScorerSupplier = SortedNumericDocValuesRangeSs<LR>;
 
     fn scorer_supplier(
         &self,
@@ -367,7 +366,7 @@ pub type TPI<LR> = TwoPhaseIteratorEnum2<
     TwoPhaseIterator4<SortedNumeric<LR>>,
 >;
 
-pub type ScorerSupplierAlias1<LR> = ScorerSupplierEnum4<
+pub type SortedNumericDocValuesRangeSs<LR> = ScorerSupplierEnum4<
     DefaultScorerSupplier<ConstantScoreScorer<AllDISI, DummyTwoPhaseIterator>>,
     DefaultScorerSupplier<ConstantScoreScorer<DISI, DummyTwoPhaseIterator>>,
     DefaultScorerSupplier<

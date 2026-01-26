@@ -37,7 +37,7 @@ use crate::core::search::dummy::dummy_matches::DummyMatches;
 use crate::core::search::dummy::dummy_two_phase_iterator::DummyTwoPhaseIterator;
 use crate::core::search::explanation::Explanation;
 use crate::core::search::index_searcher::IndexSearcher;
-use crate::core::search::query::{BaseQuery, Query, QueryBase};
+use crate::core::search::query::{Query, QueryBase};
 use crate::core::search::query_caching_policy::QueryCachingPolicy;
 use crate::core::search::query_visitor::QueryVisitor;
 use crate::core::search::score_mode::ScoreMode;
@@ -242,7 +242,7 @@ where
             Some(s) => term_states.resolve(s)?,
             None => None,
         };
-        let parent_query = if let Query::Base(BaseQuery::Term(v)) = self.parent_query.as_ref() {
+        let parent_query = if let Query::Term(v) = self.parent_query.as_ref() {
             v
         } else {
             return Err(LuceneError::illegal_state(""));
@@ -323,12 +323,11 @@ where
                 };
 
                 let mut norm: i64 = 1;
-                let parent_query =
-                    if let Query::Base(BaseQuery::Term(v)) = self.parent_query.as_ref() {
-                        v
-                    } else {
-                        return Err(LuceneError::illegal_state(""));
-                    };
+                let parent_query = if let Query::Term(v) = self.parent_query.as_ref() {
+                    v
+                } else {
+                    return Err(LuceneError::illegal_state(""));
+                };
 
                 if let Some(mut norms) =
                     context.reader().get_norm_values(&parent_query.term.field)?
@@ -372,7 +371,7 @@ where
         self.parent_query.clone()
     }
 
-    type ScorerSupplier = TermScorerSupplier<IRC, S>;
+    type ScorerSupplier = TermSs<IRC, S>;
 
     fn scorer_supplier(
         &self,
@@ -386,7 +385,7 @@ where
             "The top-reader used to create Weight is not the same as the current reader's top-reader"
         );
         let state_supplier = self.term_states.lock().get(context)?;
-        let parent_query = if let Query::Base(BaseQuery::Term(v)) = self.parent_query.as_ref() {
+        let parent_query = if let Query::Term(v) = self.parent_query.as_ref() {
             v
         } else {
             return Err(LuceneError::illegal_state(""));
@@ -420,7 +419,7 @@ where
         }
     }
 }
-
+pub type TermSs<IRC, S> = TermScorerSupplier<IRC, S>;
 pub struct TermScorerSupplier<IRC, S>
 where
     IRC: IndexReaderContext,

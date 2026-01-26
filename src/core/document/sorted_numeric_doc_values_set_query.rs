@@ -72,7 +72,6 @@ impl QueryBase for SortedNumericDocValuesSetQuery {
         IRC: IndexReaderContext,
         QCP: QueryCachingPolicy,
         QC: QueryCache;
-
     fn create_weight<S, IRC, QT, QCP, QC>(
         self,
         _searcher: &IndexSearcher<IRC, S, QT, QCP, QC>,
@@ -167,15 +166,7 @@ where
         self.parent_query.clone()
     }
 
-    type ScorerSupplier = DefaultScorerSupplier<
-        ConstantScoreScorer<
-            DummyDISI,
-            TwoPhaseIteratorEnum2<
-                TwoPhaseIterator1<<SortedNumeric<LR> as SortedNumericDocValues>::NumericDocValues>,
-                TwoPhaseIterator2<SortedNumeric<LR>>,
-            >,
-        >,
-    >;
+    type ScorerSupplier = DefaultScorerSupplierSs<LR>;
 
     fn scorer_supplier(
         &self,
@@ -200,7 +191,15 @@ where
         Ok(Some(DefaultScorerSupplier::new(scorer)))
     }
 }
-
+pub type DefaultScorerSupplierSs<LR> = DefaultScorerSupplier<
+    ConstantScoreScorer<
+        DummyDISI,
+        TwoPhaseIteratorEnum2<
+            TwoPhaseIterator1<<SortedNumeric<LR> as SortedNumericDocValues>::NumericDocValues>,
+            TwoPhaseIterator2<SortedNumeric<LR>>,
+        >,
+    >,
+>;
 pub struct TwoPhaseIterator1<N>
 where
     N: NumericDocValues,

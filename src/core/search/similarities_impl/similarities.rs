@@ -150,6 +150,7 @@ pub trait Similarity: Display {
         term_stats: &[TermStatistics],
     ) -> Self::SimScorer;
 }
+pub type SimilaritySimScorer<S> = <S as Similarity>::SimScorer;
 /// Stores the weight for a query across the indexed collection.
 ///
 /// This trait is a marker for query‐weight implementations. The base implementation is empty;
