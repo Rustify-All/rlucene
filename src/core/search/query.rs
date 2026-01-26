@@ -37,11 +37,12 @@ use crate::core::search::constant_score_query::{
     ConstantScoreQuery, ConstantScoreQueryWeight, ConstantScoreSs, ConstantScoreSsBulkScorer,
     ConstantScoreSsScorer, ConstantScoreSsScorerDisi, ConstantScoreSsScorerTpi,
 };
-use crate::core::search::doc_id_set_iterator::{DocIdSetIterator, DocIdSetIteratorEnum10};
+use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
+use crate::core::search::dummy::dummy_disi::DummyDISI;
 use crate::core::search::dummy::dummy_matches::DummyMatches;
 use crate::core::search::dummy::dummy_query::DummyQuery;
 use crate::core::search::dummy::dummy_scorable::DummyScorable;
-use crate::core::search::dummy::dummy_scorer_supplier::DummyScorerSupplier;
+use crate::core::search::dummy::dummy_two_phase_iterator::DummyTwoPhaseIterator;
 use crate::core::search::explanation::Explanation;
 use crate::core::search::field_exists_query::{FieldExistsQuery, FieldExistsSs, FieldExistsWeight};
 use crate::core::search::index_searcher::IndexSearcher;
@@ -371,12 +372,12 @@ impl QueryBase for Query {
                 boost,
                 per_reader_term_state,
             )?)),
-            Query::ConstantScore(p) => Ok(QueryWeight::ConstantScore(p.create_weight(
+            Query::ConstantScore(p) => Ok(QueryWeight::ConstantScore(Box::new(p.create_weight(
                 searcher,
                 score_mode,
                 boost,
                 per_reader_term_state,
-            )?)),
+            )?))),
             _ => Err(LuceneError::illegal_argument("")),
         }
     }
@@ -572,7 +573,7 @@ where
         IndexSortSortedNumericDocValuesRangeQueryWeight<<IRC as IndexReaderContext>::LeafReader>,
     ),
     FieldExists(FieldExistsWeight<<IRC as IndexReaderContext>::LeafReader>),
-    ConstantScore(ConstantScoreQueryWeight<QueryWeight<S, IRC, QCP, QC>, IRC, QCP, QC>),
+    ConstantScore(Box<ConstantScoreQueryWeight<QueryWeight<S, IRC, QCP, QC>, IRC, QCP, QC>>),
 }
 impl<S, IRC, QCP, QC> SegmentCacheable<IRC::LeafReader> for QueryWeight<S, IRC, QCP, QC>
 where
@@ -686,7 +687,36 @@ where
         &self,
         _context: &LeafReaderContext<IRC::LeafReader>,
     ) -> Result<Option<<Self::ScorerSupplier as ScorerSupplier<IRC::LeafReader>>::BulkScorer>> {
-        todo!()
+        match self {
+            QueryWeight::Term(w) => Ok(w.bulk_scorer(_context)?.map(QueryWeightBulkScorer::Term)),
+            QueryWeight::MatchAll(w) => Ok(w
+                .bulk_scorer(_context)?
+                .map(QueryWeightBulkScorer::MatchAll)),
+            QueryWeight::PointRange(w) => Ok(w
+                .bulk_scorer(_context)?
+                .map(QueryWeightBulkScorer::PointRange)),
+            QueryWeight::MatchNoDocs(w) => {
+                Ok(w.bulk_scorer(_context)?.map(QueryWeightBulkScorer::MatchNo))
+            },
+            QueryWeight::SortedNumericDocValuesSet(w) => Ok(w
+                .bulk_scorer(_context)?
+                .map(QueryWeightBulkScorer::SortedNumericDocValuesSet)),
+            QueryWeight::SortedNumericDocValuesRange(w) => Ok(w
+                .bulk_scorer(_context)?
+                .map(QueryWeightBulkScorer::SortedNumericDocValuesRange)),
+            QueryWeight::SortedSetDocValuesRange(w) => Ok(w
+                .bulk_scorer(_context)?
+                .map(QueryWeightBulkScorer::SortedSetDocValuesRange)),
+            QueryWeight::IndexSortSortedNumericDocValuesRange(w) => Ok(w
+                .bulk_scorer(_context)?
+                .map(QueryWeightBulkScorer::IndexSortSortedNumericDocValuesRange)),
+            QueryWeight::FieldExists(w) => Ok(w
+                .bulk_scorer(_context)?
+                .map(QueryWeightBulkScorer::FieldExists)),
+            QueryWeight::ConstantScore(w) => Ok(w
+                .bulk_scorer(_context)?
+                .map(|bs| QueryWeightBulkScorer::ConstantScore(Box::new(bs)))),
+        }
     }
 
     fn count(&self, context: &LeafReaderContext<IRC::LeafReader>) -> Result<i32> {
@@ -760,46 +790,47 @@ where
     QC: QueryCache,
 {
     type Scorer = QueryWeightScorer<S, IRC, QCP, QC>;
+    // type Scorer = DummyScorer;
+
     type BulkScorer = QueryWeightBulkScorer<S, IRC, QCP, QC>;
 
     fn get(
         &mut self,
-        lead_cost: i64,
-        context: &LeafReaderContext<IRC::LeafReader>,
+        _lead_cost: i64,
+        _context: &LeafReaderContext<IRC::LeafReader>,
     ) -> Result<Option<Self::Scorer>> {
-        match self {
-            QueryWeightSS::Term(s) => Ok(s.get(lead_cost, context)?.map(QueryWeightScorer::Term)),
-            QueryWeightSS::MatchAll(s) => {
-                Ok(s.get(lead_cost, context)?.map(QueryWeightScorer::MatchAll))
-            },
-            QueryWeightSS::PointRange(s) => Ok(s
-                .get(lead_cost, context)?
-                .map(QueryWeightScorer::PointRange)),
-            QueryWeightSS::MatchNoDocs(s) => {
-                Ok(s.get(lead_cost, context)?.map(QueryWeightScorer::MatchNo))
-            },
-            QueryWeightSS::SortedNumericDocValuesSet(s) => Ok(s
-                .get(lead_cost, context)?
-                .map(QueryWeightScorer::SortedNumericDocValuesSet)),
-            QueryWeightSS::SortedNumericDocValuesRange(s) => Ok(s
-                .get(lead_cost, context)?
-                .map(QueryWeightScorer::SortedNumericDocValuesRange)),
-            QueryWeightSS::SortedSetDocValuesRange(s) => Ok(s
-                .get(lead_cost, context)?
-                .map(QueryWeightScorer::SortedSetDocValuesRange)),
-            QueryWeightSS::IndexSortSortedNumericDocValuesRange(s) => Ok(s
-                .get(lead_cost, context)?
-                .map(QueryWeightScorer::IndexSortSortedNumericDocValuesRange)),
-            QueryWeightSS::FieldExists(s) => Ok(s
-                .get(lead_cost, context)?
-                .map(QueryWeightScorer::FieldExists)),
-            QueryWeightSS::ConstantScore(s) => {
-                match s.get(lead_cost, context)? {
-                    Some(sc) => Ok(Some(QueryWeightScorer::ConstantScore(Box::new(sc)))),
-                    None => Ok(None),
-                }
-            },
-        }
+        // match self {
+        //     QueryWeightSS::Term(s) => Ok(s.get(lead_cost, context)?.map(QueryWeightScorer::Term)),
+        //     QueryWeightSS::MatchAll(s) => {
+        //         Ok(s.get(lead_cost, context)?.map(QueryWeightScorer::MatchAll))
+        //     },
+        //     QueryWeightSS::PointRange(s) => Ok(s
+        //         .get(lead_cost, context)?
+        //         .map(QueryWeightScorer::PointRange)),
+        //     QueryWeightSS::MatchNoDocs(s) => {
+        //         Ok(s.get(lead_cost, context)?.map(QueryWeightScorer::MatchNo))
+        //     },
+        //     QueryWeightSS::SortedNumericDocValuesSet(s) => Ok(s
+        //         .get(lead_cost, context)?
+        //         .map(QueryWeightScorer::SortedNumericDocValuesSet)),
+        //     QueryWeightSS::SortedNumericDocValuesRange(s) => Ok(s
+        //         .get(lead_cost, context)?
+        //         .map(QueryWeightScorer::SortedNumericDocValuesRange)),
+        //     QueryWeightSS::SortedSetDocValuesRange(s) => Ok(s
+        //         .get(lead_cost, context)?
+        //         .map(QueryWeightScorer::SortedSetDocValuesRange)),
+        //     QueryWeightSS::IndexSortSortedNumericDocValuesRange(s) => Ok(s
+        //         .get(lead_cost, context)?
+        //         .map(QueryWeightScorer::IndexSortSortedNumericDocValuesRange)),
+        //     QueryWeightSS::FieldExists(s) => Ok(s
+        //         .get(lead_cost, context)?
+        //         .map(QueryWeightScorer::FieldExists)),
+        //     QueryWeightSS::ConstantScore(s) => match s.get(lead_cost, context)? {
+        //         Some(sc) => Ok(Some(QueryWeightScorer::ConstantScore(Box::new(sc)))),
+        //         None => Ok(None),
+        //     },
+        // }
+        todo!()
     }
 
     fn bulk_scorer(
@@ -832,14 +863,9 @@ where
             QueryWeightSS::FieldExists(s) => Ok(s
                 .bulk_scorer(context)?
                 .map(QueryWeightBulkScorer::FieldExists)),
-            QueryWeightSS::ConstantScore(s) => {
-                match s.bulk_scorer(context)? {
-                    Some(bsc) => {
-                        Ok(Some(QueryWeightBulkScorer::ConstantScore(Box::new(bsc))))
-                    },
-                    None => Ok(None),
-                }
-            },
+            QueryWeightSS::ConstantScore(s) => Ok(s
+                .bulk_scorer(context)?
+                .map(|bsc| QueryWeightBulkScorer::ConstantScore(Box::new(bsc)))),
         }
     }
 
@@ -1013,618 +1039,6 @@ where
     ConstantScore(Box<ConstantScoreSsScorer<QueryWeight<S, IRC, QCP, QC>, IRC, QCP, QC>>),
 }
 
-pub enum QueryWeightDocIdSetIteratorRef<A, B, C, D, E, F, G, H, I, J> {
-    Term(A),
-    MatchAll(B),
-    PointRange(C),
-    MatchNo(D),
-    SortedNumericDocValuesSet(E),
-    SortedNumericDocValuesRange(F),
-    SortedSetDocValuesRange(G),
-    IndexSortSortedNumericDocValuesRange(H),
-    FieldExists(I),
-    ConstantScore(J),
-}
-
-pub enum QueryWeightDocIdSetIteratorMut<A, B, C, D, E, F, G, H, I, J> {
-    Term(A),
-    MatchAll(B),
-    PointRange(C),
-    MatchNo(D),
-    SortedNumericDocValuesSet(E),
-    SortedNumericDocValuesRange(F),
-    SortedSetDocValuesRange(G),
-    IndexSortSortedNumericDocValuesRange(H),
-    FieldExists(I),
-    ConstantScore(J),
-}
-
-impl<A, B, C, D, E, F, G, H, I, J> DocIdSetIterator
-    for QueryWeightDocIdSetIteratorRef<A, B, C, D, E, F, G, H, I, J>
-where
-    A: DocIdSetIterator,
-    B: DocIdSetIterator,
-    C: DocIdSetIterator,
-    D: DocIdSetIterator,
-    E: DocIdSetIterator,
-    F: DocIdSetIterator,
-    G: DocIdSetIterator,
-    H: DocIdSetIterator,
-    I: DocIdSetIterator,
-    J: DocIdSetIterator,
-{
-    fn doc_id(&self) -> i32 {
-        match self {
-            QueryWeightDocIdSetIteratorRef::Term(iter) => iter.doc_id(),
-            QueryWeightDocIdSetIteratorRef::MatchAll(iter) => iter.doc_id(),
-            QueryWeightDocIdSetIteratorRef::PointRange(iter) => iter.doc_id(),
-            QueryWeightDocIdSetIteratorRef::MatchNo(iter) => iter.doc_id(),
-            QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesSet(iter) => iter.doc_id(),
-            QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesRange(iter) => iter.doc_id(),
-            QueryWeightDocIdSetIteratorRef::SortedSetDocValuesRange(iter) => iter.doc_id(),
-            QueryWeightDocIdSetIteratorRef::IndexSortSortedNumericDocValuesRange(iter) => {
-                iter.doc_id()
-            },
-            QueryWeightDocIdSetIteratorRef::FieldExists(iter) => iter.doc_id(),
-            QueryWeightDocIdSetIteratorRef::ConstantScore(iter) => iter.doc_id(),
-        }
-    }
-
-    fn next_doc(&mut self) -> Result<i32> {
-        match self {
-            QueryWeightDocIdSetIteratorRef::Term(iter) => iter.next_doc(),
-            QueryWeightDocIdSetIteratorRef::MatchAll(iter) => iter.next_doc(),
-            QueryWeightDocIdSetIteratorRef::PointRange(iter) => iter.next_doc(),
-            QueryWeightDocIdSetIteratorRef::MatchNo(iter) => iter.next_doc(),
-            QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesSet(iter) => iter.next_doc(),
-            QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesRange(iter) => iter.next_doc(),
-            QueryWeightDocIdSetIteratorRef::SortedSetDocValuesRange(iter) => iter.next_doc(),
-            QueryWeightDocIdSetIteratorRef::IndexSortSortedNumericDocValuesRange(iter) => {
-                iter.next_doc()
-            },
-            QueryWeightDocIdSetIteratorRef::FieldExists(iter) => iter.next_doc(),
-            QueryWeightDocIdSetIteratorRef::ConstantScore(iter) => iter.next_doc(),
-        }
-    }
-
-    fn advance(&mut self, target: i32) -> Result<i32> {
-        match self {
-            QueryWeightDocIdSetIteratorRef::Term(iter) => iter.advance(target),
-            QueryWeightDocIdSetIteratorRef::MatchAll(iter) => iter.advance(target),
-            QueryWeightDocIdSetIteratorRef::PointRange(iter) => iter.advance(target),
-            QueryWeightDocIdSetIteratorRef::MatchNo(iter) => iter.advance(target),
-            QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesSet(iter) => iter.advance(target),
-            QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesRange(iter) => {
-                iter.advance(target)
-            },
-            QueryWeightDocIdSetIteratorRef::SortedSetDocValuesRange(iter) => iter.advance(target),
-            QueryWeightDocIdSetIteratorRef::IndexSortSortedNumericDocValuesRange(iter) => {
-                iter.advance(target)
-            },
-            QueryWeightDocIdSetIteratorRef::FieldExists(iter) => iter.advance(target),
-            QueryWeightDocIdSetIteratorRef::ConstantScore(iter) => iter.advance(target),
-        }
-    }
-
-    fn cost(&self) -> Result<i64> {
-        match self {
-            QueryWeightDocIdSetIteratorRef::Term(iter) => iter.cost(),
-            QueryWeightDocIdSetIteratorRef::MatchAll(iter) => iter.cost(),
-            QueryWeightDocIdSetIteratorRef::PointRange(iter) => iter.cost(),
-            QueryWeightDocIdSetIteratorRef::MatchNo(iter) => iter.cost(),
-            QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesSet(iter) => iter.cost(),
-            QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesRange(iter) => iter.cost(),
-            QueryWeightDocIdSetIteratorRef::SortedSetDocValuesRange(iter) => iter.cost(),
-            QueryWeightDocIdSetIteratorRef::IndexSortSortedNumericDocValuesRange(iter) => {
-                iter.cost()
-            },
-            QueryWeightDocIdSetIteratorRef::FieldExists(iter) => iter.cost(),
-            QueryWeightDocIdSetIteratorRef::ConstantScore(iter) => iter.cost(),
-        }
-    }
-}
-
-impl<A, B, C, D, E, F, G, H, I, J> DocIdSetIterator
-    for QueryWeightDocIdSetIteratorMut<A, B, C, D, E, F, G, H, I, J>
-where
-    A: DocIdSetIterator,
-    B: DocIdSetIterator,
-    C: DocIdSetIterator,
-    D: DocIdSetIterator,
-    E: DocIdSetIterator,
-    F: DocIdSetIterator,
-    G: DocIdSetIterator,
-    H: DocIdSetIterator,
-    I: DocIdSetIterator,
-    J: DocIdSetIterator,
-{
-    fn doc_id(&self) -> i32 {
-        match self {
-            QueryWeightDocIdSetIteratorMut::Term(iter) => iter.doc_id(),
-            QueryWeightDocIdSetIteratorMut::MatchAll(iter) => iter.doc_id(),
-            QueryWeightDocIdSetIteratorMut::PointRange(iter) => iter.doc_id(),
-            QueryWeightDocIdSetIteratorMut::MatchNo(iter) => iter.doc_id(),
-            QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesSet(iter) => iter.doc_id(),
-            QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesRange(iter) => iter.doc_id(),
-            QueryWeightDocIdSetIteratorMut::SortedSetDocValuesRange(iter) => iter.doc_id(),
-            QueryWeightDocIdSetIteratorMut::IndexSortSortedNumericDocValuesRange(iter) => {
-                iter.doc_id()
-            },
-            QueryWeightDocIdSetIteratorMut::FieldExists(iter) => iter.doc_id(),
-            QueryWeightDocIdSetIteratorMut::ConstantScore(iter) => iter.doc_id(),
-        }
-    }
-
-    fn next_doc(&mut self) -> Result<i32> {
-        match self {
-            QueryWeightDocIdSetIteratorMut::Term(iter) => iter.next_doc(),
-            QueryWeightDocIdSetIteratorMut::MatchAll(iter) => iter.next_doc(),
-            QueryWeightDocIdSetIteratorMut::PointRange(iter) => iter.next_doc(),
-            QueryWeightDocIdSetIteratorMut::MatchNo(iter) => iter.next_doc(),
-            QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesSet(iter) => iter.next_doc(),
-            QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesRange(iter) => iter.next_doc(),
-            QueryWeightDocIdSetIteratorMut::SortedSetDocValuesRange(iter) => iter.next_doc(),
-            QueryWeightDocIdSetIteratorMut::IndexSortSortedNumericDocValuesRange(iter) => {
-                iter.next_doc()
-            },
-            QueryWeightDocIdSetIteratorMut::FieldExists(iter) => iter.next_doc(),
-            QueryWeightDocIdSetIteratorMut::ConstantScore(iter) => iter.next_doc(),
-        }
-    }
-
-    fn advance(&mut self, target: i32) -> Result<i32> {
-        match self {
-            QueryWeightDocIdSetIteratorMut::Term(iter) => iter.advance(target),
-            QueryWeightDocIdSetIteratorMut::MatchAll(iter) => iter.advance(target),
-            QueryWeightDocIdSetIteratorMut::PointRange(iter) => iter.advance(target),
-            QueryWeightDocIdSetIteratorMut::MatchNo(iter) => iter.advance(target),
-            QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesSet(iter) => iter.advance(target),
-            QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesRange(iter) => {
-                iter.advance(target)
-            },
-            QueryWeightDocIdSetIteratorMut::SortedSetDocValuesRange(iter) => iter.advance(target),
-            QueryWeightDocIdSetIteratorMut::IndexSortSortedNumericDocValuesRange(iter) => {
-                iter.advance(target)
-            },
-            QueryWeightDocIdSetIteratorMut::FieldExists(iter) => iter.advance(target),
-            QueryWeightDocIdSetIteratorMut::ConstantScore(iter) => iter.advance(target),
-        }
-    }
-
-    fn cost(&self) -> Result<i64> {
-        match self {
-            QueryWeightDocIdSetIteratorMut::Term(iter) => iter.cost(),
-            QueryWeightDocIdSetIteratorMut::MatchAll(iter) => iter.cost(),
-            QueryWeightDocIdSetIteratorMut::PointRange(iter) => iter.cost(),
-            QueryWeightDocIdSetIteratorMut::MatchNo(iter) => iter.cost(),
-            QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesSet(iter) => iter.cost(),
-            QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesRange(iter) => iter.cost(),
-            QueryWeightDocIdSetIteratorMut::SortedSetDocValuesRange(iter) => iter.cost(),
-            QueryWeightDocIdSetIteratorMut::IndexSortSortedNumericDocValuesRange(iter) => {
-                iter.cost()
-            },
-            QueryWeightDocIdSetIteratorMut::FieldExists(iter) => iter.cost(),
-            QueryWeightDocIdSetIteratorMut::ConstantScore(iter) => iter.cost(),
-        }
-    }
-}
-
-pub enum QueryWeightTwoPhaseIterRef<A, B, C, D, E, F, G, H, I, J> {
-    Term(A),
-    MatchAll(B),
-    PointRange(C),
-    MatchNo(D),
-    SortedNumericDocValuesSet(E),
-    SortedNumericDocValuesRange(F),
-    SortedSetDocValuesRange(G),
-    IndexSortSortedNumericDocValuesRange(H),
-    FieldExists(I),
-    ConstantScore(J),
-}
-
-pub enum QueryWeightTwoPhaseIterMut<A, B, C, D, E, F, G, H, I, J> {
-    Term(A),
-    MatchAll(B),
-    PointRange(C),
-    MatchNo(D),
-    SortedNumericDocValuesSet(E),
-    SortedNumericDocValuesRange(F),
-    SortedSetDocValuesRange(G),
-    IndexSortSortedNumericDocValuesRange(H),
-    FieldExists(I),
-    ConstantScore(J),
-}
-
-impl<A, B, C, D, E, F, G, H, I, J> TwoPhaseIterator
-    for QueryWeightTwoPhaseIterRef<A, B, C, D, E, F, G, H, I, J>
-where
-    A: TwoPhaseIterator,
-    B: TwoPhaseIterator,
-    C: TwoPhaseIterator,
-    D: TwoPhaseIterator,
-    E: TwoPhaseIterator,
-    F: TwoPhaseIterator,
-    G: TwoPhaseIterator,
-    H: TwoPhaseIterator,
-    I: TwoPhaseIterator,
-    J: TwoPhaseIterator,
-{
-    type DocIdSetIterator = QueryWeightDocIdSetIteratorRef<
-        A::DocIdSetIterator,
-        B::DocIdSetIterator,
-        C::DocIdSetIterator,
-        D::DocIdSetIterator,
-        E::DocIdSetIterator,
-        F::DocIdSetIterator,
-        G::DocIdSetIterator,
-        H::DocIdSetIterator,
-        I::DocIdSetIterator,
-        J::DocIdSetIterator,
-    >;
-
-    type DocIdSetIteratorRef<'a> = QueryWeightDocIdSetIteratorRef<
-        A::DocIdSetIteratorRef<'a>,
-        B::DocIdSetIteratorRef<'a>,
-        C::DocIdSetIteratorRef<'a>,
-        D::DocIdSetIteratorRef<'a>,
-        E::DocIdSetIteratorRef<'a>,
-        F::DocIdSetIteratorRef<'a>,
-        G::DocIdSetIteratorRef<'a>,
-        H::DocIdSetIteratorRef<'a>,
-        I::DocIdSetIteratorRef<'a>,
-        J::DocIdSetIteratorRef<'a>,
-    >
-    where
-        Self: 'a;
-
-    type DocIdSetIteratorMut<'a> = QueryWeightDocIdSetIteratorMut<
-        A::DocIdSetIteratorMut<'a>,
-        B::DocIdSetIteratorMut<'a>,
-        C::DocIdSetIteratorMut<'a>,
-        D::DocIdSetIteratorMut<'a>,
-        E::DocIdSetIteratorMut<'a>,
-        F::DocIdSetIteratorMut<'a>,
-        G::DocIdSetIteratorMut<'a>,
-        H::DocIdSetIteratorMut<'a>,
-        I::DocIdSetIteratorMut<'a>,
-        J::DocIdSetIteratorMut<'a>,
-    >
-    where
-        Self: 'a;
-
-    fn approximation_mut(&mut self) -> Result<Self::DocIdSetIteratorMut<'_>> {
-        match self {
-            QueryWeightTwoPhaseIterRef::Term(inner) => {
-                Ok(QueryWeightDocIdSetIteratorMut::Term(inner.approximation_mut()?))
-            },
-            QueryWeightTwoPhaseIterRef::MatchAll(inner) => Ok(
-                QueryWeightDocIdSetIteratorMut::MatchAll(inner.approximation_mut()?),
-            ),
-            QueryWeightTwoPhaseIterRef::PointRange(inner) => Ok(
-                QueryWeightDocIdSetIteratorMut::PointRange(inner.approximation_mut()?),
-            ),
-            QueryWeightTwoPhaseIterRef::MatchNo(inner) => {
-                Ok(QueryWeightDocIdSetIteratorMut::MatchNo(inner.approximation_mut()?))
-            },
-            QueryWeightTwoPhaseIterRef::SortedNumericDocValuesSet(inner) => Ok(
-                QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesSet(
-                    inner.approximation_mut()?,
-                ),
-            ),
-            QueryWeightTwoPhaseIterRef::SortedNumericDocValuesRange(inner) => Ok(
-                QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesRange(
-                    inner.approximation_mut()?,
-                ),
-            ),
-            QueryWeightTwoPhaseIterRef::SortedSetDocValuesRange(inner) => Ok(
-                QueryWeightDocIdSetIteratorMut::SortedSetDocValuesRange(
-                    inner.approximation_mut()?,
-                ),
-            ),
-            QueryWeightTwoPhaseIterRef::IndexSortSortedNumericDocValuesRange(inner) => Ok(
-                QueryWeightDocIdSetIteratorMut::IndexSortSortedNumericDocValuesRange(
-                    inner.approximation_mut()?,
-                ),
-            ),
-            QueryWeightTwoPhaseIterRef::FieldExists(inner) => Ok(
-                QueryWeightDocIdSetIteratorMut::FieldExists(inner.approximation_mut()?),
-            ),
-            QueryWeightTwoPhaseIterRef::ConstantScore(inner) => Ok(
-                QueryWeightDocIdSetIteratorMut::ConstantScore(inner.approximation_mut()?),
-            ),
-        }
-    }
-
-    fn approximation(&self) -> Result<Self::DocIdSetIteratorRef<'_>> {
-        match self {
-            QueryWeightTwoPhaseIterRef::Term(inner) => {
-                Ok(QueryWeightDocIdSetIteratorRef::Term(inner.approximation()?))
-            },
-            QueryWeightTwoPhaseIterRef::MatchAll(inner) => {
-                Ok(QueryWeightDocIdSetIteratorRef::MatchAll(inner.approximation()?))
-            },
-            QueryWeightTwoPhaseIterRef::PointRange(inner) => {
-                Ok(QueryWeightDocIdSetIteratorRef::PointRange(inner.approximation()?))
-            },
-            QueryWeightTwoPhaseIterRef::MatchNo(inner) => {
-                Ok(QueryWeightDocIdSetIteratorRef::MatchNo(inner.approximation()?))
-            },
-            QueryWeightTwoPhaseIterRef::SortedNumericDocValuesSet(inner) => Ok(
-                QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesSet(
-                    inner.approximation()?,
-                ),
-            ),
-            QueryWeightTwoPhaseIterRef::SortedNumericDocValuesRange(inner) => Ok(
-                QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesRange(
-                    inner.approximation()?,
-                ),
-            ),
-            QueryWeightTwoPhaseIterRef::SortedSetDocValuesRange(inner) => Ok(
-                QueryWeightDocIdSetIteratorRef::SortedSetDocValuesRange(
-                    inner.approximation()?,
-                ),
-            ),
-            QueryWeightTwoPhaseIterRef::IndexSortSortedNumericDocValuesRange(inner) => Ok(
-                QueryWeightDocIdSetIteratorRef::IndexSortSortedNumericDocValuesRange(
-                    inner.approximation()?,
-                ),
-            ),
-            QueryWeightTwoPhaseIterRef::FieldExists(inner) => Ok(
-                QueryWeightDocIdSetIteratorRef::FieldExists(inner.approximation()?),
-            ),
-            QueryWeightTwoPhaseIterRef::ConstantScore(inner) => Ok(
-                QueryWeightDocIdSetIteratorRef::ConstantScore(inner.approximation()?),
-            ),
-        }
-    }
-
-    fn set_empty(&mut self) -> Result<()> {
-        match self {
-            QueryWeightTwoPhaseIterRef::Term(inner) => inner.set_empty(),
-            QueryWeightTwoPhaseIterRef::MatchAll(inner) => inner.set_empty(),
-            QueryWeightTwoPhaseIterRef::PointRange(inner) => inner.set_empty(),
-            QueryWeightTwoPhaseIterRef::MatchNo(inner) => inner.set_empty(),
-            QueryWeightTwoPhaseIterRef::SortedNumericDocValuesSet(inner) => inner.set_empty(),
-            QueryWeightTwoPhaseIterRef::SortedNumericDocValuesRange(inner) => inner.set_empty(),
-            QueryWeightTwoPhaseIterRef::SortedSetDocValuesRange(inner) => inner.set_empty(),
-            QueryWeightTwoPhaseIterRef::IndexSortSortedNumericDocValuesRange(inner) => {
-                inner.set_empty()
-            },
-            QueryWeightTwoPhaseIterRef::FieldExists(inner) => inner.set_empty(),
-            QueryWeightTwoPhaseIterRef::ConstantScore(inner) => inner.set_empty(),
-        }
-    }
-
-    fn matches(&mut self) -> Result<bool> {
-        match self {
-            QueryWeightTwoPhaseIterRef::Term(inner) => inner.matches(),
-            QueryWeightTwoPhaseIterRef::MatchAll(inner) => inner.matches(),
-            QueryWeightTwoPhaseIterRef::PointRange(inner) => inner.matches(),
-            QueryWeightTwoPhaseIterRef::MatchNo(inner) => inner.matches(),
-            QueryWeightTwoPhaseIterRef::SortedNumericDocValuesSet(inner) => inner.matches(),
-            QueryWeightTwoPhaseIterRef::SortedNumericDocValuesRange(inner) => inner.matches(),
-            QueryWeightTwoPhaseIterRef::SortedSetDocValuesRange(inner) => inner.matches(),
-            QueryWeightTwoPhaseIterRef::IndexSortSortedNumericDocValuesRange(inner) => {
-                inner.matches()
-            },
-            QueryWeightTwoPhaseIterRef::FieldExists(inner) => inner.matches(),
-            QueryWeightTwoPhaseIterRef::ConstantScore(inner) => inner.matches(),
-        }
-    }
-
-    fn match_cost(&self) -> f32 {
-        match self {
-            QueryWeightTwoPhaseIterRef::Term(inner) => inner.match_cost(),
-            QueryWeightTwoPhaseIterRef::MatchAll(inner) => inner.match_cost(),
-            QueryWeightTwoPhaseIterRef::PointRange(inner) => inner.match_cost(),
-            QueryWeightTwoPhaseIterRef::MatchNo(inner) => inner.match_cost(),
-            QueryWeightTwoPhaseIterRef::SortedNumericDocValuesSet(inner) => inner.match_cost(),
-            QueryWeightTwoPhaseIterRef::SortedNumericDocValuesRange(inner) => inner.match_cost(),
-            QueryWeightTwoPhaseIterRef::SortedSetDocValuesRange(inner) => inner.match_cost(),
-            QueryWeightTwoPhaseIterRef::IndexSortSortedNumericDocValuesRange(inner) => {
-                inner.match_cost()
-            },
-            QueryWeightTwoPhaseIterRef::FieldExists(inner) => inner.match_cost(),
-            QueryWeightTwoPhaseIterRef::ConstantScore(inner) => inner.match_cost(),
-        }
-    }
-}
-
-impl<A, B, C, D, E, F, G, H, I, J> TwoPhaseIterator
-    for QueryWeightTwoPhaseIterMut<A, B, C, D, E, F, G, H, I, J>
-where
-    A: TwoPhaseIterator,
-    B: TwoPhaseIterator,
-    C: TwoPhaseIterator,
-    D: TwoPhaseIterator,
-    E: TwoPhaseIterator,
-    F: TwoPhaseIterator,
-    G: TwoPhaseIterator,
-    H: TwoPhaseIterator,
-    I: TwoPhaseIterator,
-    J: TwoPhaseIterator,
-{
-    type DocIdSetIterator = QueryWeightDocIdSetIteratorRef<
-        A::DocIdSetIterator,
-        B::DocIdSetIterator,
-        C::DocIdSetIterator,
-        D::DocIdSetIterator,
-        E::DocIdSetIterator,
-        F::DocIdSetIterator,
-        G::DocIdSetIterator,
-        H::DocIdSetIterator,
-        I::DocIdSetIterator,
-        J::DocIdSetIterator,
-    >;
-
-    type DocIdSetIteratorRef<'a> = QueryWeightDocIdSetIteratorRef<
-        A::DocIdSetIteratorRef<'a>,
-        B::DocIdSetIteratorRef<'a>,
-        C::DocIdSetIteratorRef<'a>,
-        D::DocIdSetIteratorRef<'a>,
-        E::DocIdSetIteratorRef<'a>,
-        F::DocIdSetIteratorRef<'a>,
-        G::DocIdSetIteratorRef<'a>,
-        H::DocIdSetIteratorRef<'a>,
-        I::DocIdSetIteratorRef<'a>,
-        J::DocIdSetIteratorRef<'a>,
-    >
-    where
-        Self: 'a;
-
-    type DocIdSetIteratorMut<'a> = QueryWeightDocIdSetIteratorMut<
-        A::DocIdSetIteratorMut<'a>,
-        B::DocIdSetIteratorMut<'a>,
-        C::DocIdSetIteratorMut<'a>,
-        D::DocIdSetIteratorMut<'a>,
-        E::DocIdSetIteratorMut<'a>,
-        F::DocIdSetIteratorMut<'a>,
-        G::DocIdSetIteratorMut<'a>,
-        H::DocIdSetIteratorMut<'a>,
-        I::DocIdSetIteratorMut<'a>,
-        J::DocIdSetIteratorMut<'a>,
-    >
-    where
-        Self: 'a;
-
-    fn approximation_mut(&mut self) -> Result<Self::DocIdSetIteratorMut<'_>> {
-        match self {
-            QueryWeightTwoPhaseIterMut::Term(inner) => {
-                Ok(QueryWeightDocIdSetIteratorMut::Term(inner.approximation_mut()?))
-            },
-            QueryWeightTwoPhaseIterMut::MatchAll(inner) => Ok(
-                QueryWeightDocIdSetIteratorMut::MatchAll(inner.approximation_mut()?),
-            ),
-            QueryWeightTwoPhaseIterMut::PointRange(inner) => Ok(
-                QueryWeightDocIdSetIteratorMut::PointRange(inner.approximation_mut()?),
-            ),
-            QueryWeightTwoPhaseIterMut::MatchNo(inner) => {
-                Ok(QueryWeightDocIdSetIteratorMut::MatchNo(inner.approximation_mut()?))
-            },
-            QueryWeightTwoPhaseIterMut::SortedNumericDocValuesSet(inner) => Ok(
-                QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesSet(
-                    inner.approximation_mut()?,
-                ),
-            ),
-            QueryWeightTwoPhaseIterMut::SortedNumericDocValuesRange(inner) => Ok(
-                QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesRange(
-                    inner.approximation_mut()?,
-                ),
-            ),
-            QueryWeightTwoPhaseIterMut::SortedSetDocValuesRange(inner) => Ok(
-                QueryWeightDocIdSetIteratorMut::SortedSetDocValuesRange(
-                    inner.approximation_mut()?,
-                ),
-            ),
-            QueryWeightTwoPhaseIterMut::IndexSortSortedNumericDocValuesRange(inner) => Ok(
-                QueryWeightDocIdSetIteratorMut::IndexSortSortedNumericDocValuesRange(
-                    inner.approximation_mut()?,
-                ),
-            ),
-            QueryWeightTwoPhaseIterMut::FieldExists(inner) => Ok(
-                QueryWeightDocIdSetIteratorMut::FieldExists(inner.approximation_mut()?),
-            ),
-            QueryWeightTwoPhaseIterMut::ConstantScore(inner) => Ok(
-                QueryWeightDocIdSetIteratorMut::ConstantScore(inner.approximation_mut()?),
-            ),
-        }
-    }
-
-    fn approximation(&self) -> Result<Self::DocIdSetIteratorRef<'_>> {
-        match self {
-            QueryWeightTwoPhaseIterMut::Term(inner) => {
-                Ok(QueryWeightDocIdSetIteratorRef::Term(inner.approximation()?))
-            },
-            QueryWeightTwoPhaseIterMut::MatchAll(inner) => {
-                Ok(QueryWeightDocIdSetIteratorRef::MatchAll(inner.approximation()?))
-            },
-            QueryWeightTwoPhaseIterMut::PointRange(inner) => {
-                Ok(QueryWeightDocIdSetIteratorRef::PointRange(inner.approximation()?))
-            },
-            QueryWeightTwoPhaseIterMut::MatchNo(inner) => {
-                Ok(QueryWeightDocIdSetIteratorRef::MatchNo(inner.approximation()?))
-            },
-            QueryWeightTwoPhaseIterMut::SortedNumericDocValuesSet(inner) => Ok(
-                QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesSet(
-                    inner.approximation()?,
-                ),
-            ),
-            QueryWeightTwoPhaseIterMut::SortedNumericDocValuesRange(inner) => Ok(
-                QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesRange(
-                    inner.approximation()?,
-                ),
-            ),
-            QueryWeightTwoPhaseIterMut::SortedSetDocValuesRange(inner) => Ok(
-                QueryWeightDocIdSetIteratorRef::SortedSetDocValuesRange(
-                    inner.approximation()?,
-                ),
-            ),
-            QueryWeightTwoPhaseIterMut::IndexSortSortedNumericDocValuesRange(inner) => Ok(
-                QueryWeightDocIdSetIteratorRef::IndexSortSortedNumericDocValuesRange(
-                    inner.approximation()?,
-                ),
-            ),
-            QueryWeightTwoPhaseIterMut::FieldExists(inner) => Ok(
-                QueryWeightDocIdSetIteratorRef::FieldExists(inner.approximation()?),
-            ),
-            QueryWeightTwoPhaseIterMut::ConstantScore(inner) => Ok(
-                QueryWeightDocIdSetIteratorRef::ConstantScore(inner.approximation()?),
-            ),
-        }
-    }
-
-    fn set_empty(&mut self) -> Result<()> {
-        match self {
-            QueryWeightTwoPhaseIterMut::Term(inner) => inner.set_empty(),
-            QueryWeightTwoPhaseIterMut::MatchAll(inner) => inner.set_empty(),
-            QueryWeightTwoPhaseIterMut::PointRange(inner) => inner.set_empty(),
-            QueryWeightTwoPhaseIterMut::MatchNo(inner) => inner.set_empty(),
-            QueryWeightTwoPhaseIterMut::SortedNumericDocValuesSet(inner) => inner.set_empty(),
-            QueryWeightTwoPhaseIterMut::SortedNumericDocValuesRange(inner) => inner.set_empty(),
-            QueryWeightTwoPhaseIterMut::SortedSetDocValuesRange(inner) => inner.set_empty(),
-            QueryWeightTwoPhaseIterMut::IndexSortSortedNumericDocValuesRange(inner) => {
-                inner.set_empty()
-            },
-            QueryWeightTwoPhaseIterMut::FieldExists(inner) => inner.set_empty(),
-            QueryWeightTwoPhaseIterMut::ConstantScore(inner) => inner.set_empty(),
-        }
-    }
-
-    fn matches(&mut self) -> Result<bool> {
-        match self {
-            QueryWeightTwoPhaseIterMut::Term(inner) => inner.matches(),
-            QueryWeightTwoPhaseIterMut::MatchAll(inner) => inner.matches(),
-            QueryWeightTwoPhaseIterMut::PointRange(inner) => inner.matches(),
-            QueryWeightTwoPhaseIterMut::MatchNo(inner) => inner.matches(),
-            QueryWeightTwoPhaseIterMut::SortedNumericDocValuesSet(inner) => inner.matches(),
-            QueryWeightTwoPhaseIterMut::SortedNumericDocValuesRange(inner) => inner.matches(),
-            QueryWeightTwoPhaseIterMut::SortedSetDocValuesRange(inner) => inner.matches(),
-            QueryWeightTwoPhaseIterMut::IndexSortSortedNumericDocValuesRange(inner) => {
-                inner.matches()
-            },
-            QueryWeightTwoPhaseIterMut::FieldExists(inner) => inner.matches(),
-            QueryWeightTwoPhaseIterMut::ConstantScore(inner) => inner.matches(),
-        }
-    }
-
-    fn match_cost(&self) -> f32 {
-        match self {
-            QueryWeightTwoPhaseIterMut::Term(inner) => inner.match_cost(),
-            QueryWeightTwoPhaseIterMut::MatchAll(inner) => inner.match_cost(),
-            QueryWeightTwoPhaseIterMut::PointRange(inner) => inner.match_cost(),
-            QueryWeightTwoPhaseIterMut::MatchNo(inner) => inner.match_cost(),
-            QueryWeightTwoPhaseIterMut::SortedNumericDocValuesSet(inner) => inner.match_cost(),
-            QueryWeightTwoPhaseIterMut::SortedNumericDocValuesRange(inner) => inner.match_cost(),
-            QueryWeightTwoPhaseIterMut::SortedSetDocValuesRange(inner) => inner.match_cost(),
-            QueryWeightTwoPhaseIterMut::IndexSortSortedNumericDocValuesRange(inner) => {
-                inner.match_cost()
-            },
-            QueryWeightTwoPhaseIterMut::FieldExists(inner) => inner.match_cost(),
-            QueryWeightTwoPhaseIterMut::ConstantScore(inner) => inner.match_cost(),
-        }
-    }
-}
-
 impl<S, IRC, QCP, QC> Scorable for QueryWeightScorer<S, IRC, QCP, QC>
 where
     IRC: IndexReaderContext,
@@ -1714,74 +1128,93 @@ where
 {
     type DocIdSetIterator = QueryWeightDisi<S, IRC, QCP, QC>;
     type DocIdSetIteratorRef<'a>
-
-    = QueryWeightDocIdSetIteratorRef<
-        <<TermSs<IRC, S> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
-        <<MatchAllSs as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
-        <<PointRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
-        <<MatchNoDocsSs as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
-        <<DefaultScorerSupplierSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
-        <<SortedNumericDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
-        <<SortedSetDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
-        <<IndexSortSortedNumericDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
-        <<FieldExistsSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
-        <<ConstantScoreSs<QueryWeight<S, IRC, QCP, QC>, IRC, QCP, QC> as ScorerSupplier<
-            IRC::LeafReader,
-        >>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
-    > where
+        = DummyDISI
+    where
         Self: 'a;
     type DocIdSetIteratorMut<'a>
-
-    = QueryWeightDocIdSetIteratorMut<
-        <<TermSs<IRC, S> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
-        <<MatchAllSs as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
-        <<PointRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
-        <<MatchNoDocsSs as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
-        <<DefaultScorerSupplierSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
-        <<SortedNumericDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
-        <<SortedSetDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
-        <<IndexSortSortedNumericDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
-        <<FieldExistsSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
-        <<ConstantScoreSs<QueryWeight<S, IRC, QCP, QC>, IRC, QCP, QC> as ScorerSupplier<
-            IRC::LeafReader,
-        >>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
-    > where
-        Self: 'a,;
-    type TwoPhaseIter = QueryWeightTpi<S, IRC, QCP, QC>;
+        = DummyDISI
+    where
+        Self: 'a;
+    type TwoPhaseIter = DummyTwoPhaseIterator;
     type TwoPhaseIterRef<'a>
-
-    = QueryWeightTwoPhaseIterRef<
-        <<TermSs<IRC, S> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterRef<'a>,
-        <<MatchAllSs as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterRef<'a>,
-        <<PointRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterRef<'a>,
-        <<MatchNoDocsSs as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterRef<'a>,
-        <<DefaultScorerSupplierSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterRef<'a>,
-        <<SortedNumericDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterRef<'a>,
-        <<SortedSetDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterRef<'a>,
-        <<IndexSortSortedNumericDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterRef<'a>,
-        <<FieldExistsSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterRef<'a>,
-        <<ConstantScoreSs<QueryWeight<S, IRC, QCP, QC>, IRC, QCP, QC> as ScorerSupplier<
-            IRC::LeafReader,
-        >>::Scorer as Scorer>::TwoPhaseIterRef<'a>,
-    >  where
-        Self: 'a,;
+        = DummyTwoPhaseIterator
+    where
+        Self: 'a;
     type TwoPhaseIterMut<'a>
+        = DummyTwoPhaseIterator
+    where
+        Self: 'a;
+    // type DocIdSetIteratorRef<'a>
+    //
+    // = QueryWeightDocIdSetIteratorRef<
+    //     <<TermSs<IRC, S> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
+    //     <<MatchAllSs as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
+    //     <<PointRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
+    //     <<MatchNoDocsSs as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
+    //     <<DefaultScorerSupplierSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
+    //     <<SortedNumericDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
+    //     <<SortedSetDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
+    //     <<IndexSortSortedNumericDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
+    //     <<FieldExistsSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
+    //     <<ConstantScoreSs<QueryWeight<S, IRC, QCP, QC>, IRC, QCP, QC> as ScorerSupplier<
+    //         IRC::LeafReader,
+    //     >>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
+    // > where
+    //     Self: 'a;
 
-    = QueryWeightTwoPhaseIterMut<
-        <<TermSs<IRC, S> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterMut<'a>,
-        <<MatchAllSs as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterMut<'a>,
-        <<PointRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterMut<'a>,
-        <<MatchNoDocsSs as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterMut<'a>,
-        <<DefaultScorerSupplierSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterMut<'a>,
-        <<SortedNumericDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterMut<'a>,
-        <<SortedSetDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterMut<'a>,
-        <<IndexSortSortedNumericDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterMut<'a>,
-        <<FieldExistsSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterMut<'a>,
-        <<ConstantScoreSs<QueryWeight<S, IRC, QCP, QC>, IRC, QCP, QC> as ScorerSupplier<
-            IRC::LeafReader,
-        >>::Scorer as Scorer>::TwoPhaseIterMut<'a>,
-    >where
-        Self: 'a,;
+    // type DocIdSetIteratorMut<'a>
+    //
+    // = QueryWeightDocIdSetIteratorMut<
+    //     <<TermSs<IRC, S> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
+    //     <<MatchAllSs as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
+    //     <<PointRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
+    //     <<MatchNoDocsSs as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
+    //     <<DefaultScorerSupplierSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
+    //     <<SortedNumericDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
+    //     <<SortedSetDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
+    //     <<IndexSortSortedNumericDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
+    //     <<FieldExistsSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
+    //     <<ConstantScoreSs<QueryWeight<S, IRC, QCP, QC>, IRC, QCP, QC> as ScorerSupplier<
+    //         IRC::LeafReader,
+    //     >>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
+    // > where
+    //     Self: 'a,;
+
+    // type TwoPhaseIter = QueryWeightTpi<S, IRC, QCP, QC>;
+    // type TwoPhaseIterRef<'a>
+    //
+    // = QueryWeightTwoPhaseIterRef<
+    //     <<TermSs<IRC, S> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterRef<'a>,
+    //     <<MatchAllSs as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterRef<'a>,
+    //     <<PointRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterRef<'a>,
+    //     <<MatchNoDocsSs as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterRef<'a>,
+    //     <<DefaultScorerSupplierSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterRef<'a>,
+    //     <<SortedNumericDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterRef<'a>,
+    //     <<SortedSetDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterRef<'a>,
+    //     <<IndexSortSortedNumericDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterRef<'a>,
+    //     <<FieldExistsSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterRef<'a>,
+    //     <<ConstantScoreSs<QueryWeight<S, IRC, QCP, QC>, IRC, QCP, QC> as ScorerSupplier<
+    //         IRC::LeafReader,
+    //     >>::Scorer as Scorer>::TwoPhaseIterRef<'a>,
+    // >  where
+    //     Self: 'a,;
+    // type TwoPhaseIterMut<'a>
+    //
+    // = QueryWeightTwoPhaseIterMut<
+    //     <<TermSs<IRC, S> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterMut<'a>,
+    //     <<MatchAllSs as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterMut<'a>,
+    //     <<PointRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterMut<'a>,
+    //     <<MatchNoDocsSs as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterMut<'a>,
+    //     <<DefaultScorerSupplierSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterMut<'a>,
+    //     <<SortedNumericDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterMut<'a>,
+    //     <<SortedSetDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterMut<'a>,
+    //     <<IndexSortSortedNumericDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterMut<'a>,
+    //     <<FieldExistsSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIterMut<'a>,
+    //     <<ConstantScoreSs<QueryWeight<S, IRC, QCP, QC>, IRC, QCP, QC> as ScorerSupplier<
+    //         IRC::LeafReader,
+    //     >>::Scorer as Scorer>::TwoPhaseIterMut<'a>,
+    // >where
+    //     Self: 'a,;
 
     fn doc_id(&mut self) -> Result<i32> {
         match self {
@@ -1799,67 +1232,73 @@ where
     }
 
     fn iterator(&self) -> Self::DocIdSetIteratorRef<'_> {
-        match self {
-            QueryWeightScorer::Term(s) => QueryWeightDocIdSetIteratorRef::Term(s.iterator()),
-            QueryWeightScorer::MatchAll(s) => QueryWeightDocIdSetIteratorRef::MatchAll(s.iterator()),
-            QueryWeightScorer::PointRange(s) => {
-                QueryWeightDocIdSetIteratorRef::PointRange(s.iterator())
-            },
-            QueryWeightScorer::MatchNo(s) => QueryWeightDocIdSetIteratorRef::MatchNo(s.iterator()),
-            QueryWeightScorer::SortedNumericDocValuesSet(s) => {
-                QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesSet(s.iterator())
-            },
-            QueryWeightScorer::SortedNumericDocValuesRange(s) => {
-                QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesRange(s.iterator())
-            },
-            QueryWeightScorer::SortedSetDocValuesRange(s) => {
-                QueryWeightDocIdSetIteratorRef::SortedSetDocValuesRange(s.iterator())
-            },
-            QueryWeightScorer::IndexSortSortedNumericDocValuesRange(s) => {
-                QueryWeightDocIdSetIteratorRef::IndexSortSortedNumericDocValuesRange(
-                    s.iterator(),
-                )
-            },
-            QueryWeightScorer::FieldExists(s) => {
-                QueryWeightDocIdSetIteratorRef::FieldExists(s.iterator())
-            },
-            QueryWeightScorer::ConstantScore(s) => {
-                QueryWeightDocIdSetIteratorRef::ConstantScore(s.iterator())
-            },
-        }
+        // match self {
+        //     QueryWeightScorer::Term(s) => QueryWeightDocIdSetIteratorRef::Term(s.iterator()),
+        //     QueryWeightScorer::MatchAll(s) => {
+        //         QueryWeightDocIdSetIteratorRef::MatchAll(s.iterator())
+        //     },
+        //     QueryWeightScorer::PointRange(s) => {
+        //         QueryWeightDocIdSetIteratorRef::PointRange(s.iterator())
+        //     },
+        //     QueryWeightScorer::MatchNo(s) => QueryWeightDocIdSetIteratorRef::MatchNo(s.iterator()),
+        //     QueryWeightScorer::SortedNumericDocValuesSet(s) => {
+        //         QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesSet(s.iterator())
+        //     },
+        //     QueryWeightScorer::SortedNumericDocValuesRange(s) => {
+        //         QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesRange(s.iterator())
+        //     },
+        //     QueryWeightScorer::SortedSetDocValuesRange(s) => {
+        //         QueryWeightDocIdSetIteratorRef::SortedSetDocValuesRange(s.iterator())
+        //     },
+        //     QueryWeightScorer::IndexSortSortedNumericDocValuesRange(s) => {
+        //         QueryWeightDocIdSetIteratorRef::IndexSortSortedNumericDocValuesRange(s.iterator())
+        //     },
+        //     QueryWeightScorer::FieldExists(s) => {
+        //         QueryWeightDocIdSetIteratorRef::FieldExists(s.iterator())
+        //     },
+        //     QueryWeightScorer::ConstantScore(s) => {
+        //         let v = s.iterator();
+        //         QueryWeightDocIdSetIteratorRef::ConstantScore(Box::new(v))
+        //     },
+        // }
+        todo!()
     }
 
     fn iterator_mut(&mut self) -> Self::DocIdSetIteratorMut<'_> {
-        match self {
-            QueryWeightScorer::Term(s) => QueryWeightDocIdSetIteratorMut::Term(s.iterator_mut()),
-            QueryWeightScorer::MatchAll(s) => {
-                QueryWeightDocIdSetIteratorMut::MatchAll(s.iterator_mut())
-            },
-            QueryWeightScorer::PointRange(s) => {
-                QueryWeightDocIdSetIteratorMut::PointRange(s.iterator_mut())
-            },
-            QueryWeightScorer::MatchNo(s) => QueryWeightDocIdSetIteratorMut::MatchNo(s.iterator_mut()),
-            QueryWeightScorer::SortedNumericDocValuesSet(s) => {
-                QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesSet(s.iterator_mut())
-            },
-            QueryWeightScorer::SortedNumericDocValuesRange(s) => {
-                QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesRange(s.iterator_mut())
-            },
-            QueryWeightScorer::SortedSetDocValuesRange(s) => {
-                QueryWeightDocIdSetIteratorMut::SortedSetDocValuesRange(s.iterator_mut())
-            },
-            QueryWeightScorer::IndexSortSortedNumericDocValuesRange(s) => {
-                QueryWeightDocIdSetIteratorMut::IndexSortSortedNumericDocValuesRange(
-                    s.iterator_mut(),
-                )
-            },
-            QueryWeightScorer::FieldExists(s) => {
-                QueryWeightDocIdSetIteratorMut::FieldExists(s.iterator_mut())
-            },
-            QueryWeightScorer::ConstantScore(s) => {
-                QueryWeightDocIdSetIteratorMut::ConstantScore(s.iterator_mut())
-            },
-        }
+        // match self {
+        //     QueryWeightScorer::Term(s) => QueryWeightDocIdSetIteratorMut::Term(s.iterator_mut()),
+        //     QueryWeightScorer::MatchAll(s) => {
+        //         QueryWeightDocIdSetIteratorMut::MatchAll(s.iterator_mut())
+        //     },
+        //     QueryWeightScorer::PointRange(s) => {
+        //         QueryWeightDocIdSetIteratorMut::PointRange(s.iterator_mut())
+        //     },
+        //     QueryWeightScorer::MatchNo(s) => {
+        //         QueryWeightDocIdSetIteratorMut::MatchNo(s.iterator_mut())
+        //     },
+        //     QueryWeightScorer::SortedNumericDocValuesSet(s) => {
+        //         QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesSet(s.iterator_mut())
+        //     },
+        //     QueryWeightScorer::SortedNumericDocValuesRange(s) => {
+        //         QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesRange(s.iterator_mut())
+        //     },
+        //     QueryWeightScorer::SortedSetDocValuesRange(s) => {
+        //         QueryWeightDocIdSetIteratorMut::SortedSetDocValuesRange(s.iterator_mut())
+        //     },
+        //     QueryWeightScorer::IndexSortSortedNumericDocValuesRange(s) => {
+        //         QueryWeightDocIdSetIteratorMut::IndexSortSortedNumericDocValuesRange(
+        //             s.iterator_mut(),
+        //         )
+        //     },
+        //     QueryWeightScorer::FieldExists(s) => {
+        //         QueryWeightDocIdSetIteratorMut::FieldExists(s.iterator_mut())
+        //     },
+        //     QueryWeightScorer::ConstantScore(s) => {
+        //         let v = s.iterator_mut();
+        //         QueryWeightDocIdSetIteratorMut::ConstantScore(Box::new(v))
+        //     },
+        // }
+        todo!()
     }
 
     fn take_iterator(self) -> Self::DocIdSetIterator {
@@ -1882,121 +1321,132 @@ where
             },
             QueryWeightScorer::FieldExists(s) => QueryWeightDisi::FieldExists(s.take_iterator()),
             QueryWeightScorer::ConstantScore(s) => {
-               let v = s.take_iterator();
+                let v = s.take_iterator();
                 QueryWeightDisi::ConstantScore(Box::new(v))
             },
         }
     }
 
     fn two_phase_iterator(&self) -> Result<Option<Self::TwoPhaseIterRef<'_>>> {
-        match self {
-            QueryWeightScorer::Term(s) => s
-                .two_phase_iterator()
-                .map(|res| res.map(QueryWeightTwoPhaseIterRef::Term)),
-            QueryWeightScorer::MatchAll(s) => s
-                .two_phase_iterator()
-                .map(|res| res.map(QueryWeightTwoPhaseIterRef::MatchAll)),
-            QueryWeightScorer::PointRange(s) => s
-                .two_phase_iterator()
-                .map(|res| res.map(QueryWeightTwoPhaseIterRef::PointRange)),
-            QueryWeightScorer::MatchNo(s) => s
-                .two_phase_iterator()
-                .map(|res| res.map(QueryWeightTwoPhaseIterRef::MatchNo)),
-            QueryWeightScorer::SortedNumericDocValuesSet(s) => s
-                .two_phase_iterator()
-                .map(|res| res.map(QueryWeightTwoPhaseIterRef::SortedNumericDocValuesSet)),
-            QueryWeightScorer::SortedNumericDocValuesRange(s) => s
-                .two_phase_iterator()
-                .map(|res| res.map(QueryWeightTwoPhaseIterRef::SortedNumericDocValuesRange)),
-            QueryWeightScorer::SortedSetDocValuesRange(s) => s
-                .two_phase_iterator()
-                .map(|res| res.map(QueryWeightTwoPhaseIterRef::SortedSetDocValuesRange)),
-            QueryWeightScorer::IndexSortSortedNumericDocValuesRange(s) => s
-                .two_phase_iterator()
-                .map(|res| res.map(QueryWeightTwoPhaseIterRef::IndexSortSortedNumericDocValuesRange)),
-            QueryWeightScorer::FieldExists(s) => s
-                .two_phase_iterator()
-                .map(|res| res.map(QueryWeightTwoPhaseIterRef::FieldExists)),
-            QueryWeightScorer::ConstantScore(s) => s
-                .two_phase_iterator()
-                .map(|res| res.map(QueryWeightTwoPhaseIterRef::ConstantScore)),
-        }
+        // match self {
+        //     QueryWeightScorer::Term(s) => s
+        //         .two_phase_iterator()
+        //         .map(|res| res.map(QueryWeightTwoPhaseIterRef::Term)),
+        //     QueryWeightScorer::MatchAll(s) => s
+        //         .two_phase_iterator()
+        //         .map(|res| res.map(QueryWeightTwoPhaseIterRef::MatchAll)),
+        //     QueryWeightScorer::PointRange(s) => s
+        //         .two_phase_iterator()
+        //         .map(|res| res.map(QueryWeightTwoPhaseIterRef::PointRange)),
+        //     QueryWeightScorer::MatchNo(s) => s
+        //         .two_phase_iterator()
+        //         .map(|res| res.map(QueryWeightTwoPhaseIterRef::MatchNo)),
+        //     QueryWeightScorer::SortedNumericDocValuesSet(s) => s
+        //         .two_phase_iterator()
+        //         .map(|res| res.map(QueryWeightTwoPhaseIterRef::SortedNumericDocValuesSet)),
+        //     QueryWeightScorer::SortedNumericDocValuesRange(s) => s
+        //         .two_phase_iterator()
+        //         .map(|res| res.map(QueryWeightTwoPhaseIterRef::SortedNumericDocValuesRange)),
+        //     QueryWeightScorer::SortedSetDocValuesRange(s) => s
+        //         .two_phase_iterator()
+        //         .map(|res| res.map(QueryWeightTwoPhaseIterRef::SortedSetDocValuesRange)),
+        //     QueryWeightScorer::IndexSortSortedNumericDocValuesRange(s) => {
+        //         s.two_phase_iterator().map(|res| {
+        //             res.map(QueryWeightTwoPhaseIterRef::IndexSortSortedNumericDocValuesRange)
+        //         })
+        //     },
+        //     QueryWeightScorer::FieldExists(s) => s
+        //         .two_phase_iterator()
+        //         .map(|res| res.map(QueryWeightTwoPhaseIterRef::FieldExists)),
+        //     QueryWeightScorer::ConstantScore(s) => {
+        //         Ok(s
+        //             .two_phase_iterator()?
+        //             .map(|tpi| QueryWeightTwoPhaseIterRef::ConstantScore(Box::new(tpi))))
+        //     }
+        // }
+        todo!()
     }
 
     fn two_phase_iterator_mut(&mut self) -> Result<Option<Self::TwoPhaseIterMut<'_>>> {
-        match self {
-            QueryWeightScorer::Term(s) => s
-                .two_phase_iterator_mut()
-                .map(|res| res.map(QueryWeightTwoPhaseIterMut::Term)),
-            QueryWeightScorer::MatchAll(s) => s
-                .two_phase_iterator_mut()
-                .map(|res| res.map(QueryWeightTwoPhaseIterMut::MatchAll)),
-            QueryWeightScorer::PointRange(s) => s
-                .two_phase_iterator_mut()
-                .map(|res| res.map(QueryWeightTwoPhaseIterMut::PointRange)),
-            QueryWeightScorer::MatchNo(s) => s
-                .two_phase_iterator_mut()
-                .map(|res| res.map(QueryWeightTwoPhaseIterMut::MatchNo)),
-            QueryWeightScorer::SortedNumericDocValuesSet(s) => s
-                .two_phase_iterator_mut()
-                .map(|res| res.map(QueryWeightTwoPhaseIterMut::SortedNumericDocValuesSet)),
-            QueryWeightScorer::SortedNumericDocValuesRange(s) => s
-                .two_phase_iterator_mut()
-                .map(|res| res.map(QueryWeightTwoPhaseIterMut::SortedNumericDocValuesRange)),
-            QueryWeightScorer::SortedSetDocValuesRange(s) => s
-                .two_phase_iterator_mut()
-                .map(|res| res.map(QueryWeightTwoPhaseIterMut::SortedSetDocValuesRange)),
-            QueryWeightScorer::IndexSortSortedNumericDocValuesRange(s) => s
-                .two_phase_iterator_mut()
-                .map(|res| res.map(QueryWeightTwoPhaseIterMut::IndexSortSortedNumericDocValuesRange)),
-            QueryWeightScorer::FieldExists(s) => s
-                .two_phase_iterator_mut()
-                .map(|res| res.map(QueryWeightTwoPhaseIterMut::FieldExists)),
-            QueryWeightScorer::ConstantScore(s) => s
-                .two_phase_iterator_mut()
-                .map(|res| res.map(QueryWeightTwoPhaseIterMut::ConstantScore)),
-        }
+        // match self {
+        //     QueryWeightScorer::Term(s) => s
+        //         .two_phase_iterator_mut()
+        //         .map(|res| res.map(QueryWeightTwoPhaseIterMut::Term)),
+        //     QueryWeightScorer::MatchAll(s) => s
+        //         .two_phase_iterator_mut()
+        //         .map(|res| res.map(QueryWeightTwoPhaseIterMut::MatchAll)),
+        //     QueryWeightScorer::PointRange(s) => s
+        //         .two_phase_iterator_mut()
+        //         .map(|res| res.map(QueryWeightTwoPhaseIterMut::PointRange)),
+        //     QueryWeightScorer::MatchNo(s) => s
+        //         .two_phase_iterator_mut()
+        //         .map(|res| res.map(QueryWeightTwoPhaseIterMut::MatchNo)),
+        //     QueryWeightScorer::SortedNumericDocValuesSet(s) => s
+        //         .two_phase_iterator_mut()
+        //         .map(|res| res.map(QueryWeightTwoPhaseIterMut::SortedNumericDocValuesSet)),
+        //     QueryWeightScorer::SortedNumericDocValuesRange(s) => s
+        //         .two_phase_iterator_mut()
+        //         .map(|res| res.map(QueryWeightTwoPhaseIterMut::SortedNumericDocValuesRange)),
+        //     QueryWeightScorer::SortedSetDocValuesRange(s) => s
+        //         .two_phase_iterator_mut()
+        //         .map(|res| res.map(QueryWeightTwoPhaseIterMut::SortedSetDocValuesRange)),
+        //     QueryWeightScorer::IndexSortSortedNumericDocValuesRange(s) => {
+        //         s.two_phase_iterator_mut().map(|res| {
+        //             res.map(QueryWeightTwoPhaseIterMut::IndexSortSortedNumericDocValuesRange)
+        //         })
+        //     },
+        //     QueryWeightScorer::FieldExists(s) => s
+        //         .two_phase_iterator_mut()
+        //         .map(|res| res.map(QueryWeightTwoPhaseIterMut::FieldExists)),
+        //     QueryWeightScorer::ConstantScore(s) => {
+        //         Ok(s
+        //             .two_phase_iterator_mut()?
+        //             .map(|tpi| QueryWeightTwoPhaseIterMut::ConstantScore(Box::new(tpi))))
+        //     }
+        //
+        //
+        // }
+        todo!()
     }
 
     fn take_two_phase_iterator(self) -> Result<Option<Self::TwoPhaseIter>>
     where
         Self: Sized,
     {
-        match self {
-            QueryWeightScorer::Term(s) => {
-                Ok(s.take_two_phase_iterator()?.map(QueryWeightTpi::Term))
-            },
-            QueryWeightScorer::MatchAll(s) => {
-                Ok(s.take_two_phase_iterator()?.map(QueryWeightTpi::MatchAll))
-            },
-            QueryWeightScorer::PointRange(s) => {
-                Ok(s.take_two_phase_iterator()?.map(QueryWeightTpi::PointRange))
-            },
-            QueryWeightScorer::MatchNo(s) => {
-                Ok(s.take_two_phase_iterator()?.map(QueryWeightTpi::MatchNo))
-            },
-            QueryWeightScorer::SortedNumericDocValuesSet(s) => Ok(s
-                .take_two_phase_iterator()?
-                .map(QueryWeightTpi::SortedNumericDocValuesSet)),
-            QueryWeightScorer::SortedNumericDocValuesRange(s) => Ok(s
-                .take_two_phase_iterator()?
-                .map(QueryWeightTpi::SortedNumericDocValuesRange)),
-            QueryWeightScorer::SortedSetDocValuesRange(s) => Ok(s
-                .take_two_phase_iterator()?
-                .map(QueryWeightTpi::SortedSetDocValuesRange)),
-            QueryWeightScorer::IndexSortSortedNumericDocValuesRange(s) => Ok(s
-                .take_two_phase_iterator()?
-                .map(QueryWeightTpi::IndexSortSortedNumericDocValuesRange)),
-            QueryWeightScorer::FieldExists(s) => Ok(s
-                .take_two_phase_iterator()?
-                .map(QueryWeightTpi::FieldExists)),
-            QueryWeightScorer::ConstantScore(s) => {
-                match s.take_two_phase_iterator()? {
-                    Some(tpi) => Ok(Some(QueryWeightTpi::ConstantScore(Box::new(tpi)))),
-                    None => return Ok(None),
-                }
-            },
-        }
+        // match self {
+        //     QueryWeightScorer::Term(s) => {
+        //         Ok(s.take_two_phase_iterator()?.map(QueryWeightTpi::Term))
+        //     },
+        //     QueryWeightScorer::MatchAll(s) => {
+        //         Ok(s.take_two_phase_iterator()?.map(QueryWeightTpi::MatchAll))
+        //     },
+        //     QueryWeightScorer::PointRange(s) => {
+        //         Ok(s.take_two_phase_iterator()?.map(QueryWeightTpi::PointRange))
+        //     },
+        //     QueryWeightScorer::MatchNo(s) => {
+        //         Ok(s.take_two_phase_iterator()?.map(QueryWeightTpi::MatchNo))
+        //     },
+        //     QueryWeightScorer::SortedNumericDocValuesSet(s) => Ok(s
+        //         .take_two_phase_iterator()?
+        //         .map(QueryWeightTpi::SortedNumericDocValuesSet)),
+        //     QueryWeightScorer::SortedNumericDocValuesRange(s) => Ok(s
+        //         .take_two_phase_iterator()?
+        //         .map(QueryWeightTpi::SortedNumericDocValuesRange)),
+        //     QueryWeightScorer::SortedSetDocValuesRange(s) => Ok(s
+        //         .take_two_phase_iterator()?
+        //         .map(QueryWeightTpi::SortedSetDocValuesRange)),
+        //     QueryWeightScorer::IndexSortSortedNumericDocValuesRange(s) => Ok(s
+        //         .take_two_phase_iterator()?
+        //         .map(QueryWeightTpi::IndexSortSortedNumericDocValuesRange)),
+        //     QueryWeightScorer::FieldExists(s) => Ok(s
+        //         .take_two_phase_iterator()?
+        //         .map(QueryWeightTpi::FieldExists)),
+        //     QueryWeightScorer::ConstantScore(s) => match s.take_two_phase_iterator()? {
+        //         Some(tpi) => Ok(Some(QueryWeightTpi::ConstantScore(Box::new(tpi)))),
+        //         None => return Ok(None),
+        //     },
+        // }
+        todo!()
     }
 
     fn advance_shallow(&mut self, target: i32) -> Result<i32> {
@@ -2211,86 +1661,20 @@ where
 {
     type DocIdSetIterator = QueryWeightDisi<S, IRC, QCP, QC>;
     type DocIdSetIteratorRef<'a>
-
-    = DocIdSetIteratorEnum10<
-        <<<TermSs<IRC, S> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIter as TwoPhaseIterator>::DocIdSetIteratorRef<'a>,
-        <<<MatchAllSs as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIter as TwoPhaseIterator>::DocIdSetIteratorRef<'a>,
-        <<<PointRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIter as TwoPhaseIterator>::DocIdSetIteratorRef<'a>,
-        <<<MatchNoDocsSs as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIter as TwoPhaseIterator>::DocIdSetIteratorRef<'a>,
-        <<<DefaultScorerSupplierSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIter as TwoPhaseIterator>::DocIdSetIteratorRef<'a>,
-        <<<SortedNumericDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIter as TwoPhaseIterator>::DocIdSetIteratorRef<'a>,
-        <<<SortedSetDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIter as TwoPhaseIterator>::DocIdSetIteratorRef<'a>,
-        <<<IndexSortSortedNumericDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIter as TwoPhaseIterator>::DocIdSetIteratorRef<'a>,
-        <<<FieldExistsSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIter as TwoPhaseIterator>::DocIdSetIteratorRef<'a>,
-        <<<ConstantScoreSs<QueryWeight<S, IRC, QCP, QC>, IRC, QCP, QC> as ScorerSupplier<
-            IRC::LeafReader,
-        >>::Scorer as Scorer>::TwoPhaseIter as TwoPhaseIterator>::DocIdSetIteratorRef<'a>,
-    >   where
-        Self: 'a,;
+        = DummyDISI
+    where
+        Self: 'a;
     type DocIdSetIteratorMut<'a>
-
-    = DocIdSetIteratorEnum10<
-        <<<TermSs<IRC, S> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIter as TwoPhaseIterator>::DocIdSetIteratorMut<'a>,
-        <<<MatchAllSs as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIter as TwoPhaseIterator>::DocIdSetIteratorMut<'a>,
-        <<<PointRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIter as TwoPhaseIterator>::DocIdSetIteratorMut<'a>,
-        <<<MatchNoDocsSs as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIter as TwoPhaseIterator>::DocIdSetIteratorMut<'a>,
-        <<<DefaultScorerSupplierSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIter as TwoPhaseIterator>::DocIdSetIteratorMut<'a>,
-        <<<SortedNumericDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIter as TwoPhaseIterator>::DocIdSetIteratorMut<'a>,
-        <<<SortedSetDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIter as TwoPhaseIterator>::DocIdSetIteratorMut<'a>,
-        <<<IndexSortSortedNumericDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIter as TwoPhaseIterator>::DocIdSetIteratorMut<'a>,
-        <<<FieldExistsSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::TwoPhaseIter as TwoPhaseIterator>::DocIdSetIteratorMut<'a>,
-        <<<ConstantScoreSs<QueryWeight<S, IRC, QCP, QC>, IRC, QCP, QC> as ScorerSupplier<
-            IRC::LeafReader,
-        >>::Scorer as Scorer>::TwoPhaseIter as TwoPhaseIterator>::DocIdSetIteratorMut<'a>,
-    >  where
-        Self: 'a,;
+        = DummyDISI
+    where
+        Self: 'a;
 
     fn approximation_mut(&mut self) -> Result<Self::DocIdSetIteratorMut<'_>> {
-        match self {
-            QueryWeightTpi::Term(s) => s.approximation_mut().map(DocIdSetIteratorEnum10::A),
-            QueryWeightTpi::MatchAll(s) => s.approximation_mut().map(DocIdSetIteratorEnum10::B),
-            QueryWeightTpi::PointRange(s) => s.approximation_mut().map(DocIdSetIteratorEnum10::C),
-            QueryWeightTpi::MatchNo(s) => s.approximation_mut().map(DocIdSetIteratorEnum10::D),
-            QueryWeightTpi::SortedNumericDocValuesSet(s) => {
-                s.approximation_mut().map(DocIdSetIteratorEnum10::E)
-            },
-            QueryWeightTpi::SortedNumericDocValuesRange(s) => {
-                s.approximation_mut().map(DocIdSetIteratorEnum10::F)
-            },
-            QueryWeightTpi::SortedSetDocValuesRange(s) => {
-                s.approximation_mut().map(DocIdSetIteratorEnum10::G)
-            },
-            QueryWeightTpi::IndexSortSortedNumericDocValuesRange(s) => {
-                s.approximation_mut().map(DocIdSetIteratorEnum10::H)
-            },
-            QueryWeightTpi::FieldExists(s) => s.approximation_mut().map(DocIdSetIteratorEnum10::I),
-            QueryWeightTpi::ConstantScore(s) => {
-                s.approximation_mut().map(DocIdSetIteratorEnum10::J)
-            },
-        }
+        todo!()
     }
 
     fn approximation(&self) -> Result<Self::DocIdSetIteratorRef<'_>> {
-        match self {
-            QueryWeightTpi::Term(s) => s.approximation().map(DocIdSetIteratorEnum10::A),
-            QueryWeightTpi::MatchAll(s) => s.approximation().map(DocIdSetIteratorEnum10::B),
-            QueryWeightTpi::PointRange(s) => s.approximation().map(DocIdSetIteratorEnum10::C),
-            QueryWeightTpi::MatchNo(s) => s.approximation().map(DocIdSetIteratorEnum10::D),
-            QueryWeightTpi::SortedNumericDocValuesSet(s) => {
-                s.approximation().map(DocIdSetIteratorEnum10::E)
-            },
-            QueryWeightTpi::SortedNumericDocValuesRange(s) => {
-                s.approximation().map(DocIdSetIteratorEnum10::F)
-            },
-            QueryWeightTpi::SortedSetDocValuesRange(s) => {
-                s.approximation().map(DocIdSetIteratorEnum10::G)
-            },
-            QueryWeightTpi::IndexSortSortedNumericDocValuesRange(s) => {
-                s.approximation().map(DocIdSetIteratorEnum10::H)
-            },
-            QueryWeightTpi::FieldExists(s) => s.approximation().map(DocIdSetIteratorEnum10::I),
-            QueryWeightTpi::ConstantScore(s) => s.approximation().map(DocIdSetIteratorEnum10::J),
-        }
+        todo!()
     }
 
     fn set_empty(&mut self) -> Result<()> {
@@ -2335,6 +1719,610 @@ where
             QueryWeightTpi::IndexSortSortedNumericDocValuesRange(s) => s.match_cost(),
             QueryWeightTpi::FieldExists(s) => s.match_cost(),
             QueryWeightTpi::ConstantScore(s) => s.match_cost(),
+        }
+    }
+}
+
+pub enum QueryWeightDocIdSetIteratorRef<A, B, C, D, E, F, G, H, I, J> {
+    Term(A),
+    MatchAll(B),
+    PointRange(C),
+    MatchNo(D),
+    SortedNumericDocValuesSet(E),
+    SortedNumericDocValuesRange(F),
+    SortedSetDocValuesRange(G),
+    IndexSortSortedNumericDocValuesRange(H),
+    FieldExists(I),
+    ConstantScore(Box<J>),
+}
+
+pub enum QueryWeightDocIdSetIteratorMut<A, B, C, D, E, F, G, H, I, J> {
+    Term(A),
+    MatchAll(B),
+    PointRange(C),
+    MatchNo(D),
+    SortedNumericDocValuesSet(E),
+    SortedNumericDocValuesRange(F),
+    SortedSetDocValuesRange(G),
+    IndexSortSortedNumericDocValuesRange(H),
+    FieldExists(I),
+    ConstantScore(Box<J>),
+}
+
+impl<A, B, C, D, E, F, G, H, I, J> DocIdSetIterator
+    for QueryWeightDocIdSetIteratorRef<A, B, C, D, E, F, G, H, I, J>
+where
+    A: DocIdSetIterator,
+    B: DocIdSetIterator,
+    C: DocIdSetIterator,
+    D: DocIdSetIterator,
+    E: DocIdSetIterator,
+    F: DocIdSetIterator,
+    G: DocIdSetIterator,
+    H: DocIdSetIterator,
+    I: DocIdSetIterator,
+    J: DocIdSetIterator,
+{
+    fn doc_id(&self) -> i32 {
+        match self {
+            QueryWeightDocIdSetIteratorRef::Term(iter) => iter.doc_id(),
+            QueryWeightDocIdSetIteratorRef::MatchAll(iter) => iter.doc_id(),
+            QueryWeightDocIdSetIteratorRef::PointRange(iter) => iter.doc_id(),
+            QueryWeightDocIdSetIteratorRef::MatchNo(iter) => iter.doc_id(),
+            QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesSet(iter) => iter.doc_id(),
+            QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesRange(iter) => iter.doc_id(),
+            QueryWeightDocIdSetIteratorRef::SortedSetDocValuesRange(iter) => iter.doc_id(),
+            QueryWeightDocIdSetIteratorRef::IndexSortSortedNumericDocValuesRange(iter) => {
+                iter.doc_id()
+            },
+            QueryWeightDocIdSetIteratorRef::FieldExists(iter) => iter.doc_id(),
+            QueryWeightDocIdSetIteratorRef::ConstantScore(iter) => iter.doc_id(),
+        }
+    }
+
+    fn next_doc(&mut self) -> Result<i32> {
+        match self {
+            QueryWeightDocIdSetIteratorRef::Term(iter) => iter.next_doc(),
+            QueryWeightDocIdSetIteratorRef::MatchAll(iter) => iter.next_doc(),
+            QueryWeightDocIdSetIteratorRef::PointRange(iter) => iter.next_doc(),
+            QueryWeightDocIdSetIteratorRef::MatchNo(iter) => iter.next_doc(),
+            QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesSet(iter) => iter.next_doc(),
+            QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesRange(iter) => iter.next_doc(),
+            QueryWeightDocIdSetIteratorRef::SortedSetDocValuesRange(iter) => iter.next_doc(),
+            QueryWeightDocIdSetIteratorRef::IndexSortSortedNumericDocValuesRange(iter) => {
+                iter.next_doc()
+            },
+            QueryWeightDocIdSetIteratorRef::FieldExists(iter) => iter.next_doc(),
+            QueryWeightDocIdSetIteratorRef::ConstantScore(iter) => iter.next_doc(),
+        }
+    }
+
+    fn advance(&mut self, target: i32) -> Result<i32> {
+        match self {
+            QueryWeightDocIdSetIteratorRef::Term(iter) => iter.advance(target),
+            QueryWeightDocIdSetIteratorRef::MatchAll(iter) => iter.advance(target),
+            QueryWeightDocIdSetIteratorRef::PointRange(iter) => iter.advance(target),
+            QueryWeightDocIdSetIteratorRef::MatchNo(iter) => iter.advance(target),
+            QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesSet(iter) => iter.advance(target),
+            QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesRange(iter) => {
+                iter.advance(target)
+            },
+            QueryWeightDocIdSetIteratorRef::SortedSetDocValuesRange(iter) => iter.advance(target),
+            QueryWeightDocIdSetIteratorRef::IndexSortSortedNumericDocValuesRange(iter) => {
+                iter.advance(target)
+            },
+            QueryWeightDocIdSetIteratorRef::FieldExists(iter) => iter.advance(target),
+            QueryWeightDocIdSetIteratorRef::ConstantScore(iter) => iter.advance(target),
+        }
+    }
+
+    fn cost(&self) -> Result<i64> {
+        match self {
+            QueryWeightDocIdSetIteratorRef::Term(iter) => iter.cost(),
+            QueryWeightDocIdSetIteratorRef::MatchAll(iter) => iter.cost(),
+            QueryWeightDocIdSetIteratorRef::PointRange(iter) => iter.cost(),
+            QueryWeightDocIdSetIteratorRef::MatchNo(iter) => iter.cost(),
+            QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesSet(iter) => iter.cost(),
+            QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesRange(iter) => iter.cost(),
+            QueryWeightDocIdSetIteratorRef::SortedSetDocValuesRange(iter) => iter.cost(),
+            QueryWeightDocIdSetIteratorRef::IndexSortSortedNumericDocValuesRange(iter) => {
+                iter.cost()
+            },
+            QueryWeightDocIdSetIteratorRef::FieldExists(iter) => iter.cost(),
+            QueryWeightDocIdSetIteratorRef::ConstantScore(iter) => iter.cost(),
+        }
+    }
+}
+
+impl<A, B, C, D, E, F, G, H, I, J> DocIdSetIterator
+    for QueryWeightDocIdSetIteratorMut<A, B, C, D, E, F, G, H, I, J>
+where
+    A: DocIdSetIterator,
+    B: DocIdSetIterator,
+    C: DocIdSetIterator,
+    D: DocIdSetIterator,
+    E: DocIdSetIterator,
+    F: DocIdSetIterator,
+    G: DocIdSetIterator,
+    H: DocIdSetIterator,
+    I: DocIdSetIterator,
+    J: DocIdSetIterator,
+{
+    fn doc_id(&self) -> i32 {
+        match self {
+            QueryWeightDocIdSetIteratorMut::Term(iter) => iter.doc_id(),
+            QueryWeightDocIdSetIteratorMut::MatchAll(iter) => iter.doc_id(),
+            QueryWeightDocIdSetIteratorMut::PointRange(iter) => iter.doc_id(),
+            QueryWeightDocIdSetIteratorMut::MatchNo(iter) => iter.doc_id(),
+            QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesSet(iter) => iter.doc_id(),
+            QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesRange(iter) => iter.doc_id(),
+            QueryWeightDocIdSetIteratorMut::SortedSetDocValuesRange(iter) => iter.doc_id(),
+            QueryWeightDocIdSetIteratorMut::IndexSortSortedNumericDocValuesRange(iter) => {
+                iter.doc_id()
+            },
+            QueryWeightDocIdSetIteratorMut::FieldExists(iter) => iter.doc_id(),
+            QueryWeightDocIdSetIteratorMut::ConstantScore(iter) => iter.doc_id(),
+        }
+    }
+
+    fn next_doc(&mut self) -> Result<i32> {
+        match self {
+            QueryWeightDocIdSetIteratorMut::Term(iter) => iter.next_doc(),
+            QueryWeightDocIdSetIteratorMut::MatchAll(iter) => iter.next_doc(),
+            QueryWeightDocIdSetIteratorMut::PointRange(iter) => iter.next_doc(),
+            QueryWeightDocIdSetIteratorMut::MatchNo(iter) => iter.next_doc(),
+            QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesSet(iter) => iter.next_doc(),
+            QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesRange(iter) => iter.next_doc(),
+            QueryWeightDocIdSetIteratorMut::SortedSetDocValuesRange(iter) => iter.next_doc(),
+            QueryWeightDocIdSetIteratorMut::IndexSortSortedNumericDocValuesRange(iter) => {
+                iter.next_doc()
+            },
+            QueryWeightDocIdSetIteratorMut::FieldExists(iter) => iter.next_doc(),
+            QueryWeightDocIdSetIteratorMut::ConstantScore(iter) => iter.next_doc(),
+        }
+    }
+
+    fn advance(&mut self, target: i32) -> Result<i32> {
+        match self {
+            QueryWeightDocIdSetIteratorMut::Term(iter) => iter.advance(target),
+            QueryWeightDocIdSetIteratorMut::MatchAll(iter) => iter.advance(target),
+            QueryWeightDocIdSetIteratorMut::PointRange(iter) => iter.advance(target),
+            QueryWeightDocIdSetIteratorMut::MatchNo(iter) => iter.advance(target),
+            QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesSet(iter) => iter.advance(target),
+            QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesRange(iter) => {
+                iter.advance(target)
+            },
+            QueryWeightDocIdSetIteratorMut::SortedSetDocValuesRange(iter) => iter.advance(target),
+            QueryWeightDocIdSetIteratorMut::IndexSortSortedNumericDocValuesRange(iter) => {
+                iter.advance(target)
+            },
+            QueryWeightDocIdSetIteratorMut::FieldExists(iter) => iter.advance(target),
+            QueryWeightDocIdSetIteratorMut::ConstantScore(iter) => iter.advance(target),
+        }
+    }
+
+    fn cost(&self) -> Result<i64> {
+        match self {
+            QueryWeightDocIdSetIteratorMut::Term(iter) => iter.cost(),
+            QueryWeightDocIdSetIteratorMut::MatchAll(iter) => iter.cost(),
+            QueryWeightDocIdSetIteratorMut::PointRange(iter) => iter.cost(),
+            QueryWeightDocIdSetIteratorMut::MatchNo(iter) => iter.cost(),
+            QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesSet(iter) => iter.cost(),
+            QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesRange(iter) => iter.cost(),
+            QueryWeightDocIdSetIteratorMut::SortedSetDocValuesRange(iter) => iter.cost(),
+            QueryWeightDocIdSetIteratorMut::IndexSortSortedNumericDocValuesRange(iter) => {
+                iter.cost()
+            },
+            QueryWeightDocIdSetIteratorMut::FieldExists(iter) => iter.cost(),
+            QueryWeightDocIdSetIteratorMut::ConstantScore(iter) => iter.cost(),
+        }
+    }
+}
+
+pub enum QueryWeightTwoPhaseIterRef<A, B, C, D, E, F, G, H, I, J> {
+    Term(A),
+    MatchAll(B),
+    PointRange(C),
+    MatchNo(D),
+    SortedNumericDocValuesSet(E),
+    SortedNumericDocValuesRange(F),
+    SortedSetDocValuesRange(G),
+    IndexSortSortedNumericDocValuesRange(H),
+    FieldExists(I),
+    ConstantScore(Box<J>),
+}
+
+pub enum QueryWeightTwoPhaseIterMut<A, B, C, D, E, F, G, H, I, J> {
+    Term(A),
+    MatchAll(B),
+    PointRange(C),
+    MatchNo(D),
+    SortedNumericDocValuesSet(E),
+    SortedNumericDocValuesRange(F),
+    SortedSetDocValuesRange(G),
+    IndexSortSortedNumericDocValuesRange(H),
+    FieldExists(I),
+    ConstantScore(Box<J>),
+}
+
+impl<A, B, C, D, E, F, G, H, I, J> TwoPhaseIterator
+    for QueryWeightTwoPhaseIterRef<A, B, C, D, E, F, G, H, I, J>
+where
+    A: TwoPhaseIterator,
+    B: TwoPhaseIterator,
+    C: TwoPhaseIterator,
+    D: TwoPhaseIterator,
+    E: TwoPhaseIterator,
+    F: TwoPhaseIterator,
+    G: TwoPhaseIterator,
+    H: TwoPhaseIterator,
+    I: TwoPhaseIterator,
+    J: TwoPhaseIterator,
+{
+    type DocIdSetIterator = QueryWeightDocIdSetIteratorRef<
+        A::DocIdSetIterator,
+        B::DocIdSetIterator,
+        C::DocIdSetIterator,
+        D::DocIdSetIterator,
+        E::DocIdSetIterator,
+        F::DocIdSetIterator,
+        G::DocIdSetIterator,
+        H::DocIdSetIterator,
+        I::DocIdSetIterator,
+        J::DocIdSetIterator,
+    >;
+
+    type DocIdSetIteratorRef<'a>
+        = QueryWeightDocIdSetIteratorRef<
+        A::DocIdSetIteratorRef<'a>,
+        B::DocIdSetIteratorRef<'a>,
+        C::DocIdSetIteratorRef<'a>,
+        D::DocIdSetIteratorRef<'a>,
+        E::DocIdSetIteratorRef<'a>,
+        F::DocIdSetIteratorRef<'a>,
+        G::DocIdSetIteratorRef<'a>,
+        H::DocIdSetIteratorRef<'a>,
+        I::DocIdSetIteratorRef<'a>,
+        J::DocIdSetIteratorRef<'a>,
+    >
+    where
+        Self: 'a;
+
+    type DocIdSetIteratorMut<'a>
+        = QueryWeightDocIdSetIteratorMut<
+        A::DocIdSetIteratorMut<'a>,
+        B::DocIdSetIteratorMut<'a>,
+        C::DocIdSetIteratorMut<'a>,
+        D::DocIdSetIteratorMut<'a>,
+        E::DocIdSetIteratorMut<'a>,
+        F::DocIdSetIteratorMut<'a>,
+        G::DocIdSetIteratorMut<'a>,
+        H::DocIdSetIteratorMut<'a>,
+        I::DocIdSetIteratorMut<'a>,
+        J::DocIdSetIteratorMut<'a>,
+    >
+    where
+        Self: 'a;
+
+    fn approximation_mut(&mut self) -> Result<Self::DocIdSetIteratorMut<'_>> {
+        match self {
+            QueryWeightTwoPhaseIterRef::Term(inner) => Ok(QueryWeightDocIdSetIteratorMut::Term(
+                inner.approximation_mut()?,
+            )),
+            QueryWeightTwoPhaseIterRef::MatchAll(inner) => Ok(
+                QueryWeightDocIdSetIteratorMut::MatchAll(inner.approximation_mut()?),
+            ),
+            QueryWeightTwoPhaseIterRef::PointRange(inner) => Ok(
+                QueryWeightDocIdSetIteratorMut::PointRange(inner.approximation_mut()?),
+            ),
+            QueryWeightTwoPhaseIterRef::MatchNo(inner) => Ok(
+                QueryWeightDocIdSetIteratorMut::MatchNo(inner.approximation_mut()?),
+            ),
+            QueryWeightTwoPhaseIterRef::SortedNumericDocValuesSet(inner) => {
+                Ok(QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesSet(
+                    inner.approximation_mut()?,
+                ))
+            },
+            QueryWeightTwoPhaseIterRef::SortedNumericDocValuesRange(inner) => {
+                Ok(QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesRange(
+                    inner.approximation_mut()?,
+                ))
+            },
+            QueryWeightTwoPhaseIterRef::SortedSetDocValuesRange(inner) => Ok(
+                QueryWeightDocIdSetIteratorMut::SortedSetDocValuesRange(inner.approximation_mut()?),
+            ),
+            QueryWeightTwoPhaseIterRef::IndexSortSortedNumericDocValuesRange(inner) => Ok(
+                QueryWeightDocIdSetIteratorMut::IndexSortSortedNumericDocValuesRange(
+                    inner.approximation_mut()?,
+                ),
+            ),
+            QueryWeightTwoPhaseIterRef::FieldExists(inner) => Ok(
+                QueryWeightDocIdSetIteratorMut::FieldExists(inner.approximation_mut()?),
+            ),
+            QueryWeightTwoPhaseIterRef::ConstantScore(inner) => {
+                let v = inner.approximation_mut()?;
+                Ok(QueryWeightDocIdSetIteratorMut::ConstantScore(Box::new(v)))
+            },
+        }
+    }
+
+    fn approximation(&self) -> Result<Self::DocIdSetIteratorRef<'_>> {
+        match self {
+            QueryWeightTwoPhaseIterRef::Term(inner) => {
+                Ok(QueryWeightDocIdSetIteratorRef::Term(inner.approximation()?))
+            },
+            QueryWeightTwoPhaseIterRef::MatchAll(inner) => Ok(
+                QueryWeightDocIdSetIteratorRef::MatchAll(inner.approximation()?),
+            ),
+            QueryWeightTwoPhaseIterRef::PointRange(inner) => Ok(
+                QueryWeightDocIdSetIteratorRef::PointRange(inner.approximation()?),
+            ),
+            QueryWeightTwoPhaseIterRef::MatchNo(inner) => Ok(
+                QueryWeightDocIdSetIteratorRef::MatchNo(inner.approximation()?),
+            ),
+            QueryWeightTwoPhaseIterRef::SortedNumericDocValuesSet(inner) => Ok(
+                QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesSet(inner.approximation()?),
+            ),
+            QueryWeightTwoPhaseIterRef::SortedNumericDocValuesRange(inner) => Ok(
+                QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesRange(inner.approximation()?),
+            ),
+            QueryWeightTwoPhaseIterRef::SortedSetDocValuesRange(inner) => Ok(
+                QueryWeightDocIdSetIteratorRef::SortedSetDocValuesRange(inner.approximation()?),
+            ),
+            QueryWeightTwoPhaseIterRef::IndexSortSortedNumericDocValuesRange(inner) => Ok(
+                QueryWeightDocIdSetIteratorRef::IndexSortSortedNumericDocValuesRange(
+                    inner.approximation()?,
+                ),
+            ),
+            QueryWeightTwoPhaseIterRef::FieldExists(inner) => Ok(
+                QueryWeightDocIdSetIteratorRef::FieldExists(inner.approximation()?),
+            ),
+            QueryWeightTwoPhaseIterRef::ConstantScore(inner) => {
+                let v = inner.approximation()?;
+                Ok(QueryWeightDocIdSetIteratorRef::ConstantScore(Box::new(v)))
+            },
+        }
+    }
+
+    fn set_empty(&mut self) -> Result<()> {
+        match self {
+            QueryWeightTwoPhaseIterRef::Term(inner) => inner.set_empty(),
+            QueryWeightTwoPhaseIterRef::MatchAll(inner) => inner.set_empty(),
+            QueryWeightTwoPhaseIterRef::PointRange(inner) => inner.set_empty(),
+            QueryWeightTwoPhaseIterRef::MatchNo(inner) => inner.set_empty(),
+            QueryWeightTwoPhaseIterRef::SortedNumericDocValuesSet(inner) => inner.set_empty(),
+            QueryWeightTwoPhaseIterRef::SortedNumericDocValuesRange(inner) => inner.set_empty(),
+            QueryWeightTwoPhaseIterRef::SortedSetDocValuesRange(inner) => inner.set_empty(),
+            QueryWeightTwoPhaseIterRef::IndexSortSortedNumericDocValuesRange(inner) => {
+                inner.set_empty()
+            },
+            QueryWeightTwoPhaseIterRef::FieldExists(inner) => inner.set_empty(),
+            QueryWeightTwoPhaseIterRef::ConstantScore(inner) => inner.set_empty(),
+        }
+    }
+
+    fn matches(&mut self) -> Result<bool> {
+        match self {
+            QueryWeightTwoPhaseIterRef::Term(inner) => inner.matches(),
+            QueryWeightTwoPhaseIterRef::MatchAll(inner) => inner.matches(),
+            QueryWeightTwoPhaseIterRef::PointRange(inner) => inner.matches(),
+            QueryWeightTwoPhaseIterRef::MatchNo(inner) => inner.matches(),
+            QueryWeightTwoPhaseIterRef::SortedNumericDocValuesSet(inner) => inner.matches(),
+            QueryWeightTwoPhaseIterRef::SortedNumericDocValuesRange(inner) => inner.matches(),
+            QueryWeightTwoPhaseIterRef::SortedSetDocValuesRange(inner) => inner.matches(),
+            QueryWeightTwoPhaseIterRef::IndexSortSortedNumericDocValuesRange(inner) => {
+                inner.matches()
+            },
+            QueryWeightTwoPhaseIterRef::FieldExists(inner) => inner.matches(),
+            QueryWeightTwoPhaseIterRef::ConstantScore(inner) => inner.matches(),
+        }
+    }
+
+    fn match_cost(&self) -> f32 {
+        match self {
+            QueryWeightTwoPhaseIterRef::Term(inner) => inner.match_cost(),
+            QueryWeightTwoPhaseIterRef::MatchAll(inner) => inner.match_cost(),
+            QueryWeightTwoPhaseIterRef::PointRange(inner) => inner.match_cost(),
+            QueryWeightTwoPhaseIterRef::MatchNo(inner) => inner.match_cost(),
+            QueryWeightTwoPhaseIterRef::SortedNumericDocValuesSet(inner) => inner.match_cost(),
+            QueryWeightTwoPhaseIterRef::SortedNumericDocValuesRange(inner) => inner.match_cost(),
+            QueryWeightTwoPhaseIterRef::SortedSetDocValuesRange(inner) => inner.match_cost(),
+            QueryWeightTwoPhaseIterRef::IndexSortSortedNumericDocValuesRange(inner) => {
+                inner.match_cost()
+            },
+            QueryWeightTwoPhaseIterRef::FieldExists(inner) => inner.match_cost(),
+            QueryWeightTwoPhaseIterRef::ConstantScore(inner) => inner.match_cost(),
+        }
+    }
+}
+
+impl<A, B, C, D, E, F, G, H, I, J> TwoPhaseIterator
+    for QueryWeightTwoPhaseIterMut<A, B, C, D, E, F, G, H, I, J>
+where
+    A: TwoPhaseIterator,
+    B: TwoPhaseIterator,
+    C: TwoPhaseIterator,
+    D: TwoPhaseIterator,
+    E: TwoPhaseIterator,
+    F: TwoPhaseIterator,
+    G: TwoPhaseIterator,
+    H: TwoPhaseIterator,
+    I: TwoPhaseIterator,
+    J: TwoPhaseIterator,
+{
+    type DocIdSetIterator = QueryWeightDocIdSetIteratorRef<
+        A::DocIdSetIterator,
+        B::DocIdSetIterator,
+        C::DocIdSetIterator,
+        D::DocIdSetIterator,
+        E::DocIdSetIterator,
+        F::DocIdSetIterator,
+        G::DocIdSetIterator,
+        H::DocIdSetIterator,
+        I::DocIdSetIterator,
+        J::DocIdSetIterator,
+    >;
+
+    type DocIdSetIteratorRef<'a>
+        = QueryWeightDocIdSetIteratorRef<
+        A::DocIdSetIteratorRef<'a>,
+        B::DocIdSetIteratorRef<'a>,
+        C::DocIdSetIteratorRef<'a>,
+        D::DocIdSetIteratorRef<'a>,
+        E::DocIdSetIteratorRef<'a>,
+        F::DocIdSetIteratorRef<'a>,
+        G::DocIdSetIteratorRef<'a>,
+        H::DocIdSetIteratorRef<'a>,
+        I::DocIdSetIteratorRef<'a>,
+        J::DocIdSetIteratorRef<'a>,
+    >
+    where
+        Self: 'a;
+
+    type DocIdSetIteratorMut<'a>
+        = QueryWeightDocIdSetIteratorMut<
+        A::DocIdSetIteratorMut<'a>,
+        B::DocIdSetIteratorMut<'a>,
+        C::DocIdSetIteratorMut<'a>,
+        D::DocIdSetIteratorMut<'a>,
+        E::DocIdSetIteratorMut<'a>,
+        F::DocIdSetIteratorMut<'a>,
+        G::DocIdSetIteratorMut<'a>,
+        H::DocIdSetIteratorMut<'a>,
+        I::DocIdSetIteratorMut<'a>,
+        J::DocIdSetIteratorMut<'a>,
+    >
+    where
+        Self: 'a;
+
+    fn approximation_mut(&mut self) -> Result<Self::DocIdSetIteratorMut<'_>> {
+        match self {
+            QueryWeightTwoPhaseIterMut::Term(inner) => Ok(QueryWeightDocIdSetIteratorMut::Term(
+                inner.approximation_mut()?,
+            )),
+            QueryWeightTwoPhaseIterMut::MatchAll(inner) => Ok(
+                QueryWeightDocIdSetIteratorMut::MatchAll(inner.approximation_mut()?),
+            ),
+            QueryWeightTwoPhaseIterMut::PointRange(inner) => Ok(
+                QueryWeightDocIdSetIteratorMut::PointRange(inner.approximation_mut()?),
+            ),
+            QueryWeightTwoPhaseIterMut::MatchNo(inner) => Ok(
+                QueryWeightDocIdSetIteratorMut::MatchNo(inner.approximation_mut()?),
+            ),
+            QueryWeightTwoPhaseIterMut::SortedNumericDocValuesSet(inner) => {
+                Ok(QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesSet(
+                    inner.approximation_mut()?,
+                ))
+            },
+            QueryWeightTwoPhaseIterMut::SortedNumericDocValuesRange(inner) => {
+                Ok(QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesRange(
+                    inner.approximation_mut()?,
+                ))
+            },
+            QueryWeightTwoPhaseIterMut::SortedSetDocValuesRange(inner) => Ok(
+                QueryWeightDocIdSetIteratorMut::SortedSetDocValuesRange(inner.approximation_mut()?),
+            ),
+            QueryWeightTwoPhaseIterMut::IndexSortSortedNumericDocValuesRange(inner) => Ok(
+                QueryWeightDocIdSetIteratorMut::IndexSortSortedNumericDocValuesRange(
+                    inner.approximation_mut()?,
+                ),
+            ),
+            QueryWeightTwoPhaseIterMut::FieldExists(inner) => Ok(
+                QueryWeightDocIdSetIteratorMut::FieldExists(inner.approximation_mut()?),
+            ),
+            QueryWeightTwoPhaseIterMut::ConstantScore(inner) => {
+                let v = inner.approximation_mut()?;
+                Ok(QueryWeightDocIdSetIteratorMut::ConstantScore(Box::new(v)))
+            },
+        }
+    }
+
+    fn approximation(&self) -> Result<Self::DocIdSetIteratorRef<'_>> {
+        match self {
+            QueryWeightTwoPhaseIterMut::Term(inner) => {
+                Ok(QueryWeightDocIdSetIteratorRef::Term(inner.approximation()?))
+            },
+            QueryWeightTwoPhaseIterMut::MatchAll(inner) => Ok(
+                QueryWeightDocIdSetIteratorRef::MatchAll(inner.approximation()?),
+            ),
+            QueryWeightTwoPhaseIterMut::PointRange(inner) => Ok(
+                QueryWeightDocIdSetIteratorRef::PointRange(inner.approximation()?),
+            ),
+            QueryWeightTwoPhaseIterMut::MatchNo(inner) => Ok(
+                QueryWeightDocIdSetIteratorRef::MatchNo(inner.approximation()?),
+            ),
+            QueryWeightTwoPhaseIterMut::SortedNumericDocValuesSet(inner) => Ok(
+                QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesSet(inner.approximation()?),
+            ),
+            QueryWeightTwoPhaseIterMut::SortedNumericDocValuesRange(inner) => Ok(
+                QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesRange(inner.approximation()?),
+            ),
+            QueryWeightTwoPhaseIterMut::SortedSetDocValuesRange(inner) => Ok(
+                QueryWeightDocIdSetIteratorRef::SortedSetDocValuesRange(inner.approximation()?),
+            ),
+            QueryWeightTwoPhaseIterMut::IndexSortSortedNumericDocValuesRange(inner) => Ok(
+                QueryWeightDocIdSetIteratorRef::IndexSortSortedNumericDocValuesRange(
+                    inner.approximation()?,
+                ),
+            ),
+            QueryWeightTwoPhaseIterMut::FieldExists(inner) => Ok(
+                QueryWeightDocIdSetIteratorRef::FieldExists(inner.approximation()?),
+            ),
+            QueryWeightTwoPhaseIterMut::ConstantScore(inner) => {
+                let v = inner.approximation()?;
+                Ok(QueryWeightDocIdSetIteratorRef::ConstantScore(Box::new(v)))
+            },
+        }
+    }
+
+    fn set_empty(&mut self) -> Result<()> {
+        match self {
+            QueryWeightTwoPhaseIterMut::Term(inner) => inner.set_empty(),
+            QueryWeightTwoPhaseIterMut::MatchAll(inner) => inner.set_empty(),
+            QueryWeightTwoPhaseIterMut::PointRange(inner) => inner.set_empty(),
+            QueryWeightTwoPhaseIterMut::MatchNo(inner) => inner.set_empty(),
+            QueryWeightTwoPhaseIterMut::SortedNumericDocValuesSet(inner) => inner.set_empty(),
+            QueryWeightTwoPhaseIterMut::SortedNumericDocValuesRange(inner) => inner.set_empty(),
+            QueryWeightTwoPhaseIterMut::SortedSetDocValuesRange(inner) => inner.set_empty(),
+            QueryWeightTwoPhaseIterMut::IndexSortSortedNumericDocValuesRange(inner) => {
+                inner.set_empty()
+            },
+            QueryWeightTwoPhaseIterMut::FieldExists(inner) => inner.set_empty(),
+            QueryWeightTwoPhaseIterMut::ConstantScore(inner) => inner.set_empty(),
+        }
+    }
+
+    fn matches(&mut self) -> Result<bool> {
+        match self {
+            QueryWeightTwoPhaseIterMut::Term(inner) => inner.matches(),
+            QueryWeightTwoPhaseIterMut::MatchAll(inner) => inner.matches(),
+            QueryWeightTwoPhaseIterMut::PointRange(inner) => inner.matches(),
+            QueryWeightTwoPhaseIterMut::MatchNo(inner) => inner.matches(),
+            QueryWeightTwoPhaseIterMut::SortedNumericDocValuesSet(inner) => inner.matches(),
+            QueryWeightTwoPhaseIterMut::SortedNumericDocValuesRange(inner) => inner.matches(),
+            QueryWeightTwoPhaseIterMut::SortedSetDocValuesRange(inner) => inner.matches(),
+            QueryWeightTwoPhaseIterMut::IndexSortSortedNumericDocValuesRange(inner) => {
+                inner.matches()
+            },
+            QueryWeightTwoPhaseIterMut::FieldExists(inner) => inner.matches(),
+            QueryWeightTwoPhaseIterMut::ConstantScore(inner) => inner.matches(),
+        }
+    }
+
+    fn match_cost(&self) -> f32 {
+        match self {
+            QueryWeightTwoPhaseIterMut::Term(inner) => inner.match_cost(),
+            QueryWeightTwoPhaseIterMut::MatchAll(inner) => inner.match_cost(),
+            QueryWeightTwoPhaseIterMut::PointRange(inner) => inner.match_cost(),
+            QueryWeightTwoPhaseIterMut::MatchNo(inner) => inner.match_cost(),
+            QueryWeightTwoPhaseIterMut::SortedNumericDocValuesSet(inner) => inner.match_cost(),
+            QueryWeightTwoPhaseIterMut::SortedNumericDocValuesRange(inner) => inner.match_cost(),
+            QueryWeightTwoPhaseIterMut::SortedSetDocValuesRange(inner) => inner.match_cost(),
+            QueryWeightTwoPhaseIterMut::IndexSortSortedNumericDocValuesRange(inner) => {
+                inner.match_cost()
+            },
+            QueryWeightTwoPhaseIterMut::FieldExists(inner) => inner.match_cost(),
+            QueryWeightTwoPhaseIterMut::ConstantScore(inner) => inner.match_cost(),
         }
     }
 }
