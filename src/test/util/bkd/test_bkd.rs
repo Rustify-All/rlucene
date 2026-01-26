@@ -2276,7 +2276,7 @@ where
 enum QueryWeight {
     Term(TermWeight),
     FieldExists(FieldExistsWeight),
-    ConstantScore(ConstantScoreWeight<Box<QueryWeight>>),
+    ConstantScore(<Box<QueryWeight>>),
 }
 
 impl Weight for QueryWeight {
