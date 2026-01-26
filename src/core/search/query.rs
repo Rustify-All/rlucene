@@ -23,7 +23,7 @@ use crate::core::document::sorted_numeric_doc_values_set_query::{
 };
 use crate::core::document::sorted_set_doc_values_range_query::{
     SortedSetDocValuesRangeQuery, SortedSetDocValuesRangeQueryWeight, SortedSetDocValuesRangeSs,
-    SortedSetDocValuesRangeSsScorerDisi, SortedSetDocValuesRangeSsScorerDisiRef,
+    SortedSetDocValuesRangeSsScorerDisi,
 };
 use crate::core::index::index_reader_context::{IRCTermState, IndexReaderContext};
 use crate::core::index::leaf_reader_context::LeafReaderContext;
@@ -47,7 +47,7 @@ use crate::core::search::explanation::Explanation;
 use crate::core::search::field_exists_query::{FieldExistsQuery, FieldExistsSs, FieldExistsWeight};
 use crate::core::search::index_searcher::IndexSearcher;
 use crate::core::search::index_sort_sorted_numeric_doc_values_range_query::{
-    ISSNDVRSsScorerDisi, ISSNDVRSsScorerDisiRef, IndexSortSortedNumericDocValuesRangeQuery,
+    ISSNDVRSsScorerDisi, IndexSortSortedNumericDocValuesRangeQuery,
     IndexSortSortedNumericDocValuesRangeQueryWeight, IndexSortSortedNumericDocValuesRangeSs,
 };
 use crate::core::search::leaf_collector::LeafCollector;
@@ -1128,11 +1128,33 @@ where
 {
     type DocIdSetIterator = QueryWeightDisi<S, IRC, QCP, QC>;
     type DocIdSetIteratorRef<'a>
-        = DummyDISI
+        = QueryWeightDocIdSetIteratorRef<
+        <<TermSs<IRC, S> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
+        <<MatchAllSs as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
+        <<PointRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
+        <<MatchNoDocsSs as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
+        <<DefaultScorerSupplierSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
+        <<SortedNumericDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
+        <<SortedSetDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
+        <<IndexSortSortedNumericDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
+        <<FieldExistsSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorRef<'a>,
+        DocIdSetIteratorBox<'a>,
+    >
     where
         Self: 'a;
     type DocIdSetIteratorMut<'a>
-        = DummyDISI
+        = QueryWeightDocIdSetIteratorMut<
+        <<TermSs<IRC, S> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
+        <<MatchAllSs as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
+        <<PointRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
+        <<MatchNoDocsSs as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
+        <<DefaultScorerSupplierSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
+        <<SortedNumericDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
+        <<SortedSetDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
+        <<IndexSortSortedNumericDocValuesRangeSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
+        <<FieldExistsSs<IRC::LeafReader> as ScorerSupplier<IRC::LeafReader>>::Scorer as Scorer>::DocIdSetIteratorMut<'a>,
+        DocIdSetIteratorBox<'a>,
+    >
     where
         Self: 'a;
     type TwoPhaseIter = DummyTwoPhaseIterator;
@@ -1232,73 +1254,73 @@ where
     }
 
     fn iterator(&self) -> Self::DocIdSetIteratorRef<'_> {
-        // match self {
-        //     QueryWeightScorer::Term(s) => QueryWeightDocIdSetIteratorRef::Term(s.iterator()),
-        //     QueryWeightScorer::MatchAll(s) => {
-        //         QueryWeightDocIdSetIteratorRef::MatchAll(s.iterator())
-        //     },
-        //     QueryWeightScorer::PointRange(s) => {
-        //         QueryWeightDocIdSetIteratorRef::PointRange(s.iterator())
-        //     },
-        //     QueryWeightScorer::MatchNo(s) => QueryWeightDocIdSetIteratorRef::MatchNo(s.iterator()),
-        //     QueryWeightScorer::SortedNumericDocValuesSet(s) => {
-        //         QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesSet(s.iterator())
-        //     },
-        //     QueryWeightScorer::SortedNumericDocValuesRange(s) => {
-        //         QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesRange(s.iterator())
-        //     },
-        //     QueryWeightScorer::SortedSetDocValuesRange(s) => {
-        //         QueryWeightDocIdSetIteratorRef::SortedSetDocValuesRange(s.iterator())
-        //     },
-        //     QueryWeightScorer::IndexSortSortedNumericDocValuesRange(s) => {
-        //         QueryWeightDocIdSetIteratorRef::IndexSortSortedNumericDocValuesRange(s.iterator())
-        //     },
-        //     QueryWeightScorer::FieldExists(s) => {
-        //         QueryWeightDocIdSetIteratorRef::FieldExists(s.iterator())
-        //     },
-        //     QueryWeightScorer::ConstantScore(s) => {
-        //         let v = s.iterator();
-        //         QueryWeightDocIdSetIteratorRef::ConstantScore(Box::new(v))
-        //     },
-        // }
-        todo!()
+        match self {
+            QueryWeightScorer::Term(s) => QueryWeightDocIdSetIteratorRef::Term(s.iterator()),
+            QueryWeightScorer::MatchAll(s) => {
+                QueryWeightDocIdSetIteratorRef::MatchAll(s.iterator())
+            },
+            QueryWeightScorer::PointRange(s) => {
+                QueryWeightDocIdSetIteratorRef::PointRange(s.iterator())
+            },
+            QueryWeightScorer::MatchNo(s) => QueryWeightDocIdSetIteratorRef::MatchNo(s.iterator()),
+            QueryWeightScorer::SortedNumericDocValuesSet(s) => {
+                QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesSet(s.iterator())
+            },
+            QueryWeightScorer::SortedNumericDocValuesRange(s) => {
+                QueryWeightDocIdSetIteratorRef::SortedNumericDocValuesRange(s.iterator())
+            },
+            QueryWeightScorer::SortedSetDocValuesRange(s) => {
+                QueryWeightDocIdSetIteratorRef::SortedSetDocValuesRange(s.iterator())
+            },
+            QueryWeightScorer::IndexSortSortedNumericDocValuesRange(s) => {
+                QueryWeightDocIdSetIteratorRef::IndexSortSortedNumericDocValuesRange(s.iterator())
+            },
+            QueryWeightScorer::FieldExists(s) => {
+                QueryWeightDocIdSetIteratorRef::FieldExists(s.iterator())
+            },
+            QueryWeightScorer::ConstantScore(s) => {
+                let v = s.iterator();
+                QueryWeightDocIdSetIteratorRef::ConstantScore(Box::new(
+                    DocIdSetIteratorBox::new(v),
+                ))
+            },
+        }
     }
 
     fn iterator_mut(&mut self) -> Self::DocIdSetIteratorMut<'_> {
-        // match self {
-        //     QueryWeightScorer::Term(s) => QueryWeightDocIdSetIteratorMut::Term(s.iterator_mut()),
-        //     QueryWeightScorer::MatchAll(s) => {
-        //         QueryWeightDocIdSetIteratorMut::MatchAll(s.iterator_mut())
-        //     },
-        //     QueryWeightScorer::PointRange(s) => {
-        //         QueryWeightDocIdSetIteratorMut::PointRange(s.iterator_mut())
-        //     },
-        //     QueryWeightScorer::MatchNo(s) => {
-        //         QueryWeightDocIdSetIteratorMut::MatchNo(s.iterator_mut())
-        //     },
-        //     QueryWeightScorer::SortedNumericDocValuesSet(s) => {
-        //         QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesSet(s.iterator_mut())
-        //     },
-        //     QueryWeightScorer::SortedNumericDocValuesRange(s) => {
-        //         QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesRange(s.iterator_mut())
-        //     },
-        //     QueryWeightScorer::SortedSetDocValuesRange(s) => {
-        //         QueryWeightDocIdSetIteratorMut::SortedSetDocValuesRange(s.iterator_mut())
-        //     },
-        //     QueryWeightScorer::IndexSortSortedNumericDocValuesRange(s) => {
-        //         QueryWeightDocIdSetIteratorMut::IndexSortSortedNumericDocValuesRange(
-        //             s.iterator_mut(),
-        //         )
-        //     },
-        //     QueryWeightScorer::FieldExists(s) => {
-        //         QueryWeightDocIdSetIteratorMut::FieldExists(s.iterator_mut())
-        //     },
-        //     QueryWeightScorer::ConstantScore(s) => {
-        //         let v = s.iterator_mut();
-        //         QueryWeightDocIdSetIteratorMut::ConstantScore(Box::new(v))
-        //     },
-        // }
-        todo!()
+        match self {
+            QueryWeightScorer::Term(s) => QueryWeightDocIdSetIteratorMut::Term(s.iterator_mut()),
+            QueryWeightScorer::MatchAll(s) => {
+                QueryWeightDocIdSetIteratorMut::MatchAll(s.iterator_mut())
+            },
+            QueryWeightScorer::PointRange(s) => {
+                QueryWeightDocIdSetIteratorMut::PointRange(s.iterator_mut())
+            },
+            QueryWeightScorer::MatchNo(s) => QueryWeightDocIdSetIteratorMut::MatchNo(s.iterator_mut()),
+            QueryWeightScorer::SortedNumericDocValuesSet(s) => {
+                QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesSet(s.iterator_mut())
+            },
+            QueryWeightScorer::SortedNumericDocValuesRange(s) => {
+                QueryWeightDocIdSetIteratorMut::SortedNumericDocValuesRange(s.iterator_mut())
+            },
+            QueryWeightScorer::SortedSetDocValuesRange(s) => {
+                QueryWeightDocIdSetIteratorMut::SortedSetDocValuesRange(s.iterator_mut())
+            },
+            QueryWeightScorer::IndexSortSortedNumericDocValuesRange(s) => {
+                QueryWeightDocIdSetIteratorMut::IndexSortSortedNumericDocValuesRange(
+                    s.iterator_mut(),
+                )
+            },
+            QueryWeightScorer::FieldExists(s) => {
+                QueryWeightDocIdSetIteratorMut::FieldExists(s.iterator_mut())
+            },
+            QueryWeightScorer::ConstantScore(s) => {
+                let v = s.iterator_mut();
+                QueryWeightDocIdSetIteratorMut::ConstantScore(Box::new(
+                    DocIdSetIteratorBox::new(v),
+                ))
+            },
+        }
     }
 
     fn take_iterator(self) -> Self::DocIdSetIterator {
@@ -1720,6 +1742,64 @@ where
             QueryWeightTpi::FieldExists(s) => s.match_cost(),
             QueryWeightTpi::ConstantScore(s) => s.match_cost(),
         }
+    }
+}
+
+pub struct DocIdSetIteratorBox<'a> {
+    data: *mut (),
+    drop_fn: unsafe fn(*mut ()),
+    doc_id_fn: unsafe fn(*const ()) -> i32,
+    next_doc_fn: unsafe fn(*mut ()) -> Result<i32>,
+    advance_fn: unsafe fn(*mut (), i32) -> Result<i32>,
+    slow_advance_fn: unsafe fn(*mut (), i32) -> Result<i32>,
+    cost_fn: unsafe fn(*const ()) -> Result<i64>,
+    _marker: std::marker::PhantomData<&'a mut ()>,
+}
+
+impl<'a> DocIdSetIteratorBox<'a> {
+    pub fn new<I>(iter: I) -> Self
+    where
+        I: DocIdSetIterator + 'a,
+    {
+        let boxed = Box::new(iter);
+        Self {
+            data: Box::into_raw(boxed) as *mut (),
+            drop_fn: |ptr| unsafe { drop(Box::from_raw(ptr as *mut I)) },
+            doc_id_fn: |ptr| unsafe { (&*(ptr as *const I)).doc_id() },
+            next_doc_fn: |ptr| unsafe { (&mut *(ptr as *mut I)).next_doc() },
+            advance_fn: |ptr, target| unsafe { (&mut *(ptr as *mut I)).advance(target) },
+            slow_advance_fn: |ptr, target| unsafe { (&mut *(ptr as *mut I)).slow_advance(target) },
+            cost_fn: |ptr| unsafe { (&*(ptr as *const I)).cost() },
+            _marker: std::marker::PhantomData,
+        }
+    }
+}
+
+impl Drop for DocIdSetIteratorBox<'_> {
+    fn drop(&mut self) {
+        unsafe { (self.drop_fn)(self.data) }
+    }
+}
+
+impl DocIdSetIterator for DocIdSetIteratorBox<'_> {
+    fn doc_id(&self) -> i32 {
+        unsafe { (self.doc_id_fn)(self.data) }
+    }
+
+    fn next_doc(&mut self) -> Result<i32> {
+        unsafe { (self.next_doc_fn)(self.data) }
+    }
+
+    fn advance(&mut self, target: i32) -> Result<i32> {
+        unsafe { (self.advance_fn)(self.data, target) }
+    }
+
+    fn slow_advance(&mut self, target: i32) -> Result<i32> {
+        unsafe { (self.slow_advance_fn)(self.data, target) }
+    }
+
+    fn cost(&self) -> Result<i64> {
+        unsafe { (self.cost_fn)(self.data) }
     }
 }
 
