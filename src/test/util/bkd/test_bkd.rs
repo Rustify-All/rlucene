@@ -2094,3 +2094,227 @@ fn test_too_many_points_1d() -> Result<()> {
 
     Ok(())
 }
+
+use std::fmt::Debug;
+
+// -------------------- Scorer / ScorerSupplier traits --------------------
+
+trait Scorer: Debug {
+    fn score(&self, doc: i32) -> f32;
+}
+
+trait ScorerSupplier: Debug {
+    type Scorer: Scorer;
+
+    fn get(&self) -> Self::Scorer;
+}
+
+// -------------------- Weight trait --------------------
+
+trait Weight: Debug {
+    type A: ScorerSupplier;
+
+    fn scorer_supplier(&self) -> Option<Self::A>;
+}
+
+// -------------------- Concrete scorers --------------------
+
+#[derive(Debug, Clone)]
+struct TermScorer {
+    boost: f32,
+}
+impl Scorer for TermScorer {
+    fn score(&self, _doc: i32) -> f32 {
+        1.0 * self.boost
+    }
+}
+
+#[derive(Debug, Clone)]
+struct FieldExistsScorer;
+impl Scorer for FieldExistsScorer {
+    fn score(&self, _doc: i32) -> f32 {
+        1.0
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ConstantScoreScorer<S: Scorer> {
+    inner: S,
+}
+impl<S: Scorer> Scorer for ConstantScoreScorer<S> {
+    fn score(&self, doc: i32) -> f32 {
+        // 示例里：ConstantScore把分数“压平”为 1.0（当然你也可以做别的逻辑）
+        let _ = self.inner.score(doc);
+        1.0
+    }
+}
+
+// -------------------- Concrete scorer suppliers --------------------
+
+#[derive(Debug, Clone)]
+struct TermSS {
+    boost: f32,
+}
+impl ScorerSupplier for TermSS {
+    type Scorer = TermScorer;
+
+    fn get(&self) -> Self::Scorer {
+        TermScorer { boost: self.boost }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct FieldExistsSS;
+impl ScorerSupplier for FieldExistsSS {
+    type Scorer = FieldExistsScorer;
+
+    fn get(&self) -> Self::Scorer {
+        FieldExistsScorer
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ConstantScoreSS<SS: ScorerSupplier> {
+    inner: SS,
+}
+impl<SS: ScorerSupplier> ScorerSupplier for ConstantScoreSS<SS> {
+    type Scorer = ConstantScoreScorer<SS::Scorer>;
+
+    fn get(&self) -> Self::Scorer {
+        ConstantScoreScorer {
+            inner: self.inner.get(),
+        }
+    }
+}
+
+// -------------------- Unified "Query" scorer + supplier --------------------
+//
+// 关键点：QueryScorerSupplier 自己实现 ScorerSupplier，
+// 其输出的 Scorer 也是一个统一 enum QueryScorer。
+
+#[derive(Debug, Clone)]
+enum QueryScorer {
+    Term(TermScorer),
+    FieldExists(FieldExistsScorer),
+    ConstantScore(Box<QueryScorer>),
+}
+
+impl Scorer for QueryScorer {
+    fn score(&self, doc: i32) -> f32 {
+        match self {
+            QueryScorer::Term(s) => s.score(doc),
+            QueryScorer::FieldExists(s) => s.score(doc),
+            QueryScorer::ConstantScore(inner) => {
+                // ConstantScore 的 scorer 逻辑：压平
+                let _ = inner.score(doc);
+                1.0
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+enum QueryScorerSupplier {
+    Term(TermSS),
+    FieldExists(FieldExistsSS),
+    ConstantScore(Box<QueryScorerSupplier>),
+}
+
+impl ScorerSupplier for QueryScorerSupplier {
+    type Scorer = QueryScorer;
+
+    fn get(&self) -> Self::Scorer {
+        match self {
+            QueryScorerSupplier::Term(ss) => QueryScorer::Term(ss.get()),
+            QueryScorerSupplier::FieldExists(ss) => QueryScorer::FieldExists(ss.get()),
+            QueryScorerSupplier::ConstantScore(inner) => {
+                // 递归：拿到 inner supplier 的 scorer，再包一层 ConstantScore
+                QueryScorer::ConstantScore(Box::new(inner.get()))
+            }
+        }
+    }
+}
+
+// -------------------- Weights --------------------
+
+#[derive(Debug, Clone)]
+struct TermWeight {
+    boost: f32,
+}
+impl Weight for TermWeight {
+    type A = QueryScorerSupplier;
+
+    fn scorer_supplier(&self) -> Option<Self::A> {
+        Some(QueryScorerSupplier::Term(TermSS { boost: self.boost }))
+    }
+}
+
+#[derive(Debug, Clone)]
+struct FieldExistsWeight;
+impl Weight for FieldExistsWeight {
+    type A = QueryScorerSupplier;
+
+    fn scorer_supplier(&self) -> Option<Self::A> {
+        Some(QueryScorerSupplier::FieldExists(FieldExistsSS))
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ConstantScoreWeight<W: Weight<A = QueryScorerSupplier>> {
+    inner: W,
+}
+impl<W> Weight for ConstantScoreWeight<W>
+where
+    W: Weight<A = QueryScorerSupplier>,
+{
+    type A = QueryScorerSupplier;
+
+    fn scorer_supplier(&self) -> Option<Self::A> {
+        self.inner
+            .scorer_supplier()
+            .map(|ss| QueryScorerSupplier::ConstantScore(Box::new(ss)))
+    }
+}
+
+// 递归 QueryWeight：ConstantScore 里面包 Box<QueryWeight>
+#[derive(Debug, Clone)]
+enum QueryWeight {
+    Term(TermWeight),
+    FieldExists(FieldExistsWeight),
+    ConstantScore(ConstantScoreWeight<Box<QueryWeight>>),
+}
+
+impl Weight for QueryWeight {
+    type A = QueryScorerSupplier;
+
+    fn scorer_supplier(&self) -> Option<Self::A> {
+        match self {
+            QueryWeight::Term(w) => w.scorer_supplier(),
+            QueryWeight::FieldExists(w) => w.scorer_supplier(),
+            QueryWeight::ConstantScore(w) => w.scorer_supplier(),
+        }
+    }
+}
+
+impl Weight for Box<QueryWeight> {
+    type A = QueryScorerSupplier;
+
+    fn scorer_supplier(&self) -> Option<Self::A> {
+        (**self).scorer_supplier()
+    }
+}
+
+// -------------------- demo --------------------
+#[test]
+fn main() {
+    // ConstantScore(ConstantScore(Term))
+    let w = QueryWeight::ConstantScore(ConstantScoreWeight {
+        inner: Box::new(QueryWeight::ConstantScore(ConstantScoreWeight {
+            inner: Box::new(QueryWeight::Term(TermWeight { boost: 2.0 })),
+        })),
+    });
+
+    let ss = w.scorer_supplier().unwrap();
+    let scorer = ss.get();
+    println!("score(doc=7) = {}", scorer.score(7));
+}
