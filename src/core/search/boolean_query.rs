@@ -20,9 +20,10 @@ use crate::core::index::query_timeout::QueryTimeout;
 use crate::core::index::term_states::TermStates;
 use crate::core::search::QueryCache;
 use crate::core::search::boolean_clause::{BooleanClause, Occur};
-use crate::core::search::dummy::dummy_weight::DummyWeight;
+use crate::core::search::boolean_weight::{BooleanWeight, WeightedBooleanClause};
+use crate::core::search::dummy::dummy_query::DummyQuery;
 use crate::core::search::index_searcher::{IndexSearcher, get_max_clause_count};
-use crate::core::search::query::{Query, QueryBase};
+use crate::core::search::query::{BaseQueryWeight, Query, QueryBase};
 use crate::core::search::query_caching_policy::QueryCachingPolicy;
 use crate::core::search::query_visitor::QueryVisitor;
 use crate::core::search::score_mode::ScoreMode;
@@ -32,6 +33,7 @@ use crate::core::util::error::lucene_error::{LuceneError, Result};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 /// A query that matches documents matching boolean combinations of other queries, e.g.
 /// [`TermQuery`](crate::core::search::term_query::TermQuery)s, [`PhraseQuery`](crate::core::search::phrase_query::PhraseQuery)s or other [`BooleanQuery`]s.
@@ -168,7 +170,7 @@ impl QueryBase for BooleanQuery {
     }
 
     type Weight<S, IRC, QCP, QC>
-        = DummyWeight<IRC::LeafReader>
+        = BooleanWeight<S, BaseQueryWeight<S, IRC>, IRC::LeafReader>
     where
         S: Similarity,
         IRC: IndexReaderContext,
@@ -176,9 +178,9 @@ impl QueryBase for BooleanQuery {
         QC: QueryCache;
     fn create_weight<S, IRC, QT, QCP, QC>(
         self,
-        _searcher: &IndexSearcher<IRC, S, QT, QCP, QC>,
-        _score_mode: &ScoreMode,
-        _boost: f32,
+        searcher: &IndexSearcher<IRC, S, QT, QCP, QC>,
+        score_mode: &ScoreMode,
+        boost: f32,
         _per_reader_term_state: Option<TermStates<IRCTermState<IRC>>>,
     ) -> Result<Self::Weight<S, IRC, QCP, QC>>
     where
@@ -189,7 +191,36 @@ impl QueryBase for BooleanQuery {
         QC: QueryCache,
         Self: Sized,
     {
-        todo!()
+        let is_pure_disjunction = self.is_pure_disjunction();
+        let has_no_filter = self.get_clauses_idx(Occur::Filter).is_empty();
+        let has_no_must = self.get_clauses_idx(Occur::Must).is_empty();
+        let minimum_number_should_match = self.minimum_number_should_match;
+        let clause_size = self.clauses.len() as i32;
+
+        let mut weighted_clauses = Vec::with_capacity(self.clauses.len());
+        for clause in self.clauses {
+            let occur = clause.occur;
+            let weight = clause.query.create_weight_no_constant_score(
+                searcher,
+                score_mode,
+                boost,
+                None,
+            )?;
+            weighted_clauses.push(WeightedBooleanClause::new(occur, weight));
+        }
+
+        let parent_query = Arc::new(Query::Dummy(DummyQuery::default()));
+        Ok(BooleanWeight::new(
+            searcher.get_similarity(),
+            weighted_clauses,
+            *score_mode,
+            minimum_number_should_match,
+            is_pure_disjunction,
+            has_no_filter,
+            has_no_must,
+            clause_size,
+            parent_query,
+        ))
     }
 
     fn rewrite<IRC, S, QT, QCP, QC>(

@@ -18,7 +18,7 @@ use crate::core::index::index_reader_context::IndexReaderContext;
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::leaf_reader_context::LeafReaderContext;
 use crate::core::search::abstract_multi_term_query_constant_score_wrapper::BOOLEAN_REWRITE_TERM_COUNT_THRESHOLD;
-use crate::core::search::boolean_clause::{BooleanClause, Occur};
+use crate::core::search::boolean_clause::Occur;
 use crate::core::search::boolean_scorer_supplier::BooleanScorerSupplier;
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
 use crate::core::search::dummy::dummy_matches::DummyMatches;
@@ -41,10 +41,11 @@ where
     LR: LeafReader,
     W: Weight<LR>,
 {
-    similarity: S,
+    similarity: Arc<S>,
     weighted_clauses: Vec<WeightedBooleanClause<W, LR>>,
     meta: BooleanQueryMeta,
     score_mode: ScoreMode,
+    parent_query: Arc<Query>,
 }
 
 impl<S, LR, W> BooleanWeight<S, W, LR>
@@ -53,6 +54,32 @@ where
     LR: LeafReader,
     W: Weight<LR>,
 {
+    pub(crate) fn new(
+        similarity: Arc<S>,
+        weighted_clauses: Vec<WeightedBooleanClause<W, LR>>,
+        score_mode: ScoreMode,
+        minimum_number_should_match: i32,
+        is_pure_disjunction: bool,
+        has_no_filter: bool,
+        has_no_must: bool,
+        clause_size: i32,
+        parent_query: Arc<Query>,
+    ) -> Self {
+        Self {
+            similarity,
+            weighted_clauses,
+            meta: BooleanQueryMeta::new(
+                minimum_number_should_match,
+                is_pure_disjunction,
+                has_no_filter,
+                has_no_must,
+                clause_size,
+            ),
+            score_mode,
+            parent_query,
+        }
+    }
+
     /// Return the number of matches of required clauses, or -1 if unknown, or numDocs if there are no
     /// required clauses.
     fn req_count(&self, context: &LeafReaderContext<LR>) -> Result<i32> {
@@ -60,7 +87,7 @@ where
         let mut req_count = num_docs;
 
         for weighted_clause in &self.weighted_clauses {
-            if !weighted_clause.clause.is_required() {
+            if !weighted_clause.occur.is_required() {
                 continue;
             }
 
@@ -95,7 +122,7 @@ where
         let mut unknown_count = false;
 
         for weighted_clause in &self.weighted_clauses {
-            if *weighted_clause.clause.occur() != occur {
+            if weighted_clause.occur != occur {
                 continue;
             }
 
@@ -177,15 +204,16 @@ where
         let mut should_match_count = 0;
 
         for wc in &self.weighted_clauses {
-            let clause = &wc.clause;
+            let occur = wc.occur;
             let weight = &wc.weight;
+            let query_string = weight.get_query().as_string("");
 
             let e = weight.explain(context, doc)?;
 
             if e.is_match() {
-                if clause.is_scoring() {
+                if occur.is_scoring() {
                     subs.push(e);
-                } else if clause.is_required() {
+                } else if occur.is_required() {
                     subs.push(Explanation::match_(
                         0.0,
                         "match on required clause, product of:",
@@ -194,30 +222,24 @@ where
                             e,
                         ],
                     ));
-                } else if clause.is_prohibited() {
+                } else if occur.is_prohibited() {
                     subs.push(Explanation::no_match(
-                        format!(
-                            "match on prohibited clause ({})",
-                            clause.query.as_string("")
-                        ),
+                        format!("match on prohibited clause ({})", query_string),
                         vec![e],
                     ));
                     fail = true;
                 }
 
-                if !clause.is_prohibited() {
+                if !occur.is_prohibited() {
                     match_count += 1;
                 }
 
-                if clause.occur() == &Occur::Should {
+                if occur == Occur::Should {
                     should_match_count += 1;
                 }
-            } else if clause.is_required() {
+            } else if occur.is_required() {
                 subs.push(Explanation::no_match(
-                    format!(
-                        "no match on required clause ({})",
-                        clause.query.as_string("")
-                    ),
+                    format!("no match on required clause ({})", query_string),
                     vec![e],
                 ));
                 fail = true;
@@ -258,7 +280,7 @@ where
     }
 
     fn get_query(&self) -> Arc<Query> {
-        todo!()
+        self.parent_query.clone()
     }
 
     type ScorerSupplier = BooleanScorerSupplier<WeightSs<W, LR>, LR>;
@@ -278,11 +300,11 @@ where
             let sub_supplier = wc.weight.scorer_supplier(context)?;
             match sub_supplier {
                 None => {
-                    if wc.clause.is_required() {
+                    if wc.occur.is_required() {
                         return Ok(None);
                     }
                 },
-                Some(sub_scorer) => match wc.clause.occur() {
+                Some(sub_scorer) => match wc.occur {
                     Occur::Must => must.push(sub_scorer),
                     Occur::Should => should.push(sub_scorer),
                     Occur::Filter => filter.push(sub_scorer),
@@ -364,7 +386,7 @@ where
     W: Weight<LR>,
     LR: LeafReader,
 {
-    pub(crate) clause: BooleanClause,
+    pub(crate) occur: Occur,
     pub(crate) weight: W,
     _phantom: PhantomData<LR>,
 }
@@ -374,9 +396,9 @@ where
     W: Weight<LR>,
     LR: LeafReader,
 {
-    pub(crate) fn new(clause: BooleanClause, weight: W) -> Self {
+    pub(crate) fn new(occur: Occur, weight: W) -> Self {
         Self {
-            clause,
+            occur,
             weight,
             _phantom: PhantomData,
         }
@@ -390,7 +412,7 @@ struct BooleanQueryMeta {
     clause_size: i32,
 }
 impl BooleanQueryMeta {
-    pub fn new(
+    pub(crate) fn new(
         minimum_number_should_match: i32,
         is_pure_disjunction: bool,
         has_no_filter: bool,
