@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::core::store::{DataOutput, IndexInput};
+use crate::core::store::{DataOutput, IndexInput, write_group_vints_i32};
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::group_vint_util::GroupVIntUtil;
 /// Utility struct to encode/decode postings block.
@@ -61,7 +61,7 @@ impl PostingsUtil {
                 doc_buffer[i] = (doc_buffer[i] << 1) | if freq_buffer[i] == 1 { 1 } else { 0 };
             }
         }
-        doc_out.write_group_vints_i32(doc_buffer, num)?;
+        write_group_vints_i32(doc_out, doc_buffer, num)?;
         let num = num as usize;
 
         if write_freqs {

@@ -181,17 +181,6 @@ macro_rules! either_index_output {
                 }
             }
 
-            fn write_group_vints_i64(&mut self, values: &mut [i64], limit: i32) -> Result<()> {
-                match self {
-                    $( Self::$Variant(inner) => inner.write_group_vints_i64(values, limit), )+
-                }
-            }
-
-            fn write_group_vints_i32(&mut self, values: &mut [i32], limit: i32) -> Result<()> {
-                match self {
-                    $( Self::$Variant(inner) => inner.write_group_vints_i32(values, limit), )+
-                }
-            }
         }
 
         impl<$( $T ),+> Display for $name<$( $T ),+>

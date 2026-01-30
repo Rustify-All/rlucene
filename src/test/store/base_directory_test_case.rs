@@ -33,7 +33,7 @@ use crate::core::store::IndexOutput;
 use crate::core::store::check_sum_index_input::ChecksumIndexInput;
 use crate::core::store::directory::Directory;
 use crate::core::store::random_access_input::RandomAccessInput;
-use crate::core::store::{DataOutput, IOContext};
+use crate::core::store::{DataOutput, IOContext, write_group_vints_i64};
 use crate::core::util::SliceCopyOps;
 use crate::core::util::clone::TryClone as OtherClone;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
@@ -1800,7 +1800,7 @@ pub trait BaseDirectoryTestCase {
             out.write_short(12345i16)?;
             out.write_int(1234567890i32)?;
             let values_len = values.len() as i32;
-            out.write_group_vints_i64(&mut values, values_len)?;
+            write_group_vints_i64(&mut out, &mut values, values_len)?;
             out.write_long(1234567890123456789i64)?;
         }
 
@@ -1841,7 +1841,7 @@ pub trait BaseDirectoryTestCase {
         let io_context = IOContext::default_io_context()?;
         {
             let mut out = dir.create_output("test", &io_context)?;
-            out.write_group_vints_i64(&mut values[..values_len], limit as i32)?;
+            write_group_vints_i64(&mut out, &mut values[..values_len], limit as i32)?;
         }
         {
             let mut input = dir.open_input("test", &io_context)?;
@@ -1856,7 +1856,7 @@ pub trait BaseDirectoryTestCase {
             let file_path = temp_dir.keep();
             std::fs::remove_file(file_path.join("test"))?;
             let mut out = dir.create_output("test", &io_context)?;
-            let result = out.write_group_vints_i64(&mut values[..values_len], 4);
+            let result = write_group_vints_i64(&mut out, &mut values[..values_len], 4);
             assert!(matches!(result, Err(LuceneError::NumberOverflow(_))));
         }
 
@@ -1912,7 +1912,7 @@ pub trait BaseDirectoryTestCase {
                     vint_out.write_vint(*value as i32)?;
                 }
 
-                group_vint_out.write_group_vints_i64(&mut values, *num_values as i32)?;
+                write_group_vints_i64(&mut group_vint_out, &mut values, *num_values as i32)?;
             }
         }
 

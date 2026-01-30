@@ -254,43 +254,56 @@ pub trait DataOutput: Sized {
         }
         Ok(())
     }
-    /// Encodes integers using group-varint encoding. Tail values that do not
-    /// fit into a group are encoded using
-    /// [`write_vint`](#method.write_vint). Note: A `long[]` is used because
-    /// it aligns with posting requirements, but all longs are actually
-    /// expected to be integers.
-    ///
-    /// # Arguments
-    /// * `values` - The values to write.
-    /// * `limit` - The number of values to write.
-    ///
-    /// # Note
-    /// This is an experimental API.
-    fn write_group_vints_i64(&mut self, values: &mut [i64], limit: i32) -> Result<()> {
-        let mut group_vint_bytes: Vec<u8> = vec![0; GroupVIntUtil::MAX_LENGTH_PER_GROUP];
-        GroupVIntUtil::write_group_vints_i64(self, &mut group_vint_bytes, values, limit)?;
-        Ok(())
-    }
-
-    /// Encodes integers using group-varint encoding. Tail values that do not
-    /// fit into a group are encoded using
-    /// [`write_vint`](#method.write_vint). Note: A `long[]` is used because
-    /// it aligns with posting requirements, but all longs are actually
-    /// expected to be integers.
-    ///
-    /// # Arguments
-    /// * `values` - The values to write.
-    /// * `limit` - The number of values to write.
-    ///
-    /// # Note
-    /// This is an experimental API.
-    fn write_group_vints_i32(&mut self, values: &mut [i32], limit: i32) -> Result<()> {
-        let mut group_vint_bytes: Vec<u8> = vec![0; GroupVIntUtil::MAX_LENGTH_PER_GROUP];
-        GroupVIntUtil::write_group_vints_i32(self, &mut group_vint_bytes, values, limit)?;
-        Ok(())
-    }
 }
 const COPY_BUFFER_SIZE: usize = 16384;
+
+/// Encodes integers using group-varint encoding. Tail values that do not fit
+/// into a group are encoded using [`DataOutput::write_vint`]. Note: A `long[]`
+/// is used because it aligns with posting requirements, but all longs are
+/// actually expected to be integers.
+///
+/// # Arguments
+/// * `values` - The values to write.
+/// * `limit` - The number of values to write.
+///
+/// # Note
+/// This is an experimental API.
+pub fn write_group_vints_i64<D>(
+    data_output: &mut D,
+    values: &mut [i64],
+    limit: i32,
+) -> Result<()>
+where
+    D: DataOutput,
+{
+    let mut group_vint_bytes: Vec<u8> = vec![0; GroupVIntUtil::MAX_LENGTH_PER_GROUP];
+    GroupVIntUtil::write_group_vints_i64(data_output, &mut group_vint_bytes, values, limit)?;
+    Ok(())
+}
+
+/// Encodes integers using group-varint encoding. Tail values that do not fit
+/// into a group are encoded using [`DataOutput::write_vint`]. Note: A `long[]`
+/// is used because it aligns with posting requirements, but all longs are
+/// actually expected to be integers.
+///
+/// # Arguments
+/// * `values` - The values to write.
+/// * `limit` - The number of values to write.
+///
+/// # Note
+/// This is an experimental API.
+pub fn write_group_vints_i32<D>(
+    data_output: &mut D,
+    values: &mut [i32],
+    limit: i32,
+) -> Result<()>
+where
+    D: DataOutput,
+{
+    let mut group_vint_bytes: Vec<u8> = vec![0; GroupVIntUtil::MAX_LENGTH_PER_GROUP];
+    GroupVIntUtil::write_group_vints_i32(data_output, &mut group_vint_bytes, values, limit)?;
+    Ok(())
+}
 
 pub enum DataOutputEnum2<A, B> {
     A(A),
@@ -406,17 +419,4 @@ where
         }
     }
 
-    fn write_group_vints_i64(&mut self, values: &mut [i64], limit: i32) -> Result<()> {
-        match self {
-            DataOutputEnum2::A(f) => f.write_group_vints_i64(values, limit),
-            DataOutputEnum2::B(s) => s.write_group_vints_i64(values, limit),
-        }
-    }
-
-    fn write_group_vints_i32(&mut self, values: &mut [i32], limit: i32) -> Result<()> {
-        match self {
-            DataOutputEnum2::A(f) => f.write_group_vints_i32(values, limit),
-            DataOutputEnum2::B(s) => s.write_group_vints_i32(values, limit),
-        }
-    }
 }
