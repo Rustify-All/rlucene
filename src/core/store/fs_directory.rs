@@ -383,10 +383,7 @@ where
         }
     }
 
-    fn sync<'a, T1>(&self, names: T1) -> Result<()>
-    where
-        T1: IntoIterator<Item = &'a String>,
-    {
+    fn sync(&self, names: &[String]) -> Result<()> {
         for name in names {
             self.fsync(name)?;
         }

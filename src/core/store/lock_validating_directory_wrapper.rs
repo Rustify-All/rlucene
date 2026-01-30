@@ -107,10 +107,7 @@ where
             .create_temp_output(prefix, suffix, context)
     }
 
-    fn sync<'a, T>(&self, names: T) -> Result<()>
-    where
-        T: IntoIterator<Item = &'a String>,
-    {
+    fn sync(&self, names: &[String]) -> Result<()> {
         self.write_lock.ensure_valid()?;
         self.base.delegate.sync(names)
     }

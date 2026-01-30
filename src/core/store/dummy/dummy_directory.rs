@@ -71,10 +71,7 @@ impl Directory for DummyDirectory {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    fn sync<'a, T>(&self, _names: T) -> Result<()>
-    where
-        T: IntoIterator<Item = &'a String>,
-    {
+    fn sync(&self, _names: &[String]) -> Result<()> {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 

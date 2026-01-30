@@ -221,10 +221,7 @@ where
         ))
     }
 
-    fn sync<'a, T>(&self, _names: T) -> Result<()>
-    where
-        T: IntoIterator<Item = &'a String>,
-    {
+    fn sync(&self, _names: &[String]) -> Result<()> {
         Err(LuceneError::illegal_state(
             "sync() wrapped by CompoundDirectory, this method should never not be called"
                 .to_string(),

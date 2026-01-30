@@ -121,9 +121,7 @@ pub trait Directory: Display + Closeable + HasIdentity {
     ///
     /// # See Also
     /// [`sync_metadata`](Directory::sync_metadata)
-    fn sync<'a, T>(&self, names: T) -> Result<()>
-    where
-        T: IntoIterator<Item = &'a String>;
+    fn sync(&self, names: &[String]) -> Result<()>;
     /// Ensures that directory metadata, such as recent file renames, are moved
     /// to stable storage.
     ///
@@ -328,10 +326,7 @@ macro_rules! either_directory {
                 }
             }
 
-            fn sync<'a, TIter>(&self, names: TIter) -> Result<()>
-            where
-                TIter: IntoIterator<Item = &'a String>,
-            {
+            fn sync(&self, names: &[String]) -> Result<()> {
                 match self {
                     $( Self::$Variant(inner) => inner.sync(names), )+
                 }
@@ -449,10 +444,7 @@ impl<D: Directory> Directory for &D {
         (**self).create_temp_output(p, s, ctx)
     }
 
-    fn sync<'a, T>(&self, names: T) -> Result<()>
-    where
-        T: IntoIterator<Item = &'a String>,
-    {
+    fn sync(&self, names: &[String]) -> Result<()> {
         (**self).sync(names)
     }
 
@@ -520,10 +512,7 @@ impl<D: Directory> Directory for Arc<D> {
         (**self).create_temp_output(p, s, ctx)
     }
 
-    fn sync<'a, T>(&self, names: T) -> Result<()>
-    where
-        T: IntoIterator<Item = &'a String>,
-    {
+    fn sync(&self, names: &[String]) -> Result<()> {
         (**self).sync(names)
     }
 

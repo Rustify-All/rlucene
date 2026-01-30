@@ -597,7 +597,8 @@ where
                         self.write(output)?;
                     }
                 }
-                directory.sync(std::iter::once(&segment_file_name))?;
+                let segment_files = vec![segment_file_name.clone()];
+                directory.sync(&segment_files)?;
                 success = true;
                 Ok(())
             })();

@@ -255,7 +255,8 @@ pub trait BaseCompoundFormatTestCase {
         let cfs = LATEST_CODEC
             .compound_format()
             .get_compound_reader(dir.as_ref(), &si)?;
-        let result = cfs.sync(std::iter::once(&testfile.to_string()));
+        let sync_files = vec![testfile.to_string()];
+        let result = cfs.sync(&sync_files);
         assert!(matches!(result, Err(LuceneError::UnsupportedOperation(_))));
         Ok(())
     }

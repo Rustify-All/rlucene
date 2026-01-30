@@ -115,10 +115,7 @@ where
         ))
     }
 
-    fn sync<'a, T>(&self, _names: T) -> Result<()>
-    where
-        T: IntoIterator<Item = &'a String>,
-    {
+    fn sync(&self, _names: &[String]) -> Result<()> {
         Err(LuceneError::unsupported_operation("sync".to_string()))
     }
 
@@ -253,10 +250,7 @@ where
         }
     }
 
-    fn sync<'a, T>(&self, names: T) -> Result<()>
-    where
-        T: IntoIterator<Item = &'a String>,
-    {
+    fn sync(&self, names: &[String]) -> Result<()> {
         match self {
             CompoundDirectoryEnum::A(dir) => dir.sync(names),
             CompoundDirectoryEnum::B(dir) => dir.sync(names),

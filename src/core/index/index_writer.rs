@@ -3728,9 +3728,11 @@ where
                 // This call can take a long time -- 10s of seconds
                 // or more.  We do it without syncing on this:
                 let mut files_to_sync = HashSet::new();
+                let mut files_to_sync_list = Vec::new();
                 let sync_res: Result<()> = (|| {
                     files_to_sync = commit_lock.pending_commit.as_ref().unwrap().files(false)?;
-                    self.directory.sync(&files_to_sync)?;
+                    files_to_sync_list = files_to_sync.iter().cloned().collect();
+                    self.directory.sync(&files_to_sync_list)?;
                     Ok(())
                 })();
 
