@@ -28,7 +28,7 @@ use crate::core::util::group_vint_util::GroupVIntUtil;
 /// # Note
 /// `DataOutput` is not thread-safe as it maintains internal state (e.g., file
 /// position), and therefore should only be used from a single thread.
-pub trait DataOutput: Sized {
+pub trait DataOutput {
     /// Writes a single byte.
     ///
     /// The most primitive data type is an eight-bit byte. Files are accessed as
@@ -268,11 +268,7 @@ const COPY_BUFFER_SIZE: usize = 16384;
 ///
 /// # Note
 /// This is an experimental API.
-pub fn write_group_vints_i64<D>(
-    data_output: &mut D,
-    values: &mut [i64],
-    limit: i32,
-) -> Result<()>
+pub fn write_group_vints_i64<D>(data_output: &mut D, values: &mut [i64], limit: i32) -> Result<()>
 where
     D: DataOutput,
 {
@@ -292,11 +288,7 @@ where
 ///
 /// # Note
 /// This is an experimental API.
-pub fn write_group_vints_i32<D>(
-    data_output: &mut D,
-    values: &mut [i32],
-    limit: i32,
-) -> Result<()>
+pub fn write_group_vints_i32<D>(data_output: &mut D, values: &mut [i32], limit: i32) -> Result<()>
 where
     D: DataOutput,
 {
@@ -418,5 +410,4 @@ where
             DataOutputEnum2::B(s) => s.write_set_of_strings(set),
         }
     }
-
 }
