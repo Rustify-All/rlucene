@@ -3727,11 +3727,15 @@ where
                 }
                 // This call can take a long time -- 10s of seconds
                 // or more.  We do it without syncing on this:
-                let mut files_to_sync = HashSet::new();
                 let mut files_to_sync_list = Vec::new();
                 let sync_res: Result<()> = (|| {
-                    files_to_sync = commit_lock.pending_commit.as_ref().unwrap().files(false)?;
-                    files_to_sync_list = files_to_sync.iter().cloned().collect();
+                    files_to_sync_list = commit_lock
+                        .pending_commit
+                        .as_ref()
+                        .unwrap()
+                        .files(false)?
+                        .into_iter()
+                        .collect();
                     self.directory.sync(&files_to_sync_list)?;
                     Ok(())
                 })();
@@ -3750,7 +3754,7 @@ where
 
                 if self.info_stream.enabled("IW") {
                     self.info_stream
-                        .message("IW", &format!("done all syncs: {:?}", files_to_sync));
+                        .message("IW", &format!("done all syncs: {:?}", files_to_sync_list));
                 }
 
                 self.test_point("midStartCommitSuccess");
