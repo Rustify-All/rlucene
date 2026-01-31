@@ -284,6 +284,69 @@ where
         (**self).is_weight_cacheable()
     }
 }
+
+impl<LR, T> Weight<LR> for Box<T>
+where
+    LR: LeafReader,
+    T: Weight<LR>,
+{
+    type Matches = T::Matches;
+
+    fn matches(&self, context: &LeafReaderContext<LR>, doc: i32) -> Result<Option<Self::Matches>> {
+        (**self).matches(context, doc)
+    }
+
+    fn default_matches(
+        &self,
+        context: &LeafReaderContext<LR>,
+        doc: i32,
+    ) -> Result<Option<MatchWithNoTerms>> {
+        (**self).default_matches(context, doc)
+    }
+
+    fn explain(&self, context: &LeafReaderContext<LR>, doc: i32) -> Result<Explanation> {
+        (**self).explain(context, doc)
+    }
+
+    fn get_query(&self) -> Arc<Query> {
+        (**self).get_query()
+    }
+
+    fn scorer(
+        &self,
+        context: &LeafReaderContext<LR>,
+    ) -> Result<Option<<Self::ScorerSupplier as ScorerSupplier<LR>>::Scorer>> {
+        (**self).scorer(context)
+    }
+
+    type ScorerSupplier = T::ScorerSupplier;
+
+    fn scorer_supplier(
+        &self,
+        context: &LeafReaderContext<LR>,
+    ) -> Result<Option<Self::ScorerSupplier>> {
+        (**self).scorer_supplier(context)
+    }
+
+    fn bulk_scorer(
+        &self,
+        context: &LeafReaderContext<LR>,
+    ) -> Result<Option<<Self::ScorerSupplier as ScorerSupplier<LR>>::BulkScorer>> {
+        (**self).bulk_scorer(context)
+    }
+
+    fn count(&self, context: &LeafReaderContext<LR>) -> Result<i32> {
+        (**self).count(context)
+    }
+
+    fn default_count(&self, context: &LeafReaderContext<LR>) -> Result<i32> {
+        (**self).default_count(context)
+    }
+
+    fn is_weight_cacheable(&self) -> bool {
+        (**self).is_weight_cacheable()
+    }
+}
 pub type WeightScorerSupplier<W, LR> = <W as Weight<LR>>::ScorerSupplier;
 /// Just wraps a Scorer and performs top scoring using it.
 pub struct DefaultBulkScorer<S>

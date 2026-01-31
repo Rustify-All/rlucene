@@ -19,12 +19,12 @@ use crate::core::index::index_reader_context::{IRCLeafReader, IndexReaderContext
 use crate::core::index::leaf_reader::{LRTermState, LeafReader};
 use crate::core::index::term_states::TermStates;
 use crate::core::search::QueryCache;
-use crate::core::search::boolean_clause::{BooleanClause, Occur};
+use crate::core::search::boolean_clause::{BooleanClause, BooleanClauseQuery, Occur};
 use crate::core::search::boolean_weight::{
     BaseQueryWeightEnum, BooleanWeight, WeightedBooleanClause,
 };
 use crate::core::search::index_searcher::{IndexSearcher, get_max_clause_count};
-use crate::core::search::query::{Query, QueryBase};
+use crate::core::search::query::{BaseQuery, Query, QueryBase};
 use crate::core::search::query_visitor::QueryVisitor;
 use crate::core::search::score_mode::ScoreMode;
 use crate::core::util::core_helper::HasIdentity;
@@ -88,8 +88,8 @@ impl BooleanQuery {
     pub(crate) fn is_two_clause_pure_disjunction_with_terms(&self) -> bool {
         self.clauses.len() == 2
             && self.is_pure_disjunction()
-            && matches!(self.clauses[0].query, Query::Term(_))
-            && matches!(self.clauses[1].query, Query::Term(_))
+            && matches!(self.clauses[0].query, BooleanClauseQuery::Base(BaseQuery::Term(_)))
+            && matches!(self.clauses[1].query, BooleanClauseQuery::Base(BaseQuery::Term(_)))
     }
 }
 impl Hash for BooleanQuery {
@@ -130,14 +130,7 @@ impl QueryBase for BooleanQuery {
         for (i, clause) in self.clauses.iter().enumerate() {
             buffer.push_str(&clause.occur.to_string());
 
-            match clause.query {
-                Query::Boolean(ref v) => {
-                    buffer.push_str(&v.as_string(field));
-                },
-                _ => {
-                    buffer.push_str(&clause.query.as_string(field));
-                },
-            }
+            buffer.push_str(&clause.query.as_string(field));
 
             if i != self.clauses.len() - 1 {
                 buffer.push(' ');
@@ -295,8 +288,11 @@ impl Builder {
     ///
     /// Returns [`LuceneError::TooManyClauses`] if the new number of clauses exceeds
     /// the maximum clause count.
-    pub fn add_query(&mut self, query: Query, occur: Occur) -> Result<&mut Self> {
-        self.add_clause(BooleanClause::new(query, occur))
+    pub fn add_query<Q>(&mut self, query: Q, occur: Occur) -> Result<&mut Self>
+    where
+        Q: Into<BooleanClauseQuery>,
+    {
+        self.add_clause(BooleanClause::new(query.into(), occur))
     }
 
     /// Create a new [`BooleanQuery`] based on the parameters that have been set on this builder.

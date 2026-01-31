@@ -14,12 +14,40 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::core::search::query::Query;
+use crate::core::search::constant_score_query::ConstantScoreQuery;
+use crate::core::search::query::{BaseQuery, QueryBase};
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+pub enum BooleanClauseQuery {
+    Base(BaseQuery),
+    ConstantScore(ConstantScoreQuery),
+}
+
+impl BooleanClauseQuery {
+    pub fn as_string(&self, field: &str) -> String {
+        match self {
+            BooleanClauseQuery::Base(query) => query.as_string(field),
+            BooleanClauseQuery::ConstantScore(query) => query.as_string(field),
+        }
+    }
+}
+
+impl From<BaseQuery> for BooleanClauseQuery {
+    fn from(value: BaseQuery) -> Self {
+        BooleanClauseQuery::Base(value)
+    }
+}
+
+impl From<ConstantScoreQuery> for BooleanClauseQuery {
+    fn from(value: ConstantScoreQuery) -> Self {
+        BooleanClauseQuery::ConstantScore(value)
+    }
+}
 
 /// A clause in a BooleanQuery.
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct BooleanClause {
-    pub query: Query,
+    pub query: BooleanClauseQuery,
     pub occur: Occur,
 }
 
@@ -28,7 +56,7 @@ impl BooleanClause {
     ///
     /// In Java this validated non-null arguments. In Rust, `Q` is a value type,
     /// so we just take ownership.
-    pub fn new(query: Query, occur: Occur) -> Self {
+    pub fn new(query: BooleanClauseQuery, occur: Occur) -> Self {
         Self { query, occur }
     }
 
