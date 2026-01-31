@@ -27,9 +27,9 @@ use crate::core::index::index_reader_context::{IRCLeafReader, IndexReaderContext
 use crate::core::index::leaf_reader::{LRTermState, LeafReader};
 use crate::core::index::term_states::TermStates;
 use crate::core::search::QueryCache;
-use crate::core::search::constant_score_query::ConstantScoreQuery;
 use crate::core::search::index_searcher::IndexSearcher;
-use crate::core::search::query::{Query, QueryBase, QueryWeight};
+use crate::core::search::query::{BaseQuery, Query, QueryBase};
+use crate::core::search::constant_score_query::BaseQueryWeight;
 use crate::core::search::query_visitor::QueryVisitor;
 use crate::core::search::score_mode::ScoreMode;
 use crate::core::util::core_helper::HasIdentity;
@@ -39,13 +39,13 @@ use std::hash::{Hash, Hasher};
 #[derive(Debug, Clone)]
 pub struct BoostQuery {
     id: Identity,
-    pub(crate) query: Box<Query>,
+    pub(crate) query: Box<BaseQuery>,
     boost: f32,
 }
 impl BoostQuery {
     pub fn new<T>(query: T, boost: f32) -> Result<Self>
     where
-        T: Into<Box<Query>>,
+        T: Into<Box<BaseQuery>>,
     {
         let query = query.into();
         if !boost.is_finite() || boost < 0.0 {
@@ -60,7 +60,7 @@ impl BoostQuery {
             boost,
         })
     }
-    pub fn get_query(&self) -> &Query {
+    pub fn get_query(&self) -> &BaseQuery {
         &self.query
     }
     pub fn get_boost(&self) -> f32 {
@@ -87,7 +87,7 @@ impl QueryBase for BoostQuery {
     }
 
     type Weight<LR, QC>
-        = QueryWeight<LR, QC>
+        = BaseQueryWeight<LR>
     where
         LR: LeafReader,
         QC: QueryCache;
@@ -126,23 +126,25 @@ impl QueryBase for BoostQuery {
             return Ok(rewritten);
         }
 
-        if let Query::Boost(in_boost) = rewritten {
-            return Ok(BoostQuery::new(in_boost.query, self.boost * in_boost.boost)?.into());
+        let rewritten_base = match rewritten {
+            Query::Boost(in_boost) => {
+                return Ok(BoostQuery::new(in_boost.query, self.boost * in_boost.boost)?.into());
+            },
+            Query::MatchNoDoc(_) => {
+                return Ok(rewritten);
+            },
+            Query::ConstantScore(cs) => cs.into_inner(),
+            other => BaseQuery::try_from(other)?,
+        };
+
+        if self.boost == 0.0 {
+            return Ok(BoostQuery::new(Box::new(rewritten_base), 0.0)?.into());
         }
 
-        if let Query::MatchNoDoc(_) = rewritten {
-            return Ok(rewritten);
+        if &query_id != rewritten_base.identity() {
+            return Ok(BoostQuery::new(Box::new(rewritten_base), self.boost)?.into());
         }
-
-        if self.boost == 0.0 && !matches!(rewritten, Query::ConstantScore(_)) {
-            let cs = ConstantScoreQuery::new(rewritten).into();
-            return Ok(BoostQuery::new(Box::new(cs), 0.0)?.into());
-        }
-
-        if &query_id != rewritten.identity() {
-            return Ok(BoostQuery::new(Box::new(rewritten), self.boost)?.into());
-        }
-        self.query = Box::new(rewritten);
+        self.query = Box::new(rewritten_base);
         Ok(self.into())
     }
 

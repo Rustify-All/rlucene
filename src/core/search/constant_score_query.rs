@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::core::index::index_reader_context::{IRCLeafReader, IRCTermState, IndexReaderContext};
+use crate::core::index::index_reader_context::{IRCLeafReader, IndexReaderContext};
 use crate::core::index::leaf_reader_context::LeafReaderContext;
 use crate::core::index::term_states::TermStates;
 use crate::core::search::QueryCache;
@@ -53,7 +53,7 @@ use crate::core::search::match_all_docs_query::{MatchAllSs, MatchAllWeight};
 use crate::core::search::match_no_docs_query::{MatchNoDocsSs, MatchNoDocsWeight};
 use crate::core::search::matches_utils::MatchWithNoTerms;
 use crate::core::search::point_range_query::{PointRangeSs, PointRangeWeight};
-use crate::core::search::query::{Query, QueryBase};
+use crate::core::search::query::{BaseQuery, Query, QueryBase};
 use crate::core::search::query_visitor::QueryVisitor;
 use crate::core::search::scorable::{ChildScorable, Scorable};
 use crate::core::search::score_mode::ScoreMode;
@@ -64,7 +64,7 @@ use crate::core::search::term_query::{TermSs, TermWeight};
 use crate::core::search::weight::{DefaultBulkScorer, Weight, WeightEnum2};
 use crate::core::util::bits::Bits;
 use crate::core::util::core_helper::HasIdentity;
-use crate::core::util::error::lucene_error::{LuceneError, Result};
+use crate::core::util::error::lucene_error::Result;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
@@ -74,13 +74,13 @@ use std::sync::Arc;
 #[derive(Debug, Clone)]
 pub struct ConstantScoreQuery {
     id: Identity,
-    query: Box<Query>,
+    query: Box<BaseQuery>,
 }
 impl ConstantScoreQuery {
     /// Strips off scores from the passed in Query. The hits will get a constant score of 1.
     pub fn new<T>(query: T) -> Self
     where
-        T: Into<Box<Query>>,
+        T: Into<Box<BaseQuery>>,
     {
         let query = query.into();
         Self {
@@ -89,7 +89,7 @@ impl ConstantScoreQuery {
         }
     }
 
-    pub(crate) fn into_inner(self) -> Query {
+    pub(crate) fn into_inner(self) -> BaseQuery {
         *self.query
     }
 }
@@ -143,7 +143,7 @@ impl QueryBase for ConstantScoreQuery {
             ScoreMode::TopDocs
         };
         let query = *self.query;
-        let inner_weight = query.create_weight_no_constant_score(
+        let inner_weight = query.create_weight(
             searcher,
             &inner_score_mode,
             1.0,
@@ -169,13 +169,11 @@ impl QueryBase for ConstantScoreQuery {
 
         let rewritten = match rewritten {
             Query::Boost(b) => *b.query,
-            Query::ConstantScore(cs) => *cs.query,
-            // TODO IMPORTANT
-            // Query::Boolean(bq) => bq.rewrite_no_scoring()?,
-            q => q,
+            Query::ConstantScore(cs) => cs.into_inner(),
+            q => BaseQuery::try_from(q)?,
         };
 
-        if let Query::MatchNoDoc(v) = rewritten {
+        if let BaseQuery::MatchNoDoc(v) = rewritten {
             return Ok(v.into());
         }
 
@@ -183,12 +181,6 @@ impl QueryBase for ConstantScoreQuery {
             return Ok(ConstantScoreQuery::new(rewritten).into());
         }
 
-        if matches!(rewritten, Query::ConstantScore(_)) {
-            return Ok(rewritten);
-        }
-        if let Query::Boost(v) = rewritten {
-            return Ok(ConstantScoreQuery::new(v.query).into());
-        }
         self.query = Box::new(rewritten);
         Ok(self.into())
     }
@@ -871,81 +863,12 @@ where
         }
     }
 }
-impl Query {
-    pub(crate) fn create_weight_no_constant_score<IRC, QC>(
-        self,
-        searcher: &IndexSearcher<IRC, QC>,
-        score_mode: &ScoreMode,
-        boost: f32,
-        per_reader_term_state: Option<TermStates<IRCTermState<IRC>>>,
-    ) -> Result<BaseQueryWeight<IRCLeafReader<IRC>>>
-    where
-        IRC: IndexReaderContext,
-        QC: QueryCache,
-    {
-        match self {
-            Query::Term(t) => Ok(BaseQueryWeight::Term(t.create_weight(
-                searcher,
-                score_mode,
-                boost,
-                per_reader_term_state,
-            )?)),
-            Query::MatchAll(m) => Ok(BaseQueryWeight::MatchAll(m.create_weight(
-                searcher,
-                score_mode,
-                boost,
-                per_reader_term_state,
-            )?)),
-            Query::PointRange(p) => Ok(BaseQueryWeight::PointRange(p.create_weight(
-                searcher,
-                score_mode,
-                boost,
-                per_reader_term_state,
-            )?)),
-            Query::MatchNoDoc(p) => Ok(BaseQueryWeight::MatchNoDocs(p.create_weight(
-                searcher,
-                score_mode,
-                boost,
-                per_reader_term_state,
-            )?)),
-            Query::SortedNumericDocValuesSet(p) => Ok(BaseQueryWeight::SortedNumericDocValuesSet(
-                p.create_weight(searcher, score_mode, boost, per_reader_term_state)?,
-            )),
-            Query::SortedNumericDocValuesRange(p) => {
-                Ok(BaseQueryWeight::SortedNumericDocValuesRange(
-                    p.create_weight(searcher, score_mode, boost, per_reader_term_state)?,
-                ))
-            },
-            Query::SortedSetDocValuesRange(p) => Ok(BaseQueryWeight::SortedSetDocValuesRange(
-                p.create_weight(searcher, score_mode, boost, per_reader_term_state)?,
-            )),
-            Query::IndexSortSortedNumericDocValuesRange(p) => {
-                Ok(BaseQueryWeight::IndexSortSortedNumericDocValuesRange(
-                    p.create_weight(searcher, score_mode, boost, per_reader_term_state)?,
-                ))
-            },
-            Query::FieldExists(p) => Ok(BaseQueryWeight::FieldExists(p.create_weight(
-                searcher,
-                score_mode,
-                boost,
-                per_reader_term_state,
-            )?)),
-            Query::ConstantScore(p) => p.into_inner().create_weight_no_constant_score(
-                searcher,
-                score_mode,
-                boost,
-                per_reader_term_state,
-            ),
-            _ => Err(LuceneError::unsupported_operation(format!("{:?}", self))),
-        }
-    }
-}
 #[cfg(test)]
 mod tests {
     use crate::core::index::multi_reader::MultiReader;
     use crate::core::search::constant_score_query::ConstantScoreQuery;
     use crate::core::search::match_no_docs_query::MatchNoDocsQuery;
-    use crate::core::search::query::Query;
+    use crate::core::search::query::{BaseQuery, Query};
     use crate::core::util::error::lucene_error::Result;
     use crate::test::util::lucene_test_case::lucene_test_case_util::new_searcher_with_reader;
 
@@ -973,7 +896,7 @@ mod tests {
     #[test]
     fn test_rewrite_bubbles_up_match_no_docs_query() -> Result<()> {
         let searcher = new_searcher_with_reader(MultiReader::empty()?)?;
-        let query: Query = MatchNoDocsQuery::new().into();
+        let query: BaseQuery = MatchNoDocsQuery::new().into();
         let query = ConstantScoreQuery::new(query);
         let rewritten = searcher.rewrite(query.into())?;
         assert_eq!(rewritten, Query::MatchNoDoc(MatchNoDocsQuery::new()));
