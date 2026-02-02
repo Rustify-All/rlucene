@@ -17,13 +17,13 @@
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::leaf_reader_context::LeafReaderContext;
 use crate::core::search::bulk_scorer::{
-    BulkScorer, BulkScorerEnum2, BulkScorerEnum3, BulkScorerEnum4, BulkScorerEnum5,
-    BulkScorerEnum6, BulkScorerEnum7, BulkScorerEnum8, BulkScorerEnum9, BulkScorerEnum10,
-    BulkScorerEnum11, BulkScorerEnum12,
+    BulkScorer, BulkScorerEnum, BulkScorerEnum2, BulkScorerEnum3, BulkScorerEnum4,
+    BulkScorerEnum5, BulkScorerEnum6, BulkScorerEnum7, BulkScorerEnum8, BulkScorerEnum9,
+    BulkScorerEnum10, BulkScorerEnum11, BulkScorerEnum12,
 };
 use crate::core::search::scorer::{
-    Scorer, ScorerEnum2, ScorerEnum3, ScorerEnum4, ScorerEnum5, ScorerEnum6, ScorerEnum7,
-    ScorerEnum8, ScorerEnum9, ScorerEnum10, ScorerEnum11, ScorerEnum12,
+    Scorer, ScorerEnum, ScorerEnum2, ScorerEnum3, ScorerEnum4, ScorerEnum5, ScorerEnum6,
+    ScorerEnum7, ScorerEnum8, ScorerEnum9, ScorerEnum10, ScorerEnum11, ScorerEnum12,
 };
 use crate::core::search::weight::DefaultBulkScorer;
 use crate::core::util::error::lucene_error::Result;
@@ -216,3 +216,140 @@ either_scorer_supplier!(
     => { bulk: BulkScorerEnum12, scorer: ScorerEnum12 }
     { A: A, B: B ,C:C, D:D,E:E,F:F,G:G,H:H,I:I,J:J,K:K,L:L }
 );
+
+pub enum ScorerSupplierEnum<LR>
+where
+    LR: LeafReader,
+{
+    Term(crate::core::search::term_query::TermSs<LR>),
+    MatchAll(crate::core::search::match_all_docs_query::MatchAllSs),
+    MatchNoDocs(crate::core::search::match_no_docs_query::MatchNoDocsSs),
+    Dummy(crate::core::search::dummy::dummy_scorer_supplier::DummyScorerSupplier),
+    FieldExists(crate::core::search::field_exists_query::FieldExistsESs<LR>),
+    PointRange(crate::core::search::point_range_query::PointRangeSs<LR>),
+    SortedNumericDocValuesSet(
+        crate::core::document::sorted_numeric_doc_values_set_query::SNDVSQSs<LR>,
+    ),
+    SortedNumericDocValuesRange(
+        crate::core::document::sorted_numeric_doc_values_range_query::SNDVRQSs<LR>,
+    ),
+    SortedSetDocValuesRange(
+        crate::core::document::sorted_set_doc_values_range_query::SSDVRQSs<LR>,
+    ),
+    IndexSortSortedNumericDocValuesRange(
+        crate::core::search::index_sort_sorted_numeric_doc_values_range_query::ISSNDVRQSs<LR>,
+    ),
+    ConstantScore(crate::core::search::constant_score_query::ConstantScoreScorerSupplier<LR>),
+    Cached(crate::core::search::lru_query_cache::CachingWrapperWeightSupplier<LR>),
+}
+
+impl<LR> ScorerSupplier<LR> for ScorerSupplierEnum<LR>
+where
+    LR: LeafReader,
+{
+    type Scorer = ScorerEnum<LR>;
+    type BulkScorer = BulkScorerEnum<LR>;
+
+    fn get(&mut self, lead_cost: i64, context: &LeafReaderContext<LR>) -> Result<Self::Scorer> {
+        match self {
+            Self::Term(inner) => inner.get(lead_cost, context).map(ScorerEnum::Term),
+            Self::MatchAll(inner) => inner.get(lead_cost, context).map(ScorerEnum::MatchAll),
+            Self::MatchNoDocs(inner) => inner.get(lead_cost, context).map(ScorerEnum::MatchNoDocs),
+            Self::Dummy(inner) => inner.get(lead_cost, context).map(ScorerEnum::Dummy),
+            Self::FieldExists(inner) => inner.get(lead_cost, context).map(ScorerEnum::FieldExists),
+            Self::PointRange(inner) => inner.get(lead_cost, context).map(ScorerEnum::PointRange),
+            Self::SortedNumericDocValuesSet(inner) => inner
+                .get(lead_cost, context)
+                .map(ScorerEnum::SortedNumericDocValuesSet),
+            Self::SortedNumericDocValuesRange(inner) => inner
+                .get(lead_cost, context)
+                .map(ScorerEnum::SortedNumericDocValuesRange),
+            Self::SortedSetDocValuesRange(inner) => inner
+                .get(lead_cost, context)
+                .map(ScorerEnum::SortedSetDocValuesRange),
+            Self::IndexSortSortedNumericDocValuesRange(inner) => inner
+                .get(lead_cost, context)
+                .map(ScorerEnum::IndexSortSortedNumericDocValuesRange),
+            Self::ConstantScore(inner) => inner.get(lead_cost, context).map(ScorerEnum::ConstantScore),
+            Self::Cached(inner) => inner.get(lead_cost, context).map(ScorerEnum::Cached),
+        }
+    }
+
+    fn bulk_scorer(
+        &mut self,
+        context: &LeafReaderContext<LR>,
+    ) -> Result<Option<Self::BulkScorer>> {
+        match self {
+            Self::Term(inner) => inner
+                .bulk_scorer(context)
+                .map(|opt| opt.map(BulkScorerEnum::Term)),
+            Self::MatchAll(inner) => inner
+                .bulk_scorer(context)
+                .map(|opt| opt.map(BulkScorerEnum::MatchAll)),
+            Self::MatchNoDocs(inner) => inner
+                .bulk_scorer(context)
+                .map(|opt| opt.map(BulkScorerEnum::MatchNoDocs)),
+            Self::Dummy(inner) => inner
+                .bulk_scorer(context)
+                .map(|opt| opt.map(BulkScorerEnum::Dummy)),
+            Self::FieldExists(inner) => inner
+                .bulk_scorer(context)
+                .map(|opt| opt.map(BulkScorerEnum::FieldExists)),
+            Self::PointRange(inner) => inner
+                .bulk_scorer(context)
+                .map(|opt| opt.map(BulkScorerEnum::PointRange)),
+            Self::SortedNumericDocValuesSet(inner) => inner
+                .bulk_scorer(context)
+                .map(|opt| opt.map(BulkScorerEnum::SortedNumericDocValuesSet)),
+            Self::SortedNumericDocValuesRange(inner) => inner
+                .bulk_scorer(context)
+                .map(|opt| opt.map(BulkScorerEnum::SortedNumericDocValuesRange)),
+            Self::SortedSetDocValuesRange(inner) => inner
+                .bulk_scorer(context)
+                .map(|opt| opt.map(BulkScorerEnum::SortedSetDocValuesRange)),
+            Self::IndexSortSortedNumericDocValuesRange(inner) => inner
+                .bulk_scorer(context)
+                .map(|opt| opt.map(BulkScorerEnum::IndexSortSortedNumericDocValuesRange)),
+            Self::ConstantScore(inner) => inner
+                .bulk_scorer(context)
+                .map(|opt| opt.map(BulkScorerEnum::ConstantScore)),
+            Self::Cached(inner) => inner
+                .bulk_scorer(context)
+                .map(|opt| opt.map(BulkScorerEnum::Cached)),
+        }
+    }
+
+    fn cost(&mut self, context: &LeafReaderContext<LR>) -> Result<i64> {
+        match self {
+            Self::Term(inner) => inner.cost(context),
+            Self::MatchAll(inner) => inner.cost(context),
+            Self::MatchNoDocs(inner) => inner.cost(context),
+            Self::Dummy(inner) => inner.cost(context),
+            Self::FieldExists(inner) => inner.cost(context),
+            Self::PointRange(inner) => inner.cost(context),
+            Self::SortedNumericDocValuesSet(inner) => inner.cost(context),
+            Self::SortedNumericDocValuesRange(inner) => inner.cost(context),
+            Self::SortedSetDocValuesRange(inner) => inner.cost(context),
+            Self::IndexSortSortedNumericDocValuesRange(inner) => inner.cost(context),
+            Self::ConstantScore(inner) => inner.cost(context),
+            Self::Cached(inner) => inner.cost(context),
+        }
+    }
+
+    fn set_top_level_scoring_clause(&mut self) -> Result<()> {
+        match self {
+            Self::Term(inner) => inner.set_top_level_scoring_clause(),
+            Self::MatchAll(inner) => inner.set_top_level_scoring_clause(),
+            Self::MatchNoDocs(inner) => inner.set_top_level_scoring_clause(),
+            Self::Dummy(inner) => inner.set_top_level_scoring_clause(),
+            Self::FieldExists(inner) => inner.set_top_level_scoring_clause(),
+            Self::PointRange(inner) => inner.set_top_level_scoring_clause(),
+            Self::SortedNumericDocValuesSet(inner) => inner.set_top_level_scoring_clause(),
+            Self::SortedNumericDocValuesRange(inner) => inner.set_top_level_scoring_clause(),
+            Self::SortedSetDocValuesRange(inner) => inner.set_top_level_scoring_clause(),
+            Self::IndexSortSortedNumericDocValuesRange(inner) => inner.set_top_level_scoring_clause(),
+            Self::ConstantScore(inner) => inner.set_top_level_scoring_clause(),
+            Self::Cached(inner) => inner.set_top_level_scoring_clause(),
+        }
+    }
+}

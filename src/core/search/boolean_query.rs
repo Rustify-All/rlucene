@@ -20,15 +20,12 @@ use crate::core::index::leaf_reader::{LRTermState, LeafReader};
 use crate::core::index::term_states::TermStates;
 use crate::core::search::QueryCache;
 use crate::core::search::boolean_clause::{BooleanClause, BooleanClauseQuery, Occur};
-use crate::core::search::boolean_weight::{
-    BaseQueryWeightEnum, BooleanWeight, WeightedBooleanClause,
-};
-use crate::core::search::index_searcher::{
-    IndexSearcher, IndexSearcherWeight, get_max_clause_count,
-};
+use crate::core::search::boolean_weight::{BooleanWeight, WeightedBooleanClause};
+use crate::core::search::index_searcher::{IndexSearcher, get_max_clause_count};
 use crate::core::search::query::{BaseQuery, Query, QueryBase};
 use crate::core::search::query_visitor::QueryVisitor;
 use crate::core::search::score_mode::ScoreMode;
+use crate::core::search::weight::BoxWeight;
 use crate::core::util::core_helper::HasIdentity;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use std::collections::HashMap;
@@ -157,8 +154,7 @@ impl QueryBase for BooleanQuery {
         buffer
     }
 
-    type Weight<LR, QC>
-        = BooleanWeight<IndexSearcherWeight<BaseQueryWeightEnum<LR, QC>, LR, QC>, LR>
+    type Weight<LR, QC> = BoxWeight<LR>
     where
         LR: LeafReader,
         QC: QueryCache;
@@ -194,12 +190,12 @@ impl QueryBase for BooleanQuery {
 
             weighted_clauses.push(WeightedBooleanClause::new(c, weight));
         }
-        Ok(BooleanWeight {
+        Ok(Box::new(BooleanWeight {
             similarity,
             weighted_clauses,
             query: self,
             score_mode: *score_mode,
-        })
+        }))
     }
 
     fn rewrite<IRC, QC>(self, _searcher: &IndexSearcher<IRC, QC>) -> Result<Query>

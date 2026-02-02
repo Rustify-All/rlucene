@@ -30,6 +30,7 @@ use crate::core::search::two_phase_iterator::{
     TwoPhaseIteratorEnum5, TwoPhaseIteratorEnum6, TwoPhaseIteratorEnum7, TwoPhaseIteratorEnum8,
     TwoPhaseIteratorEnum9, TwoPhaseIteratorEnum10, TwoPhaseIteratorEnum11, TwoPhaseIteratorEnum12,
 };
+use crate::core::index::leaf_reader::LeafReader;
 use crate::core::util::error::lucene_error::Result;
 
 /// Expert: Common scoring functionality for different types of queries.
@@ -409,3 +410,525 @@ either_scorer!(
         A: A, B: B,C: C, D: D,E: E,F: F,G: G,H: H,I: I,J: J,K: K,L: L,
     }
 );
+
+pub enum ScorerEnum<LR>
+where
+    LR: LeafReader,
+{
+    Term(crate::core::search::term_query::TermSsScorer<LR>),
+    MatchAll(crate::core::search::match_all_docs_query::MatchAllSsScorer),
+    MatchNoDocs(crate::core::search::match_no_docs_query::MatchNoDocsSsScorer<LR>),
+    Dummy(crate::core::search::dummy::dummy_scorer::DummyScorer),
+    FieldExists(crate::core::search::field_exists_query::FieldExistsSsScorer<LR>),
+    PointRange(crate::core::search::point_range_query::PointRangeSsScorer<LR>),
+    SortedNumericDocValuesSet(
+        crate::core::document::sorted_numeric_doc_values_set_query::SNDVSQSsScorer<LR>,
+    ),
+    SortedNumericDocValuesRange(
+        crate::core::document::sorted_numeric_doc_values_range_query::SNDVRQSsScorer<LR>,
+    ),
+    SortedSetDocValuesRange(
+        crate::core::document::sorted_set_doc_values_range_query::SSDVRQSsScorer<LR>,
+    ),
+    IndexSortSortedNumericDocValuesRange(
+        crate::core::search::index_sort_sorted_numeric_doc_values_range_query::ISSNDVRQSsScorer<LR>,
+    ),
+    ConstantScore(crate::core::search::constant_score_query::ConstantScoreScorerEnum<LR>),
+    Cached(crate::core::search::lru_query_cache::CachingWrapperWeightScorer<LR>),
+}
+
+impl<LR> Scorable for ScorerEnum<LR>
+where
+    LR: LeafReader,
+{
+    fn score(&mut self) -> Result<f32> {
+        match self {
+            Self::Term(inner) => inner.score(),
+            Self::MatchAll(inner) => inner.score(),
+            Self::MatchNoDocs(inner) => inner.score(),
+            Self::Dummy(inner) => inner.score(),
+            Self::FieldExists(inner) => inner.score(),
+            Self::PointRange(inner) => inner.score(),
+            Self::SortedNumericDocValuesSet(inner) => inner.score(),
+            Self::SortedNumericDocValuesRange(inner) => inner.score(),
+            Self::SortedSetDocValuesRange(inner) => inner.score(),
+            Self::IndexSortSortedNumericDocValuesRange(inner) => inner.score(),
+            Self::ConstantScore(inner) => inner.score(),
+            Self::Cached(inner) => inner.score(),
+        }
+    }
+
+    fn smoothing_score(&mut self, doc_id: i32) -> Result<f32> {
+        match self {
+            Self::Term(inner) => inner.smoothing_score(doc_id),
+            Self::MatchAll(inner) => inner.smoothing_score(doc_id),
+            Self::MatchNoDocs(inner) => inner.smoothing_score(doc_id),
+            Self::Dummy(inner) => inner.smoothing_score(doc_id),
+            Self::FieldExists(inner) => inner.smoothing_score(doc_id),
+            Self::PointRange(inner) => inner.smoothing_score(doc_id),
+            Self::SortedNumericDocValuesSet(inner) => inner.smoothing_score(doc_id),
+            Self::SortedNumericDocValuesRange(inner) => inner.smoothing_score(doc_id),
+            Self::SortedSetDocValuesRange(inner) => inner.smoothing_score(doc_id),
+            Self::IndexSortSortedNumericDocValuesRange(inner) => inner.smoothing_score(doc_id),
+            Self::ConstantScore(inner) => inner.smoothing_score(doc_id),
+            Self::Cached(inner) => inner.smoothing_score(doc_id),
+        }
+    }
+
+    fn set_min_competitive_score(&mut self, min_score: f32) -> Result<()> {
+        match self {
+            Self::Term(inner) => inner.set_min_competitive_score(min_score),
+            Self::MatchAll(inner) => inner.set_min_competitive_score(min_score),
+            Self::MatchNoDocs(inner) => inner.set_min_competitive_score(min_score),
+            Self::Dummy(inner) => inner.set_min_competitive_score(min_score),
+            Self::FieldExists(inner) => inner.set_min_competitive_score(min_score),
+            Self::PointRange(inner) => inner.set_min_competitive_score(min_score),
+            Self::SortedNumericDocValuesSet(inner) => inner.set_min_competitive_score(min_score),
+            Self::SortedNumericDocValuesRange(inner) => inner.set_min_competitive_score(min_score),
+            Self::SortedSetDocValuesRange(inner) => inner.set_min_competitive_score(min_score),
+            Self::IndexSortSortedNumericDocValuesRange(inner) => {
+                inner.set_min_competitive_score(min_score)
+            },
+            Self::ConstantScore(inner) => inner.set_min_competitive_score(min_score),
+            Self::Cached(inner) => inner.set_min_competitive_score(min_score),
+        }
+    }
+
+    type Scorable = ScorableEnum12<
+        <crate::core::search::term_query::TermSsScorer<LR> as Scorable>::Scorable,
+        <crate::core::search::match_all_docs_query::MatchAllSsScorer as Scorable>::Scorable,
+        <crate::core::search::match_no_docs_query::MatchNoDocsSsScorer<LR> as Scorable>::Scorable,
+        <crate::core::search::dummy::dummy_scorer::DummyScorer as Scorable>::Scorable,
+        <crate::core::search::field_exists_query::FieldExistsSsScorer<LR> as Scorable>::Scorable,
+        <crate::core::search::point_range_query::PointRangeSsScorer<LR> as Scorable>::Scorable,
+        <crate::core::document::sorted_numeric_doc_values_set_query::SNDVSQSsScorer<LR> as Scorable>::Scorable,
+        <crate::core::document::sorted_numeric_doc_values_range_query::SNDVRQSsScorer<LR> as Scorable>::Scorable,
+        <crate::core::document::sorted_set_doc_values_range_query::SSDVRQSsScorer<LR> as Scorable>::Scorable,
+        <crate::core::search::index_sort_sorted_numeric_doc_values_range_query::ISSNDVRQSsScorer<LR> as Scorable>::Scorable,
+        <crate::core::search::constant_score_query::ConstantScoreScorerEnum<LR> as Scorable>::Scorable,
+        <crate::core::search::lru_query_cache::CachingWrapperWeightScorer<LR> as Scorable>::Scorable,
+    >;
+
+    fn get_children(&self) -> Result<Vec<ChildScorable<Self::Scorable>>> {
+        match self {
+            Self::Term(inner) => inner.get_children().map(|children| {
+                children
+                    .into_iter()
+                    .map(|child| ChildScorable {
+                        child: Self::Scorable::A(child.child),
+                        relationship: child.relationship,
+                    })
+                    .collect()
+            }),
+            Self::MatchAll(inner) => inner.get_children().map(|children| {
+                children
+                    .into_iter()
+                    .map(|child| ChildScorable {
+                        child: Self::Scorable::B(child.child),
+                        relationship: child.relationship,
+                    })
+                    .collect()
+            }),
+            Self::MatchNoDocs(inner) => inner.get_children().map(|children| {
+                children
+                    .into_iter()
+                    .map(|child| ChildScorable {
+                        child: Self::Scorable::C(child.child),
+                        relationship: child.relationship,
+                    })
+                    .collect()
+            }),
+            Self::Dummy(inner) => inner.get_children().map(|children| {
+                children
+                    .into_iter()
+                    .map(|child| ChildScorable {
+                        child: Self::Scorable::D(child.child),
+                        relationship: child.relationship,
+                    })
+                    .collect()
+            }),
+            Self::FieldExists(inner) => inner.get_children().map(|children| {
+                children
+                    .into_iter()
+                    .map(|child| ChildScorable {
+                        child: Self::Scorable::E(child.child),
+                        relationship: child.relationship,
+                    })
+                    .collect()
+            }),
+            Self::PointRange(inner) => inner.get_children().map(|children| {
+                children
+                    .into_iter()
+                    .map(|child| ChildScorable {
+                        child: Self::Scorable::F(child.child),
+                        relationship: child.relationship,
+                    })
+                    .collect()
+            }),
+            Self::SortedNumericDocValuesSet(inner) => inner.get_children().map(|children| {
+                children
+                    .into_iter()
+                    .map(|child| ChildScorable {
+                        child: Self::Scorable::G(child.child),
+                        relationship: child.relationship,
+                    })
+                    .collect()
+            }),
+            Self::SortedNumericDocValuesRange(inner) => inner.get_children().map(|children| {
+                children
+                    .into_iter()
+                    .map(|child| ChildScorable {
+                        child: Self::Scorable::H(child.child),
+                        relationship: child.relationship,
+                    })
+                    .collect()
+            }),
+            Self::SortedSetDocValuesRange(inner) => inner.get_children().map(|children| {
+                children
+                    .into_iter()
+                    .map(|child| ChildScorable {
+                        child: Self::Scorable::I(child.child),
+                        relationship: child.relationship,
+                    })
+                    .collect()
+            }),
+            Self::IndexSortSortedNumericDocValuesRange(inner) => inner.get_children().map(|children| {
+                children
+                    .into_iter()
+                    .map(|child| ChildScorable {
+                        child: Self::Scorable::J(child.child),
+                        relationship: child.relationship,
+                    })
+                    .collect()
+            }),
+            Self::ConstantScore(inner) => inner.get_children().map(|children| {
+                children
+                    .into_iter()
+                    .map(|child| ChildScorable {
+                        child: Self::Scorable::K(child.child),
+                        relationship: child.relationship,
+                    })
+                    .collect()
+            }),
+            Self::Cached(inner) => inner.get_children().map(|children| {
+                children
+                    .into_iter()
+                    .map(|child| ChildScorable {
+                        child: Self::Scorable::L(child.child),
+                        relationship: child.relationship,
+                    })
+                    .collect()
+            }),
+        }
+    }
+
+    fn cost(&mut self) -> Result<i64> {
+        match self {
+            Self::Term(inner) => inner.cost(),
+            Self::MatchAll(inner) => inner.cost(),
+            Self::MatchNoDocs(inner) => inner.cost(),
+            Self::Dummy(inner) => inner.cost(),
+            Self::FieldExists(inner) => inner.cost(),
+            Self::PointRange(inner) => inner.cost(),
+            Self::SortedNumericDocValuesSet(inner) => inner.cost(),
+            Self::SortedNumericDocValuesRange(inner) => inner.cost(),
+            Self::SortedSetDocValuesRange(inner) => inner.cost(),
+            Self::IndexSortSortedNumericDocValuesRange(inner) => inner.cost(),
+            Self::ConstantScore(inner) => inner.cost(),
+            Self::Cached(inner) => inner.cost(),
+        }
+    }
+}
+
+impl<LR> Scorer for ScorerEnum<LR>
+where
+    LR: LeafReader,
+{
+    type DocIdSetIterator = DocIdSetIteratorEnum12<
+        <crate::core::search::term_query::TermSsScorer<LR> as Scorer>::DocIdSetIterator,
+        <crate::core::search::match_all_docs_query::MatchAllSsScorer as Scorer>::DocIdSetIterator,
+        <crate::core::search::match_no_docs_query::MatchNoDocsSsScorer<LR> as Scorer>::DocIdSetIterator,
+        <crate::core::search::dummy::dummy_scorer::DummyScorer as Scorer>::DocIdSetIterator,
+        <crate::core::search::field_exists_query::FieldExistsSsScorer<LR> as Scorer>::DocIdSetIterator,
+        <crate::core::search::point_range_query::PointRangeSsScorer<LR> as Scorer>::DocIdSetIterator,
+        <crate::core::document::sorted_numeric_doc_values_set_query::SNDVSQSsScorer<LR> as Scorer>::DocIdSetIterator,
+        <crate::core::document::sorted_numeric_doc_values_range_query::SNDVRQSsScorer<LR> as Scorer>::DocIdSetIterator,
+        <crate::core::document::sorted_set_doc_values_range_query::SSDVRQSsScorer<LR> as Scorer>::DocIdSetIterator,
+        <crate::core::search::index_sort_sorted_numeric_doc_values_range_query::ISSNDVRQSsScorer<LR> as Scorer>::DocIdSetIterator,
+        <crate::core::search::constant_score_query::ConstantScoreScorerEnum<LR> as Scorer>::DocIdSetIterator,
+        <crate::core::search::lru_query_cache::CachingWrapperWeightScorer<LR> as Scorer>::DocIdSetIterator,
+    >;
+    type DocIdSetIteratorRef<'a> = DocIdSetIteratorEnum12<
+        <crate::core::search::term_query::TermSsScorer<LR> as Scorer>::DocIdSetIteratorRef<'a>,
+        <crate::core::search::match_all_docs_query::MatchAllSsScorer as Scorer>::DocIdSetIteratorRef<'a>,
+        <crate::core::search::match_no_docs_query::MatchNoDocsSsScorer<LR> as Scorer>::DocIdSetIteratorRef<'a>,
+        <crate::core::search::dummy::dummy_scorer::DummyScorer as Scorer>::DocIdSetIteratorRef<'a>,
+        <crate::core::search::field_exists_query::FieldExistsSsScorer<LR> as Scorer>::DocIdSetIteratorRef<'a>,
+        <crate::core::search::point_range_query::PointRangeSsScorer<LR> as Scorer>::DocIdSetIteratorRef<'a>,
+        <crate::core::document::sorted_numeric_doc_values_set_query::SNDVSQSsScorer<LR> as Scorer>::DocIdSetIteratorRef<'a>,
+        <crate::core::document::sorted_numeric_doc_values_range_query::SNDVRQSsScorer<LR> as Scorer>::DocIdSetIteratorRef<'a>,
+        <crate::core::document::sorted_set_doc_values_range_query::SSDVRQSsScorer<LR> as Scorer>::DocIdSetIteratorRef<'a>,
+        <crate::core::search::index_sort_sorted_numeric_doc_values_range_query::ISSNDVRQSsScorer<LR> as Scorer>::DocIdSetIteratorRef<'a>,
+        <crate::core::search::constant_score_query::ConstantScoreScorerEnum<LR> as Scorer>::DocIdSetIteratorRef<'a>,
+        <crate::core::search::lru_query_cache::CachingWrapperWeightScorer<LR> as Scorer>::DocIdSetIteratorRef<'a>,
+    >
+    where
+        Self: 'a;
+    type DocIdSetIteratorMut<'a> = DocIdSetIteratorEnum12<
+        <crate::core::search::term_query::TermSsScorer<LR> as Scorer>::DocIdSetIteratorMut<'a>,
+        <crate::core::search::match_all_docs_query::MatchAllSsScorer as Scorer>::DocIdSetIteratorMut<'a>,
+        <crate::core::search::match_no_docs_query::MatchNoDocsSsScorer<LR> as Scorer>::DocIdSetIteratorMut<'a>,
+        <crate::core::search::dummy::dummy_scorer::DummyScorer as Scorer>::DocIdSetIteratorMut<'a>,
+        <crate::core::search::field_exists_query::FieldExistsSsScorer<LR> as Scorer>::DocIdSetIteratorMut<'a>,
+        <crate::core::search::point_range_query::PointRangeSsScorer<LR> as Scorer>::DocIdSetIteratorMut<'a>,
+        <crate::core::document::sorted_numeric_doc_values_set_query::SNDVSQSsScorer<LR> as Scorer>::DocIdSetIteratorMut<'a>,
+        <crate::core::document::sorted_numeric_doc_values_range_query::SNDVRQSsScorer<LR> as Scorer>::DocIdSetIteratorMut<'a>,
+        <crate::core::document::sorted_set_doc_values_range_query::SSDVRQSsScorer<LR> as Scorer>::DocIdSetIteratorMut<'a>,
+        <crate::core::search::index_sort_sorted_numeric_doc_values_range_query::ISSNDVRQSsScorer<LR> as Scorer>::DocIdSetIteratorMut<'a>,
+        <crate::core::search::constant_score_query::ConstantScoreScorerEnum<LR> as Scorer>::DocIdSetIteratorMut<'a>,
+        <crate::core::search::lru_query_cache::CachingWrapperWeightScorer<LR> as Scorer>::DocIdSetIteratorMut<'a>,
+    >
+    where
+        Self: 'a;
+
+    type TwoPhaseIter = TwoPhaseIteratorEnum12<
+        <crate::core::search::term_query::TermSsScorer<LR> as Scorer>::TwoPhaseIter,
+        <crate::core::search::match_all_docs_query::MatchAllSsScorer as Scorer>::TwoPhaseIter,
+        <crate::core::search::match_no_docs_query::MatchNoDocsSsScorer<LR> as Scorer>::TwoPhaseIter,
+        <crate::core::search::dummy::dummy_scorer::DummyScorer as Scorer>::TwoPhaseIter,
+        <crate::core::search::field_exists_query::FieldExistsSsScorer<LR> as Scorer>::TwoPhaseIter,
+        <crate::core::search::point_range_query::PointRangeSsScorer<LR> as Scorer>::TwoPhaseIter,
+        <crate::core::document::sorted_numeric_doc_values_set_query::SNDVSQSsScorer<LR> as Scorer>::TwoPhaseIter,
+        <crate::core::document::sorted_numeric_doc_values_range_query::SNDVRQSsScorer<LR> as Scorer>::TwoPhaseIter,
+        <crate::core::document::sorted_set_doc_values_range_query::SSDVRQSsScorer<LR> as Scorer>::TwoPhaseIter,
+        <crate::core::search::index_sort_sorted_numeric_doc_values_range_query::ISSNDVRQSsScorer<LR> as Scorer>::TwoPhaseIter,
+        <crate::core::search::constant_score_query::ConstantScoreScorerEnum<LR> as Scorer>::TwoPhaseIter,
+        <crate::core::search::lru_query_cache::CachingWrapperWeightScorer<LR> as Scorer>::TwoPhaseIter,
+    >;
+    type TwoPhaseIterRef<'a> = TwoPhaseIteratorEnum12<
+        <crate::core::search::term_query::TermSsScorer<LR> as Scorer>::TwoPhaseIterRef<'a>,
+        <crate::core::search::match_all_docs_query::MatchAllSsScorer as Scorer>::TwoPhaseIterRef<'a>,
+        <crate::core::search::match_no_docs_query::MatchNoDocsSsScorer<LR> as Scorer>::TwoPhaseIterRef<'a>,
+        <crate::core::search::dummy::dummy_scorer::DummyScorer as Scorer>::TwoPhaseIterRef<'a>,
+        <crate::core::search::field_exists_query::FieldExistsSsScorer<LR> as Scorer>::TwoPhaseIterRef<'a>,
+        <crate::core::search::point_range_query::PointRangeSsScorer<LR> as Scorer>::TwoPhaseIterRef<'a>,
+        <crate::core::document::sorted_numeric_doc_values_set_query::SNDVSQSsScorer<LR> as Scorer>::TwoPhaseIterRef<'a>,
+        <crate::core::document::sorted_numeric_doc_values_range_query::SNDVRQSsScorer<LR> as Scorer>::TwoPhaseIterRef<'a>,
+        <crate::core::document::sorted_set_doc_values_range_query::SSDVRQSsScorer<LR> as Scorer>::TwoPhaseIterRef<'a>,
+        <crate::core::search::index_sort_sorted_numeric_doc_values_range_query::ISSNDVRQSsScorer<LR> as Scorer>::TwoPhaseIterRef<'a>,
+        <crate::core::search::constant_score_query::ConstantScoreScorerEnum<LR> as Scorer>::TwoPhaseIterRef<'a>,
+        <crate::core::search::lru_query_cache::CachingWrapperWeightScorer<LR> as Scorer>::TwoPhaseIterRef<'a>,
+    >
+    where
+        Self: 'a;
+    type TwoPhaseIterMut<'a> = TwoPhaseIteratorEnum12<
+        <crate::core::search::term_query::TermSsScorer<LR> as Scorer>::TwoPhaseIterMut<'a>,
+        <crate::core::search::match_all_docs_query::MatchAllSsScorer as Scorer>::TwoPhaseIterMut<'a>,
+        <crate::core::search::match_no_docs_query::MatchNoDocsSsScorer<LR> as Scorer>::TwoPhaseIterMut<'a>,
+        <crate::core::search::dummy::dummy_scorer::DummyScorer as Scorer>::TwoPhaseIterMut<'a>,
+        <crate::core::search::field_exists_query::FieldExistsSsScorer<LR> as Scorer>::TwoPhaseIterMut<'a>,
+        <crate::core::search::point_range_query::PointRangeSsScorer<LR> as Scorer>::TwoPhaseIterMut<'a>,
+        <crate::core::document::sorted_numeric_doc_values_set_query::SNDVSQSsScorer<LR> as Scorer>::TwoPhaseIterMut<'a>,
+        <crate::core::document::sorted_numeric_doc_values_range_query::SNDVRQSsScorer<LR> as Scorer>::TwoPhaseIterMut<'a>,
+        <crate::core::document::sorted_set_doc_values_range_query::SSDVRQSsScorer<LR> as Scorer>::TwoPhaseIterMut<'a>,
+        <crate::core::search::index_sort_sorted_numeric_doc_values_range_query::ISSNDVRQSsScorer<LR> as Scorer>::TwoPhaseIterMut<'a>,
+        <crate::core::search::constant_score_query::ConstantScoreScorerEnum<LR> as Scorer>::TwoPhaseIterMut<'a>,
+        <crate::core::search::lru_query_cache::CachingWrapperWeightScorer<LR> as Scorer>::TwoPhaseIterMut<'a>,
+    >
+    where
+        Self: 'a;
+
+    fn doc_id(&mut self) -> Result<i32> {
+        match self {
+            Self::Term(inner) => inner.doc_id(),
+            Self::MatchAll(inner) => inner.doc_id(),
+            Self::MatchNoDocs(inner) => inner.doc_id(),
+            Self::Dummy(inner) => inner.doc_id(),
+            Self::FieldExists(inner) => inner.doc_id(),
+            Self::PointRange(inner) => inner.doc_id(),
+            Self::SortedNumericDocValuesSet(inner) => inner.doc_id(),
+            Self::SortedNumericDocValuesRange(inner) => inner.doc_id(),
+            Self::SortedSetDocValuesRange(inner) => inner.doc_id(),
+            Self::IndexSortSortedNumericDocValuesRange(inner) => inner.doc_id(),
+            Self::ConstantScore(inner) => inner.doc_id(),
+            Self::Cached(inner) => inner.doc_id(),
+        }
+    }
+
+    fn iterator(&self) -> Self::DocIdSetIteratorRef<'_> {
+        match self {
+            Self::Term(inner) => DocIdSetIteratorEnum12::A(inner.iterator()),
+            Self::MatchAll(inner) => DocIdSetIteratorEnum12::B(inner.iterator()),
+            Self::MatchNoDocs(inner) => DocIdSetIteratorEnum12::C(inner.iterator()),
+            Self::Dummy(inner) => DocIdSetIteratorEnum12::D(inner.iterator()),
+            Self::FieldExists(inner) => DocIdSetIteratorEnum12::E(inner.iterator()),
+            Self::PointRange(inner) => DocIdSetIteratorEnum12::F(inner.iterator()),
+            Self::SortedNumericDocValuesSet(inner) => DocIdSetIteratorEnum12::G(inner.iterator()),
+            Self::SortedNumericDocValuesRange(inner) => DocIdSetIteratorEnum12::H(inner.iterator()),
+            Self::SortedSetDocValuesRange(inner) => DocIdSetIteratorEnum12::I(inner.iterator()),
+            Self::IndexSortSortedNumericDocValuesRange(inner) => DocIdSetIteratorEnum12::J(inner.iterator()),
+            Self::ConstantScore(inner) => DocIdSetIteratorEnum12::K(inner.iterator()),
+            Self::Cached(inner) => DocIdSetIteratorEnum12::L(inner.iterator()),
+        }
+    }
+
+    fn iterator_mut(&mut self) -> Self::DocIdSetIteratorMut<'_> {
+        match self {
+            Self::Term(inner) => DocIdSetIteratorEnum12::A(inner.iterator_mut()),
+            Self::MatchAll(inner) => DocIdSetIteratorEnum12::B(inner.iterator_mut()),
+            Self::MatchNoDocs(inner) => DocIdSetIteratorEnum12::C(inner.iterator_mut()),
+            Self::Dummy(inner) => DocIdSetIteratorEnum12::D(inner.iterator_mut()),
+            Self::FieldExists(inner) => DocIdSetIteratorEnum12::E(inner.iterator_mut()),
+            Self::PointRange(inner) => DocIdSetIteratorEnum12::F(inner.iterator_mut()),
+            Self::SortedNumericDocValuesSet(inner) => DocIdSetIteratorEnum12::G(inner.iterator_mut()),
+            Self::SortedNumericDocValuesRange(inner) => DocIdSetIteratorEnum12::H(inner.iterator_mut()),
+            Self::SortedSetDocValuesRange(inner) => DocIdSetIteratorEnum12::I(inner.iterator_mut()),
+            Self::IndexSortSortedNumericDocValuesRange(inner) => DocIdSetIteratorEnum12::J(inner.iterator_mut()),
+            Self::ConstantScore(inner) => DocIdSetIteratorEnum12::K(inner.iterator_mut()),
+            Self::Cached(inner) => DocIdSetIteratorEnum12::L(inner.iterator_mut()),
+        }
+    }
+
+    fn take_iterator(self) -> Self::DocIdSetIterator {
+        match self {
+            Self::Term(inner) => DocIdSetIteratorEnum12::A(inner.take_iterator()),
+            Self::MatchAll(inner) => DocIdSetIteratorEnum12::B(inner.take_iterator()),
+            Self::MatchNoDocs(inner) => DocIdSetIteratorEnum12::C(inner.take_iterator()),
+            Self::Dummy(inner) => DocIdSetIteratorEnum12::D(inner.take_iterator()),
+            Self::FieldExists(inner) => DocIdSetIteratorEnum12::E(inner.take_iterator()),
+            Self::PointRange(inner) => DocIdSetIteratorEnum12::F(inner.take_iterator()),
+            Self::SortedNumericDocValuesSet(inner) => DocIdSetIteratorEnum12::G(inner.take_iterator()),
+            Self::SortedNumericDocValuesRange(inner) => DocIdSetIteratorEnum12::H(inner.take_iterator()),
+            Self::SortedSetDocValuesRange(inner) => DocIdSetIteratorEnum12::I(inner.take_iterator()),
+            Self::IndexSortSortedNumericDocValuesRange(inner) => DocIdSetIteratorEnum12::J(inner.take_iterator()),
+            Self::ConstantScore(inner) => DocIdSetIteratorEnum12::K(inner.take_iterator()),
+            Self::Cached(inner) => DocIdSetIteratorEnum12::L(inner.take_iterator()),
+        }
+    }
+
+    fn two_phase_iterator(&self) -> Result<Option<Self::TwoPhaseIterRef<'_>>> {
+        match self {
+            Self::Term(inner) => Ok(inner.two_phase_iterator()?.map(TwoPhaseIteratorEnum12::A)),
+            Self::MatchAll(inner) => Ok(inner.two_phase_iterator()?.map(TwoPhaseIteratorEnum12::B)),
+            Self::MatchNoDocs(inner) => Ok(inner.two_phase_iterator()?.map(TwoPhaseIteratorEnum12::C)),
+            Self::Dummy(inner) => Ok(inner.two_phase_iterator()?.map(TwoPhaseIteratorEnum12::D)),
+            Self::FieldExists(inner) => Ok(inner.two_phase_iterator()?.map(TwoPhaseIteratorEnum12::E)),
+            Self::PointRange(inner) => Ok(inner.two_phase_iterator()?.map(TwoPhaseIteratorEnum12::F)),
+            Self::SortedNumericDocValuesSet(inner) => {
+                Ok(inner.two_phase_iterator()?.map(TwoPhaseIteratorEnum12::G))
+            },
+            Self::SortedNumericDocValuesRange(inner) => {
+                Ok(inner.two_phase_iterator()?.map(TwoPhaseIteratorEnum12::H))
+            },
+            Self::SortedSetDocValuesRange(inner) => {
+                Ok(inner.two_phase_iterator()?.map(TwoPhaseIteratorEnum12::I))
+            },
+            Self::IndexSortSortedNumericDocValuesRange(inner) => {
+                Ok(inner.two_phase_iterator()?.map(TwoPhaseIteratorEnum12::J))
+            },
+            Self::ConstantScore(inner) => Ok(inner.two_phase_iterator()?.map(TwoPhaseIteratorEnum12::K)),
+            Self::Cached(inner) => Ok(inner.two_phase_iterator()?.map(TwoPhaseIteratorEnum12::L)),
+        }
+    }
+
+    fn two_phase_iterator_mut(&mut self) -> Result<Option<Self::TwoPhaseIterMut<'_>>> {
+        match self {
+            Self::Term(inner) => Ok(inner.two_phase_iterator_mut()?.map(TwoPhaseIteratorEnum12::A)),
+            Self::MatchAll(inner) => Ok(inner.two_phase_iterator_mut()?.map(TwoPhaseIteratorEnum12::B)),
+            Self::MatchNoDocs(inner) => Ok(inner.two_phase_iterator_mut()?.map(TwoPhaseIteratorEnum12::C)),
+            Self::Dummy(inner) => Ok(inner.two_phase_iterator_mut()?.map(TwoPhaseIteratorEnum12::D)),
+            Self::FieldExists(inner) => Ok(inner.two_phase_iterator_mut()?.map(TwoPhaseIteratorEnum12::E)),
+            Self::PointRange(inner) => Ok(inner.two_phase_iterator_mut()?.map(TwoPhaseIteratorEnum12::F)),
+            Self::SortedNumericDocValuesSet(inner) => {
+                Ok(inner.two_phase_iterator_mut()?.map(TwoPhaseIteratorEnum12::G))
+            },
+            Self::SortedNumericDocValuesRange(inner) => {
+                Ok(inner.two_phase_iterator_mut()?.map(TwoPhaseIteratorEnum12::H))
+            },
+            Self::SortedSetDocValuesRange(inner) => {
+                Ok(inner.two_phase_iterator_mut()?.map(TwoPhaseIteratorEnum12::I))
+            },
+            Self::IndexSortSortedNumericDocValuesRange(inner) => {
+                Ok(inner.two_phase_iterator_mut()?.map(TwoPhaseIteratorEnum12::J))
+            },
+            Self::ConstantScore(inner) => Ok(inner.two_phase_iterator_mut()?.map(TwoPhaseIteratorEnum12::K)),
+            Self::Cached(inner) => Ok(inner.two_phase_iterator_mut()?.map(TwoPhaseIteratorEnum12::L)),
+        }
+    }
+
+    fn take_two_phase_iterator(self) -> Result<Option<Self::TwoPhaseIter>> {
+        match self {
+            Self::Term(inner) => Ok(inner.take_two_phase_iterator()?.map(TwoPhaseIteratorEnum12::A)),
+            Self::MatchAll(inner) => Ok(inner.take_two_phase_iterator()?.map(TwoPhaseIteratorEnum12::B)),
+            Self::MatchNoDocs(inner) => Ok(inner.take_two_phase_iterator()?.map(TwoPhaseIteratorEnum12::C)),
+            Self::Dummy(inner) => Ok(inner.take_two_phase_iterator()?.map(TwoPhaseIteratorEnum12::D)),
+            Self::FieldExists(inner) => Ok(inner.take_two_phase_iterator()?.map(TwoPhaseIteratorEnum12::E)),
+            Self::PointRange(inner) => Ok(inner.take_two_phase_iterator()?.map(TwoPhaseIteratorEnum12::F)),
+            Self::SortedNumericDocValuesSet(inner) => {
+                Ok(inner.take_two_phase_iterator()?.map(TwoPhaseIteratorEnum12::G))
+            },
+            Self::SortedNumericDocValuesRange(inner) => {
+                Ok(inner.take_two_phase_iterator()?.map(TwoPhaseIteratorEnum12::H))
+            },
+            Self::SortedSetDocValuesRange(inner) => {
+                Ok(inner.take_two_phase_iterator()?.map(TwoPhaseIteratorEnum12::I))
+            },
+            Self::IndexSortSortedNumericDocValuesRange(inner) => {
+                Ok(inner.take_two_phase_iterator()?.map(TwoPhaseIteratorEnum12::J))
+            },
+            Self::ConstantScore(inner) => Ok(inner.take_two_phase_iterator()?.map(TwoPhaseIteratorEnum12::K)),
+            Self::Cached(inner) => Ok(inner.take_two_phase_iterator()?.map(TwoPhaseIteratorEnum12::L)),
+        }
+    }
+
+    fn advance_shallow(&mut self, target: i32) -> Result<i32> {
+        match self {
+            Self::Term(inner) => inner.advance_shallow(target),
+            Self::MatchAll(inner) => inner.advance_shallow(target),
+            Self::MatchNoDocs(inner) => inner.advance_shallow(target),
+            Self::Dummy(inner) => inner.advance_shallow(target),
+            Self::FieldExists(inner) => inner.advance_shallow(target),
+            Self::PointRange(inner) => inner.advance_shallow(target),
+            Self::SortedNumericDocValuesSet(inner) => inner.advance_shallow(target),
+            Self::SortedNumericDocValuesRange(inner) => inner.advance_shallow(target),
+            Self::SortedSetDocValuesRange(inner) => inner.advance_shallow(target),
+            Self::IndexSortSortedNumericDocValuesRange(inner) => inner.advance_shallow(target),
+            Self::ConstantScore(inner) => inner.advance_shallow(target),
+            Self::Cached(inner) => inner.advance_shallow(target),
+        }
+    }
+
+    fn get_max_score(&mut self, up_to: i32) -> Result<f32> {
+        match self {
+            Self::Term(inner) => inner.get_max_score(up_to),
+            Self::MatchAll(inner) => inner.get_max_score(up_to),
+            Self::MatchNoDocs(inner) => inner.get_max_score(up_to),
+            Self::Dummy(inner) => inner.get_max_score(up_to),
+            Self::FieldExists(inner) => inner.get_max_score(up_to),
+            Self::PointRange(inner) => inner.get_max_score(up_to),
+            Self::SortedNumericDocValuesSet(inner) => inner.get_max_score(up_to),
+            Self::SortedNumericDocValuesRange(inner) => inner.get_max_score(up_to),
+            Self::SortedSetDocValuesRange(inner) => inner.get_max_score(up_to),
+            Self::IndexSortSortedNumericDocValuesRange(inner) => inner.get_max_score(up_to),
+            Self::ConstantScore(inner) => inner.get_max_score(up_to),
+            Self::Cached(inner) => inner.get_max_score(up_to),
+        }
+    }
+
+    fn has_two_phase_iterator(&self) -> TwoPhaseState {
+        match self {
+            Self::Term(inner) => inner.has_two_phase_iterator(),
+            Self::MatchAll(inner) => inner.has_two_phase_iterator(),
+            Self::MatchNoDocs(inner) => inner.has_two_phase_iterator(),
+            Self::Dummy(inner) => inner.has_two_phase_iterator(),
+            Self::FieldExists(inner) => inner.has_two_phase_iterator(),
+            Self::PointRange(inner) => inner.has_two_phase_iterator(),
+            Self::SortedNumericDocValuesSet(inner) => inner.has_two_phase_iterator(),
+            Self::SortedNumericDocValuesRange(inner) => inner.has_two_phase_iterator(),
+            Self::SortedSetDocValuesRange(inner) => inner.has_two_phase_iterator(),
+            Self::IndexSortSortedNumericDocValuesRange(inner) => inner.has_two_phase_iterator(),
+            Self::ConstantScore(inner) => inner.has_two_phase_iterator(),
+            Self::Cached(inner) => inner.has_two_phase_iterator(),
+        }
+    }
+}

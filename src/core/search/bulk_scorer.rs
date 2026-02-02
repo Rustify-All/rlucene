@@ -183,3 +183,82 @@ either_bulk_scorer!(pub BulkScorerEnum12 {
     K: K1,
     L: L1
 });
+
+pub enum BulkScorerEnum<LR>
+where
+    LR: crate::core::index::leaf_reader::LeafReader,
+{
+    Term(crate::core::search::term_query::TermBulkScorer<LR>),
+    MatchAll(<crate::core::search::match_all_docs_query::MatchAllSs as crate::core::search::scorer_supplier::ScorerSupplier<LR>>::BulkScorer),
+    MatchNoDocs(crate::core::search::match_no_docs_query::MatchNoDocsSsBulkScorer<LR>),
+    Dummy(<crate::core::search::dummy::dummy_scorer_supplier::DummyScorerSupplier as crate::core::search::scorer_supplier::ScorerSupplier<LR>>::BulkScorer),
+    FieldExists(crate::core::search::field_exists_query::FieldExistsSsBulkScorer<LR>),
+    PointRange(crate::core::search::point_range_query::PointRangeSsBulkScorer<LR>),
+    SortedNumericDocValuesSet(
+        crate::core::document::sorted_numeric_doc_values_set_query::SNDVSQSsBulkScorer<LR>,
+    ),
+    SortedNumericDocValuesRange(
+        crate::core::document::sorted_numeric_doc_values_range_query::SNDVRQSsBulkScorer<LR>,
+    ),
+    SortedSetDocValuesRange(
+        crate::core::document::sorted_set_doc_values_range_query::SSDVRQSsBulkScorer<LR>,
+    ),
+    IndexSortSortedNumericDocValuesRange(
+        crate::core::search::index_sort_sorted_numeric_doc_values_range_query::ISSNDVRQSsBulkScorer<LR>,
+    ),
+    ConstantScore(crate::core::search::constant_score_query::ConstantScoreBulkScorer<LR>),
+    Cached(crate::core::search::lru_query_cache::CachingWrapperWeightBulkScorer<LR>),
+}
+
+impl<LR> BulkScorer for BulkScorerEnum<LR>
+where
+    LR: crate::core::index::leaf_reader::LeafReader,
+{
+    fn score<LC, B>(
+        &mut self,
+        collector: &mut LC,
+        accept_docs: Option<&B>,
+        min: i32,
+        max: i32,
+    ) -> Result<i32>
+    where
+        LC: LeafCollector,
+        B: Bits,
+    {
+        match self {
+            Self::Term(inner) => inner.score(collector, accept_docs, min, max),
+            Self::MatchAll(inner) => inner.score(collector, accept_docs, min, max),
+            Self::MatchNoDocs(inner) => inner.score(collector, accept_docs, min, max),
+            Self::Dummy(inner) => inner.score(collector, accept_docs, min, max),
+            Self::FieldExists(inner) => inner.score(collector, accept_docs, min, max),
+            Self::PointRange(inner) => inner.score(collector, accept_docs, min, max),
+            Self::SortedNumericDocValuesSet(inner) => inner.score(collector, accept_docs, min, max),
+            Self::SortedNumericDocValuesRange(inner) => {
+                inner.score(collector, accept_docs, min, max)
+            },
+            Self::SortedSetDocValuesRange(inner) => inner.score(collector, accept_docs, min, max),
+            Self::IndexSortSortedNumericDocValuesRange(inner) => {
+                inner.score(collector, accept_docs, min, max)
+            },
+            Self::ConstantScore(inner) => inner.score(collector, accept_docs, min, max),
+            Self::Cached(inner) => inner.score(collector, accept_docs, min, max),
+        }
+    }
+
+    fn cost(&mut self) -> Result<i64> {
+        match self {
+            Self::Term(inner) => inner.cost(),
+            Self::MatchAll(inner) => inner.cost(),
+            Self::MatchNoDocs(inner) => inner.cost(),
+            Self::Dummy(inner) => inner.cost(),
+            Self::FieldExists(inner) => inner.cost(),
+            Self::PointRange(inner) => inner.cost(),
+            Self::SortedNumericDocValuesSet(inner) => inner.cost(),
+            Self::SortedNumericDocValuesRange(inner) => inner.cost(),
+            Self::SortedSetDocValuesRange(inner) => inner.cost(),
+            Self::IndexSortSortedNumericDocValuesRange(inner) => inner.cost(),
+            Self::ConstantScore(inner) => inner.cost(),
+            Self::Cached(inner) => inner.cost(),
+        }
+    }
+}

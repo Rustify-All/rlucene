@@ -41,10 +41,10 @@ use crate::core::search::query::{Query, QueryBase};
 use crate::core::search::query_visitor::QueryVisitor;
 use crate::core::search::score_mode::ScoreMode;
 use crate::core::search::scorer::{Scorer, ScorerEnum5};
-use crate::core::search::scorer_supplier::ScorerSupplier;
+use crate::core::search::scorer_supplier::{ScorerSupplier, ScorerSupplierEnum};
 use crate::core::search::segment_cacheable::SegmentCacheable;
 use crate::core::search::two_phase_iterator::{TwoPhaseIterator, TwoPhaseIteratorEnum2};
-use crate::core::search::weight::{DefaultBulkScorer, Weight};
+use crate::core::search::weight::{BoxWeight, DefaultBulkScorer, Weight};
 use crate::core::util::core_helper::HasIdentity;
 use crate::core::util::error::lucene_error::Result;
 use std::hash::{Hash, Hasher};
@@ -128,8 +128,7 @@ impl QueryBase for SortedSetDocValuesRangeQuery {
         b
     }
 
-    type Weight<LR, QC>
-        = SortedSetDocValuesRangeQueryWeight<LR>
+    type Weight<LR, QC> = BoxWeight<LR>
     where
         LR: LeafReader,
         QC: QueryCache;
@@ -146,11 +145,11 @@ impl QueryBase for SortedSetDocValuesRangeQuery {
         QC: QueryCache,
         Self: Sized,
     {
-        Ok(SortedSetDocValuesRangeQueryWeight::new(
+        Ok(Box::new(SortedSetDocValuesRangeQueryWeight::new(
             self,
             boost,
             *score_mode,
-        ))
+        )))
     }
 
     fn rewrite<IRC, QC>(self, _searcher: &IndexSearcher<IRC, QC>) -> Result<Query>
@@ -230,7 +229,7 @@ where
         self.parent_query.clone()
     }
 
-    type ScorerSupplier = SSDVRQSs<LR>;
+    type ScorerSupplier = ScorerSupplierEnum<LR>;
 
     fn scorer_supplier(
         &self,
@@ -246,12 +245,14 @@ where
         }
 
         let values = DocValues::get_sorted_set(context.reader(), &self.query.field)?;
-        Ok(Some(ScorerSupplierImpl3::new(
-            self.query.clone(),
-            values,
-            self.base.score(),
-            self.score_mode,
-        )?))
+        Ok(Some(ScorerSupplierEnum::SortedSetDocValuesRange(
+            ScorerSupplierImpl3::new(
+                self.query.clone(),
+                values,
+                self.base.score(),
+                self.score_mode,
+            )?,
+        )))
     }
 }
 fn get_doc_id_set_iterator_or_null_for_primary_sort<LR, SDV, SK>(
