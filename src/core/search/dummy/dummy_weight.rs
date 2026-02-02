@@ -17,12 +17,11 @@
 use crate::core::index::dummy::dummy_leaf_reader::DummyLeafReader;
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::leaf_reader_context::LeafReaderContext;
-use crate::core::search::dummy::dummy_matches::DummyMatches;
 use crate::core::search::dummy::dummy_scorer_supplier::DummyScorerSupplier;
 use crate::core::search::explanation::Explanation;
 use crate::core::search::matches_utils::MatchWithNoTerms;
 use crate::core::search::query::Query;
-use crate::core::search::scorer_supplier::ScorerSupplier;
+use crate::core::search::scorer_supplier::{ScorerSupplier, ScorerSupplierEnum};
 use crate::core::search::segment_cacheable::SegmentCacheable;
 use crate::core::search::weight::Weight;
 use crate::core::util::error::lucene_error::Result;
@@ -62,7 +61,7 @@ impl<LR> Weight<LR> for DummyWeight<LR>
 where
     LR: LeafReader,
 {
-    type Matches = DummyMatches;
+    type Matches = MatchWithNoTerms;
 
     fn matches(
         &self,
@@ -95,7 +94,7 @@ where
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    type ScorerSupplier = DummyScorerSupplier;
+    type ScorerSupplier = ScorerSupplierEnum<LR>;
 
     fn scorer_supplier(
         &self,

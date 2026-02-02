@@ -27,7 +27,7 @@ use crate::core::index::index_reader_context::{IRCLeafReader, IndexReaderContext
 use crate::core::index::leaf_reader::{LRTermState, LeafReader};
 use crate::core::index::term_states::TermStates;
 use crate::core::search::QueryCache;
-use crate::core::search::constant_score_query::BaseQueryWeight;
+use crate::core::search::weight::BoxWeight;
 use crate::core::search::index_searcher::IndexSearcher;
 use crate::core::search::query::{BaseQuery, Query, QueryBase};
 use crate::core::search::query_visitor::QueryVisitor;
@@ -86,8 +86,7 @@ impl QueryBase for BoostQuery {
         s
     }
 
-    type Weight<LR, QC>
-        = BaseQueryWeight<LR>
+    type Weight<LR, QC> = BoxWeight<LR>
     where
         LR: LeafReader,
         QC: QueryCache;

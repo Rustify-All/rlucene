@@ -38,9 +38,9 @@ use crate::core::search::query::{Query, QueryBase};
 use crate::core::search::query_visitor::QueryVisitor;
 use crate::core::search::score_mode::ScoreMode;
 use crate::core::search::scorer::{Scorer, ScorerEnum2};
-use crate::core::search::scorer_supplier::{ScorerSupplier, ScorerSupplierEnum2};
+use crate::core::search::scorer_supplier::{ScorerSupplier, ScorerSupplierEnum, ScorerSupplierEnum2};
 use crate::core::search::segment_cacheable::SegmentCacheable;
-use crate::core::search::weight::{DefaultBulkScorer, Weight};
+use crate::core::search::weight::{BoxWeight, DefaultBulkScorer, Weight};
 use crate::core::util::TryIntoInt;
 use crate::core::util::array_util::{ArrayUtil, ByteArrayComparator, ByteArrayComparatorEnum};
 use crate::core::util::bit_set::BitSet;
@@ -211,8 +211,7 @@ impl QueryBase for PointRangeQuery {
         "".to_string()
     }
 
-    type Weight<LR, QC>
-        = PointRangeWeight<LR>
+    type Weight<LR, QC> = BoxWeight<LR>
     where
         LR: LeafReader,
         QC: QueryCache;
@@ -229,7 +228,7 @@ impl QueryBase for PointRangeQuery {
         QC: QueryCache,
         Self: Sized,
     {
-        Ok(PointRangeWeight::new(boost, self, *score_mode))
+        Ok(Box::new(PointRangeWeight::new(boost, self, *score_mode)))
     }
 
     fn rewrite<IRC, QC>(self, _searcher: &IndexSearcher<IRC, QC>) -> Result<Query>
@@ -417,7 +416,7 @@ where
         self.parent_query.clone()
     }
 
-    type ScorerSupplier = PointRangeSs<LR>;
+    type ScorerSupplier = ScorerSupplierEnum<LR>;
 
     fn scorer_supplier(
         &self,
@@ -514,19 +513,23 @@ where
         }
         let max_doc = reader.max_doc()?;
         if all_docs_match {
-            Ok(Some(PointRangeWeightScorerSupplier::A(
-                ScorerSupplierImpl::new(self.base.score(), self.score_mode, max_doc),
+            Ok(Some(ScorerSupplierEnum::PointRange(
+                PointRangeWeightScorerSupplier::A(ScorerSupplierImpl::new(
+                    self.base.score(),
+                    self.score_mode,
+                    max_doc,
+                )),
             )))
         } else {
             let result =
                 DocIdSetBuilder::with_point_values(max_doc, &values, self.query.field.as_ref())?;
-            Ok(Some(PointRangeWeightScorerSupplier::B(
-                ScorerSupplierImpl1::new(
+            Ok(Some(ScorerSupplierEnum::PointRange(
+                PointRangeWeightScorerSupplier::B(ScorerSupplierImpl1::new(
                     self.base.score(),
                     self.score_mode,
                     values,
                     Self::get_intersect_visitor(result, self),
-                ),
+                )),
             )))
         }
     }

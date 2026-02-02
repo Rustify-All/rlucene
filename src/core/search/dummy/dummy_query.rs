@@ -20,6 +20,7 @@ use crate::core::index::leaf_reader::{LRTermState, LeafReader};
 use crate::core::index::term_states::TermStates;
 use crate::core::search::QueryCache;
 use crate::core::search::dummy::dummy_weight::DummyWeight;
+use crate::core::search::weight::BoxWeight;
 use crate::core::search::index_searcher::IndexSearcher;
 use crate::core::search::query::{Query, QueryBase};
 use crate::core::search::query_visitor::QueryVisitor;
@@ -67,8 +68,7 @@ impl QueryBase for DummyQuery {
         unreachable!("Dummy implementation: this method should never be called in real usage")
     }
 
-    type Weight<LR, QC>
-        = DummyWeight<LR>
+    type Weight<LR, QC> = BoxWeight<LR>
     where
         LR: LeafReader,
         QC: QueryCache;

@@ -35,10 +35,10 @@ use crate::core::search::query::{Query, QueryBase};
 use crate::core::search::query_visitor::QueryVisitor;
 use crate::core::search::score_mode::ScoreMode;
 use crate::core::search::scorer::Scorer;
-use crate::core::search::scorer_supplier::ScorerSupplier;
+use crate::core::search::scorer_supplier::{ScorerSupplier, ScorerSupplierEnum};
 use crate::core::search::segment_cacheable::SegmentCacheable;
 use crate::core::search::two_phase_iterator::{TwoPhaseIterator, TwoPhaseIteratorEnum2};
-use crate::core::search::weight::{DefaultScorerSupplier, Weight};
+use crate::core::search::weight::{BoxWeight, DefaultScorerSupplier, Weight};
 use crate::core::util::accountable::Accountable;
 use crate::core::util::core_helper::HasIdentity;
 use crate::core::util::error::lucene_error::Result;
@@ -87,8 +87,7 @@ impl QueryBase for SortedNumericDocValuesSetQuery {
         format!("{}: {}", self.field, self.numbers)
     }
 
-    type Weight<LR, QC>
-        = SortedNumericDocValuesSetQueryWeight<LR>
+    type Weight<LR, QC> = BoxWeight<LR>
     where
         LR: LeafReader,
         QC: QueryCache;
@@ -105,11 +104,11 @@ impl QueryBase for SortedNumericDocValuesSetQuery {
         QC: QueryCache,
         Self: Sized,
     {
-        Ok(SortedNumericDocValuesSetQueryWeight::new(
+        Ok(Box::new(SortedNumericDocValuesSetQueryWeight::new(
             self,
             *score_mode,
             boost,
-        ))
+        )))
     }
 
     fn rewrite<IRC, QC>(self, _searcher: &IndexSearcher<IRC, QC>) -> Result<Query>
@@ -200,7 +199,7 @@ where
         self.parent_query.clone()
     }
 
-    type ScorerSupplier = SNDVSQSs<LR>;
+    type ScorerSupplier = ScorerSupplierEnum<LR>;
 
     fn scorer_supplier(
         &self,
@@ -222,7 +221,9 @@ where
             TwoPhaseIteratorEnum2::B(TwoPhaseIterator2::new(values, self.query.clone()))
         };
         let scorer = ConstantScoreScorer::with_tpi(self.base.score(), self.score_mode, iterator);
-        Ok(Some(DefaultScorerSupplier::new(scorer)))
+        Ok(Some(ScorerSupplierEnum::SortedNumericDocValuesSet(
+            DefaultScorerSupplier::new(scorer),
+        )))
     }
 }
 pub type DefaultScorerSupplierSs<LR> = DefaultScorerSupplier<

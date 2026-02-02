@@ -28,9 +28,9 @@ use crate::core::search::query::{Query, QueryBase};
 use crate::core::search::query_visitor::QueryVisitor;
 use crate::core::search::score_mode::ScoreMode;
 use crate::core::search::scorer::Scorer;
-use crate::core::search::scorer_supplier::ScorerSupplier;
+use crate::core::search::scorer_supplier::{ScorerSupplier, ScorerSupplierEnum};
 use crate::core::search::segment_cacheable::SegmentCacheable;
-use crate::core::search::weight::Weight;
+use crate::core::search::weight::{BoxWeight, Weight};
 use crate::core::util::core_helper::HasIdentity;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use std::hash::{Hash, Hasher};
@@ -93,8 +93,7 @@ impl QueryBase for MatchNoDocsQuery {
         format!("MatchNoDocsQuery(\"{}\")", self.reason)
     }
 
-    type Weight<LR, QC>
-        = MatchNoDocsWeight<LR>
+    type Weight<LR, QC> = BoxWeight<LR>
     where
         LR: LeafReader,
         QC: QueryCache;
@@ -111,7 +110,7 @@ impl QueryBase for MatchNoDocsQuery {
         QC: QueryCache,
         Self: Sized,
     {
-        Ok(MatchNoDocsWeight::new(self))
+        Ok(Box::new(MatchNoDocsWeight::new(self)))
     }
 
     fn rewrite<IRC, QC>(self, _searcher: &IndexSearcher<IRC, QC>) -> Result<Query>
@@ -195,7 +194,7 @@ where
         self.parent_query.clone()
     }
 
-    type ScorerSupplier = MatchNoDocsSs;
+    type ScorerSupplier = ScorerSupplierEnum<LR>;
 
     fn scorer_supplier(
         &self,

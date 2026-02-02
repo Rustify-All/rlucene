@@ -35,9 +35,9 @@ use crate::core::search::query_visitor::QueryVisitor;
 use crate::core::search::score::Score;
 use crate::core::search::score_mode::ScoreMode;
 use crate::core::search::scorer::Scorer;
-use crate::core::search::scorer_supplier::ScorerSupplier;
+use crate::core::search::scorer_supplier::{ScorerSupplier, ScorerSupplierEnum};
 use crate::core::search::segment_cacheable::SegmentCacheable;
-use crate::core::search::weight::{DefaultBulkScorer, Weight};
+use crate::core::search::weight::{BoxWeight, DefaultBulkScorer, Weight};
 use crate::core::util::bits::Bits;
 use crate::core::util::core_helper::HasIdentity;
 use crate::core::util::error::lucene_error::Result;
@@ -89,8 +89,7 @@ impl QueryBase for MatchAllDocsQuery {
         "*:*".to_string()
     }
 
-    type Weight<LR, QC>
-        = MatchAllWeight<LR>
+    type Weight<LR, QC> = BoxWeight<LR>
     where
         LR: LeafReader,
         QC: QueryCache;
@@ -107,7 +106,7 @@ impl QueryBase for MatchAllDocsQuery {
         QC: QueryCache,
         Self: Sized,
     {
-        Ok(MatchAllWeight::new(boost, self, *score_mode))
+        Ok(Box::new(MatchAllWeight::new(boost, self, *score_mode)))
     }
 
     fn rewrite<IRC, QC>(self, _searcher: &IndexSearcher<IRC, QC>) -> Result<Query>
@@ -179,16 +178,18 @@ where
         self.parent_query.clone()
     }
 
-    type ScorerSupplier = MatchAllSs;
+    type ScorerSupplier = ScorerSupplierEnum<LR>;
 
     fn scorer_supplier(
         &self,
         context: &LeafReaderContext<LR>,
     ) -> Result<Option<Self::ScorerSupplier>> {
-        Ok(Some(MatchAllDocsScorerSupplier::new(
-            self.score_mode,
-            self.base.clone(),
-            context.reader().max_doc()?,
+        Ok(Some(ScorerSupplierEnum::MatchAll(
+            MatchAllDocsScorerSupplier::new(
+                self.score_mode,
+                self.base.clone(),
+                context.reader().max_doc()?,
+            ),
         )))
     }
 

@@ -38,9 +38,9 @@ use crate::core::search::query::{Query, QueryBase};
 use crate::core::search::query_visitor::QueryVisitor;
 use crate::core::search::score_mode::ScoreMode;
 use crate::core::search::scorer::Scorer;
-use crate::core::search::scorer_supplier::ScorerSupplier;
+use crate::core::search::scorer_supplier::{ScorerSupplier, ScorerSupplierEnum};
 use crate::core::search::segment_cacheable::SegmentCacheable;
-use crate::core::search::weight::{DefaultScorerSupplier, Weight};
+use crate::core::search::weight::{BoxWeight, DefaultScorerSupplier, Weight};
 use crate::core::util::core_helper::HasIdentity;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use std::fmt::Debug;
@@ -109,8 +109,7 @@ impl QueryBase for FieldExistsQuery {
         format!("FieldExistsQuery [field={}]", self.field)
     }
 
-    type Weight<LR, QC>
-        = FieldExistsWeight<LR>
+    type Weight<LR, QC> = BoxWeight<LR>
     where
         LR: LeafReader,
         QC: QueryCache;
@@ -127,7 +126,7 @@ impl QueryBase for FieldExistsQuery {
         QC: QueryCache,
         Self: Sized,
     {
-        Ok(FieldExistsWeight::new(boost, self, *score_mode))
+        Ok(Box::new(FieldExistsWeight::new(boost, self, *score_mode)))
     }
 
     fn rewrite<IRC, QC>(self, _searcher: &IndexSearcher<IRC, QC>) -> Result<Query>
@@ -223,7 +222,7 @@ where
         self.parent_query.clone()
     }
 
-    type ScorerSupplier = FieldExistsESs<LR>;
+    type ScorerSupplier = ScorerSupplierEnum<LR>;
 
     fn scorer_supplier(
         &self,
@@ -272,8 +271,12 @@ where
             ));
         };
         match disi_opt {
-            Some(disi) => Ok(Some(DefaultScorerSupplier::new(
-                ConstantScoreScorer::with_disi(self.score, self.score_mode, disi),
+            Some(disi) => Ok(Some(ScorerSupplierEnum::FieldExists(
+                DefaultScorerSupplier::new(ConstantScoreScorer::with_disi(
+                    self.score,
+                    self.score_mode,
+                    disi,
+                )),
             ))),
             None => Ok(None),
         }

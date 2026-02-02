@@ -55,11 +55,11 @@ use crate::core::search::query::{Query, QueryBase};
 use crate::core::search::query_visitor::QueryVisitor;
 use crate::core::search::score_mode::ScoreMode;
 use crate::core::search::scorer::Scorer;
-use crate::core::search::scorer_supplier::{ScorerSupplier, ScorerSupplierEnum2};
+use crate::core::search::scorer_supplier::{ScorerSupplier, ScorerSupplierEnum, ScorerSupplierEnum2};
 use crate::core::search::segment_cacheable::SegmentCacheable;
 use crate::core::search::sort_field::{MissingValueEnum, SortFieldType, SortFiledBase};
 use crate::core::search::sort_field_enum::SortFieldEnum;
-use crate::core::search::weight::{DefaultBulkScorer, Weight, WeightEnum4};
+use crate::core::search::weight::{BoxWeight, DefaultBulkScorer, Weight};
 use crate::core::util::TryIntoInt;
 use crate::core::util::array_util::{ArrayUtil, ByteArrayComparator, ByteArrayComparatorEnum};
 use crate::core::util::bit_util::BitUtil;
@@ -134,8 +134,7 @@ impl QueryBase for IndexSortSortedNumericDocValuesRangeQuery {
         s
     }
 
-    type Weight<LR, QC>
-        = IndexSortSortedNumericDocValuesRangeQueryWeight<LR>
+    type Weight<LR, QC> = BoxWeight<LR>
     where
         LR: LeafReader,
         QC: QueryCache;
@@ -153,31 +152,26 @@ impl QueryBase for IndexSortSortedNumericDocValuesRangeQuery {
         Self: Sized,
     {
         let query = self.clone();
-        let fallback_query_weight =
-            match self.fallback_query {
-                FallbackQuery::PointRange(p) => FallbackQueryWeight::A(p.create_weight(
-                    searcher,
-                    score_mode,
-                    boost,
-                    per_reader_term_state,
-                )?),
-
-                FallbackQuery::SortedNumericDocValuesSet(p) => FallbackQueryWeight::B(
-                    p.create_weight(searcher, score_mode, boost, per_reader_term_state)?,
-                ),
-                FallbackQuery::SortedNumericDocValuesRange(p) => FallbackQueryWeight::C(
-                    p.create_weight(searcher, score_mode, boost, per_reader_term_state)?,
-                ),
-                FallbackQuery::SortedSetDocValuesRange(p) => FallbackQueryWeight::D(
-                    p.create_weight(searcher, score_mode, boost, per_reader_term_state)?,
-                ),
-            };
-        Ok(IndexSortSortedNumericDocValuesRangeQueryWeight::new(
+        let fallback_query_weight = match self.fallback_query {
+            FallbackQuery::PointRange(p) => {
+                p.create_weight(searcher, score_mode, boost, per_reader_term_state)?
+            },
+            FallbackQuery::SortedNumericDocValuesSet(p) => {
+                p.create_weight(searcher, score_mode, boost, per_reader_term_state)?
+            },
+            FallbackQuery::SortedNumericDocValuesRange(p) => {
+                p.create_weight(searcher, score_mode, boost, per_reader_term_state)?
+            },
+            FallbackQuery::SortedSetDocValuesRange(p) => {
+                p.create_weight(searcher, score_mode, boost, per_reader_term_state)?
+            },
+        };
+        Ok(Box::new(IndexSortSortedNumericDocValuesRangeQueryWeight::new(
             query,
             ConstantScoreWeight::new(boost),
             *score_mode,
             fallback_query_weight,
-        ))
+        )))
     }
 
     fn rewrite<IRC, QC>(mut self, searcher: &IndexSearcher<IRC, QC>) -> Result<Query>
@@ -313,7 +307,7 @@ where
         self.parent_query.clone()
     }
 
-    type ScorerSupplier = ISSNDVRQSs<LR>;
+    type ScorerSupplier = ScorerSupplierEnum<LR>;
 
     fn scorer_supplier(
         &self,
@@ -335,10 +329,14 @@ where
                     self.query.field.clone(),
                     self.base.score(),
                 )?;
-                Ok(Some(ScorerSupplierEnum2::A(scorer_supplier)))
+                Ok(Some(ScorerSupplierEnum::IndexSortSortedNumericDocValuesRange(
+                    ScorerSupplierEnum2::A(scorer_supplier),
+                )))
             },
             None => match self.fallback_query_weight.scorer_supplier(context)? {
-                Some(v) => Ok(Some(ScorerSupplierEnum2::B(v))),
+                Some(v) => Ok(Some(ScorerSupplierEnum::IndexSortSortedNumericDocValuesRange(
+                    ScorerSupplierEnum2::B(v),
+                ))),
                 None => Ok(None),
             },
         }
@@ -1342,12 +1340,7 @@ impl From<SortedSetDocValuesRangeQuery> for FallbackQuery {
         FallbackQuery::SortedSetDocValuesRange(value)
     }
 }
-pub type FallbackQueryWeight<LR> = WeightEnum4<
-    PointRangeWeight<LR>,
-    SortedNumericDocValuesSetQueryWeight<LR>,
-    SortedNumericDocValuesRangeQueryWeight<LR>,
-    SortedSetDocValuesRangeQueryWeight<LR>,
->;
+pub type FallbackQueryWeight<LR> = BoxWeight<LR>;
 
 #[cfg(test)]
 mod tests {

@@ -35,9 +35,9 @@ use crate::core::search::scorer::{
     ScorerEnum10, ScorerEnum11, ScorerEnum12, TwoPhaseState,
 };
 use crate::core::search::scorer_supplier::{
-    ScorerSupplier, ScorerSupplierEnum2, ScorerSupplierEnum3, ScorerSupplierEnum4,
-    ScorerSupplierEnum7, ScorerSupplierEnum8, ScorerSupplierEnum9, ScorerSupplierEnum10,
-    ScorerSupplierEnum11, ScorerSupplierEnum12,
+    ScorerSupplier, ScorerSupplierEnum, ScorerSupplierEnum2, ScorerSupplierEnum3,
+    ScorerSupplierEnum4, ScorerSupplierEnum7, ScorerSupplierEnum8, ScorerSupplierEnum9,
+    ScorerSupplierEnum10, ScorerSupplierEnum11, ScorerSupplierEnum12,
 };
 use crate::core::search::segment_cacheable::SegmentCacheable;
 use crate::core::search::two_phase_iterator::TwoPhaseIterator;
@@ -229,6 +229,11 @@ where
         true
     }
 }
+pub type BoxWeight<LR> = Box<
+    dyn Weight<LR, Matches = MatchWithNoTerms, ScorerSupplier = ScorerSupplierEnum<LR>>
+        + Send
+        + Sync,
+>;
 pub type WeightSs<W, LR> = <W as Weight<LR>>::ScorerSupplier;
 impl<LR, T> Weight<LR> for Box<T>
 where

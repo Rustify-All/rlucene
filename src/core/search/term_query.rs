@@ -32,7 +32,7 @@ use crate::core::search::QueryCache;
 use crate::core::search::collection_statistics::CollectionStatistics;
 use crate::core::search::constant_score_scorer::ConstantScoreScorer;
 use crate::core::search::doc_id_set_iterator::{DocIdSetIterator, EmptyDISI};
-use crate::core::search::dummy::dummy_matches::DummyMatches;
+use crate::core::search::matches_utils::MatchWithNoTerms;
 use crate::core::search::dummy::dummy_two_phase_iterator::DummyTwoPhaseIterator;
 use crate::core::search::explanation::Explanation;
 use crate::core::search::index_searcher::IndexSearcher;
@@ -40,14 +40,14 @@ use crate::core::search::query::{Query, QueryBase};
 use crate::core::search::query_visitor::QueryVisitor;
 use crate::core::search::score_mode::ScoreMode;
 use crate::core::search::scorer::{Scorer, ScorerEnum2};
-use crate::core::search::scorer_supplier::ScorerSupplier;
+use crate::core::search::scorer_supplier::{ScorerSupplier, ScorerSupplierEnum};
 use crate::core::search::segment_cacheable::SegmentCacheable;
 use crate::core::search::similarities_impl::similarities::{
     SimScorer, SimScorerEnum2, Similarity, SimilarityEnum, SimilaritySimScorer,
 };
 use crate::core::search::term_scorer::TermScorer;
 use crate::core::search::term_statistics::TermStatistics;
-use crate::core::search::weight::{DefaultBulkScorer, Weight};
+use crate::core::search::weight::{BoxWeight, DefaultBulkScorer, Weight};
 use crate::core::util::core_helper::HasIdentity;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use parking_lot::Mutex;
@@ -119,8 +119,7 @@ impl QueryBase for TermQuery {
         buffer
     }
 
-    type Weight<LR, QC>
-        = TermWeight<LR>
+    type Weight<LR, QC> = BoxWeight<LR>
     where
         LR: LeafReader,
         QC: QueryCache;
@@ -143,6 +142,7 @@ impl QueryBase for TermQuery {
             _ => build(searcher, self.term.clone(), score_mode.needs_scores())?,
         };
         TermWeight::new(searcher, *score_mode, boost, term_state, self)
+            .map(|weight| Box::new(weight) as BoxWeight<_>)
     }
 
     fn rewrite<IRC, QC>(self, _searcher: &IndexSearcher<IRC, QC>) -> Result<Query>
@@ -301,14 +301,10 @@ impl<LR> Weight<LR> for TermWeight<LR>
 where
     LR: LeafReader,
 {
-    type Matches = DummyMatches;
+    type Matches = MatchWithNoTerms;
 
-    fn matches(
-        &self,
-        _context: &LeafReaderContext<LR>,
-        _doc: i32,
-    ) -> Result<Option<Self::Matches>> {
-        todo!()
+    fn matches(&self, context: &LeafReaderContext<LR>, doc: i32) -> Result<Option<Self::Matches>> {
+        self.default_matches(context, doc)
     }
 
     fn explain(&self, context: &LeafReaderContext<LR>, doc: i32) -> Result<Explanation> {
@@ -372,7 +368,7 @@ where
         self.parent_query.clone()
     }
 
-    type ScorerSupplier = TermSs<LR>;
+    type ScorerSupplier = ScorerSupplierEnum<LR>;
 
     fn scorer_supplier(
         &self,
@@ -396,14 +392,14 @@ where
             None => Ok(None),
             Some(v) => {
                 debug_assert!(self.sim_scorer.is_some());
-                Ok(Some(TermScorerSupplier::new(
+                Ok(Some(ScorerSupplierEnum::Term(TermScorerSupplier::new(
                     false,
                     self.term_states.clone(),
                     v,
                     parent_query.term.clone(),
                     self.sim_scorer.as_ref().unwrap().clone(),
                     self.score_mode,
-                )))
+                ))))
             },
         }
     }

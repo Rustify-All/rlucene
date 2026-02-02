@@ -42,10 +42,10 @@ use crate::core::search::query::{Query, QueryBase};
 use crate::core::search::query_visitor::QueryVisitor;
 use crate::core::search::score_mode::ScoreMode;
 use crate::core::search::scorer::Scorer;
-use crate::core::search::scorer_supplier::{ScorerSupplier, ScorerSupplierEnum4};
+use crate::core::search::scorer_supplier::{ScorerSupplier, ScorerSupplierEnum, ScorerSupplierEnum4};
 use crate::core::search::segment_cacheable::SegmentCacheable;
 use crate::core::search::two_phase_iterator::{TwoPhaseIterator, TwoPhaseIteratorEnum2};
-use crate::core::search::weight::{DefaultScorerSupplier, Weight};
+use crate::core::search::weight::{BoxWeight, DefaultScorerSupplier, Weight};
 use crate::core::util::core_helper::HasIdentity;
 use crate::core::util::error::lucene_error::Result;
 use std::hash::{Hash, Hasher};
@@ -107,8 +107,7 @@ impl QueryBase for SortedNumericDocValuesRangeQuery {
         out
     }
 
-    type Weight<LR, QC>
-        = SortedNumericDocValuesRangeQueryWeight<LR>
+    type Weight<LR, QC> = BoxWeight<LR>
     where
         LR: LeafReader,
         QC: QueryCache;
@@ -125,11 +124,11 @@ impl QueryBase for SortedNumericDocValuesRangeQuery {
         QC: QueryCache,
         Self: Sized,
     {
-        Ok(SortedNumericDocValuesRangeQueryWeight::new(
+        Ok(Box::new(SortedNumericDocValuesRangeQueryWeight::new(
             self,
             *score_mode,
             boost,
-        ))
+        )))
     }
 
     fn rewrite<IRC, QC>(self, _searcher: &IndexSearcher<IRC, QC>) -> Result<Query>
@@ -308,7 +307,7 @@ where
         self.parent_query.clone()
     }
 
-    type ScorerSupplier = SNDVRQSs<LR>;
+    type ScorerSupplier = ScorerSupplierEnum<LR>;
 
     fn scorer_supplier(
         &self,
@@ -337,9 +336,9 @@ where
                 let iter = AllDISI::new(skipper.doc_count());
                 let scorer =
                     ConstantScoreScorer::with_disi(self.base.score(), self.score_mode, iter);
-                return Ok(Some(ScorerSupplierEnum4::A(DefaultScorerSupplier::new(
-                    scorer,
-                ))));
+                return Ok(Some(ScorerSupplierEnum::SortedNumericDocValuesRange(
+                    ScorerSupplierEnum4::A(DefaultScorerSupplier::new(scorer)),
+                )));
             }
         }
         let mut values = DocValues::get_sorted_numeric(context.reader(), &self.query.field)?;
@@ -358,7 +357,9 @@ where
                             self.score_mode,
                             ps_iterator,
                         ));
-                        return Ok(Some(ScorerSupplierEnum4::B(v)));
+                        return Ok(Some(ScorerSupplierEnum::SortedNumericDocValuesRange(
+                            ScorerSupplierEnum4::B(v),
+                        )));
                     } else {
                         TwoPhaseIteratorEnum2::A(TwoPhaseIterator3::new(
                             singleton,
@@ -384,13 +385,17 @@ where
                 );
                 let scorer = ConstantScoreScorer::with_tpi(self.base.score(), self.score_mode, v);
                 let v = DefaultScorerSupplier::new(scorer);
-                Ok(Some(ScorerSupplierEnum4::C(v)))
+                Ok(Some(ScorerSupplierEnum::SortedNumericDocValuesRange(
+                    ScorerSupplierEnum4::C(v),
+                )))
             },
             None => {
                 let scorer =
                     ConstantScoreScorer::with_tpi(self.base.score(), self.score_mode, iterator);
                 let v = DefaultScorerSupplier::new(scorer);
-                Ok(Some(ScorerSupplierEnum4::D(v)))
+                Ok(Some(ScorerSupplierEnum::SortedNumericDocValuesRange(
+                    ScorerSupplierEnum4::D(v),
+                )))
             },
         }
     }

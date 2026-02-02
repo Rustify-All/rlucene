@@ -18,7 +18,7 @@ use crate::core::index::index_reader_context::{IRCLeafReader, IndexReaderContext
 use crate::core::index::leaf_reader_context::LeafReaderContext;
 use crate::core::index::term_states::TermStates;
 use crate::core::search::QueryCache;
-use crate::core::search::bulk_scorer::{BulkScorer, BulkScorerEnum2, BulkScorerEnum9};
+use crate::core::search::bulk_scorer::{BulkScorer, BulkScorerEnum, BulkScorerEnum2, BulkScorerEnum9};
 use crate::core::search::constant_score_scorer::ConstantScoreScorer;
 use crate::core::search::constant_score_weight::ConstantScoreWeight;
 use crate::core::search::doc_id_stream::DocIdStream;
@@ -41,10 +41,7 @@ use crate::core::search::explanation::Explanation;
 use crate::core::search::field_exists_query::{FieldExistsESs, FieldExistsWeight};
 use crate::core::search::filter_leaf_collector::FilterLeafCollector;
 use crate::core::search::filter_scorable::FilterScorable;
-use crate::core::search::index_searcher::{
-    IndexSearcher, IndexSearcherWeight, IndexSearcherWeightSs, IndexSearcherWeightSsBulkScorer,
-    IndexSearcherWeightSsScorerDisi, IndexSearcherWeightSsScorerTpi,
-};
+use crate::core::search::index_searcher::IndexSearcher;
 use crate::core::search::index_sort_sorted_numeric_doc_values_range_query::{
     ISSNDVRQSs, IndexSortSortedNumericDocValuesRangeQueryWeight,
 };
@@ -57,11 +54,11 @@ use crate::core::search::query::{BaseQuery, Query, QueryBase};
 use crate::core::search::query_visitor::QueryVisitor;
 use crate::core::search::scorable::{ChildScorable, Scorable};
 use crate::core::search::score_mode::ScoreMode;
-use crate::core::search::scorer::{Scorer, ScorerEnum2, ScorerEnum9, TwoPhaseState};
-use crate::core::search::scorer_supplier::{ScorerSupplier, ScorerSupplierEnum9};
+use crate::core::search::scorer::{Scorer, ScorerEnum, ScorerEnum2, ScorerEnum9, TwoPhaseState};
+use crate::core::search::scorer_supplier::{ScorerSupplier, ScorerSupplierEnum, ScorerSupplierEnum9};
 use crate::core::search::segment_cacheable::SegmentCacheable;
 use crate::core::search::term_query::{TermSs, TermWeight};
-use crate::core::search::weight::{DefaultBulkScorer, Weight, WeightEnum2};
+use crate::core::search::weight::{BoxWeight, DefaultBulkScorer, Weight};
 use crate::core::util::bits::Bits;
 use crate::core::util::core_helper::HasIdentity;
 use crate::core::util::error::lucene_error::Result;
@@ -119,8 +116,7 @@ impl QueryBase for ConstantScoreQuery {
         format!("ConstantScore({})", inner)
     }
 
-    type Weight<LR, QC>
-        = ConstantScoreQueryWeight<BaseQueryWeight<LR>, LR, QC>
+    type Weight<LR, QC> = BoxWeight<LR>
     where
         LR: LeafReader,
         QC: QueryCache;
@@ -146,13 +142,15 @@ impl QueryBase for ConstantScoreQuery {
         let inner_weight =
             query.create_weight(searcher, &inner_score_mode, 1.0, per_reader_term_state)?;
         let inner_weight = searcher.wrap_weight(inner_weight, inner_score_mode);
-        let v = if score_mode.needs_scores() {
-            CSQWType::A(WeightImpl::new(boost, inner_weight, *score_mode))
+        if score_mode.needs_scores() {
+            Ok(Box::new(ConstantScoreQueryWeight::new(
+                boost,
+                inner_weight,
+                *score_mode,
+            )))
         } else {
-            CSQWType::B(inner_weight)
-        };
-        let v = ConstantScoreQueryWeight::new(v);
-        Ok(v)
+            Ok(inner_weight)
+        }
     }
 
     fn rewrite<IRC, QC>(mut self, searcher: &IndexSearcher<IRC, QC>) -> Result<Query>
@@ -189,27 +187,20 @@ impl QueryBase for ConstantScoreQuery {
     }
 }
 
-pub struct WeightImpl<W, LR, QC>
+pub struct ConstantScoreQueryWeight<LR>
 where
     LR: LeafReader,
-    QC: QueryCache,
-    W: Weight<LR>,
 {
     base: ConstantScoreWeight,
-    inner_weight: IndexSearcherWeight<W, LR, QC>,
+    inner_weight: BoxWeight<LR>,
     score_mode: ScoreMode,
 }
-impl<W, LR, QC> WeightImpl<W, LR, QC>
+
+impl<LR> ConstantScoreQueryWeight<LR>
 where
     LR: LeafReader,
-    QC: QueryCache,
-    W: Weight<LR>,
 {
-    pub fn new(
-        boost: f32,
-        inner_weight: IndexSearcherWeight<W, LR, QC>,
-        score_mode: ScoreMode,
-    ) -> Self {
+    pub fn new(boost: f32, inner_weight: BoxWeight<LR>, score_mode: ScoreMode) -> Self {
         Self {
             base: ConstantScoreWeight::new(boost),
             inner_weight,
@@ -217,27 +208,24 @@ where
         }
     }
 }
-impl<W, LR, QC> SegmentCacheable<LR> for WeightImpl<W, LR, QC>
+
+impl<LR> SegmentCacheable<LR> for ConstantScoreQueryWeight<LR>
 where
     LR: LeafReader,
-    QC: QueryCache,
-    W: Weight<LR>,
 {
     fn is_cacheable(&self, ctx: &LeafReaderContext<LR>) -> Result<bool> {
         self.inner_weight.is_cacheable(ctx)
     }
 }
 
-impl<W, LR, QC> Weight<LR> for WeightImpl<W, LR, QC>
+impl<LR> Weight<LR> for ConstantScoreQueryWeight<LR>
 where
     LR: LeafReader,
-    QC: QueryCache,
-    W: Weight<LR>,
 {
-    type Matches = <IndexSearcherWeight<W, LR, QC> as Weight<LR>>::Matches;
+    type Matches = MatchWithNoTerms;
 
     fn matches(&self, context: &LeafReaderContext<LR>, doc: i32) -> Result<Option<Self::Matches>> {
-        self.inner_weight.matches(context, doc)
+        self.default_matches(context, doc)
     }
 
     fn explain(&self, context: &LeafReaderContext<LR>, doc: i32) -> Result<Explanation> {
@@ -250,17 +238,19 @@ where
         self.inner_weight.get_query()
     }
 
-    type ScorerSupplier = ScorerSupplierImpl<W, LR, QC>;
+    type ScorerSupplier = ScorerSupplierEnum<LR>;
 
     fn scorer_supplier(
         &self,
         context: &LeafReaderContext<LR>,
     ) -> Result<Option<Self::ScorerSupplier>> {
         match self.inner_weight.scorer_supplier(context)? {
-            Some(inner_scorer_supplier) => Ok(Some(ScorerSupplierImpl::new(
-                self.score_mode,
-                inner_scorer_supplier,
-                self.base.score(),
+            Some(inner_scorer_supplier) => Ok(Some(ScorerSupplierEnum::ConstantScore(
+                ConstantScoreScorerSupplier::new(
+                    self.score_mode,
+                    inner_scorer_supplier,
+                    self.base.score(),
+                ),
             ))),
             None => Ok(None),
         }
@@ -271,35 +261,28 @@ where
     }
 }
 
-pub type ConstantScoreScorerEnum<W, LR, QC> = ScorerEnum2<
-    ConstantScoreScorer<IndexSearcherWeightSsScorerDisi<W, LR, QC>, DummyTwoPhaseIterator>,
-    ConstantScoreScorer<DummyDISI, IndexSearcherWeightSsScorerTpi<W, LR, QC>>,
+pub type ConstantScoreScorerEnum<LR> = ScorerEnum2<
+    ConstantScoreScorer<<ScorerEnum<LR> as Scorer>::DocIdSetIterator, DummyTwoPhaseIterator>,
+    ConstantScoreScorer<DummyDISI, <ScorerEnum<LR> as Scorer>::TwoPhaseIter>,
 >;
-pub type BulkScorerEnum<W, LR, QC> = BulkScorerEnum2<
-    DefaultBulkScorer<ConstantScoreScorerEnum<W, LR, QC>>,
-    ConstantBulkScorer<IndexSearcherWeightSsBulkScorer<W, LR, QC>>,
+pub type ConstantScoreBulkScorer<LR> = BulkScorerEnum2<
+    DefaultBulkScorer<ConstantScoreScorerEnum<LR>>,
+    ConstantBulkScorer<BulkScorerEnum<LR>>,
 >;
-pub struct ScorerSupplierImpl<W, LR, QC>
+
+pub struct ConstantScoreScorerSupplier<LR>
 where
-    W: Weight<LR>,
     LR: LeafReader,
-    QC: QueryCache,
 {
     score_mode: ScoreMode,
-    inner_scorer_supplier: IndexSearcherWeightSs<W, LR, QC>,
+    inner_scorer_supplier: ScorerSupplierEnum<LR>,
     score: f32,
 }
-impl<W, LR, QC> ScorerSupplierImpl<W, LR, QC>
+impl<LR> ConstantScoreScorerSupplier<LR>
 where
-    W: Weight<LR>,
     LR: LeafReader,
-    QC: QueryCache,
 {
-    fn new(
-        score_mode: ScoreMode,
-        inner_scorer_supplier: IndexSearcherWeightSs<W, LR, QC>,
-        score: f32,
-    ) -> Self {
+    fn new(score_mode: ScoreMode, inner_scorer_supplier: ScorerSupplierEnum<LR>, score: f32) -> Self {
         Self {
             score_mode,
             inner_scorer_supplier,
@@ -307,14 +290,12 @@ where
         }
     }
 }
-impl<W, LR, QC> ScorerSupplier<LR> for ScorerSupplierImpl<W, LR, QC>
+impl<LR> ScorerSupplier<LR> for ConstantScoreScorerSupplier<LR>
 where
-    W: Weight<LR>,
     LR: LeafReader,
-    QC: QueryCache,
 {
-    type Scorer = ConstantScoreScorerEnum<W, LR, QC>;
-    type BulkScorer = BulkScorerEnum<W, LR, QC>;
+    type Scorer = ConstantScoreScorerEnum<LR>;
+    type BulkScorer = ConstantScoreBulkScorer<LR>;
 
     fn get(&mut self, lead_cost: i64, context: &LeafReaderContext<LR>) -> Result<Self::Scorer> {
         let inner_scorer = self.inner_scorer_supplier.get(lead_cost, context)?;
@@ -324,12 +305,12 @@ where
             true => {
                 let tpi = inner_scorer.take_two_phase_iterator()?.unwrap();
                 let v = ConstantScoreScorer::with_tpi(self.score, self.score_mode, tpi);
-                Ok(ConstantScoreScorerEnum::<W, LR, QC>::B(v))
+                Ok(ConstantScoreScorerEnum::<LR>::B(v))
             },
             false => {
                 let disi = inner_scorer.take_iterator();
                 let v = ConstantScoreScorer::with_disi(self.score, self.score_mode, disi);
-                Ok(ConstantScoreScorerEnum::<W, LR, QC>::A(v))
+                Ok(ConstantScoreScorerEnum::<LR>::A(v))
             },
         }
     }
@@ -337,12 +318,12 @@ where
     fn bulk_scorer(&mut self, context: &LeafReaderContext<LR>) -> Result<Option<Self::BulkScorer>> {
         if !self.score_mode.is_exhaustive() {
             let v = self.default_bulk_scorer(context)?;
-            return Ok(Some(BulkScorerEnum::<W, LR, QC>::A(v)));
+            return Ok(Some(ConstantScoreBulkScorer::<LR>::A(v)));
         }
         match self.inner_scorer_supplier.bulk_scorer(context)? {
             Some(v) => {
                 let v = ConstantBulkScorer::new(v, self.score);
-                Ok(Some(BulkScorerEnum::<W, LR, QC>::B(v)))
+                Ok(Some(ConstantScoreBulkScorer::<LR>::B(v)))
             },
             None => Ok(None),
         }
@@ -515,112 +496,6 @@ where
 
     fn cost(&mut self) -> Result<i64> {
         self.base.cost()
-    }
-}
-pub type CSQWType<W, LR, QC> = WeightEnum2<WeightImpl<W, LR, QC>, IndexSearcherWeight<W, LR, QC>>;
-
-pub type ConstantScoreSs<W, LR, QC> = <CSQWType<W, LR, QC> as Weight<LR>>::ScorerSupplier;
-pub type ConstantScoreSsScorer<W, LR, QC> =
-    <ConstantScoreSs<W, LR, QC> as ScorerSupplier<LR>>::Scorer;
-pub type ConstantScoreSsScorerDisi<W, IRC, QC> =
-    <ConstantScoreSsScorer<W, IRC, QC> as Scorer>::DocIdSetIterator;
-pub type ConstantScoreSsScorerDisiRef<'a, W, IRC, QC> =
-    <ConstantScoreSsScorer<W, IRC, QC> as Scorer>::DocIdSetIteratorRef<'a>;
-pub type ConstantScoreSsScorerDisiMut<'a, W, IRC, QC> =
-    <ConstantScoreSsScorer<W, IRC, QC> as Scorer>::DocIdSetIteratorMut<'a>;
-pub type ConstantScoreSsScorerTpi<W, IRC, QC> =
-    <ConstantScoreSsScorer<W, IRC, QC> as Scorer>::TwoPhaseIter;
-pub type ConstantScoreSsBulkScorer<W, LR, QC> =
-    <ConstantScoreSs<W, LR, QC> as ScorerSupplier<LR>>::BulkScorer;
-pub struct ConstantScoreQueryWeight<W, LR, QC>
-where
-    W: Weight<LR>,
-    LR: LeafReader,
-    QC: QueryCache,
-{
-    inner: CSQWType<W, LR, QC>,
-}
-impl<W, LR, QC> ConstantScoreQueryWeight<W, LR, QC>
-where
-    W: Weight<LR>,
-    LR: LeafReader,
-    QC: QueryCache,
-{
-    pub fn new(inner: CSQWType<W, LR, QC>) -> Self {
-        Self { inner }
-    }
-}
-impl<W, LR, QC> SegmentCacheable<LR> for ConstantScoreQueryWeight<W, LR, QC>
-where
-    W: Weight<LR>,
-    LR: LeafReader,
-    QC: QueryCache,
-{
-    fn is_cacheable(&self, ctx: &LeafReaderContext<LR>) -> Result<bool> {
-        self.inner.is_cacheable(ctx)
-    }
-}
-impl<W, LR, QC> Weight<LR> for ConstantScoreQueryWeight<W, LR, QC>
-where
-    W: Weight<LR>,
-    LR: LeafReader,
-    QC: QueryCache,
-{
-    type Matches = <CSQWType<W, LR, QC> as Weight<LR>>::Matches;
-
-    fn matches(&self, context: &LeafReaderContext<LR>, doc: i32) -> Result<Option<Self::Matches>> {
-        self.inner.matches(context, doc)
-    }
-
-    fn default_matches(
-        &self,
-        _context: &LeafReaderContext<LR>,
-        _doc: i32,
-    ) -> Result<Option<MatchWithNoTerms>> {
-        self.inner.default_matches(_context, _doc)
-    }
-
-    fn explain(&self, context: &LeafReaderContext<LR>, doc: i32) -> Result<Explanation> {
-        self.inner.explain(context, doc)
-    }
-
-    fn get_query(&self) -> Arc<Query> {
-        self.inner.get_query()
-    }
-
-    fn scorer(
-        &self,
-        _context: &LeafReaderContext<LR>,
-    ) -> Result<Option<<Self::ScorerSupplier as ScorerSupplier<LR>>::Scorer>> {
-        self.inner.scorer(_context)
-    }
-
-    type ScorerSupplier = ConstantScoreSs<W, LR, QC>;
-
-    fn scorer_supplier(
-        &self,
-        _context: &LeafReaderContext<LR>,
-    ) -> Result<Option<Self::ScorerSupplier>> {
-        self.inner.scorer_supplier(_context)
-    }
-
-    fn bulk_scorer(
-        &self,
-        _context: &LeafReaderContext<LR>,
-    ) -> Result<Option<<Self::ScorerSupplier as ScorerSupplier<LR>>::BulkScorer>> {
-        self.inner.bulk_scorer(_context)
-    }
-
-    fn count(&self, context: &LeafReaderContext<LR>) -> Result<i32> {
-        self.inner.count(context)
-    }
-
-    fn default_count(&self, _context: &LeafReaderContext<LR>) -> Result<i32> {
-        self.inner.default_count(_context)
-    }
-
-    fn is_weight_cacheable(&self) -> bool {
-        self.inner.is_weight_cacheable()
     }
 }
 

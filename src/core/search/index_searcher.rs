@@ -27,7 +27,6 @@ use crate::core::search::bulk_scorer::BulkScorer;
 use crate::core::search::collection_statistics::CollectionStatistics;
 use crate::core::search::collector::Collector;
 use crate::core::search::collector_manager::CollectorManager;
-use crate::core::search::constant_score_query::QueryBaseWeight;
 use crate::core::search::doc_id_set_iterator::disi_const::NO_MORE_DOCS;
 use crate::core::search::field_doc::FieldDoc;
 use crate::core::search::leaf_collector::LeafCollector;
@@ -49,7 +48,7 @@ use crate::core::search::top_field_docs::TopFieldDocs;
 use crate::core::search::top_score_doc_collector_manager::TopScoreDocCollectorManager;
 use crate::core::search::total_hit_count_collector_manager::TotalHitCountCollectorManager;
 use crate::core::search::usage_tracking_query_caching_policy::UsageTrackingQueryCachingPolicy;
-use crate::core::search::weight::{Weight, WeightEnum2};
+use crate::core::search::weight::{BoxWeight, Weight};
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::{HasIdentity, TryIntoInt};
 use parking_lot::Mutex;
@@ -532,16 +531,13 @@ where
         // TODO
         Ok(original)
     }
-    #[allow(clippy::type_complexity)]
     pub(crate) fn create_weight<T>(
         &self,
         query: T,
         score_mode: ScoreMode,
         boost: f32,
         term_state: Option<TermStates<IRCTermState<IRC>>>,
-    ) -> Result<
-        IndexSearcherWeight<QueryBaseWeight<T, IRCLeafReader<IRC>, QC>, IRCLeafReader<IRC>, QC>,
-    >
+    ) -> Result<BoxWeight<IRCLeafReader<IRC>>>
     where
         T: QueryBase,
     {
@@ -549,23 +545,18 @@ where
         Ok(self.wrap_weight(weight, score_mode))
     }
 
-    pub(crate) fn wrap_weight<W>(
+    pub(crate) fn wrap_weight(
         &self,
-        weight: W,
+        weight: BoxWeight<IRCLeafReader<IRC>>,
         score_mode: ScoreMode,
-    ) -> IndexSearcherWeight<W, IRCLeafReader<IRC>, QC>
-    where
-        W: Weight<IRC::LeafReader>,
-    {
+    ) -> BoxWeight<IRCLeafReader<IRC>> {
         if !score_mode.needs_scores() && self.query_cache.is_some() {
-            WeightEnum2::A(
-                self.query_cache
-                    .as_ref()
-                    .unwrap()
-                    .do_cache(weight, self.query_caching_policy.clone()),
-            )
+            self.query_cache
+                .as_ref()
+                .unwrap()
+                .do_cache(weight, self.query_caching_policy.clone())
         } else {
-            WeightEnum2::B(weight)
+            weight
         }
     }
     /// Returns [`TermStatistics`] for a term.
@@ -636,18 +627,6 @@ where
     }
 }
 
-pub(crate) type IndexSearcherWeight<W, LR, QC> = WeightEnum2<<QC as QueryCache>::Weight<W, LR>, W>;
-pub type IndexSearcherWeightSs<W, LR, QC> =
-    <IndexSearcherWeight<W, LR, QC> as Weight<LR>>::ScorerSupplier;
-pub type IndexSearcherWeightSsScorer<W, LR, QC> =
-    <IndexSearcherWeightSs<W, LR, QC> as ScorerSupplier<LR>>::Scorer;
-pub type IndexSearcherWeightSsBulkScorer<W, LR, QC> =
-    <IndexSearcherWeightSs<W, LR, QC> as ScorerSupplier<LR>>::BulkScorer;
-
-pub type IndexSearcherWeightSsScorerTpi<W, LR, QC> =
-    <IndexSearcherWeightSsScorer<W, LR, QC> as Scorer>::TwoPhaseIter;
-pub type IndexSearcherWeightSsScorerDisi<W, LR, QC> =
-    <IndexSearcherWeightSsScorer<W, LR, QC> as Scorer>::DocIdSetIterator;
 /// Returns the maximum number of clauses permitted, `1024` by default.
 ///
 /// Attempts to add more than the permitted number of clauses cause a [`TooManyClauses`] error to be thrown.
