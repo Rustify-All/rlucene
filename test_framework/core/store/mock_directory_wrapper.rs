@@ -1354,11 +1354,6 @@ where
       .get_pending_deletions()
   }
 
-  #[cfg(debug_assertions)]
-  fn is_fs_directory(&self) -> bool {
-    self.state.base.lock().get_delegate().is_fs_directory()
-  }
-
   fn ensure_open(&self) -> Result<()> {
     self.state.base.lock().ensure_open()
   }
