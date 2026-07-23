@@ -460,7 +460,10 @@ where
   }
 
   fn get_vector_reader(&self) -> Result<Option<Self::KnnVectorsReader>> {
-    todo!()
+    Ok(Some(SlowCompositeKnnVectorsReaderWrapper::new(
+      self.codec_readers.clone(),
+      self.doc_stats.clone(),
+    )?))
   }
 
   fn get_float_vector_values(

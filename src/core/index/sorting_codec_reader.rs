@@ -379,72 +379,68 @@ where
   }
 
   fn get_term_vectors_reader(&self) -> Result<Option<Self::TermVectorsReader>> {
-    let delegate = self
-      .in_
-      .get_term_vectors_reader()?
-      .ok_or_else(|| LuceneError::illegal_state("term vectors reader was None"))?;
-    let v = new_term_vectors_reader(delegate, self.doc_map.clone());
-    Ok(Some(v))
+    Ok(
+      self
+        .in_
+        .get_term_vectors_reader()?
+        .map(|delegate| new_term_vectors_reader(delegate, self.doc_map.clone())),
+    )
   }
 
   fn get_norms_reader(&self) -> Result<Option<Self::NormsProducer>> {
-    let delegate = self
-      .in_
-      .get_norms_reader()?
-      .ok_or_else(|| LuceneError::illegal_state("norm reader was None"))?;
-    let v = NormsProducerImpl::new(
-      delegate,
-      self.inner.clone(),
-      self.max_doc()?,
-      self.doc_map.clone(),
-    );
-    Ok(Some(v))
+    match self.in_.get_norms_reader()? {
+      Some(delegate) => Ok(Some(NormsProducerImpl::new(
+        delegate,
+        self.inner.clone(),
+        self.max_doc()?,
+        self.doc_map.clone(),
+      ))),
+      None => Ok(None),
+    }
   }
 
   fn get_doc_values_reader(&self) -> Result<Option<Self::DocValuesProducer>> {
-    let delegate = self
-      .in_
-      .get_doc_values_reader()?
-      .ok_or_else(|| LuceneError::illegal_state("norm reader was None"))?;
-    let v = DocValuesProducerImpl::new(
-      delegate,
-      self.inner.clone(),
-      self.max_doc()?,
-      self.doc_map.clone(),
-    );
-    Ok(Some(v))
+    match self.in_.get_doc_values_reader()? {
+      Some(delegate) => Ok(Some(DocValuesProducerImpl::new(
+        delegate,
+        self.inner.clone(),
+        self.max_doc()?,
+        self.doc_map.clone(),
+      ))),
+      None => Ok(None),
+    }
   }
 
   fn get_postings_reader(&self) -> Result<Option<Self::FieldsProducer>> {
-    let posting_reader = self
-      .in_
-      .get_postings_reader()?
-      .ok_or_else(|| LuceneError::illegal_state("postings reader was None"))?;
-    let field_infos = self.in_.get_field_infos()?;
-    Ok(Some(FieldsProducerImpl::new(
-      posting_reader,
-      self.doc_map.clone(),
-      field_infos,
-    )))
+    match self.in_.get_postings_reader()? {
+      Some(posting_reader) => {
+        let field_infos = self.in_.get_field_infos()?;
+        Ok(Some(FieldsProducerImpl::new(
+          posting_reader,
+          self.doc_map.clone(),
+          field_infos,
+        )))
+      },
+      None => Ok(None),
+    }
   }
 
   fn get_points_reader(&self) -> Result<Option<Self::PointsReader>> {
-    let delegate = self
-      .in_
-      .get_points_reader()?
-      .ok_or_else(|| LuceneError::illegal_state("points reader was None"))?;
-    Ok(Some(PointsReaderImpl::new(delegate, self.doc_map.clone())))
+    Ok(
+      self
+        .in_
+        .get_points_reader()?
+        .map(|delegate| PointsReaderImpl::new(delegate, self.doc_map.clone())),
+    )
   }
 
   fn get_vector_reader(&self) -> Result<Option<Self::KnnVectorsReader>> {
-    let delegate = self
-      .in_
-      .get_vector_reader()?
-      .ok_or_else(|| LuceneError::illegal_state("vector reader was None"))?;
-    Ok(Some(KnnVectorsReaderImpl::new(
-      delegate,
-      self.doc_map.clone(),
-    )))
+    Ok(
+      self
+        .in_
+        .get_vector_reader()?
+        .map(|delegate| KnnVectorsReaderImpl::new(delegate, self.doc_map.clone())),
+    )
   }
 }
 
