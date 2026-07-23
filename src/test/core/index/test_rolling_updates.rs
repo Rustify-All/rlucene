@@ -189,11 +189,17 @@ fn test_update_same_doc() -> Result<()> {
     let num_updates = at_least(&mut random, 20);
     let num_threads = TestUtil::next_int(&mut random, 2, 6);
     let seed = random.random::<u64>();
+    let mut thread_random = random_from_seed(seed);
 
     std::thread::scope(|scope| {
+      let writer = &writer;
+      let field_to_type = &field_to_type;
       let mut threads = Vec::new();
       for _ in 0..num_threads {
-        threads.push(scope.spawn(|| indexing_thread(seed, &writer, num_updates, &field_to_type)));
+        let thread_seed = thread_random.random::<u64>();
+        threads.push(
+          scope.spawn(move || indexing_thread(thread_seed, writer, num_updates, field_to_type)),
+        );
       }
 
       for thread in threads {
