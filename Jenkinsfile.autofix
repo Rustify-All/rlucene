@@ -50,12 +50,14 @@ pipeline {
             error('Only main may be used as BASE_BRANCH.')
           }
 
-          env.FAILED_SHA_NORMALIZED = params.FAILED_SHA.toLowerCase()
-          env.SHA_SHORT = env.FAILED_SHA_NORMALIZED.take(12)
-          env.FIX_BRANCH = "codex/jenkins-autofix-${env.SHA_SHORT}"
+          String normalizedSha = params.FAILED_SHA.toLowerCase()
+          String shortSha = normalizedSha.take(12)
+          env.FAILED_SHA_NORMALIZED = normalizedSha
+          env.SHA_SHORT = shortSha
+          env.FIX_BRANCH = "codex/jenkins-autofix-${shortSha}"
           env.ATTEMPT_MARKER =
-            "${env.AUTOFIX_STATE_ROOT}/${env.FAILED_SHA_NORMALIZED}.attempted"
-          currentBuild.description = env.SHA_SHORT
+            "${env.AUTOFIX_STATE_ROOT}/${normalizedSha}.attempted"
+          currentBuild.description = shortSha
         }
       }
     }
@@ -146,7 +148,7 @@ pipeline {
           sh '''#!/bin/bash
             set -euo pipefail
             mkdir -p "$CARGO_TARGET_DIR"
-            cargo fetch --locked
+            cargo fetch
           '''
           script {
             int reproduceStatus = sh(
@@ -157,6 +159,10 @@ pipeline {
                   2>&1 | tee initial-test.log
               '''
             )
+            sh '''
+              git ls-files --error-unmatch Cargo.lock >/dev/null 2>&1 || \
+                rm -f Cargo.lock
+            '''
 
             if (reproduceStatus == 0) {
               env.SKIP_AUTOFIX = 'true'
@@ -289,6 +295,8 @@ non-reproducible flaky failure, make no changes and explain why.
             cargo fmt --all -- --check
             timeout --kill-after=30s 20m cargo test -q \
               2>&1 | tee final-test.log
+            git ls-files --error-unmatch Cargo.lock >/dev/null 2>&1 || \
+              rm -f Cargo.lock
             git diff --check
           '''
         }
