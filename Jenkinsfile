@@ -66,7 +66,7 @@ pipeline {
           df -h . /tmp "$CARGO_TARGET_DIR"
           git diff --exit-code
           rustup show
-          cargo fetch --locked
+          cargo fetch
         '''
       }
     }
