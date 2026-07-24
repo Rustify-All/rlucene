@@ -154,9 +154,13 @@ pipeline {
             int reproduceStatus = sh(
               returnStatus: true,
               script: '''#!/bin/bash
-                set -o pipefail
+                set -uo pipefail
+                set +e
                 timeout --kill-after=30s 12m cargo test -q \
-                  2>&1 | tee initial-test.log
+                  > initial-test.log 2>&1
+                test_status=$?
+                cat initial-test.log
+                exit "$test_status"
               '''
             )
             sh '''
@@ -305,8 +309,15 @@ non-reproducible flaky failure, make no changes and explain why.
             set -euo pipefail
             unset CODEX_API_KEY OPENAI_API_KEY OPENAI_KEY GH_TOKEN GITHUB_TOKEN
             cargo fmt --all -- --check
+            set +e
             timeout --kill-after=30s 20m cargo test -q \
-              2>&1 | tee final-test.log
+              > final-test.log 2>&1
+            test_status=$?
+            set -e
+            cat final-test.log
+            if [ "$test_status" -ne 0 ]; then
+              exit "$test_status"
+            fi
             git ls-files --error-unmatch Cargo.lock >/dev/null 2>&1 || \
               rm -f Cargo.lock
             git diff --check
