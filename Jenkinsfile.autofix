@@ -1,0 +1,375 @@
+pipeline {
+  agent any
+
+  parameters {
+    string(name: 'FAILED_SHA', defaultValue: '', trim: true)
+    string(name: 'BASE_BRANCH', defaultValue: 'main', trim: true)
+    string(name: 'UPSTREAM_BUILD_URL', defaultValue: '', trim: true)
+  }
+
+  options {
+    skipDefaultCheckout(true)
+    timestamps()
+    disableConcurrentBuilds()
+    timeout(time: 45, unit: 'MINUTES')
+    buildDiscarder(logRotator(numToKeepStr: '50'))
+  }
+
+  environment {
+    REPOSITORY_URL = 'git@github.com:Rustify-All/rlucene.git'
+    GIT_CREDENTIALS_ID = 'github-ssh'
+    OPENAI_CREDENTIALS_ID = 'openai-api-key'
+    GITHUB_CREDENTIALS_ID = 'github-autofix-token'
+    CODEX_BIN = '/var/jenkins_home/tools/codex/bin/codex'
+    CODEX_STATE_DIR = '/var/jenkins_home/tools/codex/home'
+    AUTOFIX_STATE_ROOT = '/var/jenkins_home/codex-autofix-state/rlucene'
+    SKIP_AUTOFIX = 'false'
+    REPRODUCED = 'false'
+    PATCH_READY = 'false'
+    RUSTUP_DIST_SERVER = 'https://rsproxy.cn'
+    RUSTUP_UPDATE_ROOT = 'https://rsproxy.cn/rustup'
+    RUSTUP_HOME = '/opt/rustup'
+    CARGO_HOME = '/opt/cargo'
+    CARGO_TARGET_DIR = '/var/jenkins_home/cargo-target/rlucene-autofix'
+    CARGO_PROFILE_TEST_DEBUG = '0'
+    CARGO_TERM_COLOR = 'never'
+    NO_COLOR = '1'
+    CARGO_NET_RETRY = '10'
+    CARGO_HTTP_TIMEOUT = '120'
+    CARGO_HTTP_MULTIPLEXING = 'false'
+  }
+
+  stages {
+    stage('Validate request') {
+      steps {
+        script {
+          if (!(params.FAILED_SHA ==~ /[0-9a-fA-F]{40}/)) {
+            error('FAILED_SHA must be exactly 40 hexadecimal characters.')
+          }
+          if (params.BASE_BRANCH != 'main') {
+            error('Only main may be used as BASE_BRANCH.')
+          }
+
+          env.FAILED_SHA_NORMALIZED = params.FAILED_SHA.toLowerCase()
+          env.SHA_SHORT = env.FAILED_SHA_NORMALIZED.take(12)
+          env.FIX_BRANCH = "codex/jenkins-autofix-${env.SHA_SHORT}"
+          env.ATTEMPT_MARKER =
+            "${env.AUTOFIX_STATE_ROOT}/${env.FAILED_SHA_NORMALIZED}.attempted"
+          currentBuild.description = env.SHA_SHORT
+        }
+      }
+    }
+
+    stage('Checkout failed commit') {
+      steps {
+        dir('source') {
+          deleteDir()
+          checkout([
+            $class: 'GitSCM',
+            branches: [[name: '*/main']],
+            userRemoteConfigs: [[
+              credentialsId: env.GIT_CREDENTIALS_ID,
+              url: env.REPOSITORY_URL
+            ]]
+          ])
+          sh '''#!/bin/bash
+            set -euo pipefail
+            git cat-file -e "$FAILED_SHA_NORMALIZED^{commit}"
+            git checkout --detach "$FAILED_SHA_NORMALIZED"
+            test "$(git rev-parse HEAD)" = "$FAILED_SHA_NORMALIZED"
+          '''
+
+          withCredentials([sshUserPrivateKey(
+            credentialsId: env.GIT_CREDENTIALS_ID,
+            keyFileVariable: 'GIT_SSH_KEY',
+            usernameVariable: 'GIT_SSH_USER'
+          )]) {
+            script {
+              int remoteBranchExists = sh(
+                returnStatus: true,
+                script: '''#!/bin/bash
+                  set +x
+                  export GIT_SSH_COMMAND="ssh -i $GIT_SSH_KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+                  git ls-remote --exit-code --heads origin "refs/heads/$FIX_BRANCH" >/dev/null 2>&1
+                '''
+              )
+              if (remoteBranchExists == 0) {
+                env.SKIP_AUTOFIX = 'true'
+                currentBuild.result = 'NOT_BUILT'
+                currentBuild.description = "${env.SHA_SHORT}: branch exists"
+                echo "Skipping: ${env.FIX_BRANCH} already exists."
+              }
+            }
+          }
+        }
+      }
+    }
+
+    stage('Claim single attempt') {
+      when {
+        expression { env.SKIP_AUTOFIX != 'true' }
+      }
+      steps {
+        script {
+          int markerExists = sh(
+            returnStatus: true,
+            script: 'test -e "$ATTEMPT_MARKER"'
+          )
+          if (markerExists == 0) {
+            env.SKIP_AUTOFIX = 'true'
+            currentBuild.result = 'NOT_BUILT'
+            currentBuild.description = "${env.SHA_SHORT}: already attempted"
+            echo "Skipping: this commit already has an attempt marker."
+          } else {
+            sh '''#!/bin/bash
+              set -euo pipefail
+              umask 077
+              mkdir -p "$AUTOFIX_STATE_ROOT"
+              {
+                printf 'commit=%s\n' "$FAILED_SHA_NORMALIZED"
+                printf 'jenkins_build=%s\n' "$BUILD_URL"
+                printf 'upstream_build=%s\n' "$UPSTREAM_BUILD_URL"
+                printf 'started_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              } > "$ATTEMPT_MARKER"
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Reproduce failure') {
+      when {
+        expression { env.SKIP_AUTOFIX != 'true' }
+      }
+      steps {
+        dir('source') {
+          sh '''#!/bin/bash
+            set -euo pipefail
+            mkdir -p "$CARGO_TARGET_DIR"
+            cargo fetch --locked
+          '''
+          script {
+            int reproduceStatus = sh(
+              returnStatus: true,
+              script: '''#!/bin/bash
+                set -o pipefail
+                timeout --kill-after=30s 12m cargo test -q \
+                  2>&1 | tee initial-test.log
+              '''
+            )
+
+            if (reproduceStatus == 0) {
+              env.SKIP_AUTOFIX = 'true'
+              currentBuild.result = 'NOT_BUILT'
+              currentBuild.description = "${env.SHA_SHORT}: not reproduced"
+              echo 'Failure did not reproduce; Codex will not modify code.'
+            } else if (reproduceStatus == 124 || reproduceStatus == 137) {
+              env.SKIP_AUTOFIX = 'true'
+              currentBuild.result = 'UNSTABLE'
+              currentBuild.description = "${env.SHA_SHORT}: infrastructure timeout"
+              echo "Reproduction timed out or was killed (exit ${reproduceStatus})."
+            } else {
+              env.REPRODUCED = 'true'
+            }
+          }
+        }
+      }
+    }
+
+    stage('Verify Codex runtime') {
+      when {
+        expression { env.REPRODUCED == 'true' }
+      }
+      steps {
+        sh '''#!/bin/bash
+          set -euo pipefail
+          test -x "$CODEX_BIN"
+          mkdir -p "$CODEX_STATE_DIR"
+          "$CODEX_BIN" --version
+          curl -sS --connect-timeout 10 --max-time 20 \
+            -o /dev/null https://api.openai.com/v1/models
+        '''
+      }
+    }
+
+    stage('Generate minimal fix') {
+      when {
+        expression { env.REPRODUCED == 'true' }
+      }
+      steps {
+        dir('source') {
+          writeFile(
+            file: 'codex-task.md',
+            text: """You are fixing a Rust project failure reproduced by Jenkins.
+
+Failed commit: ${env.FAILED_SHA_NORMALIZED}
+Upstream build: ${params.UPSTREAM_BUILD_URL}
+
+Read the attached initial-test.log and the relevant source. Make the smallest
+root-cause fix. Do not run Cargo, tests, repository scripts, or any compiled
+code during this Codex invocation; Jenkins validates after the OpenAI
+credential is removed. Do not add ignored tests, remove tests, weaken
+assertions, modify Jenkins automation, upgrade unrelated dependencies, commit,
+push, or create a pull request. If the evidence indicates infrastructure or a
+non-reproducible flaky failure, make no changes and explain why.
+"""
+          )
+
+          withCredentials([string(
+            credentialsId: env.OPENAI_CREDENTIALS_ID,
+            variable: 'OPENAI_KEY'
+          )]) {
+            sh '''#!/bin/bash
+              set -euo pipefail
+              umask 077
+              export JENKINS_AUTOFIX=1
+              export CODEX_HOME="$CODEX_STATE_DIR"
+              set +x
+              CODEX_API_KEY="$OPENAI_KEY" "$CODEX_BIN" exec \
+                --ephemeral \
+                --ignore-user-config \
+                --sandbox workspace-write \
+                --ask-for-approval never \
+                -c sandbox_workspace_write.network_access=false \
+                --output-last-message codex-result.md \
+                "$(cat codex-task.md)" \
+                < initial-test.log
+            '''
+          }
+        }
+      }
+    }
+
+    stage('Audit patch') {
+      when {
+        expression { env.REPRODUCED == 'true' }
+      }
+      steps {
+        dir('source') {
+          script {
+            int noChanges = sh(
+              returnStatus: true,
+              script: 'test -z "$(git status --porcelain)"'
+            )
+            if (noChanges == 0) {
+              env.SKIP_AUTOFIX = 'true'
+              currentBuild.result = 'NOT_BUILT'
+              currentBuild.description = "${env.SHA_SHORT}: no patch"
+              echo 'Codex produced no patch.'
+            } else {
+              sh '''#!/bin/bash
+                set -euo pipefail
+                git diff --check
+                if git status --porcelain | awk '{print $2}' | \
+                  grep -Eq '^(AGENTS\.md|Jenkinsfile|Jenkinsfile\.autofix|ci/jenkins/)'; then
+                  echo 'Codex attempted to modify protected automation files.' >&2
+                  exit 1
+                fi
+                if git diff --unified=0 | grep -Eq '^\+.*#\[ignore\]'; then
+                  echo 'Codex attempted to add #[ignore].' >&2
+                  exit 1
+                fi
+              '''
+              env.PATCH_READY = 'true'
+            }
+          }
+        }
+      }
+    }
+
+    stage('Independent verification') {
+      when {
+        expression { env.PATCH_READY == 'true' }
+      }
+      steps {
+        dir('source') {
+          sh '''#!/bin/bash
+            set -euo pipefail
+            unset CODEX_API_KEY OPENAI_API_KEY OPENAI_KEY GH_TOKEN GITHUB_TOKEN
+            cargo fmt --all -- --check
+            timeout --kill-after=30s 20m cargo test -q \
+              2>&1 | tee final-test.log
+            git diff --check
+          '''
+        }
+      }
+    }
+
+    stage('Publish Draft PR') {
+      when {
+        expression { env.PATCH_READY == 'true' }
+      }
+      steps {
+        dir('source') {
+          sh '''#!/bin/bash
+            set -euo pipefail
+            git config user.name 'jenkins-codex-autofix'
+            git config user.email 'jenkins-codex-autofix@users.noreply.github.com'
+            git switch -c "$FIX_BRANCH"
+            git add -A
+            git commit -m "fix: repair Jenkins failure for $SHA_SHORT"
+          '''
+
+          withCredentials([sshUserPrivateKey(
+            credentialsId: env.GIT_CREDENTIALS_ID,
+            keyFileVariable: 'GIT_SSH_KEY',
+            usernameVariable: 'GIT_SSH_USER'
+          )]) {
+            sh '''#!/bin/bash
+              set -euo pipefail
+              set +x
+              export GIT_SSH_COMMAND="ssh -i $GIT_SSH_KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+              git push origin "HEAD:refs/heads/$FIX_BRANCH"
+            '''
+          }
+
+          withCredentials([string(
+            credentialsId: env.GITHUB_CREDENTIALS_ID,
+            variable: 'GH_AUTOFIX_TOKEN'
+          )]) {
+            sh '''#!/bin/bash
+              set -euo pipefail
+              umask 077
+              PR_PAYLOAD=$(printf '{"title":"Codex: fix tests for %s","head":"%s","base":"main","body":"Automated Jenkins/Codex repair.\\n\\nFailed commit: `%s`\\nUpstream build: %s\\n\\nVerified with `cargo fmt --all -- --check` and `cargo test -q`.\\n\\nHuman review is required; this PR will not be auto-merged.","draft":true}' \
+                "$SHA_SHORT" "$FIX_BRANCH" "$FAILED_SHA_NORMALIZED" "$UPSTREAM_BUILD_URL")
+              set +x
+              curl --fail-with-body -sS \
+                -X POST \
+                -H "Authorization: Bearer $GH_AUTOFIX_TOKEN" \
+                -H 'Accept: application/vnd.github+json' \
+                -H 'X-GitHub-Api-Version: 2022-11-28' \
+                https://api.github.com/repos/Rustify-All/rlucene/pulls \
+                --data "$PR_PAYLOAD" \
+                -o pr-response.json
+              grep -m1 '"html_url"' pr-response.json || true
+            '''
+          }
+        }
+      }
+    }
+  }
+
+  post {
+    always {
+      archiveArtifacts(
+        artifacts: 'source/initial-test.log,source/final-test.log,source/codex-result.md,source/pr-response.json',
+        allowEmptyArchive: true
+      )
+    }
+
+    failure {
+      emailext(
+        to: 'luxugang@apache.org',
+        subject: "[Jenkins] ${env.JOB_NAME} #${env.BUILD_NUMBER} failed",
+        body: """Autofix build: ${env.BUILD_URL}
+Failed commit: ${params.FAILED_SHA}
+Upstream build: ${params.UPSTREAM_BUILD_URL}
+No branch or PR is published unless every verification step succeeds.
+""",
+        attachLog: true,
+        compressLog: true
+      )
+    }
+  }
+}
+
