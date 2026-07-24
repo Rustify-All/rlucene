@@ -457,7 +457,7 @@ Upstream build: ${params.UPSTREAM_BUILD_URL}
 Verified with `cargo tidy`, `cargo fmt --all -- --check`, and `cargo test -q`.
 
 This is a ready-for-review PR. Human review and manual merge are required;
-                this PR will never be auto-merged.""",
+this PR will never be auto-merged.""",
                 draft: false,
                 maintainer_can_modify: true
               ])
