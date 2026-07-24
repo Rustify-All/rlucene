@@ -90,6 +90,16 @@ pipeline {
               exit "$test_status"
             '''
           )
+          String cargoTestLog = readFile(file: 'cargo-test.log')
+          boolean cargoReportedFailure =
+            cargoTestLog.contains('test result: FAILED') ||
+            cargoTestLog.contains('\nerror:') ||
+            cargoTestLog.startsWith('error:') ||
+            cargoTestLog.contains('\nerror[') ||
+            cargoTestLog.startsWith('error[')
+          if (testStatus == 0 && cargoReportedFailure) {
+            testStatus = 101
+          }
 
           if (testStatus == 124 || testStatus == 137) {
             env.FAILURE_KIND = 'timeout'
