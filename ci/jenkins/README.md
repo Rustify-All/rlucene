@@ -1,13 +1,14 @@
-# Jenkins Codex autofix deployment
+# Jenkins DeepSeek autofix deployment
 
 This deployment intentionally separates four trust zones:
 
 1. `rlucene-ci` checks out `main`, fetches dependencies, and runs tests without
-   OpenAI or GitHub API credentials.
-2. `rlucene-autofix` reproduces the exact failing commit before Codex runs.
-3. Codex receives only the OpenAI credential and has no GitHub write
+   DeepSeek or GitHub API credentials.
+2. `rlucene-autofix` reproduces the exact failing commit before OpenCode runs.
+3. OpenCode uses DeepSeek and receives only the DeepSeek credential. It has no
+   shell permission, no external-directory permission, and no GitHub write
    credential. Repository code is not executed during this stage.
-4. Jenkins removes the OpenAI credential, independently formats/tests the
+4. Jenkins removes the DeepSeek credential, independently formats/tests the
    patch, then injects GitHub credentials only for push and Draft PR creation.
 
 Draft PRs are never auto-merged.
@@ -19,24 +20,24 @@ Draft PRs are never auto-merged.
   and Email Extension plugins.
 - The existing SSH credential ID `github-ssh`.
 - Outbound HTTPS access to:
-  - `api.openai.com:443`
+  - `api.deepseek.com:443`
   - `api.github.com:443`
   - `github.com:443`
   - `objects.githubusercontent.com:443`
   - `raw.githubusercontent.com:443`
-- Codex CLI at `/var/jenkins_home/tools/codex/bin/codex`.
+- OpenCode CLI at `/var/jenkins_home/tools/opencode/bin/opencode`.
 
-The Codex installer can be retrieved from the pinned OpenAI Codex repository
-path used by the readiness job. The official installer validates release
-checksums. Pin `CODEX_RELEASE` when upgrading production intentionally.
+DeepSeek exposes an OpenAI-compatible Chat Completions API. Codex CLI custom
+providers currently require the Responses API, so this deployment uses
+OpenCode as the restricted coding agent. The agent image pins the OpenCode
+release and verifies the downloaded archive checksum.
 
 ## Jenkins credentials
 
 Create these as Jenkins **Secret text** credentials:
 
-- ID `openai-api-key`: an OpenAI Platform project API key. A Codex desktop
-  sign-in is not usable by Jenkins. Restrict the API project's budget and
-  rotate this key independently of personal credentials.
+- ID `deepseek-api-key`: a DeepSeek Platform API key. Restrict the account
+  balance and rotate this key independently of personal credentials.
 - ID `github-autofix-token`: a fine-grained GitHub token scoped only to this
   repository, with `Pull requests: Read and write`. Branch push uses the
   repository's existing Jenkins SSH credential.
@@ -61,10 +62,10 @@ Disable the old Freestyle `rlucene` timer only after `rlucene-ci` has passed.
 ## Loop prevention
 
 - Only `main` is accepted as a base branch.
-- The CI job never builds `codex/*` branches.
+- The CI job checks out only `main`; it never builds repair branches.
 - Each commit gets one persistent attempt marker under
-  `/var/jenkins_home/codex-autofix-state/rlucene/`.
-- A remote `codex/jenkins-autofix-<12-char-sha>` branch prevents another
+  `/var/jenkins_home/ai-autofix-state/rlucene/`.
+- A remote `deepseek/jenkins-autofix-<12-char-sha>` branch prevents another
   attempt.
 - A failure that cannot be reproduced produces no patch and no PR.
 - A timeout or killed process is treated as infrastructure failure.
@@ -78,18 +79,20 @@ entire state directory.
 
 Configure a trusted HTTPS proxy or firewall route for the Jenkins execution
 environment. When a proxy is required, add a Jenkins global environment
-variable named `CODEX_HTTPS_PROXY`; the autofix pipeline maps it to the
-standard proxy variables only during Codex connectivity and execution stages.
+variable named `CODEX_HTTPS_PROXY`; this legacy variable name is retained to
+avoid changing the already configured proxy. The autofix pipeline maps it to
+the standard proxy variables only during DeepSeek connectivity and execution
+stages.
 Then verify:
 
 ```sh
 curl -sS --connect-timeout 10 --max-time 20 \
   -o /dev/null -w '%{http_code}\n' \
-  https://api.openai.com/v1/models
+  https://api.deepseek.com/v1/models
 ```
 
 An unauthenticated `401` response proves that the network path and TLS
-connection work. A timeout means Codex cannot run.
+connection work. A timeout means the DeepSeek repair agent cannot run.
 
 ## Jenkins root URL
 
