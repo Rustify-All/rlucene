@@ -261,11 +261,11 @@ non-reproducible flaky failure, make no changes and explain why.
                 set -euo pipefail
                 git diff --check
                 if git status --porcelain | awk '{print $2}' | \
-                  grep -Eq '^(AGENTS\.md|Jenkinsfile|Jenkinsfile\.autofix|ci/jenkins/)'; then
+                  grep -Eq '^(AGENTS[.]md|Jenkinsfile|Jenkinsfile[.]autofix|ci/jenkins/)'; then
                   echo 'Codex attempted to modify protected automation files.' >&2
                   exit 1
                 fi
-                if git diff --unified=0 | grep -Eq '^\+.*#\[ignore\]'; then
+                if git diff --unified=0 | grep '^+' | grep -F '#[ignore]'; then
                   echo 'Codex attempted to add #[ignore].' >&2
                   exit 1
                 fi
@@ -372,4 +372,3 @@ No branch or PR is published unless every verification step succeeds.
     }
   }
 }
-
