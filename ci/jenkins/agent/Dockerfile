@@ -5,6 +5,9 @@ USER root
 ARG RUST_VERSION=1.97.0
 ARG CODEX_VERSION=0.145.0
 ARG CODEX_INSTALLER_COMMIT=ef2d3edb959a75a90665ade37d554f3ca65fe880
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
 
 ENV RUSTUP_HOME=/opt/rustup \
     CARGO_HOME=/opt/cargo \
@@ -48,4 +51,3 @@ RUN mkdir -p /home/jenkins/.local/bin /home/jenkins/.codex \
       /opt/rustup
 
 USER jenkins
-
