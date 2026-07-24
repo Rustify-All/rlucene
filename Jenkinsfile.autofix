@@ -58,7 +58,7 @@ pipeline {
           env.ATTEMPT_MARKER =
             "${env.AUTOFIX_STATE_ROOT}/${normalizedSha}.attempted"
           currentBuild.description = shortSha
-          echo 'Autofix pipeline revision: mutable-state-v2'
+          echo 'Autofix pipeline revision: codex-cli-flags-v3'
         }
       }
     }
@@ -262,11 +262,10 @@ non-reproducible flaky failure, make no changes and explain why.
                 export https_proxy="$CODEX_HTTPS_PROXY"
               fi
               set +x
-              CODEX_API_KEY="$OPENAI_KEY" "$CODEX_BIN" exec \
+              CODEX_API_KEY="$OPENAI_KEY" "$CODEX_BIN" -a never exec \
                 --ephemeral \
                 --ignore-user-config \
                 --sandbox workspace-write \
-                --ask-for-approval never \
                 -c sandbox_workspace_write.network_access=false \
                 --output-last-message codex-result.md \
                 "$(cat codex-task.md)" \
