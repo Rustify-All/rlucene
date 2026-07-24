@@ -34,14 +34,15 @@ checksums. Pin `CODEX_RELEASE` when upgrading production intentionally.
 
 Create these as Jenkins **Secret text** credentials:
 
-- An OpenAI Platform project API key. Restrict its project budget and rotate it
-  independently of personal credentials.
-- A fine-grained GitHub token scoped only to this repository, with
-  `Pull requests: Read and write`. Branch push uses the repository's existing
-  Jenkins SSH credential.
+- ID `openai-api-key`: an OpenAI Platform project API key. A Codex desktop
+  sign-in is not usable by Jenkins. Restrict the API project's budget and
+  rotate this key independently of personal credentials.
+- ID `github-autofix-token`: a fine-grained GitHub token scoped only to this
+  repository, with `Pull requests: Read and write`. Branch push uses the
+  repository's existing Jenkins SSH credential.
 
-Set the credential IDs used by your Jenkins instance in the two Jenkinsfiles
-before enabling the jobs.
+If your Jenkins instance uses different IDs, update both Jenkinsfiles before
+enabling the jobs.
 
 Never put secret values in a Jenkinsfile, Dockerfile, build parameter, email,
 GitHub repository, or console log.
