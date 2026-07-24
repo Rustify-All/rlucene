@@ -374,6 +374,7 @@ flaky failure, make no changes and explain why.
             set -euo pipefail
             unset DEEPSEEK_API_KEY DEEPSEEK_KEY OPENCODE_CONFIG_CONTENT \
               GH_TOKEN GITHUB_TOKEN
+            timeout --kill-after=30s 12m cargo tidy
             cargo fmt --all -- --check
           '''
           script {
@@ -447,7 +448,7 @@ flaky failure, make no changes and explain why.
             sh '''#!/bin/bash
               set -euo pipefail
               umask 077
-              PR_PAYLOAD=$(printf '{"title":"DeepSeek: fix tests for %s","head":"%s","base":"main","body":"Automated Jenkins/DeepSeek repair using OpenCode.\\n\\nFailed commit: `%s`\\nUpstream build: %s\\n\\nVerified with `cargo fmt --all -- --check` and `cargo test -q`.\\n\\nHuman review is required; this PR will not be auto-merged.","draft":true}' \
+              PR_PAYLOAD=$(printf '{"title":"DeepSeek: fix tests for %s","head":"%s","base":"main","body":"Automated Jenkins/DeepSeek repair using OpenCode.\\n\\nFailed commit: `%s`\\nUpstream build: %s\\n\\nVerified with `cargo tidy`, `cargo fmt --all -- --check`, and `cargo test -q`.\\n\\nHuman review is required; this PR will not be auto-merged.","draft":true}' \
                 "$SHA_SHORT" "$FIX_BRANCH" "$FAILED_SHA_NORMALIZED" "$UPSTREAM_BUILD_URL")
               set +x
               curl --fail-with-body -sS \
