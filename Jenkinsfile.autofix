@@ -189,6 +189,12 @@ pipeline {
       steps {
         sh '''#!/bin/bash
           set -euo pipefail
+          if [ -n "${CODEX_HTTPS_PROXY:-}" ]; then
+            export HTTP_PROXY="$CODEX_HTTPS_PROXY"
+            export HTTPS_PROXY="$CODEX_HTTPS_PROXY"
+            export http_proxy="$CODEX_HTTPS_PROXY"
+            export https_proxy="$CODEX_HTTPS_PROXY"
+          fi
           test -x "$CODEX_BIN"
           mkdir -p "$CODEX_STATE_DIR"
           "$CODEX_BIN" --version
@@ -230,6 +236,12 @@ non-reproducible flaky failure, make no changes and explain why.
               umask 077
               export JENKINS_AUTOFIX=1
               export CODEX_HOME="$CODEX_STATE_DIR"
+              if [ -n "${CODEX_HTTPS_PROXY:-}" ]; then
+                export HTTP_PROXY="$CODEX_HTTPS_PROXY"
+                export HTTPS_PROXY="$CODEX_HTTPS_PROXY"
+                export http_proxy="$CODEX_HTTPS_PROXY"
+                export https_proxy="$CODEX_HTTPS_PROXY"
+              fi
               set +x
               CODEX_API_KEY="$OPENAI_KEY" "$CODEX_BIN" exec \
                 --ephemeral \
