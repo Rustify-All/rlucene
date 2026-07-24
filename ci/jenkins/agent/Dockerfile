@@ -3,15 +3,16 @@ FROM jenkins/inbound-agent:jdk21
 USER root
 
 ARG RUST_VERSION=1.97.0
-ARG CODEX_VERSION=0.145.0
-ARG CODEX_INSTALLER_COMMIT=ef2d3edb959a75a90665ade37d554f3ca65fe880
+ARG OPENCODE_VERSION=1.18.4
+ARG OPENCODE_LINUX_AMD64_SHA256=bab463c3fb3224d388bb7cfad63f38703df9cf0be2cfd2ce8cb49d886b53a174
+ARG OPENCODE_LINUX_ARM64_SHA256=eba87efba3976d533a24cca0316f8ef375b5f8e797c0a95c25ee919700b7ba35
+ARG TARGETARCH=amd64
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
 ARG NO_PROXY
 
 ENV RUSTUP_HOME=/opt/rustup \
     CARGO_HOME=/opt/cargo \
-    CODEX_HOME=/home/jenkins/.codex \
     PATH=/home/jenkins/.local/bin:/opt/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 RUN apt-get update \
@@ -34,19 +35,25 @@ RUN curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs \
     && rustup component add rustfmt clippy rust-src \
     && rm -f /tmp/rustup-init.sh
 
-RUN mkdir -p /home/jenkins/.local/bin /home/jenkins/.codex \
+RUN mkdir -p /home/jenkins/.local/bin /home/jenkins/.local/share/opencode \
+    && case "${TARGETARCH}" in \
+      amd64) \
+        archive=opencode-linux-x64.tar.gz; \
+        checksum="${OPENCODE_LINUX_AMD64_SHA256}" ;; \
+      arm64) \
+        archive=opencode-linux-arm64.tar.gz; \
+        checksum="${OPENCODE_LINUX_ARM64_SHA256}" ;; \
+      *) echo "Unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
     && curl -fsSL \
-      "https://raw.githubusercontent.com/openai/codex/${CODEX_INSTALLER_COMMIT}/scripts/install/install.sh" \
-      -o /tmp/install-codex.sh \
-    && CODEX_RELEASE="${CODEX_VERSION}" \
-      CODEX_INSTALL_DIR=/home/jenkins/.local/bin \
-      CODEX_NON_INTERACTIVE=1 \
-      sh /tmp/install-codex.sh \
-    && codex --version \
-    && rm -f /tmp/install-codex.sh \
+      "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/${archive}" \
+      -o "/tmp/${archive}" \
+    && printf '%s  %s\n' "${checksum}" "/tmp/${archive}" | sha256sum -c - \
+    && tar -xzf "/tmp/${archive}" -C /home/jenkins/.local/bin \
+    && opencode --version \
+    && rm -f "/tmp/${archive}" \
     && chown -R jenkins:jenkins \
       /home/jenkins/.local \
-      /home/jenkins/.codex \
       /opt/cargo \
       /opt/rustup
 
