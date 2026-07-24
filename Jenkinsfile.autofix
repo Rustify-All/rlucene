@@ -58,6 +58,7 @@ pipeline {
           env.ATTEMPT_MARKER =
             "${env.AUTOFIX_STATE_ROOT}/${normalizedSha}.attempted"
           currentBuild.description = shortSha
+          echo 'Autofix pipeline revision: groovy-cargo-marker-v1'
         }
       }
     }
@@ -167,6 +168,16 @@ pipeline {
                 exit "$test_status"
               '''
             )
+            String reproduceLog = readFile(file: 'initial-test.log')
+            boolean cargoReportedFailure =
+              reproduceLog.contains('test result: FAILED') ||
+              reproduceLog.contains('\nerror:') ||
+              reproduceLog.startsWith('error:') ||
+              reproduceLog.contains('\nerror[') ||
+              reproduceLog.startsWith('error[')
+            if (reproduceStatus == 0 && cargoReportedFailure) {
+              reproduceStatus = 101
+            }
             sh '''
               git ls-files --error-unmatch Cargo.lock >/dev/null 2>&1 || \
                 rm -f Cargo.lock
@@ -313,19 +324,34 @@ non-reproducible flaky failure, make no changes and explain why.
             set -euo pipefail
             unset CODEX_API_KEY OPENAI_API_KEY OPENAI_KEY GH_TOKEN GITHUB_TOKEN
             cargo fmt --all -- --check
-            set +e
-            timeout --kill-after=30s 20m cargo test -q \
-              > final-test.log 2>&1
-            test_status=$?
-            set -e
-            cat final-test.log
-            if grep -Eq '(^error(:|\\[)|test result: FAILED)' \
-              final-test.log; then
-              exit 101
-            fi
-            if [ "$test_status" -ne 0 ]; then
-              exit "$test_status"
-            fi
+          '''
+          script {
+            int verifyStatus = sh(
+              returnStatus: true,
+              script: '''#!/bin/bash
+                set -uo pipefail
+                unset CODEX_API_KEY OPENAI_API_KEY OPENAI_KEY GH_TOKEN GITHUB_TOKEN
+                set +e
+                timeout --kill-after=30s 20m cargo test -q \
+                  > final-test.log 2>&1
+                test_status=$?
+                cat final-test.log
+                exit "$test_status"
+              '''
+            )
+            String finalTestLog = readFile(file: 'final-test.log')
+            boolean cargoReportedFailure =
+              finalTestLog.contains('test result: FAILED') ||
+              finalTestLog.contains('\nerror:') ||
+              finalTestLog.startsWith('error:') ||
+              finalTestLog.contains('\nerror[') ||
+              finalTestLog.startsWith('error[')
+            if (verifyStatus != 0 || cargoReportedFailure) {
+              error("Independent cargo test failed (exit ${verifyStatus}).")
+            }
+          }
+          sh '''#!/bin/bash
+            set -euo pipefail
             git ls-files --error-unmatch Cargo.lock >/dev/null 2>&1 || \
               rm -f Cargo.lock
             git diff --check
