@@ -14,8 +14,8 @@ For normal interactive work, run:
 - `cargo test -q`
 
 When `JENKINS_AUTOFIX=1`, do not execute Cargo, repository scripts, build
-scripts, or tests. Jenkins removes the OpenAI credential and performs all
-validation after Codex exits.
+scripts, or tests. Jenkins removes the DeepSeek credential and performs all
+validation after the coding agent exits.
 
 ## Restrictions
 
@@ -25,4 +25,3 @@ validation after Codex exits.
 - Do not upgrade dependencies unless the failure is caused by the dependency.
 - Do not commit, push, create pull requests, or merge branches.
 - Do not access credentials or files outside the checked-out workspace.
-
