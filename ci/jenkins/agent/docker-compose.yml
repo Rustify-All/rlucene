@@ -3,6 +3,9 @@ services:
     build:
       context: ../../..
       dockerfile: ci/jenkins/agent/Dockerfile
+      args:
+        HTTP_PROXY: ${CODEX_HTTPS_PROXY:-}
+        HTTPS_PROXY: ${CODEX_HTTPS_PROXY:-}
     image: rlucene-codex-agent:0.145.0
     restart: unless-stopped
     environment:
@@ -10,6 +13,7 @@ services:
       JENKINS_AGENT_NAME: rlucene-codex
       JENKINS_SECRET: ${JENKINS_AGENT_SECRET}
       JENKINS_AGENT_WORKDIR: /home/jenkins/agent
+      CODEX_HTTPS_PROXY: ${CODEX_HTTPS_PROXY:-}
     volumes:
       - codex-agent-work:/home/jenkins/agent
       - codex-agent-cargo:/opt/cargo
