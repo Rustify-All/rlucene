@@ -83,6 +83,10 @@ pipeline {
                 > cargo-test.log 2>&1
               test_status=$?
               cat cargo-test.log
+              if grep -Eq '(^error(:|\\[)|test result: FAILED)' \
+                cargo-test.log; then
+                exit 101
+              fi
               exit "$test_status"
             '''
           )
