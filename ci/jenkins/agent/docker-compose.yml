@@ -1,30 +1,30 @@
 services:
-  codex-agent:
+  autofix-agent:
     build:
       context: ../../..
       dockerfile: ci/jenkins/agent/Dockerfile
       args:
         HTTP_PROXY: ${CODEX_HTTPS_PROXY:-}
         HTTPS_PROXY: ${CODEX_HTTPS_PROXY:-}
-    image: rlucene-codex-agent:0.145.0
+    image: rlucene-deepseek-agent:1.18.4
     restart: unless-stopped
     environment:
       JENKINS_URL: http://jenkins:8080/
-      JENKINS_AGENT_NAME: rlucene-codex
+      JENKINS_AGENT_NAME: rlucene-autofix
       JENKINS_SECRET: ${JENKINS_AGENT_SECRET}
       JENKINS_AGENT_WORKDIR: /home/jenkins/agent
       CODEX_HTTPS_PROXY: ${CODEX_HTTPS_PROXY:-}
     volumes:
-      - codex-agent-work:/home/jenkins/agent
-      - codex-agent-cargo:/opt/cargo
-      - codex-agent-rustup:/opt/rustup
+      - autofix-agent-work:/home/jenkins/agent
+      - autofix-agent-cargo:/opt/cargo
+      - autofix-agent-rustup:/opt/rustup
     networks:
       - jenkins
 
 volumes:
-  codex-agent-work:
-  codex-agent-cargo:
-  codex-agent-rustup:
+  autofix-agent-work:
+  autofix-agent-cargo:
+  autofix-agent-rustup:
 
 networks:
   jenkins:
