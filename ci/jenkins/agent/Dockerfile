@@ -4,8 +4,8 @@ USER root
 
 ARG RUST_VERSION=1.97.0
 ARG OPENCODE_VERSION=1.18.4
-ARG OPENCODE_LINUX_AMD64_SHA256=bab463c3fb3224d388bb7cfad63f38703df9cf0be2cfd2ce8cb49d886b53a174
-ARG OPENCODE_LINUX_ARM64_SHA256=eba87efba3976d533a24cca0316f8ef375b5f8e797c0a95c25ee919700b7ba35
+ARG OPENCODE_LINUX_AMD64_SHA512=982899b8a401a911d586da76d181437cd7f9714c13b7afc8f7c3052500c97434d68209e40153a78ad413992b76710c283c9f7856b4700e1672637a48637f8242
+ARG OPENCODE_LINUX_ARM64_SHA512=de0070f70784efa8e5a0d3c698fbf397718947c6fab1cc1200437150a45d277582902eea723266e3d285c9fa858cee7efb51f54368db9aaab1020b79ba9aa831
 ARG TARGETARCH=amd64
 ARG HTTP_PROXY
 ARG HTTPS_PROXY
@@ -38,20 +38,23 @@ RUN curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs \
 RUN mkdir -p /home/jenkins/.local/bin /home/jenkins/.local/share/opencode \
     && case "${TARGETARCH}" in \
       amd64) \
-        archive=opencode-linux-x64.tar.gz; \
-        checksum="${OPENCODE_LINUX_AMD64_SHA256}" ;; \
+        package=opencode-linux-x64; \
+        checksum="${OPENCODE_LINUX_AMD64_SHA512}" ;; \
       arm64) \
-        archive=opencode-linux-arm64.tar.gz; \
-        checksum="${OPENCODE_LINUX_ARM64_SHA256}" ;; \
+        package=opencode-linux-arm64; \
+        checksum="${OPENCODE_LINUX_ARM64_SHA512}" ;; \
       *) echo "Unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
     esac \
+    && archive="${package}-${OPENCODE_VERSION}.tgz" \
     && curl -fsSL \
-      "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/${archive}" \
+      "https://registry.npmjs.org/${package}/-/${archive}" \
       -o "/tmp/${archive}" \
-    && printf '%s  %s\n' "${checksum}" "/tmp/${archive}" | sha256sum -c - \
-    && tar -xzf "/tmp/${archive}" -C /home/jenkins/.local/bin \
+    && printf '%s  %s\n' "${checksum}" "/tmp/${archive}" | sha512sum -c - \
+    && tar -xzf "/tmp/${archive}" -C /tmp \
+    && cp /tmp/package/bin/opencode /home/jenkins/.local/bin/opencode \
+    && chmod 0755 /home/jenkins/.local/bin/opencode \
     && opencode --version \
-    && rm -f "/tmp/${archive}" \
+    && rm -rf "/tmp/${archive}" /tmp/package \
     && chown -R jenkins:jenkins \
       /home/jenkins/.local \
       /opt/cargo \
