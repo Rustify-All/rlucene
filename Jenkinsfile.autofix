@@ -16,7 +16,9 @@ pipeline {
   }
 
   environment {
-    REPOSITORY_URL = 'git@github.com:Rustify-All/rlucene.git'
+    UPSTREAM_REPOSITORY_URL = 'git@github.com:Rustify-All/rlucene.git'
+    FORK_REPOSITORY_URL = 'git@github.com:LuXugang/rlucene.git'
+    FORK_OWNER = 'LuXugang'
     GIT_CREDENTIALS_ID = 'github-ssh'
     DEEPSEEK_CREDENTIALS_ID = 'deepseek-api-key'
     GITHUB_CREDENTIALS_ID = 'github-autofix-token'
@@ -58,7 +60,7 @@ pipeline {
           env.ATTEMPT_MARKER =
             "${env.AUTOFIX_STATE_ROOT}/${normalizedSha}.attempted"
           currentBuild.description = shortSha
-          echo 'Autofix pipeline revision: deepseek-opencode-v1'
+          echo 'Autofix pipeline revision: deepseek-opencode-v2-fork-pr'
         }
       }
     }
@@ -72,15 +74,9 @@ pipeline {
             branches: [[name: '*/main']],
             userRemoteConfigs: [[
               credentialsId: env.GIT_CREDENTIALS_ID,
-              url: env.REPOSITORY_URL
+              url: env.UPSTREAM_REPOSITORY_URL
             ]]
           ])
-          sh '''#!/bin/bash
-            set -euo pipefail
-            git cat-file -e "$FAILED_SHA_NORMALIZED^{commit}"
-            git checkout --detach "$FAILED_SHA_NORMALIZED"
-            test "$(git rev-parse HEAD)" = "$FAILED_SHA_NORMALIZED"
-          '''
 
           withCredentials([sshUserPrivateKey(
             credentialsId: env.GIT_CREDENTIALS_ID,
@@ -88,12 +84,25 @@ pipeline {
             usernameVariable: 'GIT_SSH_USER'
           )]) {
             script {
+              sh '''#!/bin/bash
+                set -euo pipefail
+                set +x
+                export GIT_SSH_COMMAND="ssh -i $GIT_SSH_KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+                git remote remove fork >/dev/null 2>&1 || true
+                git remote add fork "$FORK_REPOSITORY_URL"
+                git fetch --no-tags --prune fork \
+                  '+refs/heads/*:refs/remotes/fork/*'
+                git cat-file -e "$FAILED_SHA_NORMALIZED^{commit}"
+                git checkout --detach "$FAILED_SHA_NORMALIZED"
+                test "$(git rev-parse HEAD)" = "$FAILED_SHA_NORMALIZED"
+                test -f AGENTS.md
+              '''
               int remoteBranchExists = sh(
                 returnStatus: true,
                 script: '''#!/bin/bash
                   set +x
                   export GIT_SSH_COMMAND="ssh -i $GIT_SSH_KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
-                  git ls-remote --exit-code --heads origin "refs/heads/$FIX_BRANCH" >/dev/null 2>&1
+                  git ls-remote --exit-code --heads fork "refs/heads/$FIX_BRANCH" >/dev/null 2>&1
                 '''
               )
               if (remoteBranchExists == 0) {
@@ -274,13 +283,15 @@ using DeepSeek through OpenCode.
 Failed commit: ${env.FAILED_SHA_NORMALIZED}
 Upstream build: ${params.UPSTREAM_BUILD_URL}
 
-Read initial-test.log and the relevant source. Make the smallest root-cause
-fix. Do not run Cargo, tests, repository scripts, or any compiled code during
-this model invocation; Jenkins validates after the DeepSeek credential is
-removed. Do not add ignored tests, remove tests, weaken assertions, modify
-Jenkins automation, upgrade unrelated dependencies, commit, push, or create a
-pull request. If the evidence indicates infrastructure or a non-reproducible
-flaky failure, make no changes and explain why.
+Before reading any other repository file, read AGENTS.md completely and follow
+all applicable instructions in it. Then read initial-test.log and the relevant
+source. Make the smallest root-cause fix. Do not run Cargo, tests, repository
+scripts, or any compiled code during this model invocation; Jenkins validates
+after the DeepSeek credential is removed. Do not add ignored tests, remove
+tests, weaken assertions, modify Jenkins automation, upgrade unrelated
+dependencies, commit, push, or create a pull request. If the evidence
+indicates infrastructure or a non-reproducible flaky failure, make no changes
+and explain why.
 """
         )
         dir('source') {
@@ -413,7 +424,7 @@ flaky failure, make no changes and explain why.
       }
     }
 
-    stage('Publish Draft PR') {
+    stage('Publish PR') {
       when {
         expression { env.PATCH_READY == 'true' }
       }
@@ -434,7 +445,7 @@ flaky failure, make no changes and explain why.
               file: 'pr-payload.json',
               text: groovy.json.JsonOutput.toJson([
                 title: "DeepSeek: fix tests for ${env.SHA_SHORT}",
-                head: env.FIX_BRANCH,
+                head: "${env.FORK_OWNER}:${env.FIX_BRANCH}",
                 base: 'main',
                 body: """Automated Jenkins/DeepSeek repair using OpenCode.
 
@@ -443,8 +454,9 @@ Upstream build: ${params.UPSTREAM_BUILD_URL}
 
 Verified with `cargo tidy`, `cargo fmt --all -- --check`, and `cargo test -q`.
 
-Human review is required; this PR will not be auto-merged.""",
-                draft: true
+This is a ready-for-review PR. Human review and manual merge are required;
+this PR will never be auto-merged.""",
+                draft: false
               ])
             )
           }
@@ -458,7 +470,7 @@ Human review is required; this PR will not be auto-merged.""",
               set -euo pipefail
               set +x
               export GIT_SSH_COMMAND="ssh -i $GIT_SSH_KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
-              git push origin "HEAD:refs/heads/$FIX_BRANCH"
+              git push fork "HEAD:refs/heads/$FIX_BRANCH"
             '''
           }
 

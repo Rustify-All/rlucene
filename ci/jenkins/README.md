@@ -10,9 +10,10 @@ This deployment intentionally separates four trust zones:
    credential. Repository code is not executed during this stage.
 4. Jenkins removes the DeepSeek credential, independently runs `cargo tidy`,
    formatting checks, and tests, then injects GitHub credentials only for push
-   and Draft PR creation.
+   and ready-for-review PR creation.
 
-Draft PRs are never auto-merged.
+Repair branches are pushed only to `LuXugang/rlucene`. Pull requests target
+`Rustify-All/rlucene:main`, require human review, and are never auto-merged.
 
 ## Jenkins prerequisites
 
@@ -40,8 +41,11 @@ Create these as Jenkins **Secret text** credentials:
 - ID `deepseek-api-key`: a DeepSeek Platform API key. Restrict the account
   balance and rotate this key independently of personal credentials.
 - ID `github-autofix-token`: a fine-grained GitHub token scoped only to this
-  repository, with `Pull requests: Read and write`. Branch push uses the
-  repository's existing Jenkins SSH credential.
+  upstream repository, with `Pull requests: Read and write`.
+
+The `github-ssh` credential must be able to read `Rustify-All/rlucene` and push
+branches to `LuXugang/rlucene`. The GitHub API token is not exposed until after
+DeepSeek has exited and all independent validation has passed.
 
 If your Jenkins instance uses different IDs, update both Jenkinsfiles before
 enabling the jobs.
@@ -56,9 +60,20 @@ Create two Pipeline-from-SCM jobs:
 - `rlucene-ci`, script path `Jenkinsfile`.
 - `rlucene-autofix`, script path `Jenkinsfile.autofix`.
 
-During review, point both jobs to the deployment branch. After the Draft PR is
-reviewed and merged manually, change their Pipeline SCM branch to `*/main`.
+During review, point `rlucene-autofix` to the deployment branch in
+`LuXugang/rlucene`. After the deployment PR is reviewed and merged manually,
+change its Pipeline SCM repository to `Rustify-All/rlucene` and its branch to
+`*/main`. The CI job continues to read the upstream repository.
 Disable the old Freestyle `rlucene` timer only after `rlucene-ci` has passed.
+
+## Repository instructions
+
+The repository-root `AGENTS.md` is synchronized from the Codex workspace
+instructions. The repair agent is explicitly required to read the entire file
+before any other repository file, and the checkout fails if the file is
+missing. Keep the repository copy synchronized whenever those principles
+change. Jenkins blocks an autofix patch that modifies `AGENTS.md` or the
+Jenkins deployment itself.
 
 ## Loop prevention
 
@@ -66,11 +81,11 @@ Disable the old Freestyle `rlucene` timer only after `rlucene-ci` has passed.
 - The CI job checks out only `main`; it never builds repair branches.
 - Each commit gets one persistent attempt marker under
   `/var/jenkins_home/ai-autofix-state/rlucene/`.
-- A remote `deepseek/jenkins-autofix-<12-char-sha>` branch prevents another
-  attempt.
+- A remote `deepseek/jenkins-autofix-<12-char-sha>` branch in
+  `LuXugang/rlucene` prevents another attempt.
 - A failure that cannot be reproduced produces no patch and no PR.
 - A timeout or killed process is treated as infrastructure failure.
-- Pull requests are always Draft and are never auto-merged.
+- Pull requests are ready for review but are never auto-merged.
 
 To retry a commit intentionally, an administrator must remove only that
 commit's marker file after reviewing the previous attempt. Never clear the
