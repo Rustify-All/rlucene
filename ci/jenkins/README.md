@@ -40,12 +40,19 @@ Create these as Jenkins **Secret text** credentials:
 
 - ID `deepseek-api-key`: a DeepSeek Platform API key. Restrict the account
   balance and rotate this key independently of personal credentials.
-- ID `github-autofix-token`: a fine-grained GitHub token scoped only to this
-  upstream repository, with `Pull requests: Read and write`.
+- ID `github-autofix-token`: because the head repository belongs to
+  `LuXugang` while the base repository belongs to `Rustify-All`, use a classic
+  PAT owned by `LuXugang` with the `public_repo` scope. Do not grant the broader
+  `repo` scope while both repositories are public. A fine-grained PAT scoped
+  only to the upstream repository cannot read the fork's head ref and GitHub
+  rejects PR creation with `not all refs are readable`.
 
 The `github-ssh` credential must be able to read `Rustify-All/rlucene` and push
 branches to `LuXugang/rlucene`. The GitHub API token is not exposed until after
 DeepSeek has exited and all independent validation has passed.
+
+For a longer-lived production setup, replace the classic PAT with a dedicated
+OAuth or GitHub App user token that has equivalent access to both repositories.
 
 If your Jenkins instance uses different IDs, update both Jenkinsfiles before
 enabling the jobs.
