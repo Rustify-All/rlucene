@@ -23,9 +23,6 @@ pipeline {
     CODEX_BIN = '/var/jenkins_home/tools/codex/bin/codex'
     CODEX_STATE_DIR = '/var/jenkins_home/tools/codex/home'
     AUTOFIX_STATE_ROOT = '/var/jenkins_home/codex-autofix-state/rlucene'
-    SKIP_AUTOFIX = 'false'
-    REPRODUCED = 'false'
-    PATCH_READY = 'false'
     RUSTUP_DIST_SERVER = 'https://rsproxy.cn'
     RUSTUP_UPDATE_ROOT = 'https://rsproxy.cn/rustup'
     RUSTUP_HOME = '/opt/rustup'
@@ -43,6 +40,9 @@ pipeline {
     stage('Validate request') {
       steps {
         script {
+          env.SKIP_AUTOFIX = 'false'
+          env.REPRODUCED = 'false'
+          env.PATCH_READY = 'false'
           if (!(params.FAILED_SHA ==~ /[0-9a-fA-F]{40}/)) {
             error('FAILED_SHA must be exactly 40 hexadecimal characters.')
           }
@@ -58,7 +58,7 @@ pipeline {
           env.ATTEMPT_MARKER =
             "${env.AUTOFIX_STATE_ROOT}/${normalizedSha}.attempted"
           currentBuild.description = shortSha
-          echo 'Autofix pipeline revision: groovy-cargo-marker-v1'
+          echo 'Autofix pipeline revision: mutable-state-v2'
         }
       }
     }
