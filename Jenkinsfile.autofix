@@ -429,6 +429,26 @@ flaky failure, make no changes and explain why.
             git commit -m "fix: repair Jenkins failure for $SHA_SHORT"
           '''
 
+          script {
+            writeFile(
+              file: 'pr-payload.json',
+              text: groovy.json.JsonOutput.toJson([
+                title: "DeepSeek: fix tests for ${env.SHA_SHORT}",
+                head: env.FIX_BRANCH,
+                base: 'main',
+                body: """Automated Jenkins/DeepSeek repair using OpenCode.
+
+Failed commit: `${env.FAILED_SHA_NORMALIZED}`
+Upstream build: ${params.UPSTREAM_BUILD_URL}
+
+Verified with `cargo tidy`, `cargo fmt --all -- --check`, and `cargo test -q`.
+
+Human review is required; this PR will not be auto-merged.""",
+                draft: true
+              ])
+            )
+          }
+
           withCredentials([sshUserPrivateKey(
             credentialsId: env.GIT_CREDENTIALS_ID,
             keyFileVariable: 'GIT_SSH_KEY',
@@ -449,8 +469,7 @@ flaky failure, make no changes and explain why.
             sh '''#!/bin/bash
               set -euo pipefail
               umask 077
-              PR_PAYLOAD=$(printf '{"title":"DeepSeek: fix tests for %s","head":"%s","base":"main","body":"Automated Jenkins/DeepSeek repair using OpenCode.\\n\\nFailed commit: `%s`\\nUpstream build: %s\\n\\nVerified with `cargo tidy`, `cargo fmt --all -- --check`, and `cargo test -q`.\\n\\nHuman review is required; this PR will not be auto-merged.","draft":true}' \
-                "$SHA_SHORT" "$FIX_BRANCH" "$FAILED_SHA_NORMALIZED" "$UPSTREAM_BUILD_URL")
+              trap 'rm -f pr-payload.json' EXIT
               set +x
               HTTP_STATUS=$(curl -sS \
                 -X POST \
@@ -459,7 +478,7 @@ flaky failure, make no changes and explain why.
                 -H 'Content-Type: application/json' \
                 -H 'X-GitHub-Api-Version: 2022-11-28' \
                 https://api.github.com/repos/Rustify-All/rlucene/pulls \
-                --data "$PR_PAYLOAD" \
+                --data-binary @pr-payload.json \
                 -o pr-response.json \
                 -w '%{http_code}')
               if [ "$HTTP_STATUS" != '201' ]; then
