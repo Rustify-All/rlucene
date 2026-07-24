@@ -19,7 +19,7 @@
 // The implementation is intentionally wrong so the pipeline can repair it.
 
 fn multiply_by_three(value: i32) -> i32 {
-  value * 2
+  value * 3
 }
 
 #[test]
