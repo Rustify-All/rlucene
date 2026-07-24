@@ -1,0 +1,28 @@
+services:
+  codex-agent:
+    build:
+      context: ../../..
+      dockerfile: ci/jenkins/agent/Dockerfile
+    image: rlucene-codex-agent:0.145.0
+    restart: unless-stopped
+    environment:
+      JENKINS_URL: http://jenkins:8080/
+      JENKINS_AGENT_NAME: rlucene-codex
+      JENKINS_SECRET: ${JENKINS_AGENT_SECRET}
+      JENKINS_AGENT_WORKDIR: /home/jenkins/agent
+    volumes:
+      - codex-agent-work:/home/jenkins/agent
+      - codex-agent-cargo:/opt/cargo
+      - codex-agent-rustup:/opt/rustup
+    networks:
+      - jenkins
+
+volumes:
+  codex-agent-work:
+  codex-agent-cargo:
+  codex-agent-rustup:
+
+networks:
+  jenkins:
+    external: true
+    name: ${JENKINS_DOCKER_NETWORK}
