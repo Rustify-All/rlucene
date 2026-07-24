@@ -77,9 +77,13 @@ pipeline {
           int testStatus = sh(
             returnStatus: true,
             script: '''#!/bin/bash
-              set -o pipefail
+              set -uo pipefail
+              set +e
               timeout --kill-after=30s 12m cargo test -q \
-                2>&1 | tee cargo-test.log
+                > cargo-test.log 2>&1
+              test_status=$?
+              cat cargo-test.log
+              exit "$test_status"
             '''
           )
 
