@@ -8,8 +8,9 @@ This deployment intentionally separates four trust zones:
 3. OpenCode uses DeepSeek and receives only the DeepSeek credential. It has no
    shell permission, no external-directory permission, and no GitHub write
    credential. Repository code is not executed during this stage.
-4. Jenkins removes the DeepSeek credential, independently formats/tests the
-   patch, then injects GitHub credentials only for push and Draft PR creation.
+4. Jenkins removes the DeepSeek credential, independently runs `cargo tidy`,
+   formatting checks, and tests, then injects GitHub credentials only for push
+   and Draft PR creation.
 
 Draft PRs are never auto-merged.
 
