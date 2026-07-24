@@ -77,7 +77,10 @@ entire state directory.
 ## Network verification
 
 Configure a trusted HTTPS proxy or firewall route for the Jenkins execution
-environment, then verify:
+environment. When a proxy is required, add a Jenkins global environment
+variable named `CODEX_HTTPS_PROXY`; the autofix pipeline maps it to the
+standard proxy variables only during Codex connectivity and execution stages.
+Then verify:
 
 ```sh
 curl -sS --connect-timeout 10 --max-time 20 \
