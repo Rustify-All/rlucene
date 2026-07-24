@@ -160,6 +160,10 @@ pipeline {
                   > initial-test.log 2>&1
                 test_status=$?
                 cat initial-test.log
+                if grep -Eq '(^error(:|\\[)|test result: FAILED)' \
+                  initial-test.log; then
+                  exit 101
+                fi
                 exit "$test_status"
               '''
             )
@@ -315,6 +319,10 @@ non-reproducible flaky failure, make no changes and explain why.
             test_status=$?
             set -e
             cat final-test.log
+            if grep -Eq '(^error(:|\\[)|test result: FAILED)' \
+              final-test.log; then
+              exit 101
+            fi
             if [ "$test_status" -ne 0 ]; then
               exit "$test_status"
             fi
