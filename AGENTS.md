@@ -10,6 +10,7 @@ existing public API unless the task explicitly requires an API change.
 For normal interactive work, run:
 
 - `cargo fmt --all -- --check`
+- `cargo tidy`
 - the narrowest relevant test
 - `cargo test -q`
 
