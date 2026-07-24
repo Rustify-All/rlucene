@@ -16,9 +16,6 @@ pipeline {
   environment {
     REPOSITORY_URL = 'git@github.com:Rustify-All/rlucene.git'
     GIT_CREDENTIALS_ID = 'github-ssh'
-    CARGO_TEST_FAILED = 'false'
-    FAILURE_KIND = 'none'
-    FAILED_SHA = ''
     RUSTUP_DIST_SERVER = 'https://rsproxy.cn'
     RUSTUP_UPDATE_ROOT = 'https://rsproxy.cn/rustup'
     RUSTUP_HOME = '/opt/rustup'
@@ -33,6 +30,16 @@ pipeline {
   }
 
   stages {
+    stage('Initialize') {
+      steps {
+        script {
+          env.CARGO_TEST_FAILED = 'false'
+          env.FAILURE_KIND = 'none'
+          env.FAILED_SHA = ''
+        }
+      }
+    }
+
     stage('Checkout main') {
       steps {
         deleteDir()
