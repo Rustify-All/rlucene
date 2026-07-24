@@ -18,11 +18,11 @@ pipeline {
   environment {
     REPOSITORY_URL = 'git@github.com:Rustify-All/rlucene.git'
     GIT_CREDENTIALS_ID = 'github-ssh'
-    OPENAI_CREDENTIALS_ID = 'openai-api-key'
+    DEEPSEEK_CREDENTIALS_ID = 'deepseek-api-key'
     GITHUB_CREDENTIALS_ID = 'github-autofix-token'
-    CODEX_BIN = '/var/jenkins_home/tools/codex/bin/codex'
-    CODEX_STATE_DIR = '/var/jenkins_home/tools/codex/home'
-    AUTOFIX_STATE_ROOT = '/var/jenkins_home/codex-autofix-state/rlucene'
+    OPENCODE_BIN = '/var/jenkins_home/tools/opencode/bin/opencode'
+    OPENCODE_STATE_DIR = '/var/jenkins_home/tools/opencode/home'
+    AUTOFIX_STATE_ROOT = '/var/jenkins_home/ai-autofix-state/rlucene'
     RUSTUP_DIST_SERVER = 'https://rsproxy.cn'
     RUSTUP_UPDATE_ROOT = 'https://rsproxy.cn/rustup'
     RUSTUP_HOME = '/opt/rustup'
@@ -54,11 +54,11 @@ pipeline {
           String shortSha = normalizedSha.take(12)
           env.FAILED_SHA_NORMALIZED = normalizedSha
           env.SHA_SHORT = shortSha
-          env.FIX_BRANCH = "codex/jenkins-autofix-${shortSha}"
+          env.FIX_BRANCH = "deepseek/jenkins-autofix-${shortSha}"
           env.ATTEMPT_MARKER =
             "${env.AUTOFIX_STATE_ROOT}/${normalizedSha}.attempted"
           currentBuild.description = shortSha
-          echo 'Autofix pipeline revision: codex-cli-flags-v3'
+          echo 'Autofix pipeline revision: deepseek-opencode-v1'
         }
       }
     }
@@ -187,7 +187,7 @@ pipeline {
               env.SKIP_AUTOFIX = 'true'
               currentBuild.result = 'NOT_BUILT'
               currentBuild.description = "${env.SHA_SHORT}: not reproduced"
-              echo 'Failure did not reproduce; Codex will not modify code.'
+              echo 'Failure did not reproduce; DeepSeek will not modify code.'
             } else if (reproduceStatus == 124 || reproduceStatus == 137) {
               env.SKIP_AUTOFIX = 'true'
               currentBuild.result = 'UNSTABLE'
@@ -201,7 +201,7 @@ pipeline {
       }
     }
 
-    stage('Verify Codex runtime') {
+    stage('Verify DeepSeek runtime') {
       when {
         expression { env.REPRODUCED == 'true' }
       }
@@ -214,47 +214,95 @@ pipeline {
             export http_proxy="$CODEX_HTTPS_PROXY"
             export https_proxy="$CODEX_HTTPS_PROXY"
           fi
-          test -x "$CODEX_BIN"
-          mkdir -p "$CODEX_STATE_DIR"
-          "$CODEX_BIN" --version
+          test -x "$OPENCODE_BIN"
+          mkdir -p "$OPENCODE_STATE_DIR"
+          "$OPENCODE_BIN" --version
           curl -sS --connect-timeout 10 --max-time 20 \
-            -o /dev/null https://api.openai.com/v1/models
+            -o /dev/null https://api.deepseek.com/v1/models
         '''
       }
     }
 
-    stage('Generate minimal fix') {
+    stage('Generate minimal fix with DeepSeek') {
       when {
         expression { env.REPRODUCED == 'true' }
       }
       steps {
-        dir('source') {
-          writeFile(
-            file: 'codex-task.md',
-            text: """You are fixing a Rust project failure reproduced by Jenkins.
+        writeFile(
+          file: 'opencode-autofix.json',
+          text: '''{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "deepseek-autofix/deepseek-v4-pro",
+  "autoupdate": false,
+  "snapshot": false,
+  "lsp": false,
+  "provider": {
+    "deepseek-autofix": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "DeepSeek API",
+      "options": {
+        "baseURL": "https://api.deepseek.com/v1",
+        "apiKey": "{env:DEEPSEEK_API_KEY}"
+      },
+      "models": {
+        "deepseek-v4-pro": {
+          "name": "DeepSeek V4 Pro",
+          "limit": {
+            "context": 128000,
+            "output": 8192
+          }
+        }
+      }
+    }
+  },
+  "permission": {
+    "*": "deny",
+    "read": "allow",
+    "edit": "allow",
+    "glob": "allow",
+    "grep": "allow",
+    "list": "allow"
+  }
+}
+'''
+        )
+        writeFile(
+          file: 'autofix-task.md',
+          text: """You are fixing a Rust project failure reproduced by Jenkins
+using DeepSeek through OpenCode.
 
 Failed commit: ${env.FAILED_SHA_NORMALIZED}
 Upstream build: ${params.UPSTREAM_BUILD_URL}
 
-Read the attached initial-test.log and the relevant source. Make the smallest
-root-cause fix. Do not run Cargo, tests, repository scripts, or any compiled
-code during this Codex invocation; Jenkins validates after the OpenAI
-credential is removed. Do not add ignored tests, remove tests, weaken
-assertions, modify Jenkins automation, upgrade unrelated dependencies, commit,
-push, or create a pull request. If the evidence indicates infrastructure or a
-non-reproducible flaky failure, make no changes and explain why.
+Read initial-test.log and the relevant source. Make the smallest root-cause
+fix. Do not run Cargo, tests, repository scripts, or any compiled code during
+this model invocation; Jenkins validates after the DeepSeek credential is
+removed. Do not add ignored tests, remove tests, weaken assertions, modify
+Jenkins automation, upgrade unrelated dependencies, commit, push, or create a
+pull request. If the evidence indicates infrastructure or a non-reproducible
+flaky failure, make no changes and explain why.
 """
-          )
-
+        )
+        dir('source') {
           withCredentials([string(
-            credentialsId: env.OPENAI_CREDENTIALS_ID,
-            variable: 'OPENAI_KEY'
+            credentialsId: env.DEEPSEEK_CREDENTIALS_ID,
+            variable: 'DEEPSEEK_KEY'
           )]) {
             sh '''#!/bin/bash
               set -euo pipefail
               umask 077
               export JENKINS_AUTOFIX=1
-              export CODEX_HOME="$CODEX_STATE_DIR"
+              export DEEPSEEK_API_KEY="$DEEPSEEK_KEY"
+              export XDG_DATA_HOME="$OPENCODE_STATE_DIR/data"
+              export XDG_CONFIG_HOME="$OPENCODE_STATE_DIR/config"
+              export XDG_CACHE_HOME="$OPENCODE_STATE_DIR/cache"
+              export OPENCODE_CONFIG_CONTENT
+              OPENCODE_CONFIG_CONTENT="$(<"$WORKSPACE/opencode-autofix.json")"
+              export OPENCODE_DISABLE_AUTOUPDATE=true
+              export OPENCODE_AUTO_SHARE=false
+              export OPENCODE_DISABLE_DEFAULT_PLUGINS=true
+              export OPENCODE_DISABLE_LSP_DOWNLOAD=true
+              export OPENCODE_DISABLE_CLAUDE_CODE=true
               if [ -n "${CODEX_HTTPS_PROXY:-}" ]; then
                 export HTTP_PROXY="$CODEX_HTTPS_PROXY"
                 export HTTPS_PROXY="$CODEX_HTTPS_PROXY"
@@ -262,14 +310,17 @@ non-reproducible flaky failure, make no changes and explain why.
                 export https_proxy="$CODEX_HTTPS_PROXY"
               fi
               set +x
-              CODEX_API_KEY="$OPENAI_KEY" "$CODEX_BIN" -a never exec \
-                --ephemeral \
-                --ignore-user-config \
-                --sandbox workspace-write \
-                -c sandbox_workspace_write.network_access=false \
-                --output-last-message codex-result.md \
-                "$(cat codex-task.md)" \
-                < initial-test.log
+              set +e
+              "$OPENCODE_BIN" run \
+                --model deepseek-autofix/deepseek-v4-pro \
+                --agent build \
+                --format json \
+                "$(cat "$WORKSPACE/autofix-task.md")" \
+                > "$WORKSPACE/deepseek-result.jsonl" 2>&1
+              agent_status=$?
+              set -e
+              cat "$WORKSPACE/deepseek-result.jsonl"
+              exit "$agent_status"
             '''
           }
         }
@@ -291,18 +342,18 @@ non-reproducible flaky failure, make no changes and explain why.
               env.SKIP_AUTOFIX = 'true'
               currentBuild.result = 'NOT_BUILT'
               currentBuild.description = "${env.SHA_SHORT}: no patch"
-              echo 'Codex produced no patch.'
+              echo 'DeepSeek produced no patch.'
             } else {
               sh '''#!/bin/bash
                 set -euo pipefail
                 git diff --check
                 if git status --porcelain | awk '{print $2}' | \
                   grep -Eq '^(AGENTS[.]md|Jenkinsfile|Jenkinsfile[.]autofix|ci/jenkins/)'; then
-                  echo 'Codex attempted to modify protected automation files.' >&2
+                  echo 'DeepSeek attempted to modify protected automation files.' >&2
                   exit 1
                 fi
                 if git diff --unified=0 | grep '^+' | grep -F '#[ignore]'; then
-                  echo 'Codex attempted to add #[ignore].' >&2
+                  echo 'DeepSeek attempted to add #[ignore].' >&2
                   exit 1
                 fi
               '''
@@ -321,7 +372,8 @@ non-reproducible flaky failure, make no changes and explain why.
         dir('source') {
           sh '''#!/bin/bash
             set -euo pipefail
-            unset CODEX_API_KEY OPENAI_API_KEY OPENAI_KEY GH_TOKEN GITHUB_TOKEN
+            unset DEEPSEEK_API_KEY DEEPSEEK_KEY OPENCODE_CONFIG_CONTENT \
+              GH_TOKEN GITHUB_TOKEN
             cargo fmt --all -- --check
           '''
           script {
@@ -329,7 +381,8 @@ non-reproducible flaky failure, make no changes and explain why.
               returnStatus: true,
               script: '''#!/bin/bash
                 set -uo pipefail
-                unset CODEX_API_KEY OPENAI_API_KEY OPENAI_KEY GH_TOKEN GITHUB_TOKEN
+                unset DEEPSEEK_API_KEY DEEPSEEK_KEY OPENCODE_CONFIG_CONTENT \
+                  GH_TOKEN GITHUB_TOKEN
                 set +e
                 timeout --kill-after=30s 20m cargo test -q \
                   > final-test.log 2>&1
@@ -367,8 +420,8 @@ non-reproducible flaky failure, make no changes and explain why.
         dir('source') {
           sh '''#!/bin/bash
             set -euo pipefail
-            git config user.name 'jenkins-codex-autofix'
-            git config user.email 'jenkins-codex-autofix@users.noreply.github.com'
+            git config user.name 'jenkins-deepseek-autofix'
+            git config user.email 'jenkins-deepseek-autofix@users.noreply.github.com'
             git switch -c "$FIX_BRANCH"
             git add -A
             git commit -m "fix: repair Jenkins failure for $SHA_SHORT"
@@ -394,7 +447,7 @@ non-reproducible flaky failure, make no changes and explain why.
             sh '''#!/bin/bash
               set -euo pipefail
               umask 077
-              PR_PAYLOAD=$(printf '{"title":"Codex: fix tests for %s","head":"%s","base":"main","body":"Automated Jenkins/Codex repair.\\n\\nFailed commit: `%s`\\nUpstream build: %s\\n\\nVerified with `cargo fmt --all -- --check` and `cargo test -q`.\\n\\nHuman review is required; this PR will not be auto-merged.","draft":true}' \
+              PR_PAYLOAD=$(printf '{"title":"DeepSeek: fix tests for %s","head":"%s","base":"main","body":"Automated Jenkins/DeepSeek repair using OpenCode.\\n\\nFailed commit: `%s`\\nUpstream build: %s\\n\\nVerified with `cargo fmt --all -- --check` and `cargo test -q`.\\n\\nHuman review is required; this PR will not be auto-merged.","draft":true}' \
                 "$SHA_SHORT" "$FIX_BRANCH" "$FAILED_SHA_NORMALIZED" "$UPSTREAM_BUILD_URL")
               set +x
               curl --fail-with-body -sS \
@@ -416,7 +469,7 @@ non-reproducible flaky failure, make no changes and explain why.
   post {
     always {
       archiveArtifacts(
-        artifacts: 'source/initial-test.log,source/final-test.log,source/codex-result.md,source/pr-response.json',
+        artifacts: 'source/initial-test.log,source/final-test.log,deepseek-result.jsonl,source/pr-response.json',
         allowEmptyArchive: true
       )
     }
