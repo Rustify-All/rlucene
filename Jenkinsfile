@@ -45,11 +45,15 @@ pipeline {
           ]]
         ])
         script {
-          env.FAILED_SHA = sh(
+          String checkedOutSha = sh(
             returnStdout: true,
             script: 'git rev-parse HEAD'
           ).trim()
-          currentBuild.description = env.FAILED_SHA.take(12)
+          if (!checkedOutSha) {
+            error('Unable to determine the checked-out commit SHA')
+          }
+          env.FAILED_SHA = checkedOutSha
+          currentBuild.description = checkedOutSha.take(12)
         }
       }
     }
@@ -138,4 +142,3 @@ Autofix triggered: ${env.CARGO_TEST_FAILED}
     }
   }
 }
-
