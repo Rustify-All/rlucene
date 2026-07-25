@@ -166,17 +166,21 @@
   `cargo nextest run --profile ci --workspace`；nextest 不运行 doctest，
   因此另行执行 `cargo test --workspace --doc -q`。
 - `.config/nextest.toml` 当前设置：60 秒标记 `SLOW`，
-  `terminate-after = 2`，因此单个测试约 120 秒会被终止并报告
-  `TIMEOUT`；`fail-fast = false`，失败输出保留，成功输出不打印。
-- 主 CI 对 nextest 使用 12 分钟整套测试外层超时，对 doctest 使用
-  4 分钟超时，整个 CI Pipeline 使用 20 分钟超时。
+  `terminate-after = 6`，因此 60 秒只产生告警；测试运行到 300 秒时，
+  Jenkins 会记录 nextest 当前运行测试、进程树、系统负载、线程 `/proc`
+  状态、内核等待栈，以及可用时由 `eu-stack`、`gdb` 或 `pstack` 生成的
+  用户态堆栈；单个测试约 360 秒才会被终止并报告 `TIMEOUT`。
+  `fail-fast = false`，失败输出保留，成功输出不打印。
+- 主 CI 对 nextest 使用 20 分钟整套测试外层超时，对 doctest 使用
+  4 分钟超时，整个 CI Pipeline 使用 30 分钟超时。
 - nextest 会在日志和 JUnit 中保留具体失败或超时测试的诊断信息，供人工
   排查。整套测试外层 124/137、Jenkins 被杀死、网络/磁盘/工具链错误应
   归类为基础设施失败。
 - nextest JUnit 的真实来源路径固定为工作区相对路径
   `target/nextest/ci/junit.xml`，不跟随 `CARGO_TARGET_DIR`。主 CI 将它
   复制为 `nextest-junit.xml`。
-- 主 CI 归档 `nextest.log`、`nextest-junit.xml`、`doctest.log`。
+- 主 CI 归档 `nextest.log`、`nextest-junit.xml`、
+  `nextest-diagnostics.log`、`doctest.log`。
 
 ### 缓存、磁盘与已验证基线
 

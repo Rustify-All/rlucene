@@ -5,7 +5,7 @@ pipeline {
     skipDefaultCheckout(true)
     timestamps()
     disableConcurrentBuilds()
-    timeout(time: 20, unit: 'MINUTES')
+    timeout(time: 30, unit: 'MINUTES')
     buildDiscarder(logRotator(numToKeepStr: '100'))
   }
 
@@ -30,6 +30,7 @@ pipeline {
     CARGO_NET_RETRY = '10'
     CARGO_HTTP_TIMEOUT = '120'
     CARGO_HTTP_MULTIPLEXING = 'false'
+    SLOW_TEST_DIAGNOSTIC_AFTER_SECONDS = '300'
   }
 
   stages {
@@ -140,17 +141,42 @@ Skipping dependency preflight and running cargo nextest directly."""
             returnStatus: true,
             script: '''#!/bin/bash
               set -uo pipefail
-              rm -f nextest.log nextest-junit.xml
+              rm -f \
+                nextest.log \
+                nextest-junit.xml \
+                nextest-diagnostics.log
               rm -f target/nextest/ci/junit.xml
               if ! cargo nextest --version > nextest.log 2>&1; then
                 cat nextest.log
                 exit 125
               fi
+              : > nextest-diagnostics.log
+
+              stop_diagnostics() {
+                if [ -n "${diagnostics_pid:-}" ]; then
+                  kill "$diagnostics_pid" >/dev/null 2>&1 || true
+                  wait "$diagnostics_pid" >/dev/null 2>&1 || true
+                fi
+              }
+              trap stop_diagnostics EXIT
+
               set +e
-              timeout --kill-after=30s 12m \
+              timeout --kill-after=30s 20m \
                 cargo nextest run --profile ci --workspace \
-                >> nextest.log 2>&1
+                >> nextest.log 2>&1 &
+              nextest_launcher_pid=$!
+              bash ci/jenkins/capture-slow-test-diagnostics.sh \
+                "$nextest_launcher_pid" \
+                "$SLOW_TEST_DIAGNOSTIC_AFTER_SECONDS" \
+                nextest-diagnostics.log &
+              diagnostics_pid=$!
+
+              wait "$nextest_launcher_pid"
               test_status=$?
+              stop_diagnostics
+              diagnostics_pid=''
+              trap - EXIT
+
               junit_source="target/nextest/ci/junit.xml"
               if [ -f "$junit_source" ]; then
                 cp "$junit_source" nextest-junit.xml
@@ -276,7 +302,8 @@ Skipping dependency preflight and running cargo nextest directly."""
         }
       }
       archiveArtifacts(
-        artifacts: 'nextest.log,nextest-junit.xml,doctest.log',
+        artifacts:
+          'nextest.log,nextest-junit.xml,nextest-diagnostics.log,doctest.log',
         allowEmptyArchive: true
       )
     }
@@ -293,7 +320,7 @@ Failure kind: ${env.FAILURE_KIND}
           attachLog: true,
           compressLog: true,
           attachmentsPattern:
-            'nextest.log,nextest-junit.xml,doctest.log'
+            'nextest.log,nextest-junit.xml,nextest-diagnostics.log,doctest.log'
         )
       }
     }
