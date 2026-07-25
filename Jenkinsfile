@@ -36,7 +36,6 @@ pipeline {
     stage('Initialize') {
       steps {
         script {
-          env.CARGO_TEST_FAILED = 'false'
           env.FAILURE_KIND = 'none'
           env.FAILED_SHA = ''
           env.SKIP_PREFLIGHT = 'false'
@@ -189,7 +188,6 @@ Skipping dependency preflight and running cargo nextest directly."""
 
           if (testStatus != 0) {
             if (nextestReportedFailure) {
-              env.CARGO_TEST_FAILED = 'true'
               env.FAILURE_KIND = testTimedOut ? 'test-timeout' : 'code'
             } else {
               env.FAILURE_KIND = 'infrastructure'
@@ -233,7 +231,6 @@ Skipping dependency preflight and running cargo nextest directly."""
           }
 
           if (doctestStatus != 0 || doctestReportedFailure) {
-            env.CARGO_TEST_FAILED = 'true'
             env.FAILURE_KIND = 'code'
             error("cargo test --doc failed (exit ${doctestStatus})")
           }
@@ -286,35 +283,12 @@ Skipping dependency preflight and running cargo nextest directly."""
 
     failure {
       script {
-        if (env.CARGO_TEST_FAILED == 'true') {
-          try {
-            build(
-              job: 'rlucene-autofix',
-              wait: false,
-              parameters: [
-                string(name: 'FAILED_SHA', value: env.FAILED_SHA),
-                string(name: 'BASE_BRANCH', value: 'main'),
-                string(name: 'UPSTREAM_BUILD_URL', value: env.BUILD_URL),
-                string(
-                  name: 'UPSTREAM_FAILURE_KIND',
-                  value: env.FAILURE_KIND
-                )
-              ]
-            )
-          } catch (triggerError) {
-            echo "Unable to trigger rlucene-autofix: ${triggerError}"
-          }
-        } else {
-          echo "Autofix not triggered because failure kind is ${env.FAILURE_KIND}."
-        }
-
         emailext(
           to: 'luxugang@apache.org',
           subject: "[Jenkins] ${env.JOB_NAME} #${env.BUILD_NUMBER} failed",
           body: """Build: ${env.BUILD_URL}
 Commit: ${env.FAILED_SHA}
 Failure kind: ${env.FAILURE_KIND}
-Autofix triggered: ${env.CARGO_TEST_FAILED}
 """,
           attachLog: true,
           compressLog: true,
