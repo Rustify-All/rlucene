@@ -42,6 +42,7 @@ mod single_instance_lock_factory_tests {
   use std::sync::Arc;
 
   use crate::core::index::index_writer::IndexWriter;
+  use crate::core::index::index_writer_config::IndexWriterConfig;
   use crate::core::index::index_writer_config::OpenMode;
   use crate::core::store::ByteBuffersDirectory;
   use crate::core::store::base_directory::BaseDirectory;
@@ -65,12 +66,12 @@ mod single_instance_lock_factory_tests {
     let dir = Arc::new(dir);
 
     let analyzer = MockAnalyzer::new(&mut random);
-    let config = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+    let config = IndexWriterConfig::with_analyzer(analyzer)?;
     let writer = IndexWriter::new(dir.clone(), config)?;
 
     // Create a 2nd IndexWriter. This should fail.
     let analyzer = MockAnalyzer::new(&mut random);
-    let mut config = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+    let mut config = IndexWriterConfig::with_analyzer(analyzer)?;
     config.set_open_mode(OpenMode::Append);
     assert!(matches!(
       IndexWriter::new(dir, config),

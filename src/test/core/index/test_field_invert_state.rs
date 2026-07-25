@@ -20,6 +20,7 @@ use crate::core::document::field::Field;
 use crate::core::document::fields::FieldTokenStreamEnum;
 use crate::core::index::field_invert_state::FieldInvertState;
 use crate::core::index::index_writer::IndexWriter;
+use crate::core::index::index_writer_config::IndexWriterConfig;
 use crate::core::search::collection_statistics::CollectionStatistics;
 use crate::core::search::similarities_impl::similarities::{
   BoxSimScorer, Similarity, SimilarityEnum,
@@ -82,7 +83,7 @@ fn test_basic() -> Result<()> {
   let dir = new_directory_shared(&mut random)?;
 
   let analyzer = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   let fis = Arc::new(Mutex::new(FieldInvertState::default()));
   iwc.set_similarity(SimilarityEnum::custom(NeverForgetsSimilarity::new(
     fis.clone(),
@@ -120,7 +121,7 @@ fn test_random() -> Result<()> {
   let dir = new_directory_shared(&mut random)?;
 
   let analyzer = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   let fis = Arc::new(Mutex::new(FieldInvertState::default()));
   iwc.set_similarity(SimilarityEnum::custom(NeverForgetsSimilarity::new(
     fis.clone(),

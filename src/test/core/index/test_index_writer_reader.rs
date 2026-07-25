@@ -1411,7 +1411,7 @@ fn test_index_reader_writer_with_leaf_sorter() -> Result<()> {
 
   let num_docs = at_least(&mut random, 30);
   let dir = new_directory_shared(&mut random)?;
-  let mut iwc = new_index_writer_config(&mut random)?;
+  let mut iwc = IndexWriterConfig::new()?;
   iwc.set_leaf_sorter(leaf_sorter.clone());
   let writer = IndexWriter::new(dir.clone(), iwc)?;
   for i in 0..num_docs {

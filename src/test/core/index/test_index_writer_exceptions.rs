@@ -45,6 +45,7 @@ use crate::core::index::index_writer::tests::INDEX_WRITER_ACCESS;
 use crate::core::index::index_writer::{
   DefaultIndexWriter, IndexWriter, IndexWriterHooks, IndexWriterHooksEnum, WRITE_LOCK_NAME,
 };
+use crate::core::index::index_writer_config::IndexWriterConfig;
 use crate::core::index::indexable_field::IndexableField;
 use crate::core::index::indexable_field_type::IndexableFieldType;
 use crate::core::index::leaf_reader::LeafReader;
@@ -2406,7 +2407,7 @@ fn test_crazy_position_increment_gap() -> Result<()> {
     stored_value: AnalyzerStoredValue::new(),
     seed: random.random(),
   }) as Box<dyn Analyzer>;
-  let config = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let config = IndexWriterConfig::with_analyzer(analyzer)?;
   let writer = IndexWriter::new(dir.clone(), config)?;
   // add good document
   writer.add_document(Document::new())?;
@@ -2464,7 +2465,7 @@ fn test_too_many_file_exception() -> Result<()> {
 
   // Create an index with one document
   let analyzer = MockAnalyzer::new(&mut random);
-  let config = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let config = IndexWriterConfig::with_analyzer(analyzer)?;
   let writer = IndexWriter::new(dir.clone(), config)?;
   let mut doc = Document::new();
   doc.add(StringField::from_string("foo", "bar", Store::No)?);
@@ -2479,7 +2480,7 @@ fn test_too_many_file_exception() -> Result<()> {
   for i in 0..10 {
     failure.do_fail.store(true, Ordering::SeqCst);
     let analyzer = MockAnalyzer::new(&mut random);
-    let config = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+    let config = IndexWriterConfig::with_analyzer(analyzer)?;
     let writer = match IndexWriter::new(dir.clone(), config) {
       Ok(writer) => writer,
       Err(_) => continue,
@@ -2542,7 +2543,7 @@ fn test_exception_during_rollback() -> Result<()> {
 
   // infostream that throws exception during rollback
   let dir = Arc::new(new_mock_directory(&mut random)?); // we want to ensure we don't leak any locks or file handles
-  let mut config = new_index_writer_config(&mut random)?;
+  let mut config = IndexWriterConfig::new()?;
   config.set_info_stream(InfoStreamEnum::Custom(Box::new(EvilRollbackInfoStream {
     message_to_fail_on,
   })));
@@ -2599,7 +2600,7 @@ fn test_random_exception_during_rollback() -> Result<()> {
     let dir = Arc::new(new_mock_directory(&mut random)?);
     dir.fail_on(Box::new(RandomRollbackFailure::new(random.random())));
 
-    let config = new_index_writer_config(&mut random)?;
+    let config = IndexWriterConfig::new()?;
     let writer = IndexWriter::new(dir.clone(), config)?;
     let doc = Document::new();
     for _ in 0..10 {

@@ -35,6 +35,7 @@ use crate::core::index::index_reader::{
 };
 use crate::core::index::index_reader_context::{IRCLeafReader, IndexReaderContext};
 use crate::core::index::index_writer::IndexWriter;
+use crate::core::index::index_writer_config::IndexWriterConfig;
 use crate::core::index::leaf_metadata::LeafMetaData;
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::leaf_reader_context::{LeafReaderContext, TopParentMeta};
@@ -1286,7 +1287,7 @@ fn test_evict_empty_segment_cache() -> Result<()> {
 fn test_min_segment_size_predicate() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
-  let mut iwc = new_index_writer_config(&mut random)?;
+  let mut iwc = IndexWriterConfig::new()?;
   iwc.set_merge_policy(crate::core::index::no_merge_policy::NoMergePolicy::default());
   let writer = IndexWriter::new(dir.clone(), iwc)?;
   let new_segment = |num_docs| -> Result<()> {

@@ -1224,7 +1224,7 @@ fn test_exc_indexing_doc_before_doc_values() -> Result<()> {
 
   let dir = new_directory_shared(&mut random)?;
   let mock = MockAnalyzer::new(&mut random);
-  let iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let iwc = IndexWriterConfig::with_analyzer(mock)?;
   let w = IndexWriter::new(dir.clone(), iwc)?;
 
   let mut ft = FieldType::from_ref(&*crate::core::document::string_field::TYPE_NOT_STORED)?;

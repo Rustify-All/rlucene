@@ -25,13 +25,14 @@ use std::sync::{Arc, Mutex};
 use crate::core::document::document::Document;
 use crate::core::document::field::Store;
 use crate::core::index::index_writer::IndexWriter;
-use crate::core::index::index_writer_config::OpenMode;
+use crate::core::index::index_writer_config::{IndexWriterConfig, OpenMode};
 use crate::core::index::two_phase_commit::TwoPhaseCommit;
 use crate::core::store::lock::{Lock, LockEnum};
 use crate::core::store::lock_factory::LockFactory;
 use crate::core::store::{ByteBuffersDirectory, NoLockFactory};
 use crate::core::util::close::CloseableRef;
 use crate::core::util::error::lucene_error::Result;
+use crate::test_framework::core::analysis::mock_analyzer::MockAnalyzer;
 use crate::test_framework::core::store::mock_directory_wrapper::MockDirectoryWrapper;
 
 #[allow(dead_code)] // for quick search
@@ -49,7 +50,8 @@ fn test_custom_lock_factory() -> Result<()> {
     ByteBuffersDirectory::with_lock_factory(lf.clone()),
   );
 
-  let iwc = new_index_writer_config(&mut random)?;
+  let analyzer = MockAnalyzer::new(&mut random);
+  let iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   let writer = IndexWriter::new(Arc::new(dir), iwc)?;
 
   // add 100 documents (so that commit lock is used)
@@ -79,13 +81,15 @@ fn test_directory_no_locking() -> Result<()> {
   );
   let dir = Arc::new(dir);
 
-  let iwc = new_index_writer_config(&mut random)?;
+  let analyzer = MockAnalyzer::new(&mut random);
+  let iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   let writer = IndexWriter::new(dir.clone(), iwc)?;
   writer.commit()?; // required so the second open succeed
 
   // Create a 2nd IndexWriter. This is normally not allowed but it should
   // run through since we're not using any locks:
-  let mut iwc2 = new_index_writer_config(&mut random)?;
+  let analyzer = MockAnalyzer::new(&mut random);
+  let mut iwc2 = IndexWriterConfig::with_analyzer(analyzer)?;
   iwc2.set_open_mode(OpenMode::Append);
   let writer2 = IndexWriter::new(dir, iwc2);
   match writer2 {

@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 use crate::core::index::index_writer::IndexWriter;
+use crate::core::index::index_writer_config::IndexWriterConfig;
 use crate::core::index::index_writer_config::OpenMode;
 use crate::core::util::close::CloseableRef;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
@@ -34,7 +35,7 @@ fn test_index_writer_lock_release() -> Result<()> {
 
   let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
     let mock = MockAnalyzer::new(&mut random);
-    let mut iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+    let mut iwc = IndexWriterConfig::with_analyzer(mock)?;
     iwc.set_open_mode(OpenMode::Append);
 
     if let Err(error) = IndexWriter::new(dir.clone(), iwc) {
@@ -46,7 +47,7 @@ fn test_index_writer_lock_release() -> Result<()> {
       }
 
       let mock = MockAnalyzer::new(&mut random);
-      let mut iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+      let mut iwc = IndexWriterConfig::with_analyzer(mock)?;
       iwc.set_open_mode(OpenMode::Append);
       let result = IndexWriter::new(dir.clone(), iwc);
       let error = result.as_ref().err();

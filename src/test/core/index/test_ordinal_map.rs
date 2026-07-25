@@ -20,6 +20,7 @@ use crate::core::document::sorted_set_doc_values_field::SortedSetDocValuesField;
 use crate::core::index::BytesRef;
 use crate::core::index::directory_reader;
 use crate::core::index::index_writer::IndexWriter;
+use crate::core::index::index_writer_config::IndexWriterConfig;
 use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
 use crate::core::index::multi_doc_values::MultiDocValues;
 use crate::core::index::no_merge_policy::NoMergePolicy;
@@ -45,7 +46,7 @@ fn test_ram_bytes_used() -> Result<()> {
   let dir = new_directory_shared(&mut random)?;
 
   let mock = MockAnalyzer::new(&mut random);
-  let mut cfg = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let mut cfg = IndexWriterConfig::with_analyzer(mock)?;
   cfg.set_merge_policy(NoMergePolicy::default());
 
   let iw = IndexWriter::new(dir.clone(), cfg)?;
@@ -126,7 +127,7 @@ fn test_one_segment_with_all_values() -> Result<()> {
   let dir = new_directory_shared(&mut random)?;
 
   let mock = MockAnalyzer::new(&mut random);
-  let mut cfg = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let mut cfg = IndexWriterConfig::with_analyzer(mock)?;
   cfg.set_merge_policy(NoMergePolicy::default());
 
   let iw = IndexWriter::new(dir.clone(), cfg)?;

@@ -32,6 +32,7 @@ use crate::core::index::index_reader::{
 };
 use crate::core::index::index_reader_context::IndexReaderContext;
 use crate::core::index::index_writer::{IndexWriter, MAX_TERM_LENGTH};
+use crate::core::index::index_writer_config::IndexWriterConfig;
 use crate::core::index::leaf_metadata::LeafMetaData;
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::standard_directory_reader::StandardDirectoryReader;
@@ -422,7 +423,7 @@ fn test_close_twice() -> Result<()> {
   // test that we can close SM twice (per Closeable's contract).
   let mut random = random();
   let directory = new_directory_shared(&mut random)?;
-  let config = new_index_writer_config::<DirEnum, _>(&mut random)?;
+  let config = IndexWriterConfig::new()?;
   IndexWriter::new(directory.clone(), config)?.close()?;
   let sm = SearcherManager::from_directory(directory.clone(), None)?;
   sm.close()?;
@@ -465,7 +466,7 @@ fn test_reference_decrement_illegally() -> Result<()> {
 fn test_ensure_open() -> Result<()> {
   let mut random = random();
   let directory = new_directory_shared(&mut random)?;
-  let config = new_index_writer_config::<DirEnum, _>(&mut random)?;
+  let config = IndexWriterConfig::new()?;
   IndexWriter::new(directory.clone(), config)?.close()?;
   let sm = SearcherManager::from_directory(directory.clone(), None)?;
   let searcher = sm.acquire()?;
@@ -508,7 +509,7 @@ impl RefreshListener for AfterRefreshCalled {
 fn test_listener_called() -> Result<()> {
   let mut random = random();
   let directory = new_directory_shared(&mut random)?;
-  let config = new_index_writer_config::<DirEnum, _>(&mut random)?;
+  let config = IndexWriterConfig::new()?;
   let writer = IndexWriter::new(directory.clone(), config)?;
   let after_refresh_called = Arc::new(AtomicBool::new(false));
   let sm =

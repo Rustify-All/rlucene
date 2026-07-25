@@ -20,6 +20,7 @@ use crate::core::document::field::Store;
 use crate::core::index::directory_reader;
 use crate::core::index::index_reader::IndexReader;
 use crate::core::index::index_writer::IndexWriter;
+use crate::core::index::index_writer_config::IndexWriterConfig;
 use crate::core::index::stored_fields::StoredFields;
 use crate::core::index::term::Term;
 use crate::core::search::phrase_query::PhraseQuery;
@@ -52,10 +53,7 @@ fn test_demo() -> Result<()> {
   )?);
   let body_result = (|| -> Result<()> {
     let analyzer = StandardAnalyzer::new();
-    let writer = IndexWriter::new(
-      dir.clone(),
-      new_index_writer_config_with_analyzer(&mut random, analyzer)?,
-    )?;
+    let writer = IndexWriter::new(dir.clone(), IndexWriterConfig::with_analyzer(analyzer)?)?;
 
     let write_result = (|| -> Result<()> {
       let mut field_to_type = HashMap::new();

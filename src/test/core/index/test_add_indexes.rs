@@ -1141,7 +1141,7 @@ fn test_add_indexes_with_empty_readers() -> Result<()> {
   let mut random = random();
   let dest_dir = new_directory_shared(&mut random)?;
   let analyzer = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   iwc.set_merge_policy(ConcurrentAddIndexesMergePolicy::default());
   let merge_scheduler = CountingSerialMergeScheduler::default();
   iwc.set_merge_scheduler(merge_scheduler.clone());
@@ -1159,7 +1159,7 @@ fn test_add_indexes_with_empty_readers() -> Result<()> {
     Arc::new(ByteBuffersDirectory::new()),
   ));
   let analyzer = MockAnalyzer::new(&mut random);
-  let iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   let writer = IndexWriter::new(dir.clone(), iwc)?;
   writer.close()?;
   const NUM_READERS: usize = 20;
@@ -1210,7 +1210,7 @@ fn test_add_indexes_hitting_max_docs_limit() -> Result<()> {
     // Create destination writer.
     let dest_dir = new_directory_shared(&mut random)?;
     let analyzer = MockAnalyzer::new(&mut random);
-    let mut iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+    let mut iwc = IndexWriterConfig::with_analyzer(analyzer)?;
     iwc.set_merge_policy(ConcurrentAddIndexesMergePolicy::default());
     iwc.set_merge_scheduler(CountingSerialMergeScheduler::default());
     let dest_writer = IndexWriter::new(dest_dir.clone(), iwc)?;
@@ -1226,7 +1226,7 @@ fn test_add_indexes_hitting_max_docs_limit() -> Result<()> {
       Arc::new(ByteBuffersDirectory::new()),
     ));
     let analyzer = MockAnalyzer::new(&mut random);
-    let iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+    let iwc = IndexWriterConfig::with_analyzer(analyzer)?;
     let writer = IndexWriter::new(dir.clone(), iwc)?;
     for _ in 0..10 {
       add_doc(&mut random, &writer, &mut field_types)?;
@@ -1759,7 +1759,7 @@ fn test_non_cfs_leftovers() -> Result<()> {
       Arc::new(ByteBuffersDirectory::new()),
     ));
     let analyzer = MockAnalyzer::new(&mut random);
-    let conf = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+    let conf = IndexWriterConfig::with_analyzer(analyzer)?;
     let writer = IndexWriter::new(dir.clone(), conf)?;
     let mut doc = Document::new();
     let mut custom_type = FieldType::from_ref(&*crate::core::document::text_field::TYPE_STORED)?;
@@ -1786,7 +1786,7 @@ fn test_non_cfs_leftovers() -> Result<()> {
     Arc::new(ByteBuffersDirectory::new()),
   ));
   let analyzer = MockAnalyzer::new(&mut random);
-  let mut conf = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let mut conf = IndexWriterConfig::with_analyzer(analyzer)?;
   let mut merge_policy = new_log_merge_policy_with_cfs(&mut random, true)?;
   MergePolicy::<AddIndexesDirectory>::get_base_mut(&mut merge_policy).set_no_cfs_ratio(1.0)?;
   MergePolicy::<AddIndexesDirectory>::get_base_mut(&mut merge_policy)

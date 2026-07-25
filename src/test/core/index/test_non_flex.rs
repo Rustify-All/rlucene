@@ -20,6 +20,7 @@ use crate::core::index::BytesRef;
 use crate::core::index::codec_reader::CodecReader;
 use crate::core::index::directory_reader;
 use crate::core::index::index_writer::IndexWriter;
+use crate::core::index::index_writer_config::IndexWriterConfig;
 use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
 use crate::core::index::multi_terms::get_terms;
 use crate::core::index::terms::Terms;
@@ -43,7 +44,7 @@ fn test_non_flex() -> Result<()> {
 
   const DOC_COUNT: i32 = 177;
   let mock = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(mock)?;
   iwc.set_max_buffered_docs(7);
   iwc.set_merge_policy(new_log_merge_policy(&mut random)?);
 

@@ -19,6 +19,7 @@ use crate::core::document::field_type::FieldType;
 use crate::core::index::directory_reader;
 use crate::core::index::index_reader::IndexReader;
 use crate::core::index::index_writer::IndexWriter;
+use crate::core::index::index_writer_config::IndexWriterConfig;
 use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
 use crate::core::index::term::Term;
 use crate::core::search::term_query::TermQuery;
@@ -211,7 +212,7 @@ fn test_rotating_field_names() -> Result<()> {
   let mut random = random();
   let dir = new_fs_directory(&mut random, create_temp_dir()?)?;
   let mock = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(mock)?;
   iwc.set_ram_buffer_size_mb(0.2);
   iwc.set_max_buffered_docs(-1);
 

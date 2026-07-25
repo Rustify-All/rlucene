@@ -33,6 +33,7 @@ use crate::core::index::doc_values::DocValues;
 use crate::core::index::index_options::IndexOptions;
 use crate::core::index::index_reader::IndexReader;
 use crate::core::index::index_reader_context::IndexReaderContext;
+use crate::core::index::index_writer_config::IndexWriterConfig;
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
 use crate::core::index::multi_terms::{get_term_postings_enum, get_term_postings_enum_with_flag};
@@ -490,7 +491,7 @@ fn test_crazy_offset_gap() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
   let analyzer = CrazyOffsetGapAnalyzer::new(random.random());
-  let iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   let iw = RandomIndexWriter::with_config(&mut random, dir.clone(), iwc);
 
   iw.add_document(&mut random, Document::new())?;

@@ -390,7 +390,7 @@ fn test_max_merge_count() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
   let analyzer = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   iwc.set_commit_on_close(false);
 
   let max_merge_count = random.random_range(1..=5);
@@ -490,7 +490,7 @@ fn test_live_max_merge_count() -> Result<()> {
   let mut random = random();
   let directory = new_directory_shared(&mut random)?;
   let analyzer = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   iwc.set_merge_policy(LiveMaxMergeCountMergePolicy::default());
   iwc.set_max_buffered_docs(2);
   iwc.set_ram_buffer_size_mb(-1.0);
@@ -569,7 +569,7 @@ fn test_hang_during_rollback() -> Result<()> {
   let mut random = random();
   let dir = Arc::new(new_mock_directory(&mut random)?);
   let analyzer = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   iwc.set_max_buffered_docs(2);
   let mut mp = LogMergePolicy::log_doc();
   mp.set_merge_factor(2)?;
@@ -662,7 +662,7 @@ fn test_merge_thread_messages() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
   let analyzer = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   let test_scheduler = MergeThreadMessagesConcurrentMergeScheduler::default();
   let cms = ConcurrentMergeScheduler::with_hook(ConcurrentMergeSchedulerHook::MergeThreadMessages(
     test_scheduler.clone(),
@@ -730,7 +730,7 @@ fn test_dynamic_defaults() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
   let analyzer = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   let cms = ConcurrentMergeScheduler::new();
   assert_eq!(AUTO_DETECT_MERGES_AND_THREADS, cms.get_max_merge_count());
   assert_eq!(AUTO_DETECT_MERGES_AND_THREADS, cms.get_max_thread_count());

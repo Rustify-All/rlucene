@@ -16,6 +16,7 @@
  */
 use crate::core::index::index_reader::IndexReader;
 use crate::core::index::index_writer::IndexWriter;
+use crate::core::index::index_writer_config::IndexWriterConfig;
 use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
 use crate::core::index::merge_policy::{
   DefaultMergeSpecification, MergeContext, MergePolicy, MergePolicyBase, MergePolicyEnum, OneMerge,
@@ -51,7 +52,7 @@ fn test_deletes1() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
   let analyzer = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   iwc.set_merge_scheduler(SerialMergeScheduler::new());
   iwc.set_max_buffered_docs(5000);
   iwc.set_ram_buffer_size_mb(100.0);

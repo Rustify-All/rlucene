@@ -1455,7 +1455,7 @@ fn assert_non_competitive_hits_are_skipped(collected_hits: i64, num_docs: i64) -
 fn test_string_sort_optimization() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
-  let writer = IndexWriter::new(dir.clone(), new_index_writer_config(&mut random)?)?;
+  let writer = IndexWriter::new(dir.clone(), IndexWriterConfig::new()?)?;
   let num_docs = at_least(&mut random, 10_000);
 
   for i in 0..num_docs {
@@ -1480,7 +1480,7 @@ fn test_string_sort_optimization() -> Result<()> {
 fn test_string_sort_optimization_with_missing_values() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
-  let mut iwc = new_index_writer_config(&mut random)?;
+  let mut iwc = IndexWriterConfig::new()?;
   iwc.set_merge_policy(new_log_merge_policy(&mut random)?);
   let writer = IndexWriter::new(dir.clone(), iwc)?;
   let num_docs = at_least(&mut random, 10_000);

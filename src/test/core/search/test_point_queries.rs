@@ -29,6 +29,7 @@ use crate::core::index::BytesRef;
 use crate::core::index::directory_reader;
 use crate::core::index::index_reader::IndexReader;
 use crate::core::index::index_writer::IndexWriter;
+use crate::core::index::index_writer_config::IndexWriterConfig;
 use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
 use crate::core::index::multi_doc_values::MultiDocValues;
 use crate::core::index::numeric_doc_values::NumericDocValues;
@@ -107,7 +108,7 @@ fn test_basic_ints() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
   let mock = MockAnalyzer::new(&mut random);
-  let iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let iwc = IndexWriterConfig::with_analyzer(mock)?;
   let w = IndexWriter::new(dir.clone(), iwc)?;
 
   {
@@ -152,7 +153,7 @@ fn test_basic_floats() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
   let mock = MockAnalyzer::new(&mut random);
-  let iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let iwc = IndexWriterConfig::with_analyzer(mock)?;
   let w = IndexWriter::new(dir.clone(), iwc)?;
 
   {
@@ -204,7 +205,7 @@ fn test_basic_longs() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
   let mock = MockAnalyzer::new(&mut random);
-  let iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let iwc = IndexWriterConfig::with_analyzer(mock)?;
   let w = IndexWriter::new(dir.clone(), iwc)?;
 
   {
@@ -256,7 +257,7 @@ fn test_basic_doubles() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
   let mock = MockAnalyzer::new(&mut random);
-  let iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let iwc = IndexWriterConfig::with_analyzer(mock)?;
   let w = IndexWriter::new(dir.clone(), iwc)?;
 
   {
@@ -308,7 +309,7 @@ fn test_crazy_doubles() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
   let mock = MockAnalyzer::new(&mut random);
-  let iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let iwc = IndexWriterConfig::with_analyzer(mock)?;
   let w = IndexWriter::new(dir.clone(), iwc)?;
 
   {
@@ -460,7 +461,7 @@ fn test_crazy_floats() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
   let mock = MockAnalyzer::new(&mut random);
-  let iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let iwc = IndexWriterConfig::with_analyzer(mock)?;
   let w = IndexWriter::new(dir.clone(), iwc)?;
 
   {

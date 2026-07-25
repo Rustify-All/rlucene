@@ -39,7 +39,7 @@ fn test_reopen() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
   let analyzer = MockAnalyzer::new(&mut random);
-  let mut config = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let mut config = IndexWriterConfig::with_analyzer(analyzer)?;
   config.set_merge_policy(NoMergePolicy::default());
   let writer = IndexWriter::new(dir.clone(), config)?;
 

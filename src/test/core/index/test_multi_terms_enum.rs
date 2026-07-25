@@ -35,6 +35,7 @@ use crate::core::index::filtered_terms_enum::{
 use crate::core::index::index_reader::{IndexReader, IndexReaderBase, LeafReaderContextKind};
 use crate::core::index::index_reader_context::IndexReaderContext;
 use crate::core::index::index_writer::IndexWriter;
+use crate::core::index::index_writer_config::IndexWriterConfig;
 use crate::core::index::leaf_metadata::LeafMetaData;
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::stored_field_visitor::StoredFieldVisitor;
@@ -67,10 +68,7 @@ fn test_no_terms_in_field() -> Result<()> {
   let mut random = random();
   let directory = new_directory_shared(&mut random)?;
   let a = MockAnalyzer::new(&mut random);
-  let writer = IndexWriter::new(
-    directory.clone(),
-    new_index_writer_config_with_analyzer(&mut random, a)?,
-  )?;
+  let writer = IndexWriter::new(directory.clone(), IndexWriterConfig::with_analyzer(a)?)?;
   let mut document = Document::new();
   document.add(StringField::from_string("deleted", "0", Store::Yes)?);
   writer.add_document(document)?;
@@ -80,10 +78,7 @@ fn test_no_terms_in_field() -> Result<()> {
 
   let directory2 = new_directory_shared(&mut random)?;
   let a = MockAnalyzer::new(&mut random);
-  let writer = IndexWriter::new(
-    directory2.clone(),
-    new_index_writer_config_with_analyzer(&mut random, a)?,
-  )?;
+  let writer = IndexWriter::new(directory2.clone(), IndexWriterConfig::with_analyzer(a)?)?;
 
   let irc = (&reader).get_context()?;
   let leaves = irc.leaves()?;

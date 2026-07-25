@@ -1061,7 +1061,7 @@ fn test_over_dec_ref_during_reopen() -> Result<()> {
   let dir = Arc::new(new_mock_directory(&mut random)?);
 
   let analyzer = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   iwc.set_merge_policy(NoMergePolicy::default());
   let w = IndexWriter::new(dir.clone(), iwc)?;
   let mut doc = Document::new();
@@ -1220,7 +1220,7 @@ fn test_nrt_mdeletes() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
   let analyzer = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   iwc.set_merge_policy(NoMergePolicy::default());
   let snapshotter = SnapshotDeletionPolicy::new(KeepOnlyLastCommitDeletionPolicy);
   iwc.set_index_deletion_policy(snapshotter.clone());
@@ -1282,7 +1282,7 @@ fn test_nrt_mdeletes2() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
   let analyzer = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   iwc.set_merge_policy(NoMergePolicy::default());
   let snapshotter = SnapshotDeletionPolicy::new(KeepOnlyLastCommitDeletionPolicy);
   iwc.set_index_deletion_policy(snapshotter.clone());
@@ -1345,7 +1345,7 @@ fn test_nrt_mupdates() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
   let analyzer = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   let snapshotter = SnapshotDeletionPolicy::new(KeepOnlyLastCommitDeletionPolicy);
   iwc.set_index_deletion_policy(snapshotter.clone());
   let writer = IndexWriter::new(dir.clone(), iwc)?;
@@ -1415,7 +1415,7 @@ fn test_nrt_mupdates2() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
   let analyzer = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   let snapshotter = SnapshotDeletionPolicy::new(KeepOnlyLastCommitDeletionPolicy);
   iwc.set_index_deletion_policy(snapshotter.clone());
   let writer = IndexWriter::new(dir.clone(), iwc)?;
@@ -1481,10 +1481,7 @@ fn test_delete_index_files_while_reader_still_open() -> Result<()> {
   let mut random = random();
   let dir = Arc::new(ByteBuffersDirectory::new());
   let analyzer = MockAnalyzer::new(&mut random);
-  let mut w = IndexWriter::new(
-    dir.clone(),
-    new_index_writer_config_with_analyzer(&mut random, analyzer)?,
-  )?;
+  let mut w = IndexWriter::new(dir.clone(), IndexWriterConfig::with_analyzer(analyzer)?)?;
   let mut doc = Document::new();
   doc.add(StringField::from_string("field", "value", Store::No)?);
   w.add_document(doc)?;
@@ -1498,7 +1495,7 @@ fn test_delete_index_files_while_reader_still_open() -> Result<()> {
   }
 
   let analyzer = MockAnalyzer::new(&mut random);
-  let mut config = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let mut config = IndexWriterConfig::with_analyzer(analyzer)?;
   config.set_merge_policy(NoMergePolicy::default());
   w = IndexWriter::new(dir.clone(), config)?;
   doc = Document::new();

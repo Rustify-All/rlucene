@@ -35,6 +35,7 @@ use crate::core::index::index_reader_context::IndexReaderContext;
 use crate::core::index::index_writer::IndexWriter;
 #[cfg(feature = "nightly")]
 use crate::core::index::index_writer_config::DISABLE_AUTO_FLUSH;
+use crate::core::index::index_writer_config::IndexWriterConfig;
 use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
 use crate::core::index::log_merge_policy::LogMergePolicy;
 use crate::core::index::merge_policy::MergePolicy;
@@ -1167,7 +1168,7 @@ fn test_delete_null_query() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
   let a = MockAnalyzer::with_automaton(&mut random, mock_tokenizer::WHITESPACE.clone(), false);
-  let iwc = new_index_writer_config_with_analyzer(&mut random, a)?;
+  let iwc = IndexWriterConfig::with_analyzer(a)?;
   let modifier = IndexWriter::new(dir, iwc)?;
   let mut field_types = HashMap::new();
 
@@ -1455,7 +1456,7 @@ fn test_deletes_check_index_output() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
   let analyzer = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   iwc
     .set_merge_policy(crate::core::index::no_merge_policy::NoMergePolicy::default())
     .set_max_buffered_docs(2);
@@ -1487,7 +1488,7 @@ fn test_deletes_check_index_output() -> Result<()> {
   // Segment should have deletions:
   assert!(output.contains("has deletions"));
   let analyzer = MockAnalyzer::new(&mut random);
-  let iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   let w = IndexWriter::new(dir.clone(), iwc)?;
   w.force_merge(1)?;
   w.close()?;
@@ -1515,7 +1516,7 @@ fn test_try_delete_document() -> Result<()> {
   let dir = new_directory_shared(&mut random)?;
 
   let mock = MockAnalyzer::new(&mut random);
-  let iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let iwc = IndexWriterConfig::with_analyzer(mock)?;
   let w = IndexWriter::new(dir.clone(), iwc)?;
   w.add_document(Document::new())?;
   w.add_document(Document::new())?;
@@ -1523,7 +1524,7 @@ fn test_try_delete_document() -> Result<()> {
   w.close()?;
 
   let mock = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(mock)?;
   iwc.set_merge_policy(NoMergePolicy::default());
   let w = IndexWriter::new(dir.clone(), iwc)?;
   let r = directory_reader::open_from_writer(&w)?;
@@ -1556,7 +1557,7 @@ fn test_nrt_is_current_after_delete() -> Result<()> {
   let dir = new_directory_shared(&mut random)?;
 
   let mock = MockAnalyzer::new(&mut random);
-  let iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let iwc = IndexWriterConfig::with_analyzer(mock)?;
   let w = IndexWriter::new(dir.clone(), iwc)?;
   w.add_document(Document::new())?;
   w.add_document(Document::new())?;
@@ -1576,7 +1577,7 @@ fn test_nrt_is_current_after_delete() -> Result<()> {
   w.close()?;
 
   let mock = MockAnalyzer::new(&mut random);
-  let iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let iwc = IndexWriterConfig::with_analyzer(mock)?;
   let w = IndexWriter::new(dir.clone(), iwc)?;
   let r = directory_reader::open_with_writer_deletes(&w, false, false)?;
   w.delete_documents_with_terms(vec![Term::from_text("id", "1")])?;
@@ -1592,7 +1593,7 @@ fn test_only_deletes_triggers_merge_on_close() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
   let mock = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(mock)?;
   iwc.set_max_buffered_docs(2);
 
   let mut mp = LogMergePolicy::log_doc();
@@ -1634,7 +1635,7 @@ fn test_only_deletes_triggers_merge_on_get_reader() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
   let mock = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(mock)?;
   iwc.set_max_buffered_docs(2);
 
   let mut mp = LogMergePolicy::log_doc();
@@ -1679,7 +1680,7 @@ fn test_only_deletes_triggers_merge_on_flush() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
   let mock = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(mock)?;
   iwc.set_max_buffered_docs(2);
   let mut mp = LogMergePolicy::log_doc();
   mp.set_min_merge_docs(1);
@@ -1721,7 +1722,7 @@ fn test_only_deletes_delete_all_docs() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
   let mock = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(mock)?;
   iwc.set_max_buffered_docs(2);
 
   let mut mp = LogMergePolicy::log_doc();
@@ -1762,7 +1763,7 @@ fn test_merging_after_delete_all() -> Result<()> {
   let dir = new_directory_shared(&mut random)?;
 
   let mock = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(mock)?;
   iwc.set_max_buffered_docs(2);
 
   let mut mp = LogMergePolicy::log_doc();

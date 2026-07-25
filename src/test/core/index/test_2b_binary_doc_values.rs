@@ -25,6 +25,7 @@ use crate::core::index::directory_reader;
 use crate::core::index::index_reader::IndexReader;
 use crate::core::index::index_reader_context::IndexReaderContext;
 use crate::core::index::index_writer::{IndexWriter, MAX_DOCS};
+use crate::core::index::index_writer_config::IndexWriterConfig;
 use crate::core::index::index_writer_config::OpenMode;
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
@@ -59,7 +60,7 @@ fn test_fixed_binary() -> Result<()> {
   }
 
   let analyzer = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   iwc
     .set_max_buffered_docs(-1)
     .set_ram_buffer_size_mb(256.0)
@@ -138,7 +139,7 @@ fn test_variable_binary() -> Result<()> {
   }
 
   let analyzer = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   iwc
     .set_max_buffered_docs(-1)
     .set_ram_buffer_size_mb(256.0)

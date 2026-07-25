@@ -181,7 +181,7 @@ fn test_segment_count_on_flush_random() -> Result<()> {
   let mut random = random();
   let dir = new_fs_directory(&mut random, create_temp_dir()?)?;
   let analyzer = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(analyzer)?;
 
   // Never trigger flushes (so we only flush on getReader).
   iwc.set_max_buffered_docs(100000000);
@@ -318,7 +318,7 @@ fn test_docs_stuck_in_ram_forever() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
   let analyzer = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   iwc.set_ram_buffer_size_mb(0.2);
   let codec = TestUtil::get_default_codec();
   iwc.set_codec(codec.clone());

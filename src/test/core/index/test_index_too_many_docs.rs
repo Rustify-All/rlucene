@@ -20,6 +20,7 @@ use crate::core::document::string_field::StringField;
 use crate::core::index::directory_reader;
 use crate::core::index::index_reader::IndexReader;
 use crate::core::index::index_writer::{IndexWriter, MAX_DOCS, set_max_docs};
+use crate::core::index::index_writer_config::IndexWriterConfig;
 use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
 use crate::core::index::term::Term;
 use crate::core::search::term_query::TermQuery;
@@ -45,7 +46,7 @@ fn test_index_too_many_docs() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
   let num_max_doc = 25;
-  let mut config = new_index_writer_config(&mut random)?;
+  let mut config = IndexWriterConfig::new()?;
   config.set_ram_buffer_size_mb(0.000001);
   let writer = IndexWriter::new(dir.clone(), config)?;
 

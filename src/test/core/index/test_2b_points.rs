@@ -21,6 +21,7 @@ use crate::core::index::directory_reader;
 use crate::core::index::index_reader::IndexReader;
 use crate::core::index::index_reader_context::IndexReaderContext;
 use crate::core::index::index_writer::IndexWriter;
+use crate::core::index::index_writer_config::IndexWriterConfig;
 use crate::core::index::index_writer_config::OpenMode;
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
@@ -52,7 +53,7 @@ fn test_1d() -> Result<()> {
   )?);
 
   let analyzer = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   let merge_scheduler = ConcurrentMergeScheduler::new();
   merge_scheduler.set_max_merges_and_threads(6, 3)?;
   let mut merge_policy = new_log_merge_policy_with_merge_factor(&mut random, 10)?;
@@ -111,7 +112,7 @@ fn test_2d() -> Result<()> {
   )?);
 
   let analyzer = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   let merge_scheduler = ConcurrentMergeScheduler::new();
   merge_scheduler.set_max_merges_and_threads(6, 3)?;
   let mut merge_policy = new_log_merge_policy_with_merge_factor(&mut random, 10)?;

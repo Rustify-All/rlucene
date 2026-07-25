@@ -23,7 +23,7 @@ use crate::core::index::directory_reader;
 use crate::core::index::fields::Fields;
 use crate::core::index::index_reader::IndexReader;
 use crate::core::index::index_writer::IndexWriter;
-use crate::core::index::index_writer_config::DISABLE_AUTO_FLUSH;
+use crate::core::index::index_writer_config::{DISABLE_AUTO_FLUSH, IndexWriterConfig};
 use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
 use crate::core::index::log_merge_policy::LogMergePolicy;
 use crate::core::index::postings_enum::{ALL, PostingsEnum};
@@ -939,7 +939,8 @@ fn test_no_abort_on_bad_tv_settings() -> Result<()> {
 
   let dir = new_directory_shared(&mut random)?;
   // Don't use RandomIndexWriter because we want to be sure both docs go to 1 seg:
-  let iwc = new_index_writer_config(&mut random)?;
+  let mock = MockAnalyzer::new(&mut random);
+  let iwc = IndexWriterConfig::with_analyzer(mock)?;
   let iw = IndexWriter::new(dir.clone(), iwc)?;
   let mut doc = Document::new();
   iw.add_document(doc.clone())?;
