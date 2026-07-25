@@ -1741,7 +1741,7 @@ fn test_delete_all_nrt_leftover_files() -> Result<()> {
   let dir = Arc::new(ByteBuffersDirectory::new());
 
   let mock = MockAnalyzer::new(&mut random);
-  let iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let iwc = IndexWriterConfig::with_analyzer(mock)?;
   let w = IndexWriter::new(dir.clone(), iwc)?;
 
   let doc = Document::new();
@@ -1775,7 +1775,7 @@ fn test_nrt_reader_version() -> Result<()> {
   let dir = Arc::new(ByteBuffersDirectory::new());
 
   let mock = MockAnalyzer::new(&mut random);
-  let iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let iwc = IndexWriterConfig::with_analyzer(mock)?;
   let w = IndexWriter::new(dir.clone(), iwc)?;
 
   let mut field_types = HashMap::new();
@@ -1846,7 +1846,7 @@ fn test_has_blocks_merge_fully_del_segments() -> Result<()> {
   let dir = new_directory_shared(&mut random)?;
 
   let mock = MockAnalyzer::new(&mut random);
-  let iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let iwc = IndexWriterConfig::with_analyzer(mock)?;
   let writer = IndexWriter::new(dir.clone(), iwc)?;
 
   let new_doc = || -> Result<Document> {
@@ -1896,7 +1896,7 @@ fn test_single_docs_do_not_trigger_has_blocks() -> Result<()> {
   let dir = new_directory_shared(&mut random)?;
 
   let mock = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(mock)?;
   iwc.set_max_buffered_docs(i32::MAX);
   iwc.set_ram_buffer_size_mb(100.0);
 
@@ -2006,7 +2006,7 @@ fn test_prepare_commit_then_close() -> Result<()> {
   let dir = new_directory_shared(&mut random)?;
 
   let mock = MockAnalyzer::new(&mut random);
-  let iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let iwc = IndexWriterConfig::with_analyzer(mock)?;
   let w = IndexWriter::new(dir.clone(), iwc)?;
 
   w.prepare_commit()?;
@@ -2030,7 +2030,7 @@ fn test_prepare_commit_then_rollback() -> Result<()> {
   let dir = new_directory_shared(&mut random)?;
 
   let mock = MockAnalyzer::new(&mut random);
-  let conf = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let conf = IndexWriterConfig::with_analyzer(mock)?;
   let w = IndexWriter::new(dir.clone(), conf)?;
 
   w.prepare_commit()?;
@@ -2047,7 +2047,7 @@ fn test_prepare_commit_then_rollback2() -> Result<()> {
   let dir = new_directory_shared(&mut random)?;
 
   let mock = MockAnalyzer::new(&mut random);
-  let conf = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let conf = IndexWriterConfig::with_analyzer(mock)?;
   let w = IndexWriter::new(dir.clone(), conf)?;
 
   w.commit()?;
@@ -2814,7 +2814,7 @@ fn test_delete_same_term_across_fields() -> Result<()> {
   let dir = new_directory_shared(&mut random)?;
 
   let mock = MockAnalyzer::new(&mut random);
-  let iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let iwc = IndexWriterConfig::with_analyzer(mock)?;
   let writer = IndexWriter::new(dir.clone(), iwc)?;
 
   let mut doc = Document::new();
@@ -3143,7 +3143,7 @@ fn test_many_separate_threads() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
   let analyzer = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   iwc.set_max_buffered_docs(1000);
   let writer = IndexWriter::new(dir.clone(), iwc)?;
 
@@ -3174,7 +3174,7 @@ fn test_nrt_segments_file() -> Result<()> {
 
   let dir = new_directory_shared(&mut random)?;
   let mock = MockAnalyzer::new(&mut random);
-  let iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let iwc = IndexWriterConfig::with_analyzer(mock)?;
   let w = IndexWriter::new(dir.clone(), iwc)?;
   // creates segments_1
   w.commit()?;
@@ -3224,7 +3224,7 @@ fn test_nrt_after_commit() -> Result<()> {
 
   let dir = new_directory_shared(&mut random)?;
   let mock = MockAnalyzer::new(&mut random);
-  let iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let iwc = IndexWriterConfig::with_analyzer(mock)?;
   let w = IndexWriter::new(dir.clone(), iwc)?;
   w.commit()?;
 
@@ -3253,7 +3253,7 @@ fn test_nrt_after_set_user_data_without_commit() -> Result<()> {
 
   let dir = new_directory_shared(&mut random)?;
   let mock = MockAnalyzer::new(&mut random);
-  let iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let iwc = IndexWriterConfig::with_analyzer(mock)?;
   let w = IndexWriter::new(dir.clone(), iwc)?;
   w.commit()?;
 
@@ -3279,7 +3279,7 @@ fn test_nrt_after_set_user_data_with_commit() -> Result<()> {
 
   let dir = new_directory_shared(&mut random)?;
   let mock = MockAnalyzer::new(&mut random);
-  let iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let iwc = IndexWriterConfig::with_analyzer(mock)?;
   let w = IndexWriter::new(dir.clone(), iwc)?;
   w.commit()?;
 
@@ -3305,7 +3305,7 @@ fn test_commit_immediately_after_nrt_reopen() -> Result<()> {
 
   let dir = new_directory_shared(&mut random)?;
   let mock = MockAnalyzer::new(&mut random);
-  let iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let iwc = IndexWriterConfig::with_analyzer(mock)?;
   let w = IndexWriter::new(dir.clone(), iwc)?;
   w.commit()?;
 
@@ -3338,7 +3338,7 @@ fn test_pending_delete_dv_generation() -> Result<()> {
   let dir = new_fs_directory(&mut random, create_temp_dir()?)?;
 
   let analyzer = MockAnalyzer::new(&mut random);
-  let mut iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let mut iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   iwc.set_use_compound_file(false);
   iwc.set_merge_policy(NoMergePolicy::default());
   iwc.set_max_buffered_docs(2);
@@ -3385,7 +3385,7 @@ fn test_pending_delete_dv_generation() -> Result<()> {
     drop(w);
 
     let analyzer = MockAnalyzer::new(&mut random);
-    let mut iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+    let mut iwc = IndexWriterConfig::with_analyzer(analyzer)?;
     iwc.set_use_compound_file(false);
     iwc.set_merge_policy(NoMergePolicy::default());
     iwc.set_max_buffered_docs(2);
@@ -3406,7 +3406,7 @@ fn test_pending_deletions_rollback_with_reader() -> Result<()> {
   let dir = new_fs_directory(&mut random, create_temp_dir()?)?;
 
   let analyzer = MockAnalyzer::new(&mut random);
-  let iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   let mut w = IndexWriter::new(dir.clone(), iwc)?;
 
   let mut d = Document::new();
@@ -3422,14 +3422,14 @@ fn test_pending_deletions_rollback_with_reader() -> Result<()> {
 
   // try-delete superfluous files (some will fail due to open readers)
   let analyzer = MockAnalyzer::new(&mut random);
-  let iwc2 = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let iwc2 = IndexWriterConfig::with_analyzer(analyzer)?;
   let writer = IndexWriter::new(dir.clone(), iwc2)?;
   writer.close()?;
   drop(writer);
 
   // test that we can index on top of pending deletions
   let analyzer = MockAnalyzer::new(&mut random);
-  let iwc3 = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let iwc3 = IndexWriterConfig::with_analyzer(analyzer)?;
   w = IndexWriter::new(dir.clone(), iwc3)?;
   w.add_document(d)?;
   w.commit()?;
@@ -3459,7 +3459,7 @@ fn test_leftover_temp_files() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
   let analyzer = MockAnalyzer::new(&mut random);
-  let iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   let writer = IndexWriter::new(dir.clone(), iwc)?;
   writer.close()?;
   drop(writer);
@@ -3473,7 +3473,7 @@ fn test_leftover_temp_files() -> Result<()> {
   };
 
   let analyzer = MockAnalyzer::new(&mut random);
-  let iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   let writer = IndexWriter::new(dir.clone(), iwc)?;
 
   assert!(
@@ -3491,7 +3491,7 @@ fn test_massive_field() -> Result<()> {
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
   let analyzer = MockAnalyzer::new(&mut random);
-  let iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
+  let iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   let writer = IndexWriter::new(dir.clone(), iwc)?;
 
   let mut b = String::new();
@@ -4886,7 +4886,7 @@ fn test_abort_fully_deleted_segment() -> Result<()> {
 fn test_set_index_created_version() -> Result<()> {
   let mut random = random();
 
-  let mut iwc = new_index_writer_config::<DirEnum, _>(&mut random)?;
+  let mut iwc = IndexWriterConfig::<DirEnum>::new()?;
   let err = iwc.set_index_created_version_major(LATEST.major + 1);
   match err {
     Ok(_) => unreachable!("expected IllegalArgument error"),
@@ -4903,7 +4903,7 @@ fn test_set_index_created_version() -> Result<()> {
     },
   }
 
-  let mut iwc = new_index_writer_config::<DirEnum, _>(&mut random)?;
+  let mut iwc = IndexWriterConfig::<DirEnum>::new()?;
   let err = iwc.set_index_created_version_major(LATEST.major - 2);
   match err {
     Ok(_) => unreachable!("expected IllegalArgument error"),
@@ -5580,7 +5580,7 @@ fn test_segment_commit_info_id() -> Result<()> {
   {
     let dir = new_directory_shared(&mut random)?;
     let v = {
-      let mut iwc = new_index_writer_config(&mut random)?;
+      let mut iwc = IndexWriterConfig::new()?;
       iwc.set_merge_policy(NoMergePolicy::default());
       let writer = IndexWriter::new(dir.clone(), iwc)?;
 
@@ -5652,7 +5652,7 @@ fn test_segment_commit_info_id() -> Result<()> {
 
     {
       let dir2 = new_directory_shared(&mut random)?;
-      let mut iwc = new_index_writer_config(&mut random)?;
+      let mut iwc = IndexWriterConfig::new()?;
       iwc.set_merge_policy(NoMergePolicy::default());
       let writer2 = IndexWriter::new(dir2.clone(), iwc)?;
 
@@ -5681,7 +5681,7 @@ fn test_segment_commit_info_id() -> Result<()> {
 
   for _ in 0..2 {
     let dir = new_directory_shared(&mut random)?;
-    let mut iwc = new_index_writer_config(&mut random)?;
+    let mut iwc = IndexWriterConfig::new()?;
     iwc.set_merge_policy(NoMergePolicy::default());
     let writer = IndexWriter::new(dir.clone(), iwc)?;
 
@@ -5716,7 +5716,7 @@ fn test_merge_zero_docs_merge_is_closed_once() -> Result<()> {
     OneMergeWrappingMergePolicy::new(keep_all_segments, MergeFinishedOnceOneMergeUnaryOperator);
   let mut random = random();
   let dir = new_directory_shared(&mut random)?;
-  let mut config = new_index_writer_config(&mut random)?;
+  let mut config = IndexWriterConfig::new()?;
   config.set_merge_policy(merge_policy);
   let writer = IndexWriter::new(dir, config)?;
 
@@ -5923,7 +5923,7 @@ fn test_parent_field_existing_index() -> Result<()> {
 
   {
     let mock = MockAnalyzer::new(&mut random);
-    let iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+    let iwc = IndexWriterConfig::with_analyzer(mock)?;
     let writer = IndexWriter::new(dir.clone(), iwc)?;
 
     let mut field_to_type = HashMap::new();
@@ -5941,7 +5941,7 @@ fn test_parent_field_existing_index() -> Result<()> {
 
   {
     let mock = MockAnalyzer::new(&mut random);
-    let mut iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+    let mut iwc = IndexWriterConfig::with_analyzer(mock)?;
     iwc.set_open_mode(OpenMode::Append);
     iwc.set_parent_field("foo");
 
@@ -5960,7 +5960,7 @@ fn test_parent_field_existing_index() -> Result<()> {
 
   {
     let mock = MockAnalyzer::new(&mut random);
-    let mut iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+    let mut iwc = IndexWriterConfig::with_analyzer(mock)?;
     iwc.set_open_mode(OpenMode::CreateOrAppend);
     iwc.set_parent_field("foo");
 
@@ -5979,7 +5979,7 @@ fn test_parent_field_existing_index() -> Result<()> {
 
   {
     let mock = MockAnalyzer::new(&mut random);
-    let mut iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+    let mut iwc = IndexWriterConfig::with_analyzer(mock)?;
     iwc.set_open_mode(OpenMode::Create);
     iwc.set_parent_field("foo");
 
@@ -5999,7 +5999,7 @@ fn test_index_with_parent_field_is_congruent() -> Result<()> {
 
   {
     let mock = MockAnalyzer::new(&mut random);
-    let mut iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+    let mut iwc = IndexWriterConfig::with_analyzer(mock)?;
     iwc.set_parent_field("parent");
     let writer = IndexWriter::new(dir.clone(), iwc)?;
 
@@ -6024,7 +6024,7 @@ fn test_index_with_parent_field_is_congruent() -> Result<()> {
 
   {
     let mock = MockAnalyzer::new(&mut random);
-    let mut config = new_index_writer_config_with_analyzer(&mut random, mock)?;
+    let mut config = IndexWriterConfig::with_analyzer(mock)?;
     config.set_parent_field("someOtherField");
 
     let err = IndexWriter::new(dir.clone(), config);
@@ -6045,7 +6045,7 @@ fn test_index_with_parent_field_is_congruent() -> Result<()> {
 
   {
     let mock = MockAnalyzer::new(&mut random);
-    let config = new_index_writer_config_with_analyzer(&mut random, mock)?;
+    let config = IndexWriterConfig::with_analyzer(mock)?;
 
     let err = IndexWriter::new(dir, config);
     match err {
@@ -6074,7 +6074,7 @@ fn test_parent_field_is_already_used() -> Result<()> {
 
   {
     let mock = MockAnalyzer::new(&mut random);
-    let iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+    let iwc = IndexWriterConfig::with_analyzer(mock)?;
     let writer = IndexWriter::new(dir.clone(), iwc)?;
 
     let mut doc = Document::new();
@@ -6089,7 +6089,7 @@ fn test_parent_field_is_already_used() -> Result<()> {
   }
 
   let mock = MockAnalyzer::new(&mut random);
-  let mut config = new_index_writer_config_with_analyzer(&mut random, mock)?;
+  let mut config = IndexWriterConfig::with_analyzer(mock)?;
   config.set_parent_field("parent");
 
   let err = IndexWriter::new(dir, config);
@@ -6118,7 +6118,7 @@ fn test_parent_field_empty_index() -> Result<()> {
 
   {
     let mock = MockAnalyzer::new(&mut random);
-    let mut iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+    let mut iwc = IndexWriterConfig::with_analyzer(mock)?;
     iwc.set_parent_field("parent");
     let writer = IndexWriter::new(dir.clone(), iwc)?;
     writer.commit()?;
@@ -6127,7 +6127,7 @@ fn test_parent_field_empty_index() -> Result<()> {
 
   {
     let mock = MockAnalyzer::new(&mut random);
-    let mut iwc2 = new_index_writer_config_with_analyzer(&mut random, mock)?;
+    let mut iwc2 = IndexWriterConfig::with_analyzer(mock)?;
     iwc2.set_parent_field("parent");
     let writer = IndexWriter::new(dir, iwc2)?;
     writer.commit()?;
@@ -6143,7 +6143,7 @@ fn test_doc_values_mixed_skipping_index() -> Result<()> {
   {
     let dir = new_directory_shared(&mut random)?;
     let mock = MockAnalyzer::new(&mut random);
-    let iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+    let iwc = IndexWriterConfig::with_analyzer(mock)?;
     let writer = IndexWriter::new(dir, iwc)?;
 
     let mut doc1 = Document::new();
@@ -6170,7 +6170,7 @@ fn test_doc_values_mixed_skipping_index() -> Result<()> {
   {
     let dir = new_directory_shared(&mut random)?;
     let mock = MockAnalyzer::new(&mut random);
-    let iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+    let iwc = IndexWriterConfig::with_analyzer(mock)?;
     let writer = IndexWriter::new(dir, iwc)?;
 
     let mut doc1 = Document::new();
@@ -6212,7 +6212,7 @@ fn test_doc_values_skipping_index_without_doc_values() -> Result<()> {
     field_type.freeze();
     let dir = new_mock_directory(&mut random)?;
     let mock = MockAnalyzer::new(&mut random);
-    let iwc = new_index_writer_config_with_analyzer(&mut random, mock)?;
+    let iwc = IndexWriterConfig::with_analyzer(mock)?;
     let writer = IndexWriter::new(Arc::new(dir.clone()), iwc)?;
 
     let mut doc1 = Document::new();
