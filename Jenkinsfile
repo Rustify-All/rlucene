@@ -25,6 +25,7 @@ pipeline {
     LAST_SUCCESSFUL_SHA_FILE = '/var/jenkins_home/ci-state/rlucene-ci/last-successful-sha'
     CARGO_PROFILE_TEST_DEBUG = '0'
     CARGO_TERM_COLOR = 'never'
+    RUST_BACKTRACE = 'full'
     NO_COLOR = '1'
     CARGO_NET_RETRY = '10'
     CARGO_HTTP_TIMEOUT = '120'
@@ -108,9 +109,9 @@ pipeline {
           if (alreadyTested == 0) {
             env.SKIP_PREFLIGHT = 'true'
             currentBuild.description =
-              "${checkedOutSha.take(12)}: unchanged, direct cargo test"
+              "${checkedOutSha.take(12)}: unchanged, direct nextest"
             echo """${checkedOutSha} already passed once.
-Skipping dependency preflight and running cargo test directly."""
+Skipping dependency preflight and running cargo nextest directly."""
           }
         }
       }
@@ -128,49 +129,113 @@ Skipping dependency preflight and running cargo test directly."""
           git diff --exit-code
           rustup show
           cargo fetch
+          cargo nextest --version
         '''
       }
     }
 
-    stage('Cargo test') {
+    stage('Cargo nextest') {
       steps {
         script {
           int testStatus = sh(
             returnStatus: true,
             script: '''#!/bin/bash
               set -uo pipefail
-              set +e
-              timeout --kill-after=30s 12m cargo test -q \
-                > cargo-test.log 2>&1
-              test_status=$?
-              cat cargo-test.log
-              if grep -Eq '(^error(:|\\[)|test result: FAILED)' \
-                cargo-test.log; then
-                exit 101
+              rm -f nextest.log nextest-junit.xml
+              rm -f "$CARGO_TARGET_DIR/nextest/ci/junit.xml"
+              if ! cargo nextest --version > nextest.log 2>&1; then
+                cat nextest.log
+                exit 125
               fi
+              set +e
+              timeout --kill-after=30s 12m \
+                cargo nextest run --profile ci --workspace \
+                >> nextest.log 2>&1
+              test_status=$?
+              junit_source="$CARGO_TARGET_DIR/nextest/ci/junit.xml"
+              if [ -f "$junit_source" ]; then
+                cp "$junit_source" nextest-junit.xml
+              fi
+              cat nextest.log
               exit "$test_status"
             '''
           )
-          String cargoTestLog = readFile(file: 'cargo-test.log')
-          boolean cargoReportedFailure =
-            cargoTestLog.contains('test result: FAILED') ||
-            cargoTestLog.contains('\nerror:') ||
-            cargoTestLog.startsWith('error:') ||
-            cargoTestLog.contains('\nerror[') ||
-            cargoTestLog.startsWith('error[')
-          if (testStatus == 0 && cargoReportedFailure) {
-            testStatus = 101
-          }
+          String nextestLog = readFile(file: 'nextest.log')
+          String nextestJunit = fileExists('nextest-junit.xml') ?
+            readFile(file: 'nextest-junit.xml') : ''
+          boolean testTimedOut = nextestLog.contains('TIMEOUT [')
+          boolean nextestReportedFailure =
+            nextestLog.contains('FAIL [') ||
+            testTimedOut ||
+            nextestLog.contains('\nerror:') ||
+            nextestLog.startsWith('error:') ||
+            nextestLog.contains('\nerror[') ||
+            nextestLog.startsWith('error[') ||
+            nextestJunit.contains('<failure') ||
+            nextestJunit.contains('<error')
 
           if (testStatus == 124 || testStatus == 137) {
-            env.FAILURE_KIND = 'timeout'
-            error("cargo test timed out or was killed (exit ${testStatus})")
+            env.FAILURE_KIND = 'suite-timeout'
+            error(
+              "cargo nextest exceeded the suite timeout or was killed " +
+              "(exit ${testStatus})"
+            )
+          }
+
+          if (testStatus == 125) {
+            env.FAILURE_KIND = 'infrastructure'
+            error('cargo-nextest is unavailable in the Jenkins environment.')
           }
 
           if (testStatus != 0) {
+            if (nextestReportedFailure) {
+              env.CARGO_TEST_FAILED = 'true'
+              env.FAILURE_KIND = testTimedOut ? 'test-timeout' : 'code'
+            } else {
+              env.FAILURE_KIND = 'infrastructure'
+            }
+            error("cargo nextest failed (exit ${testStatus})")
+          }
+        }
+      }
+    }
+
+    stage('Cargo doctest') {
+      steps {
+        script {
+          int doctestStatus = sh(
+            returnStatus: true,
+            script: '''#!/bin/bash
+              set -uo pipefail
+              set +e
+              timeout --kill-after=30s 4m \
+                cargo test --workspace --doc -q \
+                > doctest.log 2>&1
+              test_status=$?
+              cat doctest.log
+              exit "$test_status"
+            '''
+          )
+          String doctestLog = readFile(file: 'doctest.log')
+          boolean doctestReportedFailure =
+            doctestLog.contains('test result: FAILED') ||
+            doctestLog.contains('\nerror:') ||
+            doctestLog.startsWith('error:') ||
+            doctestLog.contains('\nerror[') ||
+            doctestLog.startsWith('error[')
+
+          if (doctestStatus == 124 || doctestStatus == 137) {
+            env.FAILURE_KIND = 'doctest-timeout'
+            error(
+              "cargo test --doc timed out or was killed " +
+              "(exit ${doctestStatus})"
+            )
+          }
+
+          if (doctestStatus != 0 || doctestReportedFailure) {
             env.CARGO_TEST_FAILED = 'true'
             env.FAILURE_KIND = 'code'
-            error("cargo test failed (exit ${testStatus})")
+            error("cargo test --doc failed (exit ${doctestStatus})")
           }
         }
       }
@@ -214,7 +279,7 @@ Skipping dependency preflight and running cargo test directly."""
         }
       }
       archiveArtifacts(
-        artifacts: 'cargo-test.log',
+        artifacts: 'nextest.log,nextest-junit.xml,doctest.log',
         allowEmptyArchive: true
       )
     }
@@ -229,7 +294,11 @@ Skipping dependency preflight and running cargo test directly."""
               parameters: [
                 string(name: 'FAILED_SHA', value: env.FAILED_SHA),
                 string(name: 'BASE_BRANCH', value: 'main'),
-                string(name: 'UPSTREAM_BUILD_URL', value: env.BUILD_URL)
+                string(name: 'UPSTREAM_BUILD_URL', value: env.BUILD_URL),
+                string(
+                  name: 'UPSTREAM_FAILURE_KIND',
+                  value: env.FAILURE_KIND
+                )
               ]
             )
           } catch (triggerError) {
@@ -249,7 +318,8 @@ Autofix triggered: ${env.CARGO_TEST_FAILED}
 """,
           attachLog: true,
           compressLog: true,
-          attachmentsPattern: 'cargo-test.log'
+          attachmentsPattern:
+            'nextest.log,nextest-junit.xml,doctest.log'
         )
       }
     }

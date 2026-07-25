@@ -5,13 +5,14 @@ pipeline {
     string(name: 'FAILED_SHA', defaultValue: '', trim: true)
     string(name: 'BASE_BRANCH', defaultValue: 'main', trim: true)
     string(name: 'UPSTREAM_BUILD_URL', defaultValue: '', trim: true)
+    string(name: 'UPSTREAM_FAILURE_KIND', defaultValue: '', trim: true)
   }
 
   options {
     skipDefaultCheckout(true)
     timestamps()
     disableConcurrentBuilds()
-    timeout(time: 45, unit: 'MINUTES')
+    timeout(time: 60, unit: 'MINUTES')
     buildDiscarder(logRotator(numToKeepStr: '50'))
   }
 
@@ -33,6 +34,7 @@ pipeline {
     CARGO_TARGET_DIR = '/var/jenkins_home/cargo-target/rlucene-autofix'
     CARGO_PROFILE_TEST_DEBUG = '0'
     CARGO_TERM_COLOR = 'never'
+    RUST_BACKTRACE = 'full'
     NO_COLOR = '1'
     CARGO_NET_RETRY = '10'
     CARGO_HTTP_TIMEOUT = '120'
@@ -142,6 +144,8 @@ pipeline {
                 printf 'commit=%s\n' "$FAILED_SHA_NORMALIZED"
                 printf 'jenkins_build=%s\n' "$BUILD_URL"
                 printf 'upstream_build=%s\n' "$UPSTREAM_BUILD_URL"
+                printf 'upstream_failure_kind=%s\n' \
+                  "$UPSTREAM_FAILURE_KIND"
                 printf 'started_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
               } > "$ATTEMPT_MARKER"
             '''
@@ -166,28 +170,50 @@ pipeline {
               returnStatus: true,
               script: '''#!/bin/bash
                 set -uo pipefail
+                rm -f initial-test.log initial-nextest-junit.xml
+                rm -f "$CARGO_TARGET_DIR/nextest/ci/junit.xml"
+                if ! cargo nextest --version > initial-test.log 2>&1; then
+                  cat initial-test.log
+                  exit 125
+                fi
+                printf '\\nNextest reproduction:\\n' >> initial-test.log
                 set +e
-                timeout --kill-after=30s 12m cargo test -q \
-                  > initial-test.log 2>&1
+                timeout --kill-after=30s 12m \
+                  cargo nextest run --profile ci --workspace \
+                  >> initial-test.log 2>&1
+                nextest_status=$?
+                junit_source="$CARGO_TARGET_DIR/nextest/ci/junit.xml"
+                if [ -f "$junit_source" ]; then
+                  cp "$junit_source" initial-nextest-junit.xml
+                fi
+                if [ "$nextest_status" -ne 0 ]; then
+                  cat initial-test.log
+                  exit "$nextest_status"
+                fi
+                printf '\\nDoctest reproduction:\\n' >> initial-test.log
+                timeout --kill-after=30s 4m \
+                  cargo test --workspace --doc -q \
+                  >> initial-test.log 2>&1
                 test_status=$?
                 cat initial-test.log
-                if grep -Eq '(^error(:|\\[)|test result: FAILED)' \
-                  initial-test.log; then
-                  exit 101
-                fi
                 exit "$test_status"
               '''
             )
             String reproduceLog = readFile(file: 'initial-test.log')
-            boolean cargoReportedFailure =
+            String reproduceJunit =
+              fileExists('initial-nextest-junit.xml') ?
+                readFile(file: 'initial-nextest-junit.xml') : ''
+            boolean testTimedOut = reproduceLog.contains('TIMEOUT [')
+            boolean testReportedFailure =
+              reproduceLog.contains('FAIL [') ||
+              testTimedOut ||
               reproduceLog.contains('test result: FAILED') ||
               reproduceLog.contains('\nerror:') ||
               reproduceLog.startsWith('error:') ||
               reproduceLog.contains('\nerror[') ||
-              reproduceLog.startsWith('error[')
-            if (reproduceStatus == 0 && cargoReportedFailure) {
-              reproduceStatus = 101
-            }
+              reproduceLog.startsWith('error[') ||
+              reproduceJunit.contains('<failure') ||
+              reproduceJunit.contains('<error')
             sh '''
               git ls-files --error-unmatch Cargo.lock >/dev/null 2>&1 || \
                 rm -f Cargo.lock
@@ -198,13 +224,34 @@ pipeline {
               currentBuild.result = 'NOT_BUILT'
               currentBuild.description = "${env.SHA_SHORT}: not reproduced"
               echo 'Failure did not reproduce; DeepSeek will not modify code.'
-            } else if (reproduceStatus == 124 || reproduceStatus == 137) {
+            } else if (
+              reproduceStatus == 124 ||
+              reproduceStatus == 125 ||
+              reproduceStatus == 137
+            ) {
               env.SKIP_AUTOFIX = 'true'
               currentBuild.result = 'UNSTABLE'
-              currentBuild.description = "${env.SHA_SHORT}: infrastructure timeout"
-              echo "Reproduction timed out or was killed (exit ${reproduceStatus})."
-            } else {
+              currentBuild.description =
+                "${env.SHA_SHORT}: infrastructure reproduction failure"
+              echo(
+                "Reproduction infrastructure failed, timed out, or was " +
+                "killed (exit ${reproduceStatus})."
+              )
+            } else if (testReportedFailure) {
               env.REPRODUCED = 'true'
+              if (testTimedOut) {
+                currentBuild.description =
+                  "${env.SHA_SHORT}: test timeout reproduced"
+              }
+            } else {
+              env.SKIP_AUTOFIX = 'true'
+              currentBuild.result = 'UNSTABLE'
+              currentBuild.description =
+                "${env.SHA_SHORT}: unclassified reproduction failure"
+              echo(
+                'Reproduction failed without test evidence; DeepSeek will ' +
+                'not modify code.'
+              )
             }
           }
         }
@@ -283,16 +330,20 @@ using DeepSeek through OpenCode.
 
 Failed commit: ${env.FAILED_SHA_NORMALIZED}
 Upstream build: ${params.UPSTREAM_BUILD_URL}
+Upstream failure kind: ${params.UPSTREAM_FAILURE_KIND}
 
 Before reading any other repository file, read AGENTS.md completely and follow
-all applicable instructions in it. Then read initial-test.log and the relevant
-source. Make the smallest root-cause fix. Do not run Cargo, tests, repository
-scripts, or any compiled code during this model invocation; Jenkins validates
-after the DeepSeek credential is removed. Do not add ignored tests, remove
-tests, weaken assertions, modify Jenkins automation, upgrade unrelated
-dependencies, commit, push, or create a pull request. If the evidence
-indicates infrastructure or a non-reproducible flaky failure, make no changes
-and explain why.
+all applicable instructions in it. Then read initial-test.log,
+initial-nextest-junit.xml when present, and the relevant source. For a nextest
+TIMEOUT, use the exact test name, elapsed time, captured output, and any
+reported random seed as the primary evidence. Make the smallest root-cause
+fix. Do not run Cargo, tests, repository scripts, or any compiled code during
+this model invocation; Jenkins validates after the DeepSeek credential is
+removed. Do not add ignored tests, remove tests, weaken assertions, modify
+Jenkins automation or .config/nextest.toml, upgrade unrelated dependencies,
+commit, push, or create a pull request. If the evidence indicates
+infrastructure or a non-reproducible flaky failure, make no changes and
+explain why.
 """
         )
         dir('source') {
@@ -360,7 +411,7 @@ and explain why.
                 set -euo pipefail
                 git diff --check
                 if git status --porcelain | awk '{print $2}' | \
-                  grep -Eq '^(AGENTS[.]md|Jenkinsfile|Jenkinsfile[.]autofix|ci/jenkins/)'; then
+                  grep -Eq '^([.]config/nextest[.]toml|AGENTS[.]md|Jenkinsfile|Jenkinsfile[.]autofix|ci/jenkins/)'; then
                   echo 'DeepSeek attempted to modify protected automation files.' >&2
                   exit 1
                 fi
@@ -396,23 +447,54 @@ and explain why.
                 set -uo pipefail
                 unset DEEPSEEK_API_KEY DEEPSEEK_KEY OPENCODE_CONFIG_CONTENT \
                   GH_TOKEN GITHUB_TOKEN
+                rm -f final-test.log final-nextest-junit.xml
+                rm -f "$CARGO_TARGET_DIR/nextest/ci/junit.xml"
+                if ! cargo nextest --version > final-test.log 2>&1; then
+                  cat final-test.log
+                  exit 125
+                fi
+                printf '\\nNextest verification:\\n' >> final-test.log
                 set +e
-                timeout --kill-after=30s 20m cargo test -q \
-                  > final-test.log 2>&1
+                timeout --kill-after=30s 20m \
+                  cargo nextest run --profile ci --workspace \
+                  >> final-test.log 2>&1
+                nextest_status=$?
+                junit_source="$CARGO_TARGET_DIR/nextest/ci/junit.xml"
+                if [ -f "$junit_source" ]; then
+                  cp "$junit_source" final-nextest-junit.xml
+                fi
+                if [ "$nextest_status" -ne 0 ]; then
+                  cat final-test.log
+                  exit "$nextest_status"
+                fi
+                printf '\\nDoctest verification:\\n' >> final-test.log
+                timeout --kill-after=30s 4m \
+                  cargo test --workspace --doc -q \
+                  >> final-test.log 2>&1
                 test_status=$?
                 cat final-test.log
                 exit "$test_status"
               '''
             )
             String finalTestLog = readFile(file: 'final-test.log')
-            boolean cargoReportedFailure =
+            String finalNextestJunit =
+              fileExists('final-nextest-junit.xml') ?
+                readFile(file: 'final-nextest-junit.xml') : ''
+            boolean testReportedFailure =
+              finalTestLog.contains('FAIL [') ||
+              finalTestLog.contains('TIMEOUT [') ||
               finalTestLog.contains('test result: FAILED') ||
               finalTestLog.contains('\nerror:') ||
               finalTestLog.startsWith('error:') ||
               finalTestLog.contains('\nerror[') ||
-              finalTestLog.startsWith('error[')
-            if (verifyStatus != 0 || cargoReportedFailure) {
-              error("Independent cargo test failed (exit ${verifyStatus}).")
+              finalTestLog.startsWith('error[') ||
+              finalNextestJunit.contains('<failure') ||
+              finalNextestJunit.contains('<error')
+            if (verifyStatus != 0 || testReportedFailure) {
+              error(
+                "Independent nextest/doctest verification failed " +
+                "(exit ${verifyStatus})."
+              )
             }
           }
           sh '''#!/bin/bash
@@ -435,7 +517,8 @@ and explain why.
             set -euo pipefail
             git config user.name 'jenkins-deepseek-autofix'
             git config user.email 'jenkins-deepseek-autofix@users.noreply.github.com'
-            rm -f initial-test.log final-test.log pr-response.json
+            rm -f initial-test.log initial-nextest-junit.xml \
+              final-test.log final-nextest-junit.xml pr-response.json
             git switch -c "$FIX_BRANCH"
             git add -A
             git commit -m "fix: repair Jenkins failure for $SHA_SHORT"
@@ -453,8 +536,11 @@ and explain why.
 
 Failed commit: `${env.FAILED_SHA_NORMALIZED}`
 Upstream build: ${params.UPSTREAM_BUILD_URL}
+Failure kind: `${params.UPSTREAM_FAILURE_KIND}`
 
-Verified with `cargo tidy`, `cargo fmt --all -- --check`, and `cargo test -q`.
+Verified with `cargo tidy`, `cargo fmt --all -- --check`,
+`cargo nextest run --profile ci --workspace`, and
+`cargo test --workspace --doc -q`.
 
 This is a ready-for-review PR. Human review and manual merge are required;
 this PR will never be auto-merged.""",
@@ -511,7 +597,7 @@ this PR will never be auto-merged.""",
   post {
     always {
       archiveArtifacts(
-        artifacts: 'source/initial-test.log,source/final-test.log,deepseek-result.jsonl,source/pr-response.json',
+        artifacts: 'source/initial-test.log,source/initial-nextest-junit.xml,source/final-test.log,source/final-nextest-junit.xml,deepseek-result.jsonl,source/pr-response.json',
         allowEmptyArchive: true
       )
     }
@@ -523,6 +609,7 @@ this PR will never be auto-merged.""",
         body: """Autofix build: ${env.BUILD_URL}
 Failed commit: ${params.FAILED_SHA}
 Upstream build: ${params.UPSTREAM_BUILD_URL}
+Upstream failure kind: ${params.UPSTREAM_FAILURE_KIND}
 No branch or PR is published unless every verification step succeeds.
 """,
         attachLog: true,

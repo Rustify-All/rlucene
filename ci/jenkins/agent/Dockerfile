@@ -3,6 +3,9 @@ FROM jenkins/inbound-agent:jdk21
 USER root
 
 ARG RUST_VERSION=1.97.0
+ARG NEXTEST_VERSION=0.9.140
+ARG NEXTEST_LINUX_AMD64_SHA256=4ee9aaa0d0171a985a5d0eb735b87355894c1c455972e9674fb9fdbd1387c9a3
+ARG NEXTEST_LINUX_ARM64_SHA256=8b3f4d4560b6b0f83774fecc6be07e47716dbad0eb0bb6c3890f478f4affe4b6
 ARG OPENCODE_VERSION=1.18.4
 ARG OPENCODE_LINUX_AMD64_SHA512=982899b8a401a911d586da76d181437cd7f9714c13b7afc8f7c3052500c97434d68209e40153a78ad413992b76710c283c9f7856b4700e1672637a48637f8242
 ARG OPENCODE_LINUX_ARM64_SHA512=de0070f70784efa8e5a0d3c698fbf397718947c6fab1cc1200437150a45d277582902eea723266e3d285c9fa858cee7efb51f54368db9aaab1020b79ba9aa831
@@ -34,6 +37,26 @@ RUN curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs \
       --default-toolchain "${RUST_VERSION}" \
     && rustup component add rustfmt clippy rust-src \
     && rm -f /tmp/rustup-init.sh
+
+RUN case "${TARGETARCH}" in \
+      amd64) \
+        nextest_target=x86_64-unknown-linux-gnu; \
+        nextest_checksum="${NEXTEST_LINUX_AMD64_SHA256}" ;; \
+      arm64) \
+        nextest_target=aarch64-unknown-linux-gnu; \
+        nextest_checksum="${NEXTEST_LINUX_ARM64_SHA256}" ;; \
+      *) echo "Unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+    && nextest_archive="cargo-nextest-${NEXTEST_VERSION}-${nextest_target}.tar.gz" \
+    && curl -fsSL \
+      "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-${NEXTEST_VERSION}/${nextest_archive}" \
+      -o "/tmp/${nextest_archive}" \
+    && printf '%s  %s\n' \
+      "${nextest_checksum}" "/tmp/${nextest_archive}" | sha256sum -c - \
+    && tar -xzf "/tmp/${nextest_archive}" -C /opt/cargo/bin cargo-nextest \
+    && chmod 0755 /opt/cargo/bin/cargo-nextest \
+    && cargo nextest --version \
+    && rm -f "/tmp/${nextest_archive}"
 
 RUN mkdir -p /home/jenkins/.local/bin /home/jenkins/.local/share/opencode \
     && case "${TARGETARCH}" in \
