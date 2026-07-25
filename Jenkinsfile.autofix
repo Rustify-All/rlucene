@@ -47,6 +47,19 @@ pipeline {
   stages {
     stage('Validate request') {
       steps {
+        sh '''#!/bin/bash
+          set -euo pipefail
+          rm -f \
+            "$WORKSPACE/deepseek-result.jsonl" \
+            "$WORKSPACE/opencode-autofix.json" \
+            "$WORKSPACE/autofix-task.md" \
+            "$WORKSPACE/source/initial-test.log" \
+            "$WORKSPACE/source/initial-nextest-junit.xml" \
+            "$WORKSPACE/source/final-test.log" \
+            "$WORKSPACE/source/final-nextest-junit.xml" \
+            "$WORKSPACE/source/pr-payload.json" \
+            "$WORKSPACE/source/pr-response.json"
+        '''
         script {
           env.SKIP_AUTOFIX = 'false'
           env.REPRODUCED = 'false'
@@ -61,8 +74,11 @@ pipeline {
 
           String normalizedSha = params.FAILED_SHA.toLowerCase()
           String shortSha = normalizedSha.take(12)
+          String upstreamFailureKind =
+            params.UPSTREAM_FAILURE_KIND?.trim() ?: 'unknown'
           env.FAILED_SHA_NORMALIZED = normalizedSha
           env.SHA_SHORT = shortSha
+          env.UPSTREAM_FAILURE_KIND_NORMALIZED = upstreamFailureKind
           env.FIX_BRANCH = "deepseek/jenkins-autofix-${shortSha}"
           env.ATTEMPT_MARKER =
             "${env.AUTOFIX_STATE_ROOT}/${normalizedSha}.attempted"
@@ -144,14 +160,25 @@ pipeline {
               set -euo pipefail
               umask 077
               mkdir -p "$AUTOFIX_STATE_ROOT"
+              marker_tmp="$(mktemp "${ATTEMPT_MARKER}.tmp.XXXXXX")"
+              cleanup_marker_tmp() {
+                rm -f "$marker_tmp"
+              }
+              trap cleanup_marker_tmp EXIT
               {
                 printf 'commit=%s\n' "$FAILED_SHA_NORMALIZED"
                 printf 'jenkins_build=%s\n' "$BUILD_URL"
                 printf 'upstream_build=%s\n' "$UPSTREAM_BUILD_URL"
                 printf 'upstream_failure_kind=%s\n' \
-                  "$UPSTREAM_FAILURE_KIND"
+                  "$UPSTREAM_FAILURE_KIND_NORMALIZED"
                 printf 'started_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-              } > "$ATTEMPT_MARKER"
+              } > "$marker_tmp"
+              if ! ln "$marker_tmp" "$ATTEMPT_MARKER"; then
+                echo 'Attempt marker appeared while claiming this commit.' >&2
+                exit 75
+              fi
+              rm -f "$marker_tmp"
+              trap - EXIT
             '''
           }
         }
@@ -409,7 +436,7 @@ using DeepSeek through OpenCode.
 
 Failed commit: ${env.FAILED_SHA_NORMALIZED}
 Upstream build: ${params.UPSTREAM_BUILD_URL}
-Upstream failure kind: ${params.UPSTREAM_FAILURE_KIND}
+Upstream failure kind: ${env.UPSTREAM_FAILURE_KIND_NORMALIZED}
 Java reference branch: ${env.JAVA_REFERENCE_BRANCH}
 Java reference commit: ${env.JAVA_REFERENCE_SHA}
 Read-only Java reference: ${env.WORKSPACE}/java-reference
@@ -471,6 +498,7 @@ non-reproducible flaky failure, make no changes and explain why.
                 chmod -R u+rwX "$JAVA_REFERENCE_DIR" >/dev/null 2>&1 || true
               }
               trap restore_java_reference_permissions EXIT
+              rm -f "$WORKSPACE/deepseek-result.jsonl"
               set +x
               set +e
               "$OPENCODE_BIN" run \
@@ -642,7 +670,7 @@ non-reproducible flaky failure, make no changes and explain why.
 
 Failed commit: `${env.FAILED_SHA_NORMALIZED}`
 Upstream build: ${params.UPSTREAM_BUILD_URL}
-Failure kind: `${params.UPSTREAM_FAILURE_KIND}`
+Failure kind: `${env.UPSTREAM_FAILURE_KIND_NORMALIZED}`
 Java reference: `LuXugang/lucene:${env.JAVA_REFERENCE_BRANCH}`
 Java reference commit: `${env.JAVA_REFERENCE_SHA}`
 
@@ -726,7 +754,7 @@ this PR will never be auto-merged.""",
         body: """Autofix build: ${env.BUILD_URL}
 Failed commit: ${params.FAILED_SHA}
 Upstream build: ${params.UPSTREAM_BUILD_URL}
-Upstream failure kind: ${params.UPSTREAM_FAILURE_KIND}
+Upstream failure kind: ${env.UPSTREAM_FAILURE_KIND_NORMALIZED}
 No branch or PR is published unless every verification step succeeds.
 """,
         attachLog: true,

@@ -212,6 +212,11 @@
   `/var/jenkins_home/ai-autofix-state/rlucene/`。已有同名远程修复分支
   也会阻止重复尝试。需要人工重试时，只删除对应 commit 的 marker，
   不能清空整个状态目录。
+- 自动修复开始时必须删除上一构建遗留的已知日志、模型结果和 PR API
+  响应，避免早期失败时归档陈旧产物。下游缺失的失败类型统一规范化为
+  `unknown`，不能在 `set -u` 的 shell 中直接引用可能不存在的参数。
+  commit 尝试标记必须先完整写入私有临时文件，再用同文件系统原子操作
+  声明，任何参数或 shell 失败都不能留下阻止重试的残缺 marker。
 - Jenkins 无法直接访问 DeepSeek 时，可通过 Jenkins 全局环境变量
   `CODEX_HTTPS_PROXY` 使用受信任的局域网代理；Pipeline 只在 DeepSeek
   联网阶段将其映射为标准代理变量。Mac 使用 Clash Verge 提供代理时，

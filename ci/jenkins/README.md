@@ -121,6 +121,14 @@ It gives DeepSeek the exact test log and JUnit report, protects
 `.config/nextest.toml` from agent edits, and independently verifies a patch
 with `cargo tidy`, formatting, nextest, and doctests before publishing a PR.
 
+At build start, the autofix job removes only its known report, prompt, and API
+response files from the previous run so Jenkins cannot archive stale DeepSeek
+output when an earlier stage fails. Missing `UPSTREAM_FAILURE_KIND` values are
+normalized to `unknown` before any shell runs. The persistent per-commit
+attempt marker is first written to a private temporary file and then claimed
+with an atomic hard link, so a parameter or shell failure cannot leave a
+partial marker that blocks a legitimate retry.
+
 ## Java Lucene reference
 
 Migration-fidelity checks use only
