@@ -120,12 +120,13 @@ with `cargo tidy`, formatting, nextest, and doctests before publishing a PR.
 
 ## Repository instructions
 
-The repository-root `AGENTS.md` is synchronized from the Codex workspace
-instructions. The repair agent is explicitly required to read the entire file
-before any other repository file, and the checkout fails if the file is
-missing. Keep the repository copy synchronized whenever those principles
-change. Jenkins blocks an autofix patch that modifies `AGENTS.md` or the
-Jenkins deployment itself.
+The repository-root `AGENTS.md` is the canonical instruction file for both
+Codex and the repair agent. In the current Mac workspace, the parent
+`AGENTS.md` is a local relative symlink to this file, so there is no second
+copy to synchronize. The repair agent is explicitly required to read the
+entire file before any other repository file, and the checkout fails if the
+file is missing. Jenkins blocks an autofix patch that modifies `AGENTS.md` or
+the Jenkins deployment itself.
 
 ## Loop prevention
 
