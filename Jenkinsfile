@@ -43,14 +43,46 @@ pipeline {
       }
     }
 
+    stage('Storage status before build') {
+      steps {
+        sh '''#!/bin/bash
+          set -u
+          mkdir -p "$CARGO_TARGET_DIR"
+          printf 'Jenkins storage before build:\\n'
+          df -h /var/jenkins_home
+          printf 'Temporary storage before build:\\n'
+          df -h /tmp
+          printf 'Cargo target before build:\\n'
+          du -sh "$CARGO_TARGET_DIR"
+        '''
+      }
+    }
+
     stage('Checkout main') {
       steps {
-        deleteDir()
         checkout([
           $class: 'GitSCM',
           branches: [[name: '*/main']],
+          extensions: [
+            [
+              $class: 'CleanBeforeCheckout',
+              deleteUntrackedNestedRepositories: true
+            ],
+            [
+              $class: 'CloneOption',
+              depth: 1,
+              honorRefspec: true,
+              noTags: true,
+              reference: '',
+              shallow: true,
+              timeout: 10
+            ]
+          ],
           userRemoteConfigs: [[
             credentialsId: env.GIT_CREDENTIALS_ID,
+            name: 'origin',
+            refspec:
+              '+refs/heads/main:refs/remotes/origin/main',
             url: env.REPOSITORY_URL
           ]]
         ])
@@ -160,6 +192,27 @@ Skipping dependency preflight and running cargo test directly."""
 
   post {
     always {
+      script {
+        int storageStatus = sh(
+          returnStatus: true,
+          script: '''#!/bin/bash
+            set -u
+            printf 'Jenkins storage after build:\\n'
+            df -h /var/jenkins_home
+            printf 'Temporary storage after build:\\n'
+            df -h /tmp
+            printf 'Cargo target after build:\\n'
+            if [ -d "$CARGO_TARGET_DIR" ]; then
+              du -sh "$CARGO_TARGET_DIR"
+            else
+              printf '%s does not exist\\n' "$CARGO_TARGET_DIR"
+            fi
+          '''
+        )
+        if (storageStatus != 0) {
+          echo "Unable to report storage status (exit ${storageStatus})."
+        }
+      }
       archiveArtifacts(
         artifacts: 'cargo-test.log',
         allowEmptyArchive: true

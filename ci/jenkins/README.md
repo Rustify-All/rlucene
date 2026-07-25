@@ -71,6 +71,19 @@ Create two Pipeline-from-SCM jobs:
 Both jobs read `Rustify-All/rlucene` branch `*/main`. The old Freestyle job is
 kept disabled as `legency` so its historical build records remain available.
 
+The CI checkout uses a main-only refspec, does not fetch tags, and keeps the
+workspace `.git` directory between builds. Jenkins cleans tracked and untracked
+workspace files before checkout without deleting the Git metadata, so the first
+build clones the repository and later builds normally perform only an
+incremental fetch of `main`.
+
+Every CI build prints filesystem free space and the size of its dedicated Cargo
+target directory both before and after the build. The Cargo target is preserved
+between builds to avoid recompiling unchanged dependencies. Do not run
+`cargo clean` on every scheduled build; if cleanup becomes necessary, remove
+only the affected job's dedicated target after confirming that no build is
+using it.
+
 The CI job stores the SHA of the most recent successful full test in
 `/var/jenkins_home/ci-state/rlucene-ci/last-successful-sha`. A scheduled build
 still performs the lightweight SCM lookup and checkout needed to determine the
