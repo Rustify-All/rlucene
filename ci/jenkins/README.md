@@ -104,7 +104,9 @@ which writes Jenkins-compatible JUnit XML. The console log therefore contains
 the exact test name and elapsed time for `SLOW`, `TERMINATING`, and `TIMEOUT`
 events. Failed-test stdout and stderr are stored in the JUnit report.
 
-The CI job archives `nextest.log`, `nextest-junit.xml`, and `doctest.log`.
+The CI job copies the report from the nextest workspace store at
+`target/nextest/ci/junit.xml`, then archives `nextest.log`,
+`nextest-junit.xml`, and `doctest.log`.
 Because nextest does not run Rust doctests, Jenkins runs
 `cargo test --workspace --doc -q` as a separate step. A per-test nextest
 timeout is classified as `test-timeout` and may trigger the guarded autofix
