@@ -21,6 +21,9 @@ pipeline {
     FORK_REPOSITORY_URL = 'git@github.com:LuXugang/rlucene.git'
     FORK_REPOSITORY = 'LuXugang/rlucene'
     FORK_OWNER = 'LuXugang'
+    JAVA_REFERENCE_REPOSITORY_URL =
+      'git@github.com:LuXugang/lucene.git'
+    JAVA_REFERENCE_BRANCH = 'rlucene_10_1'
     GIT_CREDENTIALS_ID = 'github-ssh'
     DEEPSEEK_CREDENTIALS_ID = 'deepseek-api-key'
     GITHUB_CREDENTIALS_ID = 'github-autofix-token'
@@ -48,6 +51,7 @@ pipeline {
           env.SKIP_AUTOFIX = 'false'
           env.REPRODUCED = 'false'
           env.PATCH_READY = 'false'
+          env.JAVA_REFERENCE_SHA = ''
           if (!(params.FAILED_SHA ==~ /[0-9a-fA-F]{40}/)) {
             error('FAILED_SHA must be exactly 40 hexadecimal characters.')
           }
@@ -258,6 +262,71 @@ pipeline {
       }
     }
 
+    stage('Checkout Java reference') {
+      when {
+        expression { env.REPRODUCED == 'true' }
+      }
+      steps {
+        dir('java-reference') {
+          sh '''#!/bin/bash
+            set -euo pipefail
+            chmod -R u+rwX . >/dev/null 2>&1 || true
+          '''
+          checkout([
+            $class: 'GitSCM',
+            branches: [[name: "*/${env.JAVA_REFERENCE_BRANCH}"]],
+            extensions: [
+              [
+                $class: 'CleanBeforeCheckout',
+                deleteUntrackedNestedRepositories: true
+              ],
+              [
+                $class: 'CloneOption',
+                depth: 1,
+                honorRefspec: true,
+                noTags: true,
+                reference: '',
+                shallow: true,
+                timeout: 10
+              ]
+            ],
+            userRemoteConfigs: [[
+              credentialsId: env.GIT_CREDENTIALS_ID,
+              name: 'origin',
+              refspec:
+                "+refs/heads/${env.JAVA_REFERENCE_BRANCH}:" +
+                "refs/remotes/origin/${env.JAVA_REFERENCE_BRANCH}",
+              url: env.JAVA_REFERENCE_REPOSITORY_URL
+            ]]
+          ])
+          script {
+            String javaReferenceSha = sh(
+              returnStdout: true,
+              script: 'git rev-parse HEAD'
+            ).trim()
+            if (!javaReferenceSha) {
+              error('Unable to determine the Java reference commit SHA.')
+            }
+            env.JAVA_REFERENCE_SHA = javaReferenceSha
+            currentBuild.description =
+              "${env.SHA_SHORT}: Java ${javaReferenceSha.take(12)}"
+          }
+          sh '''#!/bin/bash
+            set -euo pipefail
+            test -d lucene/core/src/java
+            test -d lucene/core/src/test
+            test "$(git rev-parse HEAD)" = "$JAVA_REFERENCE_SHA"
+            printf 'Java reference: %s@%s (%s)\\n' \
+              "$JAVA_REFERENCE_REPOSITORY_URL" \
+              "$JAVA_REFERENCE_BRANCH" \
+              "$JAVA_REFERENCE_SHA"
+            du -sh .
+            chmod -R a-w .
+          '''
+        }
+      }
+    }
+
     stage('Verify DeepSeek runtime') {
       when {
         expression { env.REPRODUCED == 'true' }
@@ -315,13 +384,23 @@ pipeline {
   "permission": {
     "*": "deny",
     "read": "allow",
-    "edit": "allow",
+    "edit": {
+      "*": "allow",
+      "__JAVA_REFERENCE_DIR__/**": "deny"
+    },
     "glob": "allow",
     "grep": "allow",
-    "list": "allow"
+    "list": "allow",
+    "external_directory": {
+      "*": "deny",
+      "__JAVA_REFERENCE_DIR__/**": "allow"
+    }
   }
 }
-'''
+'''.replace(
+            '__JAVA_REFERENCE_DIR__',
+            "${env.WORKSPACE}/java-reference"
+          )
         )
         writeFile(
           file: 'autofix-task.md',
@@ -331,19 +410,28 @@ using DeepSeek through OpenCode.
 Failed commit: ${env.FAILED_SHA_NORMALIZED}
 Upstream build: ${params.UPSTREAM_BUILD_URL}
 Upstream failure kind: ${params.UPSTREAM_FAILURE_KIND}
+Java reference branch: ${env.JAVA_REFERENCE_BRANCH}
+Java reference commit: ${env.JAVA_REFERENCE_SHA}
+Read-only Java reference: ${env.WORKSPACE}/java-reference
 
 Before reading any other repository file, read AGENTS.md completely and follow
 all applicable instructions in it. Then read initial-test.log,
-initial-nextest-junit.xml when present, and the relevant source. For a nextest
-TIMEOUT, use the exact test name, elapsed time, captured output, and any
-reported random seed as the primary evidence. Make the smallest root-cause
-fix. Do not run Cargo, tests, repository scripts, or any compiled code during
-this model invocation; Jenkins validates after the DeepSeek credential is
-removed. Do not add ignored tests, remove tests, weaken assertions, modify
-Jenkins automation or .config/nextest.toml, upgrade unrelated dependencies,
-commit, push, or create a pull request. If the evidence indicates
-infrastructure or a non-reproducible flaky failure, make no changes and
-explain why.
+initial-nextest-junit.xml when present, and the relevant Rust source. Before
+changing Rust code, locate the corresponding Java implementation and Java test
+under the read-only Java reference, compare the behavior and control flow, and
+use that comparison to identify migration differences. The reference is
+exactly LuXugang/lucene:${env.JAVA_REFERENCE_BRANCH} at
+${env.JAVA_REFERENCE_SHA}; do not use another Java branch and never modify the
+reference checkout. For a nextest TIMEOUT, use the exact test name, elapsed
+time, captured output, and any reported random seed as the primary evidence.
+Make the smallest root-cause fix. If no corresponding Java implementation or
+test exists, say so explicitly and continue only from reliable Rust evidence.
+Do not run Cargo, tests, repository scripts, or any compiled code during this
+model invocation; Jenkins validates after the DeepSeek credential is removed.
+Do not add ignored tests, remove tests, weaken assertions, modify Jenkins
+automation or .config/nextest.toml, upgrade unrelated dependencies, commit,
+push, or create a pull request. If the evidence indicates infrastructure or a
+non-reproducible flaky failure, make no changes and explain why.
 """
         )
         dir('source') {
@@ -356,6 +444,7 @@ explain why.
               umask 077
               export JENKINS_AUTOFIX=1
               export DEEPSEEK_API_KEY="$DEEPSEEK_KEY"
+              export JAVA_REFERENCE_DIR="$WORKSPACE/java-reference"
               export XDG_DATA_HOME="$OPENCODE_STATE_DIR/data"
               export XDG_CONFIG_HOME="$OPENCODE_STATE_DIR/config"
               export XDG_CACHE_HOME="$OPENCODE_STATE_DIR/cache"
@@ -372,6 +461,16 @@ explain why.
                 export http_proxy="$CODEX_HTTPS_PROXY"
                 export https_proxy="$CODEX_HTTPS_PROXY"
               fi
+              test -d "$JAVA_REFERENCE_DIR/lucene/core/src/java"
+              test -d "$JAVA_REFERENCE_DIR/lucene/core/src/test"
+              test "$(git -C "$JAVA_REFERENCE_DIR" rev-parse HEAD)" = \
+                "$JAVA_REFERENCE_SHA"
+              test -z "$(git -C "$JAVA_REFERENCE_DIR" status --porcelain)"
+              test ! -w "$JAVA_REFERENCE_DIR/lucene/core/src/java"
+              restore_java_reference_permissions() {
+                chmod -R u+rwX "$JAVA_REFERENCE_DIR" >/dev/null 2>&1 || true
+              }
+              trap restore_java_reference_permissions EXIT
               set +x
               set +e
               "$OPENCODE_BIN" run \
@@ -395,6 +494,13 @@ explain why.
         expression { env.REPRODUCED == 'true' }
       }
       steps {
+        sh '''#!/bin/bash
+          set -euo pipefail
+          test -d "$WORKSPACE/java-reference/.git"
+          test "$(git -C "$WORKSPACE/java-reference" rev-parse HEAD)" = \
+            "$JAVA_REFERENCE_SHA"
+          test -z "$(git -C "$WORKSPACE/java-reference" status --porcelain)"
+        '''
         dir('source') {
           script {
             int noChanges = sh(
@@ -537,6 +643,8 @@ explain why.
 Failed commit: `${env.FAILED_SHA_NORMALIZED}`
 Upstream build: ${params.UPSTREAM_BUILD_URL}
 Failure kind: `${params.UPSTREAM_FAILURE_KIND}`
+Java reference: `LuXugang/lucene:${env.JAVA_REFERENCE_BRANCH}`
+Java reference commit: `${env.JAVA_REFERENCE_SHA}`
 
 Verified with `cargo tidy`, `cargo fmt --all -- --check`,
 `cargo nextest run --profile ci --workspace`, and
@@ -596,6 +704,15 @@ this PR will never be auto-merged.""",
 
   post {
     always {
+      sh(
+        returnStatus: true,
+        script: '''#!/bin/bash
+          if [ -d "$WORKSPACE/java-reference" ]; then
+            chmod -R u+rwX "$WORKSPACE/java-reference" \
+              >/dev/null 2>&1 || true
+          fi
+        '''
+      )
       archiveArtifacts(
         artifacts: 'source/initial-test.log,source/initial-nextest-junit.xml,source/final-test.log,source/final-nextest-junit.xml,deepseek-result.jsonl,source/pr-response.json',
         allowEmptyArchive: true

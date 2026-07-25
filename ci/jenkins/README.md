@@ -6,8 +6,10 @@ This deployment intentionally separates four trust zones:
    DeepSeek or GitHub API credentials.
 2. `rlucene-autofix` reproduces the exact failing commit before OpenCode runs.
 3. OpenCode uses DeepSeek and receives only the DeepSeek credential. It has no
-   shell permission, no external-directory permission, and no GitHub write
-   credential. Repository code is not executed during this stage.
+   shell permission or GitHub write credential. Its only external-directory
+   access is read-only access to the Jenkins-provisioned Java Lucene reference;
+   every other external path is denied. Repository code is not executed during
+   this stage.
 4. Jenkins removes the DeepSeek credential, independently runs `cargo tidy`,
    formatting checks, and tests, then injects GitHub credentials only for push
    and ready-for-review PR creation.
@@ -50,9 +52,10 @@ Create these as Jenkins **Secret text** credentials:
   fork's head ref and GitHub rejects PR creation with
   `not all refs are readable`.
 
-The `github-ssh` credential must be able to read `Rustify-All/rlucene` and push
-branches to `LuXugang/rlucene`. The GitHub API token is not exposed until after
-DeepSeek has exited and all independent validation has passed.
+The `github-ssh` credential must be able to read `Rustify-All/rlucene`, read
+`LuXugang/lucene`, and push branches to `LuXugang/rlucene`. The GitHub API token
+is not exposed until after DeepSeek has exited and all independent validation
+has passed.
 
 For a longer-lived production setup, replace the classic PAT with a dedicated
 OAuth or GitHub App user token that has equivalent access to both repositories.
@@ -117,6 +120,27 @@ The autofix job reproduces failures with the same nextest and doctest commands.
 It gives DeepSeek the exact test log and JUnit report, protects
 `.config/nextest.toml` from agent edits, and independently verifies a patch
 with `cargo tidy`, formatting, nextest, and doctests before publishing a PR.
+
+## Java Lucene reference
+
+Migration-fidelity checks use only
+`LuXugang/lucene:rlucene_10_1` as the canonical Java reference. After a Rust
+failure is reproduced, Jenkins checks out that branch into the sibling
+directory `$WORKSPACE/java-reference` with a main-only refspec, no tags, and
+shallow depth 1. The Rust checkout remains in `$WORKSPACE/source`, so Java
+files can never be included by `git add -A` or pushed in an autofix branch.
+
+Jenkins records the exact Java commit SHA in the build log, includes it in the
+agent prompt and PR body, and verifies both the SHA and a clean Java worktree
+after the agent exits. During the model stage the Java checkout is made
+filesystem read-only. OpenCode permits external-directory access only to that
+exact path and explicitly denies edits there; it has no access to other
+external directories. Jenkins restores owner write permission after the model
+stage or in `post`, allowing the next build to update the checkout.
+
+The repair agent must compare the corresponding Java production implementation
+and Java test before changing Rust code. If no Java counterpart exists, it must
+say so and rely only on verifiable Rust evidence.
 
 ## Repository instructions
 
