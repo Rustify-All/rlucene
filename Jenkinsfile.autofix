@@ -171,7 +171,7 @@ pipeline {
               script: '''#!/bin/bash
                 set -uo pipefail
                 rm -f initial-test.log initial-nextest-junit.xml
-                rm -f "$CARGO_TARGET_DIR/nextest/ci/junit.xml"
+                rm -f target/nextest/ci/junit.xml
                 if ! cargo nextest --version > initial-test.log 2>&1; then
                   cat initial-test.log
                   exit 125
@@ -182,7 +182,7 @@ pipeline {
                   cargo nextest run --profile ci --workspace \
                   >> initial-test.log 2>&1
                 nextest_status=$?
-                junit_source="$CARGO_TARGET_DIR/nextest/ci/junit.xml"
+                junit_source="target/nextest/ci/junit.xml"
                 if [ -f "$junit_source" ]; then
                   cp "$junit_source" initial-nextest-junit.xml
                 fi
@@ -448,7 +448,7 @@ explain why.
                 unset DEEPSEEK_API_KEY DEEPSEEK_KEY OPENCODE_CONFIG_CONTENT \
                   GH_TOKEN GITHUB_TOKEN
                 rm -f final-test.log final-nextest-junit.xml
-                rm -f "$CARGO_TARGET_DIR/nextest/ci/junit.xml"
+                rm -f target/nextest/ci/junit.xml
                 if ! cargo nextest --version > final-test.log 2>&1; then
                   cat final-test.log
                   exit 125
@@ -459,7 +459,7 @@ explain why.
                   cargo nextest run --profile ci --workspace \
                   >> final-test.log 2>&1
                 nextest_status=$?
-                junit_source="$CARGO_TARGET_DIR/nextest/ci/junit.xml"
+                junit_source="target/nextest/ci/junit.xml"
                 if [ -f "$junit_source" ]; then
                   cp "$junit_source" final-nextest-junit.xml
                 fi

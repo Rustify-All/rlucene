@@ -142,7 +142,7 @@ Skipping dependency preflight and running cargo nextest directly."""
             script: '''#!/bin/bash
               set -uo pipefail
               rm -f nextest.log nextest-junit.xml
-              rm -f "$CARGO_TARGET_DIR/nextest/ci/junit.xml"
+              rm -f target/nextest/ci/junit.xml
               if ! cargo nextest --version > nextest.log 2>&1; then
                 cat nextest.log
                 exit 125
@@ -152,7 +152,7 @@ Skipping dependency preflight and running cargo nextest directly."""
                 cargo nextest run --profile ci --workspace \
                 >> nextest.log 2>&1
               test_status=$?
-              junit_source="$CARGO_TARGET_DIR/nextest/ci/junit.xml"
+              junit_source="target/nextest/ci/junit.xml"
               if [ -f "$junit_source" ]; then
                 cp "$junit_source" nextest-junit.xml
               fi
