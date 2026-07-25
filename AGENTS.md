@@ -135,93 +135,30 @@
 - 注意事项：
 ```
 
-## `rlucene` Jenkins + DeepSeek 自动修复部署记忆
+## `rlucene` Jenkins CI 部署记忆
 
 ### 已部署拓扑
 
-- 该部署已于 2026-07-25 完成并通过真实 Jenkins 构建验证。Jenkins
+- Jenkins CI 已于 2026-07-25 完成并通过真实构建验证。Jenkins
   对用户可访问的地址是 `http://192.168.3.15:8080/`；Jenkins 所在
   Ubuntu 虚拟机内部地址是 `192.168.132.129`，SSH 用户是 `xugang`。
   Mac 不一定能直接路由到虚拟机内部地址，因此管理 Jenkins 时优先使用
   可访问的 Jenkins Web 地址和已登录的 Google Chrome 会话。
-- 当前活动任务是：
+- 当前与本仓库 CI 相关的保留任务是：
   - `rlucene-ci`：Pipeline from SCM，脚本路径为 `Jenkinsfile`，只测试
-    `Rustify-All/rlucene:main`。
-  - `rlucene-autofix`：Pipeline from SCM，脚本路径为
-    `Jenkinsfile.autofix`，只由 `rlucene-ci` 的可修复代码失败触发。
+    `Rustify-All/rlucene:main`；当前按用户要求保持禁用，后续重新安排任务
+    时再决定是否启用。
   - `legency`：旧 Freestyle 测试任务，保持禁用，只用于保留五万多次历史
     构建记录，不再作为主 CI。
-  - 旧的 `codex-autofix-readiness` 已确认无用并删除。
 - Jenkins 每两分钟检查一次 `main`。同一 commit 仍会直接运行 nextest
   和 doctest，但会跳过依赖/基础设施预检并复用 Git、Cargo 和 target
   缓存；新 commit 才执行完整预检。
 - Jenkins 使用仓库中的配置作为唯一来源。长期维护时优先修改：
-  `rlucene/Jenkinsfile`、`rlucene/Jenkinsfile.autofix`、
-  `rlucene/.config/nextest.toml`、`rlucene/ci/jenkins/README.md`、
-  `rlucene/ci/jenkins/autofix-prompt.md` 和
-  `rlucene/ci/jenkins/agent/Dockerfile`，不要只在 Jenkins 页面里临时改
+  `rlucene/Jenkinsfile`、`rlucene/.config/nextest.toml` 和
+  `rlucene/ci/jenkins/README.md`，不要只在 Jenkins 页面里临时改
   Pipeline 内容。
-
-### 仓库与 PR 流向
-
-- 上游/base 仓库固定为 `Rustify-All/rlucene`，base 分支固定为 `main`。
-- 自动修复分支只推送到 `LuXugang/rlucene`，命名为
-  `deepseek/jenkins-autofix-<失败提交前12位>`。
-- 自动修复 PR 从 `LuXugang/rlucene` 提交到
-  `Rustify-All/rlucene:main`，必须是 Ready for review 的正式 PR，不是
-  Draft，但绝不自动合并，始终由人工审查和合并。
-- Jenkins Git SSH 凭据 ID 为 `github-ssh`；DeepSeek Secret text ID 为
-  `deepseek-api-key`；创建分支和跨 fork PR 的 GitHub token ID 为
-  `github-autofix-token`。只记录凭据 ID，任何 Secret、API Key、PAT
-  实值都不得写入仓库、记忆、构建参数或日志。
-- 两个仓库为 private 时，跨 fork PR 使用的 classic PAT 需要 `repo`
-  scope；仅有 `public_repo` 会失败。长期可替换为同时可访问两个仓库的
-  GitHub App/OAuth token。
-- 本机已将 GitHub CLI 2.96.0 安装到
-  `/Users/luxugang/.local/bin/gh`，并通过
-  `/Users/luxugang/.zshrc` 加入 PATH；当前授权账号为 `LuXugang`。仍应
-  在执行 GitHub 写操作前用 `gh auth status` 检查实际登录状态。
-
-### DeepSeek 执行与安全边界
-
-- Jenkins 不调用 Mac 上的 Codex 桌面版，也不使用 Mac 当前登录的
-  OpenAI 账号。当前自动修复模型通过 Jenkins 内的 OpenCode CLI 调用
-  DeepSeek，OpenCode 路径为
-  `/var/jenkins_home/tools/opencode/bin/opencode`。
-- DeepSeek 阶段只注入 DeepSeek 凭据，不持有 GitHub 写凭据；模型阶段
-  禁止 shell，也不执行仓库代码。模型只允许读取 Jenkins 提供的只读
-  Java 参考目录，除此之外的仓库外目录全部禁止访问。DeepSeek 退出后
-  Jenkins 移除模型凭据，再独立执行 `cargo tidy`、格式检查、nextest
-  和 doctest；所有验证通过后才在单独阶段注入 GitHub 写凭据。
-- 自动修复对照的 Java 源码唯一固定为
-  `LuXugang/lucene:rlucene_10_1`。Jenkins 仅在 Rust 失败可复现后，将
-  该分支浅克隆到 `$WORKSPACE/java-reference`，与 Rust 的
-  `$WORKSPACE/source` 并列；精确 Java commit SHA 必须写入日志、提示词
-  和 PR 正文。模型运行期间该目录在文件系统和 OpenCode 权限层均为
-  只读，运行后还要核对 SHA 与干净工作树，绝不能把 Java 文件加入 Rust
-  提交或 PR。
-- 修复代理必须先完整读取仓库根目录 `AGENTS.md`，再读取
-  `initial-test.log` 和存在时的 `initial-nextest-junit.xml`。所有通用
-  原则和自动修复原则都直接维护在这个仓库文件中。修改 Rust 前必须在
-  Java 参考目录中找到并对照相应的生产实现和测试；如果不存在对应项，
-  必须明确说明，只能依据可靠的 Rust 证据继续。
-- 自动修复补丁不得修改 `AGENTS.md`、`.config/nextest.toml`、
-  `Jenkinsfile`、`Jenkinsfile.autofix` 或 `ci/jenkins/`；不得删除或忽略
-  测试、削弱断言、升级无关依赖。
-- 每个失败 commit 只允许一次持久化自动修复尝试；状态文件保存在
-  `/var/jenkins_home/ai-autofix-state/rlucene/`。已有同名远程修复分支
-  也会阻止重复尝试。需要人工重试时，只删除对应 commit 的 marker，
-  不能清空整个状态目录。
-- 自动修复开始时必须删除上一构建遗留的已知日志、模型结果和 PR API
-  响应，避免早期失败时归档陈旧产物。下游缺失的失败类型统一规范化为
-  `unknown`，不能在 `set -u` 的 shell 中直接引用可能不存在的参数。
-  commit 尝试标记必须先完整写入私有临时文件，再用同文件系统原子操作
-  声明，任何参数或 shell 失败都不能留下阻止重试的残缺 marker。
-- Jenkins 无法直接访问 DeepSeek 时，可通过 Jenkins 全局环境变量
-  `CODEX_HTTPS_PROXY` 使用受信任的局域网代理；Pipeline 只在 DeepSeek
-  联网阶段将其映射为标准代理变量。Mac 使用 Clash Verge 提供代理时，
-  必须显式开启 Allow LAN，并用防火墙限制局域网访问范围。不要把代理
-  密码或其他敏感值提交到仓库。
+- Jenkins Git SSH 凭据 ID 为 `github-ssh`。只记录凭据 ID，任何 Secret
+  或私钥实值都不得写入仓库、记忆、构建参数或日志。
 
 ### nextest、超时和诊断
 
@@ -232,25 +169,19 @@
   `terminate-after = 2`，因此单个测试约 120 秒会被终止并报告
   `TIMEOUT`；`fail-fast = false`，失败输出保留，成功输出不打印。
 - 主 CI 对 nextest 使用 12 分钟整套测试外层超时，对 doctest 使用
-  4 分钟超时，整个 CI Pipeline 使用 20 分钟超时。自动修复 Pipeline
-  整体使用 60 分钟超时，独立验证 nextest 使用 20 分钟外层超时。
-- 能定位到具体测试名的 nextest `TIMEOUT` 属于可自动修复的代码失败；
-  整套测试外层 124/137、Jenkins 被杀死、网络/磁盘/工具链错误属于基础
-  设施失败，不触发 DeepSeek。
+  4 分钟超时，整个 CI Pipeline 使用 20 分钟超时。
+- nextest 会在日志和 JUnit 中保留具体失败或超时测试的诊断信息，供人工
+  排查。整套测试外层 124/137、Jenkins 被杀死、网络/磁盘/工具链错误应
+  归类为基础设施失败。
 - nextest JUnit 的真实来源路径固定为工作区相对路径
   `target/nextest/ci/junit.xml`，不跟随 `CARGO_TARGET_DIR`。主 CI 将它
-  复制为 `nextest-junit.xml`；自动修复复现和最终验证分别复制为
-  `initial-nextest-junit.xml` 和 `final-nextest-junit.xml`。
+  复制为 `nextest-junit.xml`。
 - 主 CI 归档 `nextest.log`、`nextest-junit.xml`、`doctest.log`。
-  自动修复任务还归档复现/验证日志、两个 JUnit 报告、DeepSeek 结果和
-  PR API 响应，便于失败后审计。
 
 ### 缓存、磁盘与已验证基线
 
 - `rlucene-ci` 的持久化 Cargo target 是
-  `/var/jenkins_home/cargo-target/rlucene-ci`；
-  `rlucene-autofix` 使用独立的
-  `/var/jenkins_home/cargo-target/rlucene-autofix`。不要每两分钟运行
+  `/var/jenkins_home/cargo-target/rlucene-ci`。不要每两分钟运行
   `cargo clean`，否则会丢失编译缓存。
 - 每次 CI 构建必须在日志中打印 Jenkins home、`/tmp`、Cargo target
   的构建前后磁盘状态。需要清理时先确认没有构建正在使用，仅清理明确
@@ -263,21 +194,3 @@
   `nextest-junit.xml`。JUnit 文件大小为 985851 字节，包含 4807 个
   `<testcase>`，没有 `<failure>` 或 `<error>`。这证明 nextest、
   doctest、JUnit 诊断和归档链路已经真实生效。
-
-## Jenkins 自动修复模式
-
-当环境变量 `JENKINS_AUTOFIX=1` 时，除上述项目原则外，还必须遵守以下限制：
-
-- 在读取任何其他仓库文件之前，先完整读取本文件。
-- 先阅读 `initial-test.log` 和存在时的 `initial-nextest-junit.xml`，再
-  对照相关 Rust 源码定位根因。修改 Rust 前，必须读取
-  `../java-reference` 中 `LuXugang/lucene:rlucene_10_1` 对应的 Java
-  生产实现和测试，逐段比较行为与控制流，只做最小修复；如果没有对应
-  Java 实现或测试，必须明确说明。
-- 不执行 Cargo、测试、构建脚本、仓库脚本或任何编译后的代码；Jenkins 会在移除模型凭据后独立执行 `cargo tidy`、格式检查和测试。
-- 不通过忽略或删除测试、削弱断言、升级无关依赖来让验证通过。
-- 不修改 `AGENTS.md`、`Jenkinsfile`、`Jenkinsfile.autofix` 或 `ci/jenkins/`。
-- 除 Jenkins 提供的只读 `../java-reference` 外，不读取工作区外部
-  内容；绝不修改 Java 参考目录，不访问凭据，不执行提交、推送、创建
-  PR 或合并。
-- 如果失败属于基础设施、无法复现的偶发问题，或缺少足够证据，不修改代码，并在结果中说明原因。
