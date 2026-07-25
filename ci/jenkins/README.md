@@ -28,6 +28,8 @@ Repair branches are pushed only to `LuXugang/rlucene`. Pull requests target
   - `objects.githubusercontent.com:443`
   - `raw.githubusercontent.com:443`
 - OpenCode CLI at `/var/jenkins_home/tools/opencode/bin/opencode`.
+- `cargo-nextest` available through `/opt/cargo/bin/cargo-nextest`. The agent
+  image pins version 0.9.140 and verifies the official release archive SHA-256.
 
 DeepSeek exposes an OpenAI-compatible Chat Completions API. Codex CLI custom
 providers currently require the Responses API, so this deployment uses
@@ -88,11 +90,31 @@ The CI job stores the SHA of the most recent successful full test in
 `/var/jenkins_home/ci-state/rlucene-ci/last-successful-sha`. A scheduled build
 still performs the lightweight SCM lookup and checkout needed to determine the
 current `main` SHA. When that SHA is unchanged, Jenkins skips the dependency
-and infrastructure preflight, then runs `cargo test` directly with the existing
-Cargo and target caches. Every scheduled build still executes the tests.
-Failed, timed-out, aborted, and infrastructure builds never update this state
-file, so a commit must complete a successful test before it can use the direct
-test path.
+and infrastructure preflight, then runs `cargo nextest` directly with the
+existing Cargo and target caches. Every scheduled build still executes nextest
+and doctests. Failed, timed-out, aborted, and infrastructure builds never update
+this state file, so a commit must complete both successful test steps before it
+can use the direct test path.
+
+## Test timeouts and diagnostics
+
+The repository nextest configuration marks an individual test as slow after
+60 seconds and terminates it after 120 seconds. CI runs use the `ci` profile,
+which writes Jenkins-compatible JUnit XML. The console log therefore contains
+the exact test name and elapsed time for `SLOW`, `TERMINATING`, and `TIMEOUT`
+events. Failed-test stdout and stderr are stored in the JUnit report.
+
+The CI job archives `nextest.log`, `nextest-junit.xml`, and `doctest.log`.
+Because nextest does not run Rust doctests, Jenkins runs
+`cargo test --workspace --doc -q` as a separate step. A per-test nextest
+timeout is classified as `test-timeout` and may trigger the guarded autofix
+job. The outer whole-suite timeout remains an infrastructure failure and does
+not trigger DeepSeek because it lacks reliable single-test evidence.
+
+The autofix job reproduces failures with the same nextest and doctest commands.
+It gives DeepSeek the exact test log and JUnit report, protects
+`.config/nextest.toml` from agent edits, and independently verifies a patch
+with `cargo tidy`, formatting, nextest, and doctests before publishing a PR.
 
 ## Repository instructions
 
@@ -112,7 +134,9 @@ Jenkins deployment itself.
 - A remote `deepseek/jenkins-autofix-<12-char-sha>` branch in
   `LuXugang/rlucene` prevents another attempt.
 - A failure that cannot be reproduced produces no patch and no PR.
-- A timeout or killed process is treated as infrastructure failure.
+- A nextest per-test timeout with an exact test name is treated as a code
+  failure; an outer suite timeout or killed Jenkins process is treated as an
+  infrastructure failure.
 - Pull requests are ready for review but are never auto-merged.
 
 To retry a commit intentionally, an administrator must remove only that
