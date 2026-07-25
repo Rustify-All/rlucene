@@ -38,7 +38,7 @@ pipeline {
           env.CARGO_TEST_FAILED = 'false'
           env.FAILURE_KIND = 'none'
           env.FAILED_SHA = ''
-          env.SKIP_TESTS = 'false'
+          env.SKIP_PREFLIGHT = 'false'
         }
       }
     }
@@ -74,10 +74,11 @@ pipeline {
             '''
           )
           if (alreadyTested == 0) {
-            env.SKIP_TESTS = 'true'
+            env.SKIP_PREFLIGHT = 'true'
             currentBuild.description =
-              "${checkedOutSha.take(12)}: unchanged, skipped"
-            echo "Skipping Cargo: ${checkedOutSha} already passed."
+              "${checkedOutSha.take(12)}: unchanged, direct cargo test"
+            echo """${checkedOutSha} already passed once.
+Skipping dependency preflight and running cargo test directly."""
           }
         }
       }
@@ -85,7 +86,7 @@ pipeline {
 
     stage('Infrastructure preflight') {
       when {
-        expression { env.SKIP_TESTS != 'true' }
+        expression { env.SKIP_PREFLIGHT != 'true' }
       }
       steps {
         sh '''#!/bin/bash
@@ -100,9 +101,6 @@ pipeline {
     }
 
     stage('Cargo test') {
-      when {
-        expression { env.SKIP_TESTS != 'true' }
-      }
       steps {
         script {
           int testStatus = sh(
@@ -147,9 +145,6 @@ pipeline {
     }
 
     stage('Record successful commit') {
-      when {
-        expression { env.SKIP_TESTS != 'true' }
-      }
       steps {
         sh '''#!/bin/bash
           set -euo pipefail
@@ -159,15 +154,6 @@ pipeline {
           printf '%s\n' "$FAILED_SHA" > "$state_tmp"
           mv "$state_tmp" "$LAST_SUCCESSFUL_SHA_FILE"
         '''
-      }
-    }
-
-    stage('Skip unchanged commit') {
-      when {
-        expression { env.SKIP_TESTS == 'true' }
-      }
-      steps {
-        echo 'No new commit since the last successful full test.'
       }
     }
   }

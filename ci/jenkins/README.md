@@ -74,9 +74,12 @@ kept disabled as `legency` so its historical build records remain available.
 The CI job stores the SHA of the most recent successful full test in
 `/var/jenkins_home/ci-state/rlucene-ci/last-successful-sha`. A scheduled build
 still performs the lightweight SCM lookup and checkout needed to determine the
-current `main` SHA. When that SHA is unchanged, Jenkins skips `cargo fetch`,
-compilation, and tests. Failed, timed-out, aborted, and infrastructure builds
-never update this state file, so Jenkins always retries them.
+current `main` SHA. When that SHA is unchanged, Jenkins skips the dependency
+and infrastructure preflight, then runs `cargo test` directly with the existing
+Cargo and target caches. Every scheduled build still executes the tests.
+Failed, timed-out, aborted, and infrastructure builds never update this state
+file, so a commit must complete a successful test before it can use the direct
+test path.
 
 ## Repository instructions
 
