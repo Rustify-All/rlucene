@@ -189,12 +189,22 @@
   DeepSeek，OpenCode 路径为
   `/var/jenkins_home/tools/opencode/bin/opencode`。
 - DeepSeek 阶段只注入 DeepSeek 凭据，不持有 GitHub 写凭据；模型阶段
-  禁止 shell、禁止读取仓库外目录，也不执行仓库代码。DeepSeek 退出后
+  禁止 shell，也不执行仓库代码。模型只允许读取 Jenkins 提供的只读
+  Java 参考目录，除此之外的仓库外目录全部禁止访问。DeepSeek 退出后
   Jenkins 移除模型凭据，再独立执行 `cargo tidy`、格式检查、nextest
   和 doctest；所有验证通过后才在单独阶段注入 GitHub 写凭据。
+- 自动修复对照的 Java 源码唯一固定为
+  `LuXugang/lucene:rlucene_10_1`。Jenkins 仅在 Rust 失败可复现后，将
+  该分支浅克隆到 `$WORKSPACE/java-reference`，与 Rust 的
+  `$WORKSPACE/source` 并列；精确 Java commit SHA 必须写入日志、提示词
+  和 PR 正文。模型运行期间该目录在文件系统和 OpenCode 权限层均为
+  只读，运行后还要核对 SHA 与干净工作树，绝不能把 Java 文件加入 Rust
+  提交或 PR。
 - 修复代理必须先完整读取仓库根目录 `AGENTS.md`，再读取
   `initial-test.log` 和存在时的 `initial-nextest-junit.xml`。所有通用
-  原则和自动修复原则都直接维护在这个仓库文件中。
+  原则和自动修复原则都直接维护在这个仓库文件中。修改 Rust 前必须在
+  Java 参考目录中找到并对照相应的生产实现和测试；如果不存在对应项，
+  必须明确说明，只能依据可靠的 Rust 证据继续。
 - 自动修复补丁不得修改 `AGENTS.md`、`.config/nextest.toml`、
   `Jenkinsfile`、`Jenkinsfile.autofix` 或 `ci/jenkins/`；不得删除或忽略
   测试、削弱断言、升级无关依赖。
@@ -254,9 +264,15 @@
 当环境变量 `JENKINS_AUTOFIX=1` 时，除上述项目原则外，还必须遵守以下限制：
 
 - 在读取任何其他仓库文件之前，先完整读取本文件。
-- 先阅读 `initial-test.log`，再对照相关源码定位根因，只做最小修复。
+- 先阅读 `initial-test.log` 和存在时的 `initial-nextest-junit.xml`，再
+  对照相关 Rust 源码定位根因。修改 Rust 前，必须读取
+  `../java-reference` 中 `LuXugang/lucene:rlucene_10_1` 对应的 Java
+  生产实现和测试，逐段比较行为与控制流，只做最小修复；如果没有对应
+  Java 实现或测试，必须明确说明。
 - 不执行 Cargo、测试、构建脚本、仓库脚本或任何编译后的代码；Jenkins 会在移除模型凭据后独立执行 `cargo tidy`、格式检查和测试。
 - 不通过忽略或删除测试、削弱断言、升级无关依赖来让验证通过。
 - 不修改 `AGENTS.md`、`Jenkinsfile`、`Jenkinsfile.autofix` 或 `ci/jenkins/`。
-- 不读取工作区外部内容，不访问凭据，不执行提交、推送、创建 PR 或合并。
+- 除 Jenkins 提供的只读 `../java-reference` 外，不读取工作区外部
+  内容；绝不修改 Java 参考目录，不访问凭据，不执行提交、推送、创建
+  PR 或合并。
 - 如果失败属于基础设施、无法复现的偶发问题，或缺少足够证据，不修改代码，并在结果中说明原因。
