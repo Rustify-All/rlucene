@@ -68,11 +68,15 @@ Create two Pipeline-from-SCM jobs:
 - `rlucene-ci`, script path `Jenkinsfile`.
 - `rlucene-autofix`, script path `Jenkinsfile.autofix`.
 
-During review, point `rlucene-autofix` to the deployment branch in
-`LuXugang/rlucene`. After the deployment PR is reviewed and merged manually,
-change its Pipeline SCM repository to `Rustify-All/rlucene` and its branch to
-`*/main`. The CI job continues to read the upstream repository.
-Disable the old Freestyle `rlucene` timer only after `rlucene-ci` has passed.
+Both jobs read `Rustify-All/rlucene` branch `*/main`. The old Freestyle job is
+kept disabled as `legency` so its historical build records remain available.
+
+The CI job stores the SHA of the most recent successful full test in
+`/var/jenkins_home/ci-state/rlucene-ci/last-successful-sha`. A scheduled build
+still performs the lightweight SCM lookup and checkout needed to determine the
+current `main` SHA. When that SHA is unchanged, Jenkins skips `cargo fetch`,
+compilation, and tests. Failed, timed-out, aborted, and infrastructure builds
+never update this state file, so Jenkins always retries them.
 
 ## Repository instructions
 

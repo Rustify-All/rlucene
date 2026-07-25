@@ -21,6 +21,8 @@ pipeline {
     RUSTUP_HOME = '/opt/rustup'
     CARGO_HOME = '/opt/cargo'
     CARGO_TARGET_DIR = '/var/jenkins_home/cargo-target/rlucene-ci'
+    CI_STATE_ROOT = '/var/jenkins_home/ci-state/rlucene-ci'
+    LAST_SUCCESSFUL_SHA_FILE = '/var/jenkins_home/ci-state/rlucene-ci/last-successful-sha'
     CARGO_PROFILE_TEST_DEBUG = '0'
     CARGO_TERM_COLOR = 'never'
     NO_COLOR = '1'
@@ -36,6 +38,7 @@ pipeline {
           env.CARGO_TEST_FAILED = 'false'
           env.FAILURE_KIND = 'none'
           env.FAILED_SHA = ''
+          env.SKIP_TESTS = 'false'
         }
       }
     }
@@ -61,11 +64,29 @@ pipeline {
           }
           env.FAILED_SHA = checkedOutSha
           currentBuild.description = checkedOutSha.take(12)
+
+          int alreadyTested = sh(
+            returnStatus: true,
+            script: '''#!/bin/bash
+              set -euo pipefail
+              test -f "$LAST_SUCCESSFUL_SHA_FILE"
+              test "$(cat "$LAST_SUCCESSFUL_SHA_FILE")" = "$FAILED_SHA"
+            '''
+          )
+          if (alreadyTested == 0) {
+            env.SKIP_TESTS = 'true'
+            currentBuild.description =
+              "${checkedOutSha.take(12)}: unchanged, skipped"
+            echo "Skipping Cargo: ${checkedOutSha} already passed."
+          }
         }
       }
     }
 
     stage('Infrastructure preflight') {
+      when {
+        expression { env.SKIP_TESTS != 'true' }
+      }
       steps {
         sh '''#!/bin/bash
           set -euo pipefail
@@ -79,6 +100,9 @@ pipeline {
     }
 
     stage('Cargo test') {
+      when {
+        expression { env.SKIP_TESTS != 'true' }
+      }
       steps {
         script {
           int testStatus = sh(
@@ -119,6 +143,31 @@ pipeline {
             error("cargo test failed (exit ${testStatus})")
           }
         }
+      }
+    }
+
+    stage('Record successful commit') {
+      when {
+        expression { env.SKIP_TESTS != 'true' }
+      }
+      steps {
+        sh '''#!/bin/bash
+          set -euo pipefail
+          umask 077
+          mkdir -p "$CI_STATE_ROOT"
+          state_tmp="$LAST_SUCCESSFUL_SHA_FILE.tmp.$BUILD_NUMBER"
+          printf '%s\n' "$FAILED_SHA" > "$state_tmp"
+          mv "$state_tmp" "$LAST_SUCCESSFUL_SHA_FILE"
+        '''
+      }
+    }
+
+    stage('Skip unchanged commit') {
+      when {
+        expression { env.SKIP_TESTS == 'true' }
+      }
+      steps {
+        echo 'No new commit since the last successful full test.'
       }
     }
   }
