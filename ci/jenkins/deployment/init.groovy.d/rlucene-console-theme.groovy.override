@@ -1,0 +1,40 @@
+import jenkins.model.Jenkins
+import org.codefirst.SimpleThemeDecorator
+import org.jenkinsci.plugins.simpletheme.CssTextThemeElement
+
+def marker = '/* rlucene-pipeline-console */'
+def css = '''/* rlucene-pipeline-console */
+.pipeline-new-node:not([label]) {
+  display: none !important;
+}
+
+.pipeline-new-node[label] {
+  display: block;
+  color: var(--text-color-secondary, #666);
+  font-size: 0;
+  font-weight: 600;
+  line-height: 1.5;
+  margin-block: 1rem 0.25rem;
+}
+
+.pipeline-new-node[label]::before {
+  content: "── " attr(label) " ──";
+  font-size: 0.875rem;
+}
+
+.pipeline-new-node[label] .pipeline-show-hide {
+  display: none !important;
+}
+'''
+
+def decorator = Jenkins.get().getDescriptorByType(SimpleThemeDecorator.class)
+if (decorator == null) {
+  throw new IllegalStateException('Simple Theme plugin is not available')
+}
+
+def elements = decorator.getElements().findAll {
+  !(it instanceof CssTextThemeElement && it.getText()?.contains(marker))
+}
+elements.add(new CssTextThemeElement(css))
+decorator.setElements(elements)
+decorator.save()

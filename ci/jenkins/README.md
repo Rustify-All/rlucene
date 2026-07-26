@@ -15,7 +15,9 @@ disabled as `legency` so its historical build records remain available.
 - The version-controlled controller image and Compose configuration under
   `ci/jenkins/deployment`. They install `eu-stack` and `gdb` and grant the
   minimum ptrace capability needed by the dedicated `eu-stack` executable. The
-  image configures Cargo to use the rsproxy sparse registry.
+  image configures Cargo to use the rsproxy sparse registry. It also installs
+  the Simple Theme plugin and applies the version-controlled classic Pipeline
+  console theme from `ci/jenkins/deployment/init.groovy.d`.
 - Outbound access to GitHub and the configured Rust package mirrors.
 
 Never put credential values in a Jenkinsfile, build parameter, email,

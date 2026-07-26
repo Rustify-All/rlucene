@@ -51,3 +51,10 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 USER jenkins
+
+RUN jenkins-plugin-cli \
+    --plugins simple-theme-plugin:230.v8b_fd91b_b_800c
+
+COPY --chown=jenkins:jenkins \
+    init.groovy.d/rlucene-console-theme.groovy.override \
+    /usr/share/jenkins/ref/init.groovy.d/rlucene-console-theme.groovy.override

@@ -16,9 +16,25 @@ use all CPU and memory assigned to the VM. `JAVA_OPTS` still caps the Jenkins
 controller heap at 8 GiB; this does not limit separate Cargo and test
 processes.
 
+## Pipeline console theme
+
+The image installs the Simple Theme plugin and configures a small inline theme
+from `init.groovy.d/rlucene-console-theme.groovy.override`. Classic Pipeline
+console pages hide implementation-only flow nodes such as `withEnv`,
+`timestamps`, `timeout`, `script`, and `sh`, while labeled stage boundaries are
+rendered as concise headings. The raw `consoleText` response is unchanged, so
+downloaded logs, failure emails, and diagnostic data retain the complete
+Pipeline metadata.
+
+The `.override` suffix is intentional. The Jenkins Docker entrypoint copies the
+script to the persistent `jenkins_home` volume on every container start, keeping
+the repository version authoritative without clearing unrelated initialization
+scripts.
+
 ## Deploy
 
-Copy `Dockerfile` and `docker-compose.yml` to `/home/xugang/jenkins`, then run:
+Copy `Dockerfile`, `docker-compose.yml`, and `init.groovy.d` to
+`/home/xugang/jenkins`, then run:
 
 ```sh
 cd /home/xugang/jenkins
@@ -31,6 +47,11 @@ docker compose ps
 Back up the currently deployed files before replacing them so configuration
 rollback does not require rebuilding the previous revision from memory. The
 named volume is retained when the container is recreated.
+
+After deployment, open a completed Pipeline's classic Console Output and verify
+that stage headings remain visible while the other `[Pipeline]` flow-node lines
+are hidden. Also verify that the build's `consoleText` download still contains
+`[Pipeline] Start of Pipeline`.
 
 ## Slow-test stack capture
 
