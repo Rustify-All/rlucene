@@ -77,9 +77,17 @@ timeout for the complete build.
 
 Jenkins archives `nextest.log`, `nextest-junit.xml`,
 `nextest-diagnostics.log`, and `doctest.log`. Failure emails include the commit
-SHA, failure classification, compressed console log, and the available
-diagnostic artifacts. Failures are reported for human investigation; this
-repository no longer starts an automatic repair job.
+SHA, failure classification, consecutive failure count, automatic-build status,
+compressed console log, and the available diagnostic artifacts. Failures are
+reported for human investigation; this repository no longer starts an
+automatic repair job.
+
+After four consecutive failed builds, the Pipeline temporarily removes its cron
+trigger before starting the next run so another scheduled build cannot queue
+behind it. If that fifth run also fails, the cron trigger remains removed and
+automatic builds stop. The job remains available for a manual recovery run. A
+successful recovery run restores the `H/2 * * * *` schedule; an unsuccessful
+recovery run leaves automatic builds stopped.
 
 ## Jenkins root URL
 

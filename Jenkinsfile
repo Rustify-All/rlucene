@@ -23,6 +23,7 @@ pipeline {
     CARGO_TARGET_DIR = '/var/jenkins_home/cargo-target/rlucene-ci'
     CI_STATE_ROOT = '/var/jenkins_home/ci-state/rlucene-ci'
     LAST_SUCCESSFUL_SHA_FILE = '/var/jenkins_home/ci-state/rlucene-ci/last-successful-sha'
+    MAX_CONSECUTIVE_FAILURES = '5'
     CARGO_PROFILE_TEST_DEBUG = '0'
     CARGO_TERM_COLOR = 'never'
     RUST_BACKTRACE = 'full'
@@ -40,6 +41,30 @@ pipeline {
           env.FAILURE_KIND = 'none'
           env.FAILED_SHA = ''
           env.SKIP_PREFLIGHT = 'false'
+          env.AUTOMATIC_BUILDS_SUSPENDED = 'false'
+          env.CONSECUTIVE_FAILURES = '0'
+
+          int priorConsecutiveFailures = 0
+          def previousBuild = currentBuild.previousBuild
+          while (
+            previousBuild != null &&
+            previousBuild.result == 'FAILURE' &&
+            priorConsecutiveFailures <
+              env.MAX_CONSECUTIVE_FAILURES.toInteger() - 1
+          ) {
+            priorConsecutiveFailures++
+            previousBuild = previousBuild.previousBuild
+          }
+
+          if (
+            priorConsecutiveFailures >=
+              env.MAX_CONSECUTIVE_FAILURES.toInteger() - 1
+          ) {
+            properties([pipelineTriggers([])])
+            env.AUTOMATIC_BUILDS_SUSPENDED = 'true'
+            echo """Temporarily stopped automatic builds before this run.
+At least ${priorConsecutiveFailures} previous builds failed consecutively."""
+          }
         }
       }
     }
@@ -310,18 +335,54 @@ Skipping dependency preflight and running cargo nextest directly."""
 
     failure {
       script {
+        int consecutiveFailures = 1
+        def previousBuild = currentBuild.previousBuild
+        while (
+          previousBuild != null &&
+          previousBuild.result == 'FAILURE'
+        ) {
+          consecutiveFailures++
+          previousBuild = previousBuild.previousBuild
+        }
+        env.CONSECUTIVE_FAILURES = consecutiveFailures.toString()
+
+        if (
+          consecutiveFailures >= env.MAX_CONSECUTIVE_FAILURES.toInteger()
+        ) {
+          properties([pipelineTriggers([])])
+          env.AUTOMATIC_BUILDS_SUSPENDED = 'true'
+          echo """Stopped automatic builds after ${consecutiveFailures} consecutive failures.
+Run this job manually after fixing the failure; a successful run restores the schedule."""
+        }
+
         emailext(
           to: 'luxugang@apache.org',
           subject: "[Jenkins] ${env.JOB_NAME} #${env.BUILD_NUMBER} failed",
           body: """Build: ${env.BUILD_URL}
 Commit: ${env.FAILED_SHA}
 Failure kind: ${env.FAILURE_KIND}
+Consecutive failures: ${env.CONSECUTIVE_FAILURES}
+Automatic builds: ${env.AUTOMATIC_BUILDS_SUSPENDED == 'true' ? 'stopped' : 'enabled'}
 """,
           attachLog: true,
           compressLog: true,
           attachmentsPattern:
             'nextest.log,nextest-junit.xml,nextest-diagnostics.log,doctest.log'
         )
+      }
+    }
+
+    cleanup {
+      script {
+        if (
+          env.AUTOMATIC_BUILDS_SUSPENDED == 'true' &&
+          currentBuild.currentResult == 'SUCCESS'
+        ) {
+          properties([
+            pipelineTriggers([cron('H/2 * * * *')])
+          ])
+          echo 'Restored automatic builds after a successful recovery run.'
+        }
       }
     }
   }
