@@ -454,8 +454,13 @@ fn test_avoid_wrapping_readers_without_soft_deletes() -> Result<()> {
     writer.flush()?;
     let reader = directory_reader::open_from_writer(&writer)?;
     let wrapped = SoftDeletesDirectoryReaderWrapper::new(reader, soft_deletes_field)?;
+    let mut expected_num_deletes = 0;
+    let context = (&wrapped).get_context()?;
+    for leaf in context.leaves()? {
+      expected_num_deletes += leaf.reader().num_deleted_docs()?;
+    }
     assert_eq!(num_docs, wrapped.num_docs()?);
-    assert_eq!(num_deletes, wrapped.num_deleted_docs()?);
+    assert_eq!(expected_num_deletes, wrapped.num_deleted_docs()?);
     wrapped.close()?;
 
     writer
