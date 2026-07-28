@@ -40,7 +40,26 @@ pipeline {
           env.FAILURE_KIND = 'none'
           env.FAILED_SHA = ''
           env.SKIP_PREFLIGHT = 'false'
+          if (!env.WORKSPACE_TMP) {
+            error('WORKSPACE_TMP is unavailable')
+          }
+          env.CI_TMP_ROOT = "${env.WORKSPACE_TMP}/rlucene-ci-build-tmp"
+          env.TMPDIR = "${env.CI_TMP_ROOT}/${env.BUILD_NUMBER}"
         }
+        sh '''#!/bin/bash
+          set -euo pipefail
+          expected_root="${WORKSPACE_TMP}/rlucene-ci-build-tmp"
+          expected_tmp="${expected_root}/${BUILD_NUMBER}"
+          if [ "$CI_TMP_ROOT" != "$expected_root" ] ||
+             [ "$TMPDIR" != "$expected_tmp" ]; then
+            printf 'Refusing to prepare unexpected temporary path: %s\\n' \
+              "$TMPDIR" >&2
+            exit 1
+          fi
+          rm -rf -- "$CI_TMP_ROOT"
+          mkdir -p -- "$TMPDIR"
+          printf 'Build temporary directory: %s\\n' "$TMPDIR"
+        '''
       }
     }
 
@@ -53,6 +72,8 @@ pipeline {
           df -h /var/jenkins_home
           printf 'Temporary storage before build:\\n'
           df -h /tmp
+          printf 'Build temporary directory before build:\\n'
+          du -sh "$TMPDIR"
           printf 'Cargo target before build:\\n'
           du -sh "$CARGO_TARGET_DIR"
         '''
@@ -125,7 +146,7 @@ Skipping dependency preflight and running cargo nextest directly."""
         sh '''#!/bin/bash
           set -euo pipefail
           mkdir -p "$CARGO_TARGET_DIR"
-          df -h . /tmp "$CARGO_TARGET_DIR"
+          df -h . /tmp "$TMPDIR" "$CARGO_TARGET_DIR"
           git diff --exit-code
           rustup show
           cargo fetch
@@ -289,6 +310,12 @@ Skipping dependency preflight and running cargo nextest directly."""
             df -h /var/jenkins_home
             printf 'Temporary storage after build:\\n'
             df -h /tmp
+            printf 'Build temporary directory after build:\\n'
+            if [ -d "$TMPDIR" ]; then
+              du -sh "$TMPDIR"
+            else
+              printf '%s does not exist\\n' "$TMPDIR"
+            fi
             printf 'Cargo target after build:\\n'
             if [ -d "$CARGO_TARGET_DIR" ]; then
               du -sh "$CARGO_TARGET_DIR"
@@ -306,6 +333,33 @@ Skipping dependency preflight and running cargo nextest directly."""
           'nextest.log,nextest-junit.xml,nextest-diagnostics.log,doctest.log',
         allowEmptyArchive: true
       )
+      script {
+        int temporaryCleanupStatus = sh(
+          returnStatus: true,
+          script: '''#!/bin/bash
+            set -euo pipefail
+            expected_root="${WORKSPACE_TMP}/rlucene-ci-build-tmp"
+            expected_tmp="${expected_root}/${BUILD_NUMBER}"
+            if [ "${CI_TMP_ROOT:-}" != "$expected_root" ] ||
+               [ "${TMPDIR:-}" != "$expected_tmp" ]; then
+              printf 'Refusing to clean unexpected temporary path: %s\\n' \
+                "${TMPDIR:-<unset>}" >&2
+              exit 1
+            fi
+            if [ -d "$TMPDIR" ]; then
+              rm -rf -- "$TMPDIR"
+            fi
+            rmdir -- "$CI_TMP_ROOT" 2>/dev/null || true
+            printf 'Cleaned build temporary directory: %s\\n' "$TMPDIR"
+          '''
+        )
+        if (temporaryCleanupStatus != 0) {
+          error(
+            "Unable to clean the build temporary directory " +
+            "(exit ${temporaryCleanupStatus})"
+          )
+        }
+      }
     }
 
     failure {

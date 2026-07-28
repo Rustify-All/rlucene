@@ -39,6 +39,14 @@ The persistent Cargo target is
 scheduled build. Before and after every build, Jenkins logs free space for
 Jenkins home and `/tmp`, plus the target directory size.
 
+Rust test temporary files are isolated per build under
+`$WORKSPACE_TMP/rlucene-ci-build-tmp/$BUILD_NUMBER` by setting `TMPDIR`. The
+Pipeline removes stale data under its dedicated temporary root before a build
+and deletes the current build directory from `post { always { ... } }`, so the
+cleanup also runs after test failures and timeouts. This is safe because the
+Pipeline disables concurrent builds. Do not clean the controller's global
+`/tmp` from a scheduled build.
+
 ## Tests, timeouts, and diagnostics
 
 The main test command is:
