@@ -243,8 +243,7 @@ where
     R: KnnVectorsReader,
     B: Bits,
   {
-    // TODO IMPORTANT PerFieldKnnVectorsFormat 未实现
-    if !reader.is_hnsw_graph_provider() || !no_deletes(live_docs)? {
+    if !reader.is_hnsw_graph_provider(&self.field_info.name) || !no_deletes(live_docs)? {
       return Ok(());
     }
 

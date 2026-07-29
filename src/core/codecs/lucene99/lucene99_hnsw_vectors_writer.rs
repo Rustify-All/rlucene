@@ -68,7 +68,7 @@ use std::sync::Arc;
 /// Writes vector values and knn graphs to index segments.
 pub struct Lucene99HnswVectorsWriter<F, O>
 where
-  F: FlatVectorsWriter,
+  F: FlatVectorsWriter<IndexOutput = O>,
   O: IndexOutput,
 {
   meta: O,
@@ -86,7 +86,7 @@ pub type DefaultRandomVectorScorerSupplier<F> =
   FlatVectorsWriterSs<F, ByteVectorValuesImpl, FloatVectorValuesImpl>;
 impl<F, O> Lucene99HnswVectorsWriter<F, O>
 where
-  F: FlatVectorsWriter,
+  F: FlatVectorsWriter<IndexOutput = O>,
   O: IndexOutput,
 {
   pub fn new<D1, D2>(
@@ -520,7 +520,7 @@ where
 
 impl<F, O> Accountable for Lucene99HnswVectorsWriter<F, O>
 where
-  F: FlatVectorsWriter,
+  F: FlatVectorsWriter<IndexOutput = O>,
   O: IndexOutput,
 {
   fn ram_bytes_used(&self) -> Result<i64> {
@@ -537,7 +537,7 @@ where
 
 impl<F, O> Closeable for Lucene99HnswVectorsWriter<F, O>
 where
-  F: FlatVectorsWriter,
+  F: FlatVectorsWriter<IndexOutput = O>,
   O: IndexOutput,
 {
   fn close(&mut self) -> Result<()> {
@@ -549,10 +549,21 @@ where
 
 impl<F, O> KnnVectorsWriter for Lucene99HnswVectorsWriter<F, O>
 where
-  F: FlatVectorsWriter,
+  F: FlatVectorsWriter<IndexOutput = O>,
   O: IndexOutput,
 {
-  fn add_field(&mut self, field_info: Arc<FieldInfo>) -> Result<usize> {
+  type IndexOutput = O;
+
+  fn add_field<D1, D2>(
+    &mut self,
+    _write_state: &SegmentWriteState<D1>,
+    _segment_info: &SegmentInfo<D2>,
+    field_info: Arc<FieldInfo>,
+  ) -> Result<usize>
+  where
+    D1: Directory<IndexOutput = Self::IndexOutput>,
+    D2: Directory,
+  {
     let flat_field_vectors_writer =
       FlatVectorsWriter::flat_add_field(&mut self.flat_vector_writer, field_info.clone())?;
     let scorer = self.flat_vector_writer.get_flat_vector_scorer();
@@ -595,7 +606,7 @@ where
   ) -> Result<()>
   where
     D1: Directory,
-    D2: Directory,
+    D2: Directory<IndexOutput = Self::IndexOutput>,
     CR: CodecReader,
   {
     let scorer_supplier = self.flat_vector_writer.merge_one_field_to_index(

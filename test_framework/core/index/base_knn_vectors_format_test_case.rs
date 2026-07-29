@@ -91,13 +91,11 @@ use strum::EnumCount;
 
 pub trait BaseKnnVectorsFormatTestCase: BaseIndexFileFormatTestCase {
   fn get_vectors_max_dimensions(&self, field_name: &str) -> Result<usize> {
-    Ok(
-      self
-        .get_codec()?
-        .knn_vectors_format()
-        .unwrap()
-        .get_max_dimensions(field_name),
-    )
+    self
+      .get_codec()?
+      .knn_vectors_format()
+      .unwrap()
+      .get_max_dimensions(field_name)
   }
 
   fn test_field_constructor<R>(&self, _random: &mut R) -> Result<()>
@@ -328,7 +326,6 @@ pub trait BaseKnnVectorsFormatTestCase: BaseIndexFileFormatTestCase {
     let dir = new_directory_shared(random)?;
     let ex = Arc::new(AtomicBool::new(false));
     let merge_scheduler = TestMergeScheduler::new(ex.clone());
-    // TODO PerFieldKnnVectorsFormat 未实现
     let mut iwc = new_index_writer_config(random)?;
     iwc.set_merge_scheduler(MergeSchedulerEnum::KnnMergeScheduler(merge_scheduler));
     let mp = iwc.get_merge_policy().clone();
@@ -368,7 +365,6 @@ pub trait BaseKnnVectorsFormatTestCase: BaseIndexFileFormatTestCase {
     let dir = new_directory_shared(random)?;
     let ex = Arc::new(AtomicBool::new(false));
     let merge_scheduler = TestMergeScheduler::new(ex.clone());
-    // TODO PerFieldKnnVectorsFormat 未实现
     let mut iwc = new_index_writer_config(random)?;
     iwc.set_merge_scheduler(MergeSchedulerEnum::KnnMergeScheduler(merge_scheduler));
     let mp = iwc.get_merge_policy().clone();
@@ -437,26 +433,30 @@ pub trait BaseKnnVectorsFormatTestCase: BaseIndexFileFormatTestCase {
       dim += 1;
     }
     let num_docs = at_least(random, 100);
-    let field_writer_idx = writer.add_field(Arc::new(FieldInfo::new(
-      "fieldA",
-      0,
-      false,
-      false,
-      false,
-      IndexOptions::None,
-      DocValuesType::None,
-      DocValuesSkipIndexType::None,
-      -1,
-      HashMap::new(),
-      0,
-      0,
-      0,
-      dim,
-      VectorEncoding::FLOAT32(4),
-      VectorSimilarityFunction::DotProduct,
-      false,
-      false,
-    )?))?;
+    let field_writer_idx = writer.add_field(
+      &state,
+      &segment_info,
+      Arc::new(FieldInfo::new(
+        "fieldA",
+        0,
+        false,
+        false,
+        false,
+        IndexOptions::None,
+        DocValuesType::None,
+        DocValuesSkipIndexType::None,
+        -1,
+        HashMap::new(),
+        0,
+        0,
+        0,
+        dim,
+        VectorEncoding::FLOAT32(4),
+        VectorSimilarityFunction::DotProduct,
+        false,
+        false,
+      )?),
+    )?;
     for i in 0..num_docs {
       let vector = VectorValueEnum::Float(Self::random_vector(random, dim as usize));
       writer.add_value(i, &vector, field_writer_idx)?;

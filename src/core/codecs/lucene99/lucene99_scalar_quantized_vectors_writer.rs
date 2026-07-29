@@ -106,7 +106,7 @@ const REQUANTIZATION_LIMIT: f32 = 0.2;
 pub struct Lucene99ScalarQuantizedVectorsWriter<O, R, F>
 where
   O: IndexOutput,
-  R: FlatVectorsWriter,
+  R: FlatVectorsWriter<IndexOutput = O>,
   F: FlatVectorsScorer,
 {
   fields: Vec<ScalarQuantizedFieldWriter>,
@@ -125,7 +125,7 @@ where
 impl<O, R, F> Lucene99ScalarQuantizedVectorsWriter<O, R, F>
 where
   O: IndexOutput,
-  R: FlatVectorsWriter,
+  R: FlatVectorsWriter<IndexOutput = O>,
   F: FlatVectorsScorer,
 {
   pub fn new<D1, D2>(
@@ -334,7 +334,7 @@ where
 impl<O, R, S> Lucene99ScalarQuantizedVectorsWriter<O, R, Lucene99ScalarQuantizedVectorScorer<S>>
 where
   O: IndexOutput,
-  R: FlatVectorsWriter,
+  R: FlatVectorsWriter<IndexOutput = O>,
   S: FlatVectorsScorer + Clone,
 {
   fn merge_one_field_to_index_with_quantization_state<'a, D1, D2, CR>(
@@ -348,7 +348,7 @@ where
   >
   where
     D1: Directory,
-    D2: Directory,
+    D2: Directory<IndexOutput = O>,
     CR: CodecReader,
   {
     if segment_write_state
@@ -453,7 +453,7 @@ where
 impl<O, R, F> Accountable for Lucene99ScalarQuantizedVectorsWriter<O, R, F>
 where
   O: IndexOutput,
-  R: FlatVectorsWriter,
+  R: FlatVectorsWriter<IndexOutput = O>,
   F: FlatVectorsScorer,
 {
   fn ram_bytes_used(&self) -> Result<i64> {
@@ -471,7 +471,7 @@ where
 impl<O, R, F> Closeable for Lucene99ScalarQuantizedVectorsWriter<O, R, F>
 where
   O: IndexOutput,
-  R: FlatVectorsWriter,
+  R: FlatVectorsWriter<IndexOutput = O>,
   F: FlatVectorsScorer,
 {
   fn close(&mut self) -> Result<()> {
@@ -486,9 +486,11 @@ where
 impl<O, R, F> KnnVectorsWriter for Lucene99ScalarQuantizedVectorsWriter<O, R, F>
 where
   O: IndexOutput,
-  R: FlatVectorsWriter,
+  R: FlatVectorsWriter<IndexOutput = O>,
   F: FlatVectorsScorer,
 {
+  type IndexOutput = O;
+
   fn merge_one_field<D1, D2, CR>(
     &mut self,
     field_info: &Arc<FieldInfo>,
@@ -497,7 +499,7 @@ where
   ) -> Result<()>
   where
     D1: Directory,
-    D2: Directory,
+    D2: Directory<IndexOutput = Self::IndexOutput>,
     CR: CodecReader,
   {
     self
@@ -567,7 +569,7 @@ impl<O, R, S> FlatVectorsWriter
   for Lucene99ScalarQuantizedVectorsWriter<O, R, Lucene99ScalarQuantizedVectorScorer<S>>
 where
   O: IndexOutput,
-  R: FlatVectorsWriter,
+  R: FlatVectorsWriter<IndexOutput = O>,
   S: FlatVectorsScorer + Clone,
 {
   type FlatVectorsScorer = Lucene99ScalarQuantizedVectorScorer<S>;
@@ -690,7 +692,7 @@ where
   ) -> Result<Self::CloseableRandomVectorScorerSupplier<'a, D2::IndexInput, D2>>
   where
     D1: Directory,
-    D2: Directory,
+    D2: Directory<IndexOutput = Self::IndexOutput>,
     CR: CodecReader,
   {
     if *field_info.get_vector_encoding() == VectorEncoding::FLOAT32(BitUtil::FLOAT_BYTES) {

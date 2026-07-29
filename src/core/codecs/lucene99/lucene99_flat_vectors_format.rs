@@ -19,13 +19,16 @@ use crate::core::codecs::hnsw::flat_vectors_scorer::FlatVectorsScorer;
 use crate::core::codecs::knn_vectors_format::KnnVectorsFormat;
 use crate::core::codecs::lucene99::lucene99_flat_vectors_reader::Lucene99FlatVectorsReader;
 use crate::core::codecs::lucene99::lucene99_flat_vectors_writer::Lucene99FlatVectorsWriter;
+use crate::core::index::index_reader::Identity;
 use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::segment_read_state::SegmentReadState;
 use crate::core::index::segment_write_state::SegmentWriteState;
 use crate::core::store::directory::Directory;
 use crate::core::store::{IndexInput, IndexOutput};
-use crate::core::util::error::lucene_error::Result;
+use crate::core::util::HasIdentity;
+use crate::core::util::error::lucene_error::{LuceneError, Result};
 use std::fmt::{Display, Formatter};
+use std::sync::Arc;
 
 pub(crate) const NAME: &str = "Lucene99FlatVectorsFormat";
 pub(crate) const META_CODEC_NAME: &str = "Lucene99FlatVectorsFormatMeta";
@@ -72,13 +75,17 @@ where
   F: FlatVectorsScorer,
 {
   vectors_scorer: F,
+  identity: Identity,
 }
 impl<F> Lucene99FlatVectorsFormat<F>
 where
   F: FlatVectorsScorer + Clone,
 {
   pub fn new(vectors_scorer: F) -> Self {
-    Self { vectors_scorer }
+    Self {
+      vectors_scorer,
+      identity: Identity::new(),
+    }
   }
 }
 
@@ -95,10 +102,23 @@ where
   }
 }
 
+impl<F> HasIdentity for Lucene99FlatVectorsFormat<F>
+where
+  F: FlatVectorsScorer,
+{
+  fn identity(&self) -> &Identity {
+    &self.identity
+  }
+}
+
 impl<F> KnnVectorsFormat for Lucene99FlatVectorsFormat<F>
 where
   F: Clone + FlatVectorsScorer,
 {
+  fn get_name(&self) -> &str {
+    NAME
+  }
+
   type KnnVectorsWriter<T: IndexOutput> = Lucene99FlatVectorsWriter<T, F>;
 
   fn fields_writer<D1, D2>(
@@ -127,8 +147,14 @@ where
     FlatVectorsFormat::fields_reader(self, state, segment_info)
   }
 
-  fn get_max_dimensions(&self, field_name: &str) -> usize {
-    FlatVectorsFormat::get_max_dimensions(self, field_name)
+  fn get_max_dimensions(&self, field_name: &str) -> Result<usize> {
+    Ok(FlatVectorsFormat::get_max_dimensions(self, field_name))
+  }
+
+  fn for_name(name: &str) -> Result<Arc<Self>> {
+    Err(LuceneError::illegal_argument(format!(
+      "Could not load vectors format named \"{name}\""
+    )))
   }
 }
 

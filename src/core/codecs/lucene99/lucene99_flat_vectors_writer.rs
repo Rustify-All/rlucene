@@ -311,6 +311,8 @@ where
   O: IndexOutput,
   F: FlatVectorsScorer,
 {
+  type IndexOutput = O;
+
   fn merge_one_field<D1, D2, CR>(
     &mut self,
     field_info: &Arc<FieldInfo>,
@@ -319,7 +321,7 @@ where
   ) -> Result<()>
   where
     D1: Directory,
-    D2: Directory,
+    D2: Directory<IndexOutput = Self::IndexOutput>,
     CR: CodecReader,
     Self: Sized,
   {
@@ -435,7 +437,7 @@ where
   ) -> Result<Self::CloseableRandomVectorScorerSupplier<'a, D2::IndexInput, D2>>
   where
     D1: Directory,
-    D2: Directory,
+    D2: Directory<IndexOutput = Self::IndexOutput>,
     CR: CodecReader,
   {
     let vector_data_offset = self.vector_data.align_file_pointer(BitUtil::FLOAT_BYTES)?;

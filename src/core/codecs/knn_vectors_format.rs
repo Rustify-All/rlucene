@@ -22,14 +22,19 @@ use crate::core::index::segment_read_state::SegmentReadState;
 use crate::core::index::segment_write_state::SegmentWriteState;
 use crate::core::store::directory::Directory;
 use crate::core::store::{IndexInput, IndexOutput};
+use crate::core::util::HasIdentity;
 use crate::core::util::error::lucene_error::Result;
 use std::fmt::Display;
+use std::sync::Arc;
 
 /// The maximum number of vector dimensions.
 pub const DEFAULT_MAX_DIMENSIONS: usize = 1024;
 
-pub trait KnnVectorsFormat: Display {
-  type KnnVectorsWriter<T: IndexOutput>: KnnVectorsWriter;
+pub trait KnnVectorsFormat: Display + HasIdentity {
+  /// Returns this vectors format's name.
+  fn get_name(&self) -> &str;
+
+  type KnnVectorsWriter<T: IndexOutput>: KnnVectorsWriter<IndexOutput = T>;
   /// Returns a [`KnnVectorsWriter`] to write the vectors to the index.
   fn fields_writer<D1, D2>(
     &self,
@@ -59,7 +64,12 @@ pub trait KnnVectorsFormat: Display {
   ///
   /// # Returns
   /// the maximum number of vector dimensions.
-  fn get_max_dimensions(&self, field_name: &str) -> usize;
+  fn get_max_dimensions(&self, field_name: &str) -> Result<usize>;
+
+  /// Looks up a format by name.
+  fn for_name(name: &str) -> Result<Arc<Self>>
+  where
+    Self: Sized;
 }
 
 pub type DefaultKnnVectorsWriter<T> =

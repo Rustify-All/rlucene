@@ -430,13 +430,11 @@ pub trait BaseFieldInfoFormatTestCase: BaseIndexFileFormatTestCase {
   }
 
   fn get_vectors_max_dimensions(&self, field_name: &str) -> Result<usize> {
-    Ok(
-      self
-        .get_codec()?
-        .knn_vectors_format()
-        .unwrap()
-        .get_max_dimensions(field_name),
-    )
+    self
+      .get_codec()?
+      .knn_vectors_format()
+      .unwrap()
+      .get_max_dimensions(field_name)
   }
 
   fn random_field_type<R>(&self, random: &mut R, field_name: &str) -> Result<FieldType>

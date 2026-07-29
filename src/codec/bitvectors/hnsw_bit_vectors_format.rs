@@ -30,6 +30,7 @@ use crate::core::codecs::lucene99::lucene99_hnsw_vectors_reader::Lucene99HnswVec
 use crate::core::codecs::lucene99::lucene99_hnsw_vectors_writer::Lucene99HnswVectorsWriter;
 use crate::core::index::codec_reader::CodecReader;
 use crate::core::index::field_info::FieldInfo;
+use crate::core::index::index_reader::Identity;
 use crate::core::index::merge_state::MergeState;
 use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::segment_read_state::SegmentReadState;
@@ -38,11 +39,12 @@ use crate::core::index::sorter::DocMap;
 use crate::core::index::vector_encoding::VectorEncoding;
 use crate::core::store::directory::Directory;
 use crate::core::store::{IndexInput, IndexOutput};
+use crate::core::util::HasIdentity;
 use crate::core::util::accountable::Accountable;
 use crate::core::util::close::Closeable;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use std::fmt::{Display, Formatter};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 /// Encodes bit vector values into an associated graph connecting the documents having values. The
 /// graph is used to power HNSW search. The format consists of two files, and uses
@@ -55,6 +57,7 @@ pub struct HnswBitVectorsFormat {
   /// The format for storing, reading, merging vectors on disk
   flat_vectors_format: Lucene99FlatVectorsFormat<FlatBitVectorsScorer>,
   num_merge_workers: usize,
+  identity: Identity,
 }
 
 pub const NAME: &str = "HnswBitVectorsFormat";
@@ -104,11 +107,22 @@ impl HnswBitVectorsFormat {
       beam_width,
       num_merge_workers,
       flat_vectors_format: Lucene99FlatVectorsFormat::new(FlatBitVectorsScorer),
+      identity: Identity::new(),
     })
   }
 }
 
+impl HasIdentity for HnswBitVectorsFormat {
+  fn identity(&self) -> &Identity {
+    &self.identity
+  }
+}
+
 impl KnnVectorsFormat for HnswBitVectorsFormat {
+  fn get_name(&self) -> &str {
+    NAME
+  }
+
   type KnnVectorsWriter<T: IndexOutput> = FlatBitVectorsWriter<
     Lucene99HnswVectorsWriter<Lucene99FlatVectorsWriter<T, FlatBitVectorsScorer>, T>,
   >;
@@ -151,8 +165,33 @@ impl KnnVectorsFormat for HnswBitVectorsFormat {
     )
   }
 
-  fn get_max_dimensions(&self, _field_name: &str) -> usize {
-    1024
+  fn get_max_dimensions(&self, _field_name: &str) -> Result<usize> {
+    Ok(1024)
+  }
+
+  fn for_name(name: &str) -> Result<Arc<Self>> {
+    static FORMAT: OnceLock<Arc<HnswBitVectorsFormat>> = OnceLock::new();
+
+    match name {
+      NAME => {
+        if let Some(format) = FORMAT.get() {
+          return Ok(Arc::clone(format));
+        }
+        let format = Arc::new(Self::new()?);
+        if FORMAT.set(Arc::clone(&format)).is_ok() {
+          Ok(format)
+        } else {
+          FORMAT.get().map(Arc::clone).ok_or_else(|| {
+            LuceneError::illegal_state(format!(
+              "failed to initialize vectors format named \"{NAME}\""
+            ))
+          })
+        }
+      },
+      _ => Err(LuceneError::illegal_argument(format!(
+        "Could not load vectors format named \"{name}\""
+      ))),
+    }
   }
 }
 
@@ -186,6 +225,8 @@ impl<W> KnnVectorsWriter for FlatBitVectorsWriter<W>
 where
   W: KnnVectorsWriter,
 {
+  type IndexOutput = W::IndexOutput;
+
   fn merge_one_field<D1, D2, CR>(
     &mut self,
     field_info: &Arc<FieldInfo>,
@@ -194,7 +235,7 @@ where
   ) -> Result<()>
   where
     D1: Directory,
-    D2: Directory,
+    D2: Directory<IndexOutput = Self::IndexOutput>,
     CR: CodecReader,
   {
     self
@@ -206,13 +247,24 @@ where
     self.delegate.finish()
   }
 
-  fn add_field(&mut self, field_info: Arc<FieldInfo>) -> Result<usize> {
+  fn add_field<D1, D2>(
+    &mut self,
+    write_state: &SegmentWriteState<D1>,
+    segment_info: &SegmentInfo<D2>,
+    field_info: Arc<FieldInfo>,
+  ) -> Result<usize>
+  where
+    D1: Directory<IndexOutput = Self::IndexOutput>,
+    D2: Directory,
+  {
     if !matches!(field_info.get_vector_encoding(), VectorEncoding::BYTE(_)) {
       return Err(LuceneError::illegal_argument(
         "HnswBitVectorsFormat only supports BYTE encoding",
       ));
     }
-    self.delegate.add_field(field_info)
+    self
+      .delegate
+      .add_field(write_state, segment_info, field_info)
   }
 
   fn flush<DM>(&mut self, max_doc: i32, sort_map: Option<&DM>) -> Result<()>

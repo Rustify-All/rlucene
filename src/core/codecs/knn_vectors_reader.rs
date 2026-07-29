@@ -57,7 +57,7 @@ pub trait KnnVectorsReader: HnswGraphProvider + CloseableRef {
   }
 
   /// Returns whether this reader is a flat vectors reader.
-  fn is_flat_vectors_reader(&self) -> bool {
+  fn is_flat_vectors_reader(&self, _field: &str) -> bool {
     false
   }
 
@@ -186,9 +186,9 @@ macro_rules! either_knn_vectors_reader {
                 $graph_ty<$( < $T as $crate::core::codecs::hnsw::hnsw_graph_provider::HnswGraphProvider >::HnswGraph ),+>;
 
             #[inline]
-            fn is_hnsw_graph_provider(&self) -> bool {
+            fn is_hnsw_graph_provider(&self, field: &str) -> bool {
                 match self {
-                    $( Self::$Variant(inner) => inner.is_hnsw_graph_provider(), )+
+                    $( Self::$Variant(inner) => inner.is_hnsw_graph_provider(field), )+
                 }
             }
 
@@ -239,9 +239,9 @@ macro_rules! either_knn_vectors_reader {
             }
 
             #[inline]
-            fn is_flat_vectors_reader(&self) -> bool {
+            fn is_flat_vectors_reader(&self, field: &str) -> bool {
                 match self {
-                    $( Self::$Variant(inner) => inner.is_flat_vectors_reader(), )+
+                    $( Self::$Variant(inner) => inner.is_flat_vectors_reader(field), )+
                 }
             }
 
@@ -376,8 +376,8 @@ where
 {
   type HnswGraph = T::HnswGraph;
 
-  fn is_hnsw_graph_provider(&self) -> bool {
-    (**self).is_hnsw_graph_provider()
+  fn is_hnsw_graph_provider(&self, field: &str) -> bool {
+    (**self).is_hnsw_graph_provider(field)
   }
 
   fn get_graph(&self, field: &str) -> Result<Self::HnswGraph> {
@@ -409,8 +409,8 @@ where
     (**self).get_quantization_state(field)
   }
 
-  fn is_flat_vectors_reader(&self) -> bool {
-    (**self).is_flat_vectors_reader()
+  fn is_flat_vectors_reader(&self, field: &str) -> bool {
+    (**self).is_flat_vectors_reader(field)
   }
 
   fn search_f32<B, K>(

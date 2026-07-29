@@ -375,7 +375,7 @@ where
     QuantizedVectorsReader::get_quantization_state(self, field)
   }
 
-  fn is_flat_vectors_reader(&self) -> bool {
+  fn is_flat_vectors_reader(&self, _field: &str) -> bool {
     true
   }
 

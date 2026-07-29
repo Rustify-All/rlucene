@@ -95,7 +95,7 @@ pub trait FlatVectorsWriter: KnnVectorsWriter {
   ) -> Result<Self::CloseableRandomVectorScorerSupplier<'a, D2::IndexInput, D2>>
   where
     D1: Directory,
-    D2: Directory,
+    D2: Directory<IndexOutput = Self::IndexOutput>,
     CR: CodecReader,
   {
     Err(crate::core::util::error::lucene_error::LuceneError::unsupported_operation(""))

@@ -326,7 +326,7 @@ where
 {
   type HnswGraph = HnswGraphEnum2<Box<OffHeapHnswGraph<I>>, EmptyHnswGraph>;
 
-  fn is_hnsw_graph_provider(&self) -> bool {
+  fn is_hnsw_graph_provider(&self, _field: &str) -> bool {
     true
   }
 

@@ -23,13 +23,16 @@ use crate::core::codecs::lucene99::lucene99_hnsw_vectors_format::{
 use crate::core::codecs::lucene99::lucene99_hnsw_vectors_reader::Lucene99HnswVectorsReader;
 use crate::core::codecs::lucene99::lucene99_hnsw_vectors_writer::Lucene99HnswVectorsWriter;
 use crate::core::codecs::lucene99::lucene99_scalar_quantized_vectors_format::Lucene99ScalarQuantizedVectorsFormat;
+use crate::core::index::index_reader::Identity;
 use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::segment_read_state::SegmentReadState;
 use crate::core::index::segment_write_state::SegmentWriteState;
 use crate::core::store::directory::Directory;
 use crate::core::store::{IndexInput, IndexOutput};
+use crate::core::util::HasIdentity;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use std::fmt::{Display, Formatter};
+use std::sync::{Arc, OnceLock};
 
 /// Lucene 9.9 vector format, which encodes numeric vector values into an associated graph connecting
 /// the documents having values. The graph is used to power HNSW search. The format consists of two
@@ -41,6 +44,7 @@ pub struct Lucene99HnswScalarQuantizedVectorsFormat {
   /// The format for storing, reading, merging vectors on disk
   flat_vectors_format: Lucene99ScalarQuantizedVectorsFormat,
   num_merge_workers: usize,
+  identity: Identity,
 }
 
 pub const NAME: &str = "Lucene99HnswScalarQuantizedVectorsFormat";
@@ -117,11 +121,22 @@ impl Lucene99HnswScalarQuantizedVectorsFormat {
           compress,
         )?,
       num_merge_workers,
+      identity: Identity::new(),
     })
   }
 }
 
+impl HasIdentity for Lucene99HnswScalarQuantizedVectorsFormat {
+  fn identity(&self) -> &Identity {
+    &self.identity
+  }
+}
+
 impl KnnVectorsFormat for Lucene99HnswScalarQuantizedVectorsFormat {
+  fn get_name(&self) -> &str {
+    NAME
+  }
+
   type KnnVectorsWriter<T: IndexOutput> = Lucene99HnswVectorsWriter<
     <Lucene99ScalarQuantizedVectorsFormat as FlatVectorsFormat>::FlatVectorsWriter<T>,
     T,
@@ -167,8 +182,33 @@ impl KnnVectorsFormat for Lucene99HnswScalarQuantizedVectorsFormat {
     )
   }
 
-  fn get_max_dimensions(&self, _field_name: &str) -> usize {
-    1024
+  fn get_max_dimensions(&self, _field_name: &str) -> Result<usize> {
+    Ok(1024)
+  }
+
+  fn for_name(name: &str) -> Result<Arc<Self>> {
+    static FORMAT: OnceLock<Arc<Lucene99HnswScalarQuantizedVectorsFormat>> = OnceLock::new();
+
+    match name {
+      NAME => {
+        if let Some(format) = FORMAT.get() {
+          return Ok(Arc::clone(format));
+        }
+        let format = Arc::new(Self::new()?);
+        if FORMAT.set(Arc::clone(&format)).is_ok() {
+          Ok(format)
+        } else {
+          FORMAT.get().map(Arc::clone).ok_or_else(|| {
+            LuceneError::illegal_state(format!(
+              "failed to initialize vectors format named \"{NAME}\""
+            ))
+          })
+        }
+      },
+      _ => Err(LuceneError::illegal_argument(format!(
+        "Could not load vectors format named \"{name}\""
+      ))),
+    }
   }
 }
 

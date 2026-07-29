@@ -24,14 +24,16 @@ use crate::core::codecs::lucene99::lucene99_flat_vectors_writer::Lucene99FlatVec
 use crate::core::codecs::lucene99::lucene99_scalar_quantized_vector_scorer::Lucene99ScalarQuantizedVectorScorer;
 use crate::core::codecs::lucene99::lucene99_scalar_quantized_vectors_reader::Lucene99ScalarQuantizedVectorsReader;
 use crate::core::codecs::lucene99::lucene99_scalar_quantized_vectors_writer::Lucene99ScalarQuantizedVectorsWriter;
+use crate::core::index::index_reader::Identity;
 use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::segment_read_state::SegmentReadState;
 use crate::core::index::segment_write_state::SegmentWriteState;
 use crate::core::store::directory::Directory;
 use crate::core::store::{IndexInput, IndexOutput};
+use crate::core::util::HasIdentity;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use std::fmt::{Display, Formatter};
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock, OnceLock};
 
 // The bits that are allowed for scalar quantization
 // We only allow signed byte (7), and half-byte (4)
@@ -73,6 +75,7 @@ pub struct Lucene99ScalarQuantizedVectorsFormat {
   bits: u8,
   compress: bool,
   flat_vector_scorer: Lucene99ScalarQuantizedVectorScorer<DefaultFlatVectorScorer>,
+  identity: Identity,
 }
 
 impl Lucene99ScalarQuantizedVectorsFormat {
@@ -129,6 +132,7 @@ impl Lucene99ScalarQuantizedVectorsFormat {
       confidence_interval,
       compress,
       flat_vector_scorer: Lucene99ScalarQuantizedVectorScorer::new(DefaultFlatVectorScorer),
+      identity: Identity::new(),
     })
   }
 
@@ -157,7 +161,17 @@ impl Display for Lucene99ScalarQuantizedVectorsFormat {
   }
 }
 
+impl HasIdentity for Lucene99ScalarQuantizedVectorsFormat {
+  fn identity(&self) -> &Identity {
+    &self.identity
+  }
+}
+
 impl KnnVectorsFormat for Lucene99ScalarQuantizedVectorsFormat {
+  fn get_name(&self) -> &str {
+    NAME
+  }
+
   type KnnVectorsWriter<T: IndexOutput> = Lucene99ScalarQuantizedVectorsWriter<
     T,
     crate::core::codecs::lucene99::lucene99_flat_vectors_writer::Lucene99FlatVectorsWriter<
@@ -197,8 +211,33 @@ impl KnnVectorsFormat for Lucene99ScalarQuantizedVectorsFormat {
     FlatVectorsFormat::fields_reader(self, state, segment_info)
   }
 
-  fn get_max_dimensions(&self, field_name: &str) -> usize {
-    FlatVectorsFormat::get_max_dimensions(self, field_name)
+  fn get_max_dimensions(&self, field_name: &str) -> Result<usize> {
+    Ok(FlatVectorsFormat::get_max_dimensions(self, field_name))
+  }
+
+  fn for_name(name: &str) -> Result<Arc<Self>> {
+    static FORMAT: OnceLock<Arc<Lucene99ScalarQuantizedVectorsFormat>> = OnceLock::new();
+
+    match name {
+      NAME => {
+        if let Some(format) = FORMAT.get() {
+          return Ok(Arc::clone(format));
+        }
+        let format = Arc::new(Self::new()?);
+        if FORMAT.set(Arc::clone(&format)).is_ok() {
+          Ok(format)
+        } else {
+          FORMAT.get().map(Arc::clone).ok_or_else(|| {
+            LuceneError::illegal_state(format!(
+              "failed to initialize vectors format named \"{NAME}\""
+            ))
+          })
+        }
+      },
+      _ => Err(LuceneError::illegal_argument(format!(
+        "Could not load vectors format named \"{name}\""
+      ))),
+    }
   }
 }
 

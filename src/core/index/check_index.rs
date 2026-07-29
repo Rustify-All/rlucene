@@ -3135,14 +3135,14 @@ impl CheckIndex<DirectoryEnum, LockEnum, Sink> {
     Ok(status)
   }
 
-  fn vectors_reader_supports_search<R>(codec_reader: &R, _field_name: &str) -> Result<bool>
+  fn vectors_reader_supports_search<R>(codec_reader: &R, field_name: &str) -> Result<bool>
   where
     R: CodecReader,
   {
     Ok(
       codec_reader
         .get_vector_reader()?
-        .is_some_and(|reader| !reader.is_flat_vectors_reader()),
+        .is_some_and(|reader| !reader.is_flat_vectors_reader(field_name)),
     )
   }
 

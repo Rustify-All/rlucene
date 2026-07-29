@@ -23,7 +23,7 @@ pub trait HnswGraphProvider {
   type HnswGraph: HnswGraph;
 
   /// Whether this reader corresponds to Java's `HnswGraphProvider` capability.
-  fn is_hnsw_graph_provider(&self) -> bool {
+  fn is_hnsw_graph_provider(&self, _field: &str) -> bool {
     false
   }
 

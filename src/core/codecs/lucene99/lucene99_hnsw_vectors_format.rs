@@ -22,15 +22,17 @@ use crate::core::codecs::lucene99::lucene99_flat_vectors_reader::Lucene99FlatVec
 use crate::core::codecs::lucene99::lucene99_flat_vectors_writer::Lucene99FlatVectorsWriter;
 use crate::core::codecs::lucene99::lucene99_hnsw_vectors_reader::Lucene99HnswVectorsReader;
 use crate::core::codecs::lucene99::lucene99_hnsw_vectors_writer::Lucene99HnswVectorsWriter;
+use crate::core::index::index_reader::Identity;
 use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::segment_read_state::SegmentReadState;
 use crate::core::index::segment_write_state::SegmentWriteState;
 use crate::core::store::directory::Directory;
 use crate::core::store::{IndexInput, IndexOutput};
+use crate::core::util::HasIdentity;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::hnsw::hnsw_graph_builder::DEFAULT_MAX_CONN as OtherDEFAULT_MAX_CONN;
 use std::fmt::{Display, Formatter};
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock, OnceLock};
 
 pub(crate) const META_CODEC_NAME: &str = "Lucene99HnswVectorsFormatMeta";
 pub(crate) const VECTOR_INDEX_CODEC_NAME: &str = "Lucene99HnswVectorsFormatIndex";
@@ -102,6 +104,7 @@ pub struct Lucene99HnswVectorsFormat {
   max_conn: usize,
   beam_width: usize,
   num_merge_workers: usize,
+  identity: Identity,
 }
 impl Lucene99HnswVectorsFormat {
   /// Constructs a format using default graph construction parameters
@@ -146,6 +149,7 @@ impl Lucene99HnswVectorsFormat {
       max_conn,
       beam_width,
       num_merge_workers,
+      identity: Identity::new(),
     })
   }
 }
@@ -159,7 +163,17 @@ impl Display for Lucene99HnswVectorsFormat {
   }
 }
 
+impl HasIdentity for Lucene99HnswVectorsFormat {
+  fn identity(&self) -> &Identity {
+    &self.identity
+  }
+}
+
 impl KnnVectorsFormat for Lucene99HnswVectorsFormat {
+  fn get_name(&self) -> &str {
+    "Lucene99HnswVectorsFormat"
+  }
+
   type KnnVectorsWriter<T: IndexOutput> =
     Lucene99HnswVectorsWriter<Lucene99FlatVectorsWriter<T, DefaultFlatVectorScorer>, T>;
 
@@ -199,7 +213,32 @@ impl KnnVectorsFormat for Lucene99HnswVectorsFormat {
     Lucene99HnswVectorsReader::new(state, flat_reader, segment_info)
   }
 
-  fn get_max_dimensions(&self, _field_name: &str) -> usize {
-    1024
+  fn get_max_dimensions(&self, _field_name: &str) -> Result<usize> {
+    Ok(1024)
+  }
+
+  fn for_name(name: &str) -> Result<Arc<Self>> {
+    static FORMAT: OnceLock<Arc<Lucene99HnswVectorsFormat>> = OnceLock::new();
+
+    match name {
+      "Lucene99HnswVectorsFormat" => {
+        if let Some(format) = FORMAT.get() {
+          return Ok(Arc::clone(format));
+        }
+        let format = Arc::new(Self::new()?);
+        if FORMAT.set(Arc::clone(&format)).is_ok() {
+          Ok(format)
+        } else {
+          FORMAT.get().map(Arc::clone).ok_or_else(|| {
+            LuceneError::illegal_state(
+              "failed to initialize vectors format named \"Lucene99HnswVectorsFormat\"",
+            )
+          })
+        }
+      },
+      _ => Err(LuceneError::illegal_argument(format!(
+        "Could not load vectors format named \"{name}\""
+      ))),
+    }
   }
 }

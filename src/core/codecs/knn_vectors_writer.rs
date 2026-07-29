@@ -28,6 +28,7 @@ use crate::core::index::field_infos::FieldInfos;
 use crate::core::index::float_vector_values::FloatVectorValues;
 use crate::core::index::knn_vector_values::{BitsImpl1, DocIndexIterator, KnnVectorValues};
 use crate::core::index::merge_state::{DocMap as MergeDocMap, MergeState, MergeStateDocMap};
+use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::segment_write_state::SegmentWriteState;
 use crate::core::index::sorter::DocMap;
 use crate::core::index::vector_encoding::VectorEncoding;
@@ -36,6 +37,7 @@ use crate::core::search::doc_id_set::DocIdSet;
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
 use crate::core::search::doc_id_set_iterator::NO_MORE_DOCS;
 use crate::core::search::dummy::dummy_vector_scorer::DummyVectorScorer;
+use crate::core::store::IndexOutput;
 use crate::core::store::directory::Directory;
 use crate::core::util::TryIntoInt;
 use crate::core::util::accountable::Accountable;
@@ -51,8 +53,19 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 pub trait KnnVectorsWriter: Accountable + Closeable {
+  type IndexOutput: IndexOutput;
+
   /// Adds a new field for indexing.
-  fn add_field(&mut self, _field_info: Arc<FieldInfo>) -> Result<usize> {
+  fn add_field<D1, D2>(
+    &mut self,
+    _write_state: &SegmentWriteState<D1>,
+    _segment_info: &SegmentInfo<D2>,
+    _field_info: Arc<FieldInfo>,
+  ) -> Result<usize>
+  where
+    D1: Directory<IndexOutput = Self::IndexOutput>,
+    D2: Directory,
+  {
     Err(LuceneError::unsupported_operation(""))
   }
 
@@ -68,16 +81,20 @@ pub trait KnnVectorsWriter: Accountable + Closeable {
     &mut self,
     field_info: &Arc<FieldInfo>,
     merge_state: &MergeState<'_, D1, CR>,
-    _segment_write_state: &SegmentWriteState<&D2>,
+    segment_write_state: &SegmentWriteState<&D2>,
   ) -> Result<()>
   where
     D1: Directory,
-    D2: Directory,
+    D2: Directory<IndexOutput = Self::IndexOutput>,
     CR: CodecReader,
   {
     match field_info.get_vector_encoding() {
       VectorEncoding::BYTE(_) => {
-        let field_vectors_writer_idx = self.add_field(field_info.clone())?;
+        let field_vectors_writer_idx = self.add_field(
+          segment_write_state,
+          merge_state.segment_info,
+          field_info.clone(),
+        )?;
         let merged_bytes = merge_byte_vector_values(field_info.as_ref(), merge_state)?;
         let mut iter = merged_bytes.iterator()?;
         let mut doc = iter.next_doc()?;
@@ -89,7 +106,11 @@ pub trait KnnVectorsWriter: Accountable + Closeable {
         }
       },
       VectorEncoding::FLOAT32(_) => {
-        let field_vectors_writer_idx = self.add_field(field_info.clone())?;
+        let field_vectors_writer_idx = self.add_field(
+          segment_write_state,
+          merge_state.segment_info,
+          field_info.clone(),
+        )?;
         let merged_floats = merge_float_vector_values(field_info.as_ref(), merge_state)?;
         let mut iter = merged_floats.iterator()?;
         let mut doc = iter.next_doc()?;
@@ -115,7 +136,7 @@ pub trait KnnVectorsWriter: Accountable + Closeable {
   ) -> Result<i32>
   where
     D1: Directory,
-    D2: Directory,
+    D2: Directory<IndexOutput = Self::IndexOutput>,
     CR: CodecReader,
   {
     for (i, reader) in merge_state.knn_vectors_readers.iter().enumerate() {

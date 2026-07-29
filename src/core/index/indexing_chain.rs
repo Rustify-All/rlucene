@@ -947,7 +947,7 @@ where
       let max_dim = index_writer_config
         .get_codec()
         .knn_vectors_format()?
-        .get_max_dimensions(&pf.field_name);
+        .get_max_dimensions(&pf.field_name)?;
       Self::validate_max_vector_dimension(&pf.field_name, s.vector_dimension, max_dim)?;
     }
     let soft_deletes_field = field_infos.is_soft_deletes_field_name(&pf.field_name);
