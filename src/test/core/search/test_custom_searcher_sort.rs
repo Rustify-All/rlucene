@@ -37,7 +37,7 @@ use crate::test_framework::core::util::DefaultCRReader;
 use crate::test_framework::core::util::lucene_test_case::{
   at_least_usize, new_directory_shared, random,
 };
-use chrono::{DateTime, Datelike, Local};
+use chrono::{DateTime, Local, LocalResult, NaiveDate, TimeDelta, TimeZone};
 use rand::{Rng, RngExt};
 use std::collections::BTreeMap;
 
@@ -155,11 +155,30 @@ struct RandomGen<'a, R: Rng + ?Sized> {
 
 impl<'a, R: Rng + ?Sized> RandomGen<'a, R> {
   fn new(random: &'a mut R) -> Self {
-    let base = Local::now()
-      .with_year(1980)
-      .and_then(|date| date.with_month(2))
-      .and_then(|date| date.with_day(1))
+    let now = Local::now();
+    let local_base = NaiveDate::from_ymd_opt(1980, 2, 1)
+      .map(|date| date.and_time(now.time()))
       .expect("1980-02-01 must be a valid date in the default time zone");
+    let base = match Local.from_local_datetime(&local_base) {
+      LocalResult::Single(base) => base,
+      LocalResult::Ambiguous(_, latest) => latest,
+      LocalResult::None => {
+        let day = TimeDelta::days(1);
+        let before = Local
+          .from_local_datetime(&(local_base - day))
+          .latest()
+          .expect("the preceding local date must be valid");
+        let after = Local
+          .from_local_datetime(&(local_base + day))
+          .latest()
+          .expect("the following local date must be valid");
+        let offset_change = after.offset().local_minus_utc() - before.offset().local_minus_utc();
+        Local
+          .from_local_datetime(&(local_base + TimeDelta::seconds(offset_change.into())))
+          .latest()
+          .expect("the leniently adjusted local date must be valid")
+      },
+    };
     Self { random, base }
   }
 
