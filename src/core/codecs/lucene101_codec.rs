@@ -26,11 +26,63 @@ use crate::core::codecs::lucene94::lucene94_field_infos_format::Lucene94FieldInf
 use crate::core::codecs::lucene99::lucene99_hnsw_vectors_format::Lucene99HnswVectorsFormat;
 use crate::core::codecs::lucene99::lucene99_segment_info_format::Lucene99SegmentInfoFormat;
 use crate::core::codecs::lucene101::lucene101_postings_format::Lucene101PostingsFormat;
+use crate::core::codecs::perfield::per_field_doc_values_format::{
+  PerFieldDocValuesFormat, PerFieldDocValuesFormatBase,
+};
+use crate::core::codecs::perfield::per_field_postings_format::{
+  PerFieldPostingsFormat, PerFieldPostingsFormatBase,
+};
 use crate::core::util::error::lucene_error::Result;
 use std::fmt::{Display, Formatter};
 
-#[derive(Clone, Default)]
-pub struct Lucene101Codec;
+type DefaultPostingsFormat = Lucene101PostingsFormat;
+type DefaultDocValuesFormat = Lucene90DocValuesFormat;
+
+pub type Lucene101CodecPostingsFormat = PerFieldPostingsFormat<Lucene101CodecPostingsFormatBase>;
+pub type Lucene101CodecDocValuesFormat = PerFieldDocValuesFormat<Lucene101CodecDocValuesFormatBase>;
+
+pub struct Lucene101CodecPostingsFormatBase {
+  default_postings_format: DefaultPostingsFormat,
+}
+
+impl PerFieldPostingsFormatBase for Lucene101CodecPostingsFormatBase {
+  type Format = DefaultPostingsFormat;
+
+  fn get_postings_format_for_field(&self, _field: &str) -> Result<&Self::Format> {
+    Ok(&self.default_postings_format)
+  }
+}
+
+pub struct Lucene101CodecDocValuesFormatBase {
+  default_doc_values_format: DefaultDocValuesFormat,
+}
+
+impl PerFieldDocValuesFormatBase for Lucene101CodecDocValuesFormatBase {
+  type Format = DefaultDocValuesFormat;
+
+  fn get_doc_values_format_for_field(&self, _field: &str) -> Result<&Self::Format> {
+    Ok(&self.default_doc_values_format)
+  }
+}
+
+#[derive(Clone)]
+pub struct Lucene101Codec {
+  postings_format: Lucene101CodecPostingsFormat,
+  doc_values_format: Lucene101CodecDocValuesFormat,
+}
+
+impl Default for Lucene101Codec {
+  fn default() -> Self {
+    Self {
+      postings_format: PerFieldPostingsFormat::new(Lucene101CodecPostingsFormatBase {
+        default_postings_format: DefaultPostingsFormat::new(),
+      }),
+      doc_values_format: PerFieldDocValuesFormat::new(Lucene101CodecDocValuesFormatBase {
+        default_doc_values_format: DefaultDocValuesFormat::default(),
+      }),
+    }
+  }
+}
 
 impl Display for Lucene101Codec {
   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -38,8 +90,8 @@ impl Display for Lucene101Codec {
   }
 }
 impl Codec for Lucene101Codec {
-  type PostingsFormat = Lucene101PostingsFormat;
-  type DocValuesFormat = Lucene90DocValuesFormat;
+  type PostingsFormat = Lucene101CodecPostingsFormat;
+  type DocValuesFormat = Lucene101CodecDocValuesFormat;
   type StoredFieldsFormat = Lucene90StoredFieldsFormat;
   type TermVectorsFormat = Lucene90TermVectorsFormat;
   type FieldInfosFormat = Lucene94FieldInfosFormat;
@@ -51,11 +103,11 @@ impl Codec for Lucene101Codec {
   type KnnVectorsFormat = Lucene99HnswVectorsFormat;
 
   fn postings_format(&self) -> Self::PostingsFormat {
-    Lucene101PostingsFormat::new()
+    self.postings_format.clone()
   }
 
   fn doc_values_format(&self) -> Self::DocValuesFormat {
-    Lucene90DocValuesFormat::default()
+    self.doc_values_format.clone()
   }
 
   fn stored_fields_format(&self) -> Self::StoredFieldsFormat {

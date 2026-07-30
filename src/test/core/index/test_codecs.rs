@@ -100,7 +100,7 @@ fn test_fixed_postings() -> Result<()> {
   let fields = vec![Arc::clone(&field)];
   let field_infos = Arc::new(builder.finish()?);
   let dir = new_directory_shared(&mut random)?;
-  let codec = Lucene101Codec;
+  let codec = Lucene101Codec::default();
   let si = SegmentInfo::new(
     Arc::clone(&dir),
     Some((*LATEST).clone()),
