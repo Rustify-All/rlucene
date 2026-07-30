@@ -289,7 +289,7 @@ where
       return Ok(None);
     }
     let mut inner = self.inner.lock();
-    let result = (|| {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
       // we need to commit this under lock but calculate it outside of the lock to minimize the time
       // this lock is held
       // per document. The reason we update this under lock is that we mark DWPTs as pending without
@@ -319,7 +319,7 @@ where
         }
       }
       self.checkout(&mut inner, per_thread, false, config)
-    })();
+    }));
 
     let stall = self.update_stall_state(&mut inner, config)?;
     debug_assert!(
@@ -327,7 +327,10 @@ where
         && self.assert_memory(&mut inner, config)
     );
 
-    result
+    match result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
   fn checkout<L>(
     &self,
@@ -381,7 +384,7 @@ where
       Some(inner) => inner,
       None => &mut *self.inner.lock(),
     };
-    let result = {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       debug_assert!(inner.flushing_writers.contains(&dwpt));
       if let Some(pos) = inner
         .flushing_writers
@@ -393,12 +396,21 @@ where
       inner.flush_bytes -= dwpt.state.get_last_committed_bytes_used();
       debug_assert!(self.assert_memory(inner, config));
       Ok(())
-    };
+    }));
 
-    self.update_stall_state(inner, config)?;
+    let stall_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      self.update_stall_state(inner, config)
+    }));
     self.pausing.notify_all();
 
-    result
+    match stall_result {
+      Ok(result) => result?,
+      Err(payload) => std::panic::resume_unwind(payload),
+    };
+    match result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
   fn update_stall_state<L>(&self, inner: &mut Inner<D>, config: &L) -> Result<bool>
   where
@@ -481,7 +493,7 @@ where
     L: LiveIndexWriterConfig,
   {
     let mut inner = self.inner.lock();
-    let result = {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       let dwpt = per_thread.dwpt.lock();
       debug_assert!(self.per_thread_pool.is_registered(per_thread.id()));
       let bytes = dwpt.get_last_committed_bytes_used();
@@ -493,7 +505,7 @@ where
       debug_assert!(self.assert_memory(&mut inner, config));
       // Take it out of the loop this DWPT is stale
       Ok(())
-    };
+    }));
 
     self.update_stall_state(&mut inner, config)?;
     let checked_out = {
@@ -502,7 +514,10 @@ where
     };
     debug_assert!(checked_out.is_some());
 
-    result
+    match result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
   /// To be called only by the owner of this object's monitor lock
   fn checkout_and_block(
@@ -539,19 +554,24 @@ where
     debug_assert!(per_thread.is_flush_pending());
     debug_assert!(per_thread.state.is_locked());
     debug_assert!(self.per_thread_pool.is_registered(&per_thread.state.id));
-    let result = (|| -> Result<Arc<DwptWrapper<D>>> {
-      inner.num_pending -= 1;
-      let v = match self.per_thread_pool.checkout(per_thread) {
-        Some(v) => {
-          self.add_flushing_dwpt(v.clone(), inner);
-          v
-        },
-        None => return Err(LuceneError::illegal_state("DWPT not registered in pool")),
-      };
-      Ok(v)
-    })();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+      || -> Result<Arc<DwptWrapper<D>>> {
+        inner.num_pending -= 1;
+        let v = match self.per_thread_pool.checkout(per_thread) {
+          Some(v) => {
+            self.add_flushing_dwpt(v.clone(), inner);
+            v
+          },
+          None => return Err(LuceneError::illegal_state("DWPT not registered in pool")),
+        };
+        Ok(v)
+      },
+    ));
     self.update_stall_state(inner, config)?;
-    result
+    match result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
   fn add_flushing_dwpt(&self, per_thread: Arc<DwptWrapper<D>>, inner: &mut Inner<D>) {
     debug_assert!(
@@ -589,7 +609,7 @@ where
       let dwpts = self.per_thread_pool.iterator();
       for (id, next) in &dwpts {
         if next.state.is_flush_pending() && next.try_lock() {
-          let result = (|| {
+          let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             if self.per_thread_pool.is_registered(id) {
               let mut inner = self.inner.lock();
               return Ok(Some(self.check_out_for_flush(
@@ -600,9 +620,12 @@ where
             } else {
               Ok(None)
             }
-          })();
+          }));
           next.unlock();
-          return result;
+          return match result {
+            Ok(result) => result,
+            Err(payload) => std::panic::resume_unwind(payload),
+          };
         }
       }
     }
@@ -672,17 +695,22 @@ where
         // progress full flush.
         return Ok(per_thread);
       } else {
-        #[cfg(debug_assertions)]
-        {
-          let inner = self.inner.lock();
-          debug_assert!(
-            inner.full_flush && !inner.full_flush_mark_done,
-            "found a stale DWPT but full flush mark phase is already done fullFlush: {} markDone: {}",
-            inner.full_flush,
-            inner.full_flush_mark_done
-          );
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+          #[cfg(debug_assertions)]
+          {
+            let inner = self.inner.lock();
+            debug_assert!(
+              inner.full_flush && !inner.full_flush_mark_done,
+              "found a stale DWPT but full flush mark phase is already done fullFlush: {} markDone: {}",
+              inner.full_flush,
+              inner.full_flush_mark_done
+            );
+          }
+        }));
+        per_thread.unlock();
+        if let Err(payload) = result {
+          std::panic::resume_unwind(payload);
         }
-        per_thread.unlock()
       }
     }
   }
@@ -716,15 +744,18 @@ where
       // no new thread-states while we do a flush otherwise the seqNo
       // accounting might be off
 
-      let result = (|| -> Result<i64> {
+      let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<i64> {
         let size = self.per_thread_pool.size();
         // Insert a gap in seqNo of current active thread count, in the worst case each of those
         // threads now have one operation in flight.  It's fine
         // if we have some sequence numbers that were never assigned:
         documents_writer.reset_delete_queue(guard, size.try_convert()?)
-      })();
+      }));
       self.per_thread_pool.unlock_new_writers();
-      result
+      match result {
+        Ok(result) => result,
+        Err(payload) => std::panic::resume_unwind(payload),
+      }
     }?;
 
     let mut full_flush_buffer = Vec::new();
@@ -735,7 +766,7 @@ where
     };
 
     for dwpt in dwpts {
-      let result: Result<()> = (|| {
+      let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
         let next = dwpt.dwpt.lock();
         if next.get_num_docs_in_ram() > 0 {
           let flushing_dwpt = {
@@ -755,9 +786,12 @@ where
           debug_assert!(checked_out.is_some());
         }
         Ok(())
-      })();
+      }));
       dwpt.unlock();
-      result?;
+      match result {
+        Ok(result) => result?,
+        Err(payload) => std::panic::resume_unwind(payload),
+      }
     }
 
     {
@@ -830,7 +864,7 @@ where
       "flushing_writers must be empty"
     );
 
-    let result: Result<_> = {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       if !inner.blocked_flushes.is_empty() {
         debug_assert!(self.assert_blocked_flushes(&inner, &delete_queue));
         self.prune_blocked_queue(&delete_queue, &mut inner);
@@ -840,12 +874,15 @@ where
         );
       }
       Ok(())
-    };
+    }));
 
     inner.full_flush_mark_done = false;
     inner.full_flush = false;
     self.update_stall_state(&mut inner, config)?;
-    result
+    match result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
   pub(crate) fn assert_blocked_flushes(
     &self,
@@ -1035,22 +1072,28 @@ where
   {
     if let Some(largest_non_pending_writer) = self.find_largest_non_pending_writer()? {
       largest_non_pending_writer.lock();
-      let result = {
+      let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let per_thread = largest_non_pending_writer.dwpt.lock();
         if self.per_thread_pool.is_registered(&per_thread.state.id) {
           let mut inner = self.inner.lock();
-          let result = {
+          let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mark_pending = !per_thread.is_flush_pending();
             self.checkout(&mut inner, &per_thread, mark_pending, config)
-          };
+          }));
           self.update_stall_state(&mut inner, config)?;
-          result
+          match result {
+            Ok(result) => result,
+            Err(payload) => std::panic::resume_unwind(payload),
+          }
         } else {
           Ok(None)
         }
-      };
+      }));
       largest_non_pending_writer.unlock();
-      return result;
+      return match result {
+        Ok(result) => result,
+        Err(payload) => std::panic::resume_unwind(payload),
+      };
     }
     Ok(None)
   }

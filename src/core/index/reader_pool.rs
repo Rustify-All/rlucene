@@ -404,21 +404,32 @@ where
   /// Remove all our references to readers, and commits any pending changes.
   pub(crate) fn drop_all(&self, segment_infos: &mut SegmentInfos<D>) -> Result<()> {
     let mut prior_errs = None;
+    let mut prior_panic = None;
 
     let mut inner = self.inner.lock();
     for (info_id, rld) in inner.reader_map.drain() {
-      match rld.drop_readers() {
-        Ok(()) => {
+      match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| rld.drop_readers())) {
+        Ok(Ok(())) => {
           if rld.ref_count() == 0 {
             segment_infos.remove_dropped_segment_commit_info(&info_id);
           }
         },
-        Err(e) => {
-          prior_errs = Some(IOUtils::use_or_suppress(prior_errs, e));
+        Ok(Err(error)) => {
+          if prior_panic.is_none() {
+            prior_errs = Some(IOUtils::use_or_suppress(prior_errs, error));
+          }
+        },
+        Err(payload) => {
+          if prior_errs.is_none() && prior_panic.is_none() {
+            prior_panic = Some(payload);
+          }
         },
       }
     }
     debug_assert!(inner.reader_map.is_empty());
+    if let Some(payload) = prior_panic {
+      std::panic::resume_unwind(payload);
+    }
     prior_errs.map_or(Ok(()), Err)
   }
   /// Commit live docs changes for the  readers for the provided infos.

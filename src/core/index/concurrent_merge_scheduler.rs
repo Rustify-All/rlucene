@@ -1094,21 +1094,24 @@ impl ConcurrentMergeScheduler {
 
       let merge_stat = merge.stat.clone();
 
-      let setup_result = (|| -> Result<()> {
-        let new_merge_thread = self.get_merge_thread(inner, merge_source.clone(), merge)?;
-        let merge_thread_state = new_merge_thread.state.clone();
-        inner.merge_threads.push(merge_thread_state.clone());
-        self.update_io_throttle(inner, &merge_thread_state)?;
-        new_merge_thread.start(self.clone())?;
-        self.update_merge_threads(inner)?;
-        Ok(())
-      })();
+      let setup_result =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+          let new_merge_thread = self.get_merge_thread(inner, merge_source.clone(), merge)?;
+          let merge_thread_state = new_merge_thread.state.clone();
+          inner.merge_threads.push(merge_thread_state.clone());
+          self.update_io_throttle(inner, &merge_thread_state)?;
+          new_merge_thread.start(self.clone())?;
+          self.update_merge_threads(inner)?;
+          Ok(())
+        }));
 
-      if setup_result.is_err() {
+      if !matches!(&setup_result, Ok(Ok(()))) {
         merge_source.on_merge_finished(&merge_stat, None);
       }
-
-      setup_result?;
+      match setup_result {
+        Ok(result) => result?,
+        Err(payload) => std::panic::resume_unwind(payload),
+      }
     }
 
     Ok(())
@@ -1274,26 +1277,20 @@ impl ConcurrentMergeScheduler {
     );
 
     // Let CMS run new merges if necessary:
-    let merge_result =
+    let merge_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
       match self.merge_locked(&mut inner, merge_source, MergeTrigger::MergeFinished) {
         Ok(()) | Err(LuceneError::AlreadyClosed(_)) => Ok(()),
         Err(err) => Err(LuceneError::unchecked_io_error(err.to_string())),
-      };
-    let finish_result = {
-      Self::remove_merge_thread(&mut inner);
-      match self.update_merge_threads(&mut inner) {
-        Ok(()) => {
-          // In case we had stalled indexing, we can now wake up
-          // and possibly unstall:
-          self.changed.notify_all();
-          Ok(())
-        },
-        Err(err) => Err(err),
       }
-    };
-    match finish_result {
-      Err(err) => Err(err),
-      Ok(()) => merge_result,
+    }));
+    Self::remove_merge_thread(&mut inner);
+    self.update_merge_threads(&mut inner)?;
+    // In case we had stalled indexing, we can now wake up
+    // and possibly unstall:
+    self.changed.notify_all();
+    match merge_result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
     }
   }
 }
@@ -1385,7 +1382,7 @@ where
     state.set_owner_to_current_thread();
     let previous =
       CURRENT_MERGE_RATE_LIMITER.with(|slot| slot.borrow_mut().replace(state.rate_limiter.clone()));
-    let merge_result = (|| {
+    let merge_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       if merge_scheduler.verbose() {
         merge_scheduler.message(&format!("merge thread {} start", state.name))?;
       }
@@ -1406,14 +1403,25 @@ where
           ConcurrentMergeScheduler::rate_to_string(state.rate_limiter.get_mb_per_sec()),
         ))?;
       }
+      merge_scheduler.run_on_merge_finished(merge_source)?;
+      if merge_scheduler.verbose() {
+        merge_scheduler.message(&format!("merge thread {} end", state.name))?;
+      }
       Ok(())
-    })();
+    }));
     CURRENT_MERGE_RATE_LIMITER.with(|slot| {
       *slot.borrow_mut() = previous;
     });
 
     let merge_aborted = merge_stat.is_aborted();
 
+    let merge_result = match merge_result {
+      Ok(result) => result,
+      Err(payload) => Err(LuceneError::tragedy_from_panic(
+        "panic in merge thread",
+        payload.as_ref(),
+      )),
+    };
     if let Err(exc) = merge_result {
       let mut inner = merge_scheduler.inner.lock();
       ConcurrentMergeScheduler::remove_merge_thread(&mut inner);
@@ -1429,10 +1437,6 @@ where
         Ok(())
       }
     } else {
-      merge_scheduler.run_on_merge_finished(merge_source)?;
-      if merge_scheduler.verbose() {
-        merge_scheduler.message(&format!("merge thread {} end", state.name))?;
-      }
       Ok(())
     }
   }
