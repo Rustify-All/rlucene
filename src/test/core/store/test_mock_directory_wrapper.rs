@@ -17,7 +17,7 @@
 use crate::core::document::document::Document;
 use crate::core::index::index_reader::Identity;
 use crate::core::store::directory::{
-  Directory, DirectoryEnum2, MockDirWrapper, RawDirEnum, SharedLockFactory,
+  Directory, DirectoryEnum2, DirectoryEnum3, MockDirWrapper, RawDirEnum, SharedLockFactory,
 };
 use crate::core::store::fs_lock_factory;
 use crate::core::store::mmap_directory::MMapDirectory;
@@ -90,6 +90,13 @@ impl BaseDirectoryTestCase for TestMockDirectoryWrapper {
           RawDirEnum::MMap(dir) => {
             dir.set_preload(MMapDirectory::ALL_FILES);
             true
+          },
+          RawDirEnum::FileSwitch(dir) => match dir.get_secondary_dir_mut() {
+            DirectoryEnum3::B(dir) => {
+              dir.set_preload(MMapDirectory::ALL_FILES);
+              true
+            },
+            _ => false,
           },
           _ => false,
         }

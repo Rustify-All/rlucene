@@ -106,6 +106,11 @@ where
     &self.secondary_dir
   }
 
+  #[cfg(test)]
+  pub(crate) fn get_secondary_dir_mut(&mut self) -> &mut S {
+    &mut self.secondary_dir
+  }
+
   fn get_directory(&self, name: &str) -> DirectoryEnum2<&P, &S> {
     let ext = get_extension(name);
     if self.primary_extensions.contains(ext) {
