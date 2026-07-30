@@ -270,8 +270,22 @@ where
     }));
 
     let finally_result: Result<()> = (|| {
-      let close_result = reader.close();
-      let close_result = IOUtils::use_or_suppress_result(close_result, writer.close());
+      let reader_close_result =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| reader.close()));
+      let writer_close_result =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| writer.close()));
+      let close_result = match reader_close_result {
+        Ok(reader_close_result) => match writer_close_result {
+          Ok(writer_close_result) => {
+            IOUtils::use_or_suppress_result(reader_close_result, writer_close_result)
+          },
+          Err(payload) => match reader_close_result {
+            Ok(()) => std::panic::resume_unwind(payload),
+            Err(error) => Err(error),
+          },
+        },
+        Err(payload) => std::panic::resume_unwind(payload),
+      };
       close_result?;
 
       let file_names: Vec<String> = self

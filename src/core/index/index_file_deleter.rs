@@ -319,6 +319,7 @@ where
     // then decref all files that had been referred to by
     // the now-deleted commits:
     let mut first_error = None;
+    let mut first_panic = None;
     for commit in removed {
       if self.info_stream.is_enabled("IFD") {
         self.info_stream.message(
@@ -329,14 +330,26 @@ where
           ),
         )?;
       }
-      match self.dec_ref(commit.files.iter()) {
-        Ok(_) => {},
-        Err(e) => {
-          first_error = Some(IOUtils::use_or_suppress(first_error, e));
+      match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        self.dec_ref(commit.files.iter())
+      })) {
+        Ok(Ok(())) => {},
+        Ok(Err(error)) => {
+          if first_panic.is_none() {
+            first_error = Some(IOUtils::use_or_suppress(first_error, error));
+          }
+        },
+        Err(payload) => {
+          if first_error.is_none() && first_panic.is_none() {
+            first_panic = Some(payload);
+          }
         },
       }
     }
     self.commits_to_delete.store(false, SeqCst);
+    if let Some(payload) = first_panic {
+      std::panic::resume_unwind(payload);
+    }
     match first_error {
       Some(e) => Err(e),
       None => Ok(()),

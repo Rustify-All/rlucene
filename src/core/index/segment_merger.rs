@@ -158,13 +158,24 @@ where
       .doc_values_format()
       .fields_consumer(segment_write_state, self.merge_state.segment_info)?;
 
-    let merge_result = consumer.merge(
-      segment_write_state,
-      self.merge_state.segment_info,
-      &self.merge_state,
-    );
-    let close_result = consumer.close();
-    IOUtils::use_or_suppress_result(merge_result, close_result)
+    let merge_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      consumer.merge(
+        segment_write_state,
+        self.merge_state.segment_info,
+        &self.merge_state,
+      )
+    }));
+    let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| consumer.close()));
+    match merge_result {
+      Ok(merge_result) => match close_result {
+        Ok(close_result) => IOUtils::use_or_suppress_result(merge_result, close_result),
+        Err(payload) => match merge_result {
+          Ok(()) => std::panic::resume_unwind(payload),
+          Err(error) => Err(error),
+        },
+      },
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
   fn merge_points(&self, segment_write_state: &SegmentWriteState<&D2>) -> Result<()> {
     let mut writer = self
@@ -174,9 +185,20 @@ where
       .points_format()
       .fields_writer(segment_write_state, self.merge_state.segment_info)?;
 
-    let merge_result = writer.merge(&self.merge_state, &self.directory);
-    let close_result = writer.close();
-    IOUtils::use_or_suppress_result(merge_result, close_result)
+    let merge_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      writer.merge(&self.merge_state, &self.directory)
+    }));
+    let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| writer.close()));
+    match merge_result {
+      Ok(merge_result) => match close_result {
+        Ok(close_result) => IOUtils::use_or_suppress_result(merge_result, close_result),
+        Err(payload) => match merge_result {
+          Ok(()) => std::panic::resume_unwind(payload),
+          Err(error) => Err(error),
+        },
+      },
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
   fn merge_norms(&self, segment_write_state: &SegmentWriteState<&D2>) -> Result<()> {
     let mut consumer = self
@@ -186,9 +208,20 @@ where
       .norms_format()
       .norms_consumer(segment_write_state, self.merge_state.segment_info)?;
 
-    let merge_result = consumer.merge(&self.merge_state);
-    let close_result = consumer.close();
-    IOUtils::use_or_suppress_result(merge_result, close_result)
+    let merge_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      consumer.merge(&self.merge_state)
+    }));
+    let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| consumer.close()));
+    match merge_result {
+      Ok(merge_result) => match close_result {
+        Ok(close_result) => IOUtils::use_or_suppress_result(merge_result, close_result),
+        Err(payload) => match merge_result {
+          Ok(()) => std::panic::resume_unwind(payload),
+          Err(error) => Err(error),
+        },
+      },
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
   fn merge_terms(
     &self,
@@ -208,7 +241,7 @@ where
       None
     };
 
-    let result = (|| {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       let mut norms_merge_instance = None;
       if let Some(ref mut norms) = norms {
         // Use the merge instance in order to reuse the same IndexInput for all terms
@@ -223,23 +256,47 @@ where
           .postings_format()
           .fields_consumer(segment_write_state, self.merge_state.segment_info)?;
 
-        let merge_result = consumer.merge(
-          segment_write_state,
-          self.merge_state.segment_info,
-          &self.merge_state,
-          norms_merge_instance.as_ref(),
-        );
-        let close_result = consumer.close();
-        IOUtils::use_or_suppress_result(merge_result, close_result)?;
+        let merge_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+          consumer.merge(
+            segment_write_state,
+            self.merge_state.segment_info,
+            &self.merge_state,
+            norms_merge_instance.as_ref(),
+          )
+        }));
+        let close_result =
+          std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| consumer.close()));
+        match merge_result {
+          Ok(merge_result) => match close_result {
+            Ok(close_result) => {
+              IOUtils::use_or_suppress_result(merge_result, close_result)?;
+            },
+            Err(payload) => match merge_result {
+              Ok(()) => std::panic::resume_unwind(payload),
+              Err(error) => return Err(error),
+            },
+          },
+          Err(payload) => std::panic::resume_unwind(payload),
+        }
       }
 
       Ok(())
-    })();
-    let close_result = match norms.as_mut() {
-      Some(norms) => norms.close(),
-      None => Ok(()),
-    };
-    IOUtils::use_or_suppress_result(result, close_result)
+    }));
+    let close_result =
+      std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match norms.as_mut() {
+        Some(norms) => norms.close(),
+        None => Ok(()),
+      }));
+    match result {
+      Ok(result) => match close_result {
+        Ok(close_result) => IOUtils::use_or_suppress_result(result, close_result),
+        Err(payload) => match result {
+          Ok(()) => std::panic::resume_unwind(payload),
+          Err(error) => Err(error),
+        },
+      },
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
   fn merge_field_infos(&mut self) -> Result<()> {
     for reader_field_infos in &self.merge_state.field_infos {
@@ -268,9 +325,24 @@ where
       .stored_fields_format()
       .fields_writer(self.directory, self.merge_state.segment_info, self.context)?;
 
-    let merge_result = fields_writer.merge(&mut self.merge_state, &self.directory);
-    let close_result = fields_writer.close();
-    IOUtils::use_or_suppress_result(merge_result, close_result)
+    let merge_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      fields_writer.merge(&mut self.merge_state, &self.directory)
+    }));
+    let close_result =
+      std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| fields_writer.close()));
+    match merge_result {
+      Ok(merge_result) => match close_result {
+        Ok(close_result) => IOUtils::use_or_suppress_result(merge_result, close_result),
+        Err(payload) => match merge_result {
+          Ok(value) => {
+            let _ = value;
+            std::panic::resume_unwind(payload)
+          },
+          Err(error) => Err(error),
+        },
+      },
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
   /// Merge the term vectors from each of the segments into the new one.
   /// # Errors
@@ -284,9 +356,22 @@ where
       .term_vectors_format()
       .vectors_writer(self.directory, self.merge_state.segment_info, self.context)?;
 
-    let merge_result = term_vectors_writer.merge(&mut self.merge_state, &self.directory);
-    let close_result = term_vectors_writer.close();
-    let num_merged = IOUtils::use_or_suppress_result(merge_result, close_result)?;
+    let merge_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      term_vectors_writer.merge(&mut self.merge_state, &self.directory)
+    }));
+    let close_result =
+      std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| term_vectors_writer.close()));
+    let num_merged = match merge_result {
+      Ok(merge_result) => match close_result {
+        Ok(close_result) => IOUtils::use_or_suppress_result(merge_result, close_result)?,
+        Err(payload) => {
+          let value = merge_result?;
+          let _ = value;
+          std::panic::resume_unwind(payload)
+        },
+      },
+      Err(payload) => std::panic::resume_unwind(payload),
+    };
 
     debug_assert_eq!(num_merged, self.merge_state.segment_info.max_doc()?);
 
@@ -300,11 +385,22 @@ where
       .knn_vectors_format()?
       .fields_writer(segment_write_state, self.merge_state.segment_info)?;
 
-    let merge_result = writer
-      .merge(&self.merge_state, segment_write_state)
-      .map(|_| ());
-    let close_result = writer.close();
-    IOUtils::use_or_suppress_result(merge_result, close_result)
+    let merge_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      writer
+        .merge(&self.merge_state, segment_write_state)
+        .map(|_| ())
+    }));
+    let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| writer.close()));
+    match merge_result {
+      Ok(merge_result) => match close_result {
+        Ok(close_result) => IOUtils::use_or_suppress_result(merge_result, close_result),
+        Err(payload) => match merge_result {
+          Ok(()) => std::panic::resume_unwind(payload),
+          Err(error) => Err(error),
+        },
+      },
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
   fn merge_with_logging<F, I>(merger: F, format_name: &str, info_stream: &I) -> Result<i32>
   where

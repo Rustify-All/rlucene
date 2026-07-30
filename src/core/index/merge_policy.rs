@@ -2297,15 +2297,18 @@ where
     if !self.stat.complete(success) {
       return Err(LuceneError::illegal_state("merge has already finished"));
     }
-    let result = (|| -> Result<()> {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       self.merge_finished(inner, success, segment_dropped)?;
       Ok(())
-    })();
+    }));
     let merge_readers = std::mem::take(&mut self.merge_readers);
     IOUtils::apply_to_all(&merge_readers, |merge_reader| {
       reader_consumer(inner, merge_reader)
     })?;
-    result
+    match result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
 
   #[cfg(test)]
@@ -2466,14 +2469,17 @@ impl OneMergeDefaults {
     debug_assert!(merge_readers.is_empty());
     debug_assert!(!stat.has_finished(), "merge is already done");
     let mut readers = Vec::with_capacity(stat.segments.len());
-    let result: Result<_> = (|| {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       for seg_id in stat.segments.iter() {
         readers.push(reader_factory(seg_id)?);
       }
       Ok(())
-    })();
+    }));
     *merge_readers = readers;
-    result
+    match result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
 }
 

@@ -450,7 +450,7 @@ where
     } else {
       None
     };
-    let result = (|| -> Result<()> {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       let norms_merge_instance = match norms.as_ref() {
         // Use the merge instance in order to reuse the same IndexInput for all terms
         Some(norms) => norms.get_merge_instance()?,
@@ -472,12 +472,22 @@ where
         int_pool,
         byte_pool,
       )
-    })();
-    let close_result = match norms.as_mut() {
-      Some(norms) => norms.close(),
-      None => Ok(()),
-    };
-    IOUtils::use_or_suppress_result(result, close_result)?;
+    }));
+    let close_result =
+      std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match norms.as_mut() {
+        Some(norms) => norms.close(),
+        None => Ok(()),
+      }));
+    match result {
+      Ok(result) => match close_result {
+        Ok(close_result) => IOUtils::use_or_suppress_result(result, close_result)?,
+        Err(payload) => match result {
+          Ok(()) => std::panic::resume_unwind(payload),
+          Err(error) => return Err(error),
+        },
+      },
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
     if self.info_stream.is_enabled("IW") {
       self.info_stream.message(
         "IW",
@@ -523,7 +533,7 @@ where
     let mut points_writer = None;
     debug_assert!(self.field_hash.len() <= i32::MAX as usize);
 
-    let body_result = (|| -> Result<()> {
+    let body_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       for bucket in 0..self.field_hash.len() {
         let mut per_field_index = self.field_hash[bucket];
         while per_field_index >= 0 {
@@ -555,18 +565,24 @@ where
         w.finish()?;
       }
       Ok(())
-    })();
+    }));
     match body_result {
-      Ok(()) => {
+      Ok(Ok(())) => {
         if let Some(mut w) = points_writer {
           w.close()?;
         }
       },
-      Err(err) => {
+      Ok(Err(err)) => {
         if let Some(mut w) = points_writer {
           IOUtils::close_resources_while_handling_error(&mut w)?;
         }
         return Err(err);
+      },
+      Err(payload) => {
+        if let Some(mut w) = points_writer {
+          IOUtils::close_resources_while_handling_error(&mut w)?;
+        }
+        std::panic::resume_unwind(payload)
       },
     }
     Ok(())
@@ -602,7 +618,7 @@ where
   {
     let mut dv_consumer = None;
 
-    let body_result: Result<()> = (|| {
+    let body_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       // iterate hash buckets
       let mut per_field_index;
       debug_assert!(self.field_hash.len() <= i32::MAX as usize);
@@ -640,20 +656,26 @@ where
         }
       }
       Ok(())
-    })();
+    }));
 
     let has_dv_consumer = dv_consumer.is_some();
     match body_result {
-      Ok(()) => {
+      Ok(Ok(())) => {
         if let Some(mut consumer) = dv_consumer {
           consumer.close()?;
         }
       },
-      Err(err) => {
+      Ok(Err(err)) => {
         if let Some(mut consumer) = dv_consumer {
           IOUtils::close_resources_while_handling_error(&mut consumer)?;
         }
         return Err(err);
+      },
+      Err(payload) => {
+        if let Some(mut consumer) = dv_consumer {
+          IOUtils::close_resources_while_handling_error(&mut consumer)?;
+        }
+        std::panic::resume_unwind(payload)
       },
     }
 
@@ -692,7 +714,7 @@ where
       norm_format.norms_consumer(state, segment_info)?
     };
 
-    let body_result = (|| -> Result<()> {
+    let body_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       let max_doc = segment_info.max_doc()?;
       for fi in state.field_infos.iter() {
         let per_field_index = self.get_per_field(&fi.name);
@@ -707,12 +729,16 @@ where
         }
       }
       Ok(())
-    })();
+    }));
     match body_result {
-      Ok(()) => norms_consumer.close()?,
-      Err(err) => {
+      Ok(Ok(())) => norms_consumer.close()?,
+      Ok(Err(err)) => {
         IOUtils::close_resources_while_handling_error(&mut norms_consumer)?;
         return Err(err);
+      },
+      Err(payload) => {
+        IOUtils::close_resources_while_handling_error(&mut norms_consumer)?;
+        std::panic::resume_unwind(payload)
       },
     }
     Ok(())
@@ -835,7 +861,7 @@ where
     // 1st pass over doc fields – verify that doc schema matches the index schema
     // build schema for each unique doc field
 
-    let result = (|| {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       for field in &document {
         let field_type = field.field_type();
         let is_reserved = field.is_reserved();
@@ -905,7 +931,7 @@ where
         doc_field_idx += 1;
       }
       Ok(())
-    })();
+    }));
     if !self.has_hit_aborting_exception {
       // Finish each indexed field name seen in the document:
       for i in 0..indexed_field_count {
@@ -932,7 +958,10 @@ where
         )
       )?;
     }
-    result
+    match result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
   fn oversize_doc_fields(&mut self) -> Result<()> {
     let required = self.doc_fields.len() + 1;
@@ -1679,7 +1708,7 @@ impl PerField {
       let mut stream = field
         .token_stream(analyzer, &mut self.token_stream)?
         .ok_or_else(|| LuceneError::illegal_state("Analyzer token_stream is not initialized"))?;
-      let result = (|| {
+      let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
         stream.reset()?;
         while stream.increment_token()? {
           // If we hit an error in stream.next below
@@ -1800,17 +1829,28 @@ impl PerField {
         invert_state.position += stream.get_attribute_source().get_position_increment()?;
         invert_state.offset += stream.get_attribute_source().end_offset()?;
         Ok(())
-      })();
-      let result = IOUtils::use_or_suppress_result(result, stream.close());
+      }));
+      let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| stream.close()));
 
-      if result.is_err() && info_stream.is_enabled("DW") {
+      if (!matches!(&result, Ok(Ok(()))) || !matches!(&close_result, Ok(Ok(()))))
+        && info_stream.is_enabled("DW")
+      {
         info_stream.message(
           "DW",
           &format!("exception in invert_token_stream for {}", field_name),
         )?;
       }
 
-      result?;
+      match result {
+        Ok(result) => match close_result {
+          Ok(close_result) => IOUtils::use_or_suppress_result(result, close_result)?,
+          Err(payload) => match result {
+            Ok(()) => std::panic::resume_unwind(payload),
+            Err(error) => return Err(error),
+          },
+        },
+        Err(payload) => std::panic::resume_unwind(payload),
+      }
     }
 
     if analyzed {

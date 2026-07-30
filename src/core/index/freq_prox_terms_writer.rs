@@ -168,7 +168,7 @@ where
     self.apply_deletes(state, &fields, info, seg_updates)?;
 
     let mut consumer = codec.postings_format().fields_consumer(state, info)?;
-    let write_result = (|| {
+    let write_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       if let Some(doc_map) = sort_map {
         let mut filter_fields =
           FilterFieldsImpl::new(fields, state.field_infos.clone(), doc_map.clone());
@@ -177,9 +177,18 @@ where
         consumer.write(state, info, &mut fields, norms)?;
       }
       Ok(())
-    })();
-    let close_result = consumer.close();
-    IOUtils::use_or_suppress_result(write_result, close_result)
+    }));
+    let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| consumer.close()));
+    match write_result {
+      Ok(write_result) => match close_result {
+        Ok(close_result) => IOUtils::use_or_suppress_result(write_result, close_result),
+        Err(payload) => match write_result {
+          Ok(()) => std::panic::resume_unwind(payload),
+          Err(error) => Err(error),
+        },
+      },
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
   pub(crate) fn finish_document<D1>(
     &mut self,
