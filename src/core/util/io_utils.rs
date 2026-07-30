@@ -206,9 +206,9 @@ impl IOUtils {
     P: AsRef<Path>,
   {
     for file in files {
-      if fs::remove_file(file.as_ref()).is_err() {
-        // Ignore the error and continue with the next file.
-      }
+      let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        fs::remove_file(file.as_ref())
+      }));
     }
   }
 
@@ -243,9 +243,7 @@ impl IOUtils {
     D: Directory + ?Sized,
   {
     for name in files {
-      if dir.delete_file(name).is_err() {
-        // Ignore the error and continue with the next file.
-      }
+      let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| dir.delete_file(name)));
     }
   }
   pub fn delete_files<'a, T, D>(dir: &D, names: T) -> Result<()>

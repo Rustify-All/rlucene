@@ -29,6 +29,7 @@ use crate::core::search::field_exists_query::get_doc_values_doc_id_set_iterator;
 use crate::core::store::IOContext;
 use crate::core::store::directory::Directory;
 use crate::core::util::bit_set::BitSet;
+use crate::core::util::close::CloseableRef;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::fixed_bit_set::FixedBitSet;
 use num_bigint::BigInt;
@@ -334,9 +335,16 @@ where
       let cfs = codec
         .compound_format()
         .get_compound_reader(seg_info.dir.as_ref(), seg_info)?;
-      codec
-        .field_infos_format()
-        .read(&cfs, seg_info, "", &IOContext::read_once_io_context()?)
+      let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        codec
+          .field_infos_format()
+          .read(&cfs, seg_info, "", &IOContext::read_once_io_context()?)
+      }));
+      cfs.close()?;
+      match result {
+        Ok(result) => result,
+        Err(payload) => std::panic::resume_unwind(payload),
+      }
     } else {
       codec.field_infos_format().read(
         seg_info.dir.as_ref(),

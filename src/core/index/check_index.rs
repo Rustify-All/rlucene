@@ -4852,9 +4852,23 @@ impl CheckIndex<DirectoryEnum, LockEnum, Sink> {
       },
     };
 
-    let mut checker: CheckIndex<_, _, Stdout> = match CheckIndex::new(Arc::clone(&directory)) {
-      Ok(checker) => checker,
-      Err(error) => return IOUtils::use_or_suppress_result(Err(error), directory.close()),
+    let checker_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      CheckIndex::new(Arc::clone(&directory))
+    }));
+    let mut checker: CheckIndex<_, _, Stdout> = match checker_result {
+      Ok(Ok(checker)) => checker,
+      Ok(Err(error)) => {
+        let close_result =
+          std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| directory.close()));
+        return match close_result {
+          Ok(close_result) => IOUtils::use_or_suppress_result(Err(error), close_result),
+          Err(_) => Err(error),
+        };
+      },
+      Err(payload) => {
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| directory.close()));
+        std::panic::resume_unwind(payload)
+      },
     };
     let mut options = Options {
       do_exorcise,
@@ -4866,9 +4880,34 @@ impl CheckIndex<DirectoryEnum, LockEnum, Sink> {
       dir_impl,
       out: Some(std::io::stdout()),
     };
-    let result = checker.do_check(&mut options);
-    let result = IOUtils::use_or_suppress_result(result, checker.close());
-    IOUtils::use_or_suppress_result(result, directory.close())
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      checker.do_check(&mut options)
+    }));
+    let checker_close_result =
+      std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| checker.close()));
+    let directory_close_result =
+      std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| directory.close()));
+    match result {
+      Ok(result) => {
+        let result = match checker_close_result {
+          Ok(checker_close_result) => IOUtils::use_or_suppress_result(result, checker_close_result),
+          Err(payload) => match result {
+            Ok(_) => std::panic::resume_unwind(payload),
+            Err(error) => Err(error),
+          },
+        };
+        match directory_close_result {
+          Ok(directory_close_result) => {
+            IOUtils::use_or_suppress_result(result, directory_close_result)
+          },
+          Err(payload) => match result {
+            Ok(_) => std::panic::resume_unwind(payload),
+            Err(error) => Err(error),
+          },
+        }
+      },
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
 }
 

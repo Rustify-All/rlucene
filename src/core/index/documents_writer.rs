@@ -511,30 +511,34 @@ where
     let mut flushing_dwpt_opt = None;
     let mut seq_no = 0;
     let config = &writer.config;
-    let result = (|| {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       // This must happen after we've pulled the DWPT because IW.close
       // waits for all DWPT to be released:
       self.ensure_open()?;
-      let res = dwpt_wrapper.dwpt.lock().update_documents(
-        docs,
-        del_node,
-        &self.flush_notifications,
-        &self.num_docs_in_ram,
-        writer,
-      );
+      let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        dwpt_wrapper.dwpt.lock().update_documents(
+          docs,
+          del_node,
+          &self.flush_notifications,
+          &self.num_docs_in_ram,
+          writer,
+        )
+      }));
       if dwpt_wrapper.state.is_aborted() {
         self.flush_control.do_on_abort(&dwpt_wrapper, config)?;
       }
-      if let Ok(sno) = &res {
-        seq_no = *sno;
-        flushing_dwpt_opt = {
-          let dw = &dwpt_wrapper.dwpt.lock();
-          self.flush_control.do_after_document(dw, config)?
-        };
+      match res {
+        Ok(result) => {
+          seq_no = result?;
+          flushing_dwpt_opt = {
+            let dw = &dwpt_wrapper.dwpt.lock();
+            self.flush_control.do_after_document(dw, config)?
+          };
+        },
+        Err(payload) => std::panic::resume_unwind(payload),
       }
-
-      res
-    })();
+      Ok(())
+    }));
 
     let release_result = {
       let inner = self.flush_control.inner.lock();
@@ -555,7 +559,10 @@ where
     };
 
     release_result?;
-    result?;
+    match result {
+      Ok(result) => result?,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
     if self.post_update(flushing_dwpt_opt, has_events, writer)? {
       seq_no = -seq_no;
     }
@@ -818,7 +825,7 @@ where
     });
 
     let mut anything_flushed = false;
-    let result: Result<()> = (|| {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       anything_flushed |= self.maybe_flush(writer)?;
       // If a concurrent flush is still in flight wait for it
       self.flush_control.wait_for_flush();
@@ -842,7 +849,7 @@ where
       // concurrently if we have very small ram buffers this happens quite frequently
       debug_assert!(!flushing_delete_queue.any_changes(None));
       Ok(())
-    })();
+    }));
     debug_assert!({
       let inner = self.inner.lock();
       Arc::ptr_eq(
@@ -853,28 +860,32 @@ where
     // all DWPT have been processed and this queue has been fully flushed to the
     // ticket-queue
     flushing_delete_queue.close()?;
-    result?;
+    match result {
+      Ok(result) => result?,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
     Ok(if anything_flushed { -seq_no } else { seq_no })
   }
   pub(crate) fn finish_full_flush<L>(&self, success: bool, config: &L) -> Result<()>
   where
     L: LiveIndexWriterConfig,
   {
-    if self.info_stream.is_enabled("DW") {
-      let thread_name = thread::current().name().unwrap_or("<unnamed>").to_string();
-      self.info_stream.message(
-        "DW",
-        &format!("{thread_name} finishFullFlush success={success}"),
-      )?;
-    }
-    let result = {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+      if self.info_stream.is_enabled("DW") {
+        let thread_name = thread::current().name().unwrap_or("<unnamed>").to_string();
+        self.info_stream.message(
+          "DW",
+          &format!("{thread_name} finishFullFlush success={success}"),
+        )?;
+      }
       debug_assert!(self.set_flushing_delete_queue(None, None));
       if success {
-        self.flush_control.finish_full_flush(config)
+        self.flush_control.finish_full_flush(config)?;
       } else {
-        self.flush_control.abort_full_flushes(self, config)
+        self.flush_control.abort_full_flushes(self, config)?;
       }
-    };
+      Ok(())
+    }));
     self
       .pending_changes_in_current_full_flush
       .store(false, Ordering::SeqCst);
@@ -882,7 +893,10 @@ where
     // flush
     self.apply_all_deletes()?;
 
-    result
+    match result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
 
   /// Returns the number of bytes currently being flushed
