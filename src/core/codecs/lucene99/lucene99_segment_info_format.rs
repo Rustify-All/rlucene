@@ -264,26 +264,44 @@ impl SegmentInfoFormat for Lucene99SegmentInfoFormat {
     let file_name = IndexFileNames::segment_file_name(segment, "", SI_EXTENSION);
     let mut input = dir.open_checksum_input(&file_name)?;
 
-    let result = (|| -> Result<SegmentInfo<D>> {
-      CodecUtil::check_index_header(
-        &mut input,
-        Lucene99SegmentInfoFormat::CODEC_NAME,
-        Lucene99SegmentInfoFormat::VERSION_START,
-        Lucene99SegmentInfoFormat::VERSION_CURRENT,
-        segment_id,
-        "",
-      )?;
-      Self::parse_segment_info(dir.clone(), &mut input, segment, segment_id)
-    })();
-
-    let result = match result {
-      Ok(si) => {
-        CodecUtil::check_footer(&mut input)?;
-        Ok(si)
+    let mut footer_attempted = false;
+    let mut result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+      || -> Result<SegmentInfo<D>> {
+        let result = (|| -> Result<SegmentInfo<D>> {
+          CodecUtil::check_index_header(
+            &mut input,
+            Lucene99SegmentInfoFormat::CODEC_NAME,
+            Lucene99SegmentInfoFormat::VERSION_START,
+            Lucene99SegmentInfoFormat::VERSION_CURRENT,
+            segment_id,
+            "",
+          )?;
+          Self::parse_segment_info(dir.clone(), &mut input, segment, segment_id)
+        })();
+        footer_attempted = true;
+        match result {
+          Ok(segment_info) => {
+            CodecUtil::check_footer(&mut input)?;
+            Ok(segment_info)
+          },
+          Err(error) => Err(CodecUtil::check_footer_with_error(&mut input, error)),
+        }
       },
-      Err(e) => Err(CodecUtil::check_footer_with_error(&mut input, e)),
+    ));
+    let footer_error = if let Err(payload) = &result
+      && !footer_attempted
+    {
+      let error =
+        LuceneError::tragedy_from_panic("panic while reading segment info", payload.as_ref());
+      Some(CodecUtil::check_footer_with_error(&mut input, error))
+    } else {
+      None
     };
-    IOUtils::use_or_suppress_result(result, input.close())
+    if let Some(error @ LuceneError::CorruptIndex(_)) = footer_error {
+      result = Ok(Err(error));
+    }
+    let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| input.close()));
+    IOUtils::use_or_suppress_caught_result(result, close_result)
   }
 
   fn write<D>(
@@ -297,7 +315,7 @@ impl SegmentInfoFormat for Lucene99SegmentInfoFormat {
   {
     let file_name = IndexFileNames::segment_file_name(&si.name, "", SI_EXTENSION);
     let mut output = dir.create_output(&file_name, io_context)?;
-    let result = (|| -> Result<()> {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       si.add_file(file_name)?;
       CodecUtil::write_index_header(
         &mut output,
@@ -308,8 +326,8 @@ impl SegmentInfoFormat for Lucene99SegmentInfoFormat {
       )?;
       Self::write_segment_info(&mut output, si)?;
       CodecUtil::write_footer(&mut output)
-    })();
-    let close_result = output.close();
-    IOUtils::use_or_suppress_result(result, close_result)
+    }));
+    let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| output.close()));
+    IOUtils::use_or_suppress_caught_result(result, close_result)
   }
 }

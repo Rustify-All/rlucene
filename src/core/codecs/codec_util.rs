@@ -528,7 +528,7 @@ impl CodecUtil {
     checksum_in: &mut impl ChecksumIndexInput,
     mut prior_error: LuceneError,
   ) -> LuceneError {
-    let result = (|prior_error: &mut LuceneError| -> Result<()> {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       // If we have evidence of corruption, then we return the corruption as
       // the main error and the prior error gets suppressed.
       // Otherwise, we return the prior error with a suppressed
@@ -556,10 +556,10 @@ impl CodecUtil {
         }
       }
       Ok(())
-    })(&mut prior_error);
+    }));
     match result {
-      Ok(_) => prior_error,
-      Err(mut t) => {
+      Ok(Ok(())) => prior_error,
+      Ok(Err(mut t)) => {
         if matches!(t, LuceneError::CorruptIndex(_)) {
           t.add_suppressed(prior_error);
           t
@@ -571,6 +571,17 @@ impl CodecUtil {
           prior_error.add_suppressed(suppressed);
           prior_error
         }
+      },
+      Err(payload) => {
+        let mut suppressed = LuceneError::corrupt_index(format!(
+          "checksum status indeterminate: unexpected exception: {checksum_in}"
+        ));
+        suppressed.add_suppressed(LuceneError::tragedy_from_panic(
+          "panic while checking footer",
+          payload.as_ref(),
+        ));
+        prior_error.add_suppressed(suppressed);
+        prior_error
       },
     }
   }

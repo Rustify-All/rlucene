@@ -520,21 +520,12 @@ where
   F: FlatVectorsScorer,
 {
   fn close(&mut self) -> Result<()> {
-    let output_close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-      IOUtils::close(
-        [&mut self.meta, &mut self.quantized_vector_data],
-        Closeable::close,
-      )
-    }));
-    let delegate_close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-      self.raw_vector_delegate.close()
-    }));
-    match (output_close_result, delegate_close_result) {
-      (Ok(output_close_result), Ok(delegate_close_result)) => {
-        IOUtils::use_or_suppress_result(output_close_result, delegate_close_result)
-      },
-      (Err(payload), _) | (_, Err(payload)) => std::panic::resume_unwind(payload),
-    }
+    IOUtils::close(0..3, |operation| match operation {
+      0 => self.meta.close(),
+      1 => self.quantized_vector_data.close(),
+      2 => self.raw_vector_delegate.close(),
+      _ => unreachable!(),
+    })
   }
 }
 

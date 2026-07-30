@@ -151,7 +151,7 @@ impl CloseableRef for SimpleFSLock {
       return Ok(());
     }
 
-    let result = (|| -> Result<()> {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       self.ensure_valid().map_err(|e| {
         let mut error = LuceneError::lock_release_failed(
           "Lock file cannot be safely removed. Manual intervention is recommended.",
@@ -168,10 +168,13 @@ impl CloseableRef for SimpleFSLock {
         error
       })?;
       Ok(())
-    })();
+    }));
 
     self.closed.store(true, Ordering::SeqCst);
-    result
+    match result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
 }
 

@@ -121,52 +121,115 @@ where
 
     let segment = si.name.clone();
     let compressor = compression_mode.new_compressor();
+    let term_suffixes = ByteBuffersDataOutput::new_resettable_instance();
+    let payload_bytes = ByteBuffersDataOutput::new_resettable_instance();
+    let scratch_buffer = ByteBuffersDataOutput::new_resettable_instance();
+    let last_term = BytesRef::with_capacity(ArrayUtil::oversize(30, 1)?)?;
 
-    let mut meta_stream = directory.create_output(
-      &IndexFileNames::segment_file_name(&segment, segment_suffix, VECTORS_META_EXTENSION),
-      context,
-    )?;
-    CodecUtil::write_index_header(
-      &mut meta_stream,
-      &format!("{}Meta", VECTORS_INDEX_CODEC_NAME),
-      VERSION_CURRENT,
-      si.get_id(),
-      segment_suffix,
-    )?;
-    debug_assert_eq!(
-      CodecUtil::index_header_length(&format!("{}Meta", VECTORS_INDEX_CODEC_NAME), segment_suffix),
-      meta_stream.get_file_pointer()?
-    );
+    let mut directory = Some(directory);
+    let mut meta_stream = None;
+    let mut vectors_stream = None;
+    let mut index_writer = None;
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<_> {
+      let dir = directory
+        .as_ref()
+        .ok_or_else(|| LuceneError::illegal_state("directory is missing"))?;
+      meta_stream = Some(dir.create_output(
+        &IndexFileNames::segment_file_name(&segment, segment_suffix, VECTORS_META_EXTENSION),
+        context,
+      )?);
+      let meta = meta_stream
+        .as_mut()
+        .ok_or_else(|| LuceneError::illegal_state("metadata output is missing"))?;
+      CodecUtil::write_index_header(
+        meta,
+        &format!("{}Meta", VECTORS_INDEX_CODEC_NAME),
+        VERSION_CURRENT,
+        si.get_id(),
+        segment_suffix,
+      )?;
+      debug_assert_eq!(
+        CodecUtil::index_header_length(
+          &format!("{}Meta", VECTORS_INDEX_CODEC_NAME),
+          segment_suffix
+        ),
+        meta.get_file_pointer()?
+      );
 
-    let mut vectors_stream = directory.create_output(
-      &IndexFileNames::segment_file_name(&segment, segment_suffix, VECTORS_EXTENSION),
-      context,
-    )?;
-    CodecUtil::write_index_header(
-      &mut vectors_stream,
-      format_name,
-      VERSION_CURRENT,
-      si.get_id(),
-      segment_suffix,
-    )?;
-    debug_assert_eq!(
-      CodecUtil::index_header_length(format_name, segment_suffix),
-      vectors_stream.get_file_pointer()?
-    );
+      vectors_stream = Some(dir.create_output(
+        &IndexFileNames::segment_file_name(&segment, segment_suffix, VECTORS_EXTENSION),
+        context,
+      )?);
+      let vectors = vectors_stream
+        .as_mut()
+        .ok_or_else(|| LuceneError::illegal_state("term vectors output is missing"))?;
+      CodecUtil::write_index_header(
+        vectors,
+        format_name,
+        VERSION_CURRENT,
+        si.get_id(),
+        segment_suffix,
+      )?;
+      debug_assert_eq!(
+        CodecUtil::index_header_length(format_name, segment_suffix),
+        vectors.get_file_pointer()?
+      );
 
-    let index_writer = FieldsIndexWriter::new(
-      directory,
-      &segment,
-      segment_suffix,
-      VECTORS_INDEX_EXTENSION,
-      VECTORS_INDEX_CODEC_NAME,
-      *si.get_id(),
-      block_shift,
-      context.clone(),
-    )?;
+      index_writer = Some(FieldsIndexWriter::new(
+        directory
+          .take()
+          .ok_or_else(|| LuceneError::illegal_state("directory is missing"))?,
+        &segment,
+        segment_suffix,
+        VECTORS_INDEX_EXTENSION,
+        VECTORS_INDEX_CODEC_NAME,
+        *si.get_id(),
+        block_shift,
+        context.clone(),
+      )?);
 
-    meta_stream.write_vint(PackedInts::VERSION_CURRENT)?;
-    meta_stream.write_vint(chunk_size)?;
+      meta_stream
+        .as_mut()
+        .ok_or_else(|| LuceneError::illegal_state("metadata output is missing"))?
+        .write_vint(PackedInts::VERSION_CURRENT)?;
+      meta_stream
+        .as_mut()
+        .ok_or_else(|| LuceneError::illegal_state("metadata output is missing"))?
+        .write_vint(chunk_size)?;
+
+      Ok((
+        AbstractBlockPackedWriter::new(PACKED_BLOCK_SIZE, BlockPackedWriter)?,
+        vec![0; 1024],
+        vec![0; 1024],
+        vec![0; 1024],
+        vec![0; 1024],
+      ))
+    }));
+    let (writer, positions_buf, start_offsets_buf, lengths_buf, payload_lengths_buf) = match result
+    {
+      Ok(Ok(values)) => values,
+      result => {
+        IOUtils::close_while_handling_error(0..4, |operation| match operation {
+          0 => meta_stream.as_mut().map_or(Ok(()), Closeable::close),
+          1 => vectors_stream.as_mut().map_or(Ok(()), Closeable::close),
+          2 | 3 => index_writer.as_mut().map_or(Ok(()), Closeable::close),
+          _ => unreachable!(),
+        })?;
+        return match result {
+          Ok(Err(error)) => Err(error),
+          Err(payload) => std::panic::resume_unwind(payload),
+          Ok(Ok(_)) => Err(LuceneError::illegal_state(
+            "term vectors writer initialization entered failure handling after success",
+          )),
+        };
+      },
+    };
+    let meta_stream =
+      meta_stream.ok_or_else(|| LuceneError::illegal_state("metadata output is missing"))?;
+    let vectors_stream =
+      vectors_stream.ok_or_else(|| LuceneError::illegal_state("term vectors output is missing"))?;
+    let index_writer =
+      index_writer.ok_or_else(|| LuceneError::illegal_state("fields index writer is missing"))?;
 
     Ok(Self {
       segment,
@@ -184,16 +247,16 @@ where
       pending_docs: VecDeque::new(),
       cur_doc: 0,
       cur_field: 0,
-      last_term: BytesRef::with_capacity(ArrayUtil::oversize(30, 1)?)?,
-      positions_buf: vec![0; 1024],
-      start_offsets_buf: vec![0; 1024],
-      lengths_buf: vec![0; 1024],
-      payload_lengths_buf: vec![0; 1024],
-      term_suffixes: ByteBuffersDataOutput::new_resettable_instance(),
-      payload_bytes: ByteBuffersDataOutput::new_resettable_instance(),
-      writer: AbstractBlockPackedWriter::new(PACKED_BLOCK_SIZE, BlockPackedWriter)?,
+      last_term,
+      positions_buf,
+      start_offsets_buf,
+      lengths_buf,
+      payload_lengths_buf,
+      term_suffixes,
+      payload_bytes,
+      writer,
       max_docs_per_chunk,
-      scratch_buffer: ByteBuffersDataOutput::new_resettable_instance(),
+      scratch_buffer,
     })
   }
   fn add_doc_data(&mut self, num_vector_fields: i32) -> usize {
@@ -895,13 +958,19 @@ where
       return Ok(());
     }
 
-    let close_result = IOUtils::close(
-      [&mut self.meta_stream, &mut self.vectors_stream],
-      Closeable::close,
-    );
-    let close_result = IOUtils::use_or_suppress_result(close_result, self.index_writer.close());
+    let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      IOUtils::close(0..3, |operation| match operation {
+        0 => self.meta_stream.close(),
+        1 => self.vectors_stream.close(),
+        2 => self.index_writer.close(),
+        _ => unreachable!(),
+      })
+    }));
     self.closed = true;
-    close_result
+    match close_result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
 }
 

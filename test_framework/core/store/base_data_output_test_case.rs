@@ -45,7 +45,10 @@ pub trait BaseDataOutputTestCase {
 
     add_random_data(&mut instance, &mut random1, max);
     add_random_data(&mut os, &mut random2, max);
-    assert_eq!(&self.get_bytes(instance), os.os.into_inner().unwrap());
+    assert_eq!(
+      &self.get_bytes(instance),
+      os.os.unwrap().into_inner().unwrap()
+    );
     Ok(())
   }
 }

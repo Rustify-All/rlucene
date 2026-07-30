@@ -93,9 +93,8 @@ where
     let mut expected_pos_file_length = 0;
     let mut expected_pay_file_length = 0;
     let mut meta_in_opt = None;
-    let result = (|| {
-      let meta_in = state.directory.open_checksum_input(&meta_name)?;
-      meta_in_opt = Some(meta_in);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+      meta_in_opt = Some(state.directory.open_checksum_input(&meta_name)?);
       if let Some(ref mut meta_in) = meta_in_opt {
         version = CodecUtil::check_index_header(
           meta_in,
@@ -124,18 +123,44 @@ where
         CodecUtil::check_footer(meta_in)?;
       }
       Ok(())
-    })();
-    let result = match result {
-      Ok(()) => Ok(()),
-      Err(e) => match meta_in_opt.as_mut() {
-        Some(meta_in) => Err(CodecUtil::check_footer_with_error(meta_in, e)),
-        None => Err(e),
+    }));
+    match result {
+      Ok(Ok(())) => {
+        meta_in_opt
+          .as_mut()
+          .ok_or_else(|| LuceneError::illegal_state("postings metadata input is missing"))?
+          .close()?;
       },
-    };
-    if let Some(meta_in) = meta_in_opt {
-      IOUtils::use_or_suppress_result(result, meta_in.close())?;
-    } else {
-      result?;
+      result => {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+          match result {
+            Ok(Err(error)) => match meta_in_opt.as_mut() {
+              Some(meta_in) => Err(CodecUtil::check_footer_with_error(meta_in, error)),
+              None => Err(error),
+            },
+            Err(payload) => {
+              if let Some(meta_in) = meta_in_opt.as_mut() {
+                let error = LuceneError::tragedy_from_panic(
+                  "panic while reading postings metadata",
+                  payload.as_ref(),
+                );
+                if let error @ LuceneError::CorruptIndex(_) =
+                  CodecUtil::check_footer_with_error(meta_in, error)
+                {
+                  return Err(error);
+                }
+              }
+              std::panic::resume_unwind(payload)
+            },
+            Ok(Ok(())) => unreachable!(),
+          }
+        }));
+        IOUtils::close_resources_while_handling_error(meta_in_opt.as_ref())?;
+        match result {
+          Ok(result) => result?,
+          Err(payload) => std::panic::resume_unwind(payload),
+        }
+      },
     }
     // NOTE: these data files are too costly to verify checksum against all
     // the bytes on open, but for now we at least verify proper
@@ -149,70 +174,96 @@ where
     );
     // Postings have a forward-only access pattern, so pass
     // ReadAdvice.NORMAL to perform readahead.
-    let mut doc_in = state.directory.open_input(
-      &doc_name,
-      &state.context.with_read_advice_self(ReadAdvice::Normal)?,
-    )?;
-    CodecUtil::check_index_header(
-      &mut doc_in,
-      Lucene101PostingsFormat::DOC_CODEC,
-      version,
-      version,
-      segment_info.get_id(),
-      &state.segment_suffix,
-    )?;
-    CodecUtil::retrieve_checksum_with_expected(&mut doc_in, expected_doc_file_length)?;
-
+    let mut doc_in_opt = None;
     let mut pos_in_opt: Option<I> = None;
     let mut pay_in_opt: Option<I> = None;
-    if state.field_infos.has_prox() {
-      let pos_name = IndexFileNames::segment_file_name(
-        &segment_info.name,
-        &state.segment_suffix,
-        Lucene101PostingsFormat::POS_EXTENSION,
-      );
-      let mut pos_in = state.directory.open_input(&pos_name, state.context)?;
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<Self> {
+      doc_in_opt = Some(state.directory.open_input(
+        &doc_name,
+        &state.context.with_read_advice_self(ReadAdvice::Normal)?,
+      )?);
+      let doc_in = doc_in_opt
+        .as_mut()
+        .ok_or_else(|| LuceneError::illegal_state("postings docs input is missing"))?;
       CodecUtil::check_index_header(
-        &mut pos_in,
-        Lucene101PostingsFormat::POS_CODEC,
+        doc_in,
+        Lucene101PostingsFormat::DOC_CODEC,
         version,
         version,
         segment_info.get_id(),
         &state.segment_suffix,
       )?;
-      CodecUtil::retrieve_checksum_with_expected(&mut pos_in, expected_pos_file_length as usize)?;
-      pos_in_opt = Some(pos_in);
+      CodecUtil::retrieve_checksum_with_expected(doc_in, expected_doc_file_length)?;
 
-      if state.field_infos.has_payloads() || state.field_infos.has_offsets() {
-        let pay_name = IndexFileNames::segment_file_name(
+      if state.field_infos.has_prox() {
+        let pos_name = IndexFileNames::segment_file_name(
           &segment_info.name,
           &state.segment_suffix,
-          Lucene101PostingsFormat::PAY_EXTENSION,
+          Lucene101PostingsFormat::POS_EXTENSION,
         );
-        let mut pay = state.directory.open_input(&pay_name, state.context)?;
+        pos_in_opt = Some(state.directory.open_input(&pos_name, state.context)?);
+        let pos_in = pos_in_opt
+          .as_mut()
+          .ok_or_else(|| LuceneError::illegal_state("postings positions input is missing"))?;
         CodecUtil::check_index_header(
-          &mut pay,
-          Lucene101PostingsFormat::PAY_CODEC,
+          pos_in,
+          Lucene101PostingsFormat::POS_CODEC,
           version,
           version,
           segment_info.get_id(),
           &state.segment_suffix,
         )?;
-        CodecUtil::retrieve_checksum_with_expected(&mut pay, expected_pay_file_length as usize)?;
-        pay_in_opt = Some(pay);
-      }
-    }
+        CodecUtil::retrieve_checksum_with_expected(pos_in, expected_pos_file_length as usize)?;
 
-    Ok(Self {
-      doc_in,
-      pos_in: pos_in_opt,
-      pay_in: pay_in_opt,
-      max_num_impacts_at_level0,
-      max_impact_num_bytes_at_level0,
-      max_num_impacts_at_level1,
-      max_impact_num_bytes_at_level1,
-      vectorization_provider: DefaultVectorizationProvider,
-    })
+        if state.field_infos.has_payloads() || state.field_infos.has_offsets() {
+          let pay_name = IndexFileNames::segment_file_name(
+            &segment_info.name,
+            &state.segment_suffix,
+            Lucene101PostingsFormat::PAY_EXTENSION,
+          );
+          pay_in_opt = Some(state.directory.open_input(&pay_name, state.context)?);
+          let pay_in = pay_in_opt
+            .as_mut()
+            .ok_or_else(|| LuceneError::illegal_state("postings payloads input is missing"))?;
+          CodecUtil::check_index_header(
+            pay_in,
+            Lucene101PostingsFormat::PAY_CODEC,
+            version,
+            version,
+            segment_info.get_id(),
+            &state.segment_suffix,
+          )?;
+          CodecUtil::retrieve_checksum_with_expected(pay_in, expected_pay_file_length as usize)?;
+        }
+      }
+
+      Ok(Self {
+        doc_in: doc_in_opt
+          .take()
+          .ok_or_else(|| LuceneError::illegal_state("postings docs input is missing"))?,
+        pos_in: pos_in_opt.take(),
+        pay_in: pay_in_opt.take(),
+        max_num_impacts_at_level0,
+        max_impact_num_bytes_at_level0,
+        max_num_impacts_at_level1,
+        max_impact_num_bytes_at_level1,
+        vectorization_provider: DefaultVectorizationProvider,
+      })
+    }));
+    match result {
+      Ok(result @ Ok(_)) => result,
+      result => {
+        IOUtils::close_resources_while_handling_error((
+          doc_in_opt.as_ref(),
+          pos_in_opt.as_ref(),
+          pay_in_opt.as_ref(),
+        ))?;
+        match result {
+          Ok(result) => result,
+          Err(payload) => std::panic::resume_unwind(payload),
+        }
+      },
+    }
   }
 }
 

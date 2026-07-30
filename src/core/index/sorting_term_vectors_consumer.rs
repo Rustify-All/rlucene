@@ -270,9 +270,11 @@ where
     }));
 
     let finally_result: Result<()> = (|| {
-      let close_result = reader.close();
-      let close_result = IOUtils::use_or_suppress_result(close_result, writer.close());
-      close_result?;
+      IOUtils::close(0..2, |operation| match operation {
+        0 => reader.close(),
+        1 => writer.close(),
+        _ => unreachable!(),
+      })?;
 
       let file_names: Vec<String> = self
         .tmp_directory

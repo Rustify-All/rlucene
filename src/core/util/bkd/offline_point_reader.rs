@@ -122,7 +122,7 @@ where
       return Ok(());
     }
 
-    let result = (|| -> Result<()> {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       if self.count_left == 0
         && let Some(check_sum_input) = self.check_sum_input.as_mut()
         && !self.checked
@@ -131,16 +131,24 @@ where
         CodecUtil::check_footer(check_sum_input)?;
       }
       Ok(())
-    })();
+    }));
 
-    if let Some(input) = self.input.take() {
-      input.close()?;
+    let close_result = if let Some(input) = self.input.take() {
+      std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| input.close()))
     } else if let Some(check_sum_input) = self.check_sum_input.take() {
-      check_sum_input.close()?;
-    }
-
+      std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| check_sum_input.close()))
+    } else {
+      Ok(Ok(()))
+    };
     self.closed = true;
-    result
+    match close_result {
+      Ok(Ok(())) => match result {
+        Ok(result) => result,
+        Err(payload) => std::panic::resume_unwind(payload),
+      },
+      Ok(Err(error)) => Err(error),
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
 }
 impl<I> PointReader for OfflinePointReader<I>

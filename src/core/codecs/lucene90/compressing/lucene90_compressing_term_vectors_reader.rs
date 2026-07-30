@@ -122,17 +122,22 @@ where
     let segment = &si.name;
     let num_docs = si.max_doc()?;
     let mut meta_in = None;
-
-    let result: Result<Self> = (|| {
+    let mut vectors_stream = None;
+    let mut fields_index_reader = None;
+    let mut reader = None;
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       let vectors_stream_fn =
         IndexFileNames::segment_file_name(segment, segment_suffix, VECTORS_EXTENSION);
-      let mut vectors_stream = dir.open_input(
+      vectors_stream = Some(dir.open_input(
         &vectors_stream_fn,
         &context.with_read_advice_self(ReadAdvice::Random)?,
-      )?;
+      )?);
+      let vectors_stream_ref = vectors_stream
+        .as_mut()
+        .ok_or_else(|| LuceneError::illegal_state("term vectors input is missing"))?;
 
       let version = CodecUtil::check_index_header(
-        &mut vectors_stream,
+        vectors_stream_ref,
         format_name,
         VERSION_START,
         VERSION_CURRENT,
@@ -141,7 +146,7 @@ where
       )?;
       debug_assert_eq!(
         CodecUtil::index_header_length(format_name, segment_suffix),
-        vectors_stream.get_file_pointer()?
+        vectors_stream_ref.get_file_pointer()?
       );
 
       let meta_stream_fn =
@@ -164,9 +169,9 @@ where
       // but for now we at least verify proper structure of the checksum footer: which looks
       // for FOOTER_MAGIC + algorithmID. This is cheap and can detect some forms of corruption
       // such as file truncation.
-      CodecUtil::retrieve_checksum(&mut vectors_stream)?;
+      CodecUtil::retrieve_checksum(vectors_stream_ref)?;
 
-      let fields_index_reader = FieldsIndexReader::new(
+      fields_index_reader = Some(FieldsIndexReader::new(
         dir,
         si.name.clone(),
         segment_suffix,
@@ -175,8 +180,11 @@ where
         si.get_id(),
         meta,
         context,
-      )?;
-      let max_pointer = fields_index_reader.get_max_pointer();
+      )?);
+      let max_pointer = fields_index_reader
+        .as_ref()
+        .ok_or_else(|| LuceneError::illegal_state("term vectors index input is missing"))?
+        .get_max_pointer();
 
       let num_chunks = meta.read_vlong()?;
       let num_dirty_chunks = meta.read_vlong()?;
@@ -202,15 +210,19 @@ where
 
       let prefetched_block_id_cache = [-1i64; PREFETCH_CACHE_SIZE];
 
-      let reader = Self {
+      reader = Some(Self {
         field_infos,
         compression_mode,
         version,
         packed_ints_version,
         chunk_size,
         num_docs,
-        vectors_stream,
-        index_reader: fields_index_reader,
+        vectors_stream: vectors_stream
+          .take()
+          .ok_or_else(|| LuceneError::illegal_state("term vectors input is missing"))?,
+        index_reader: fields_index_reader
+          .take()
+          .ok_or_else(|| LuceneError::illegal_state("term vectors index input is missing"))?,
         max_pointer,
         num_chunks,
         num_dirty_chunks,
@@ -220,25 +232,54 @@ where
         prefetched_block_id_cache_index: 0,
         closed: AtomicBool::new(false),
         block_state: BlockState::new(None, None, 0),
-      };
+      });
       CodecUtil::check_footer(meta)?;
-      Ok(reader)
-    })();
+      meta.close()?;
+      Ok(())
+    }));
 
-    let result = match result {
-      Ok(reader) => Ok(reader),
-      Err(e) => {
-        if let Some(ref mut meta) = meta_in {
-          Err(CodecUtil::check_footer_with_error(meta, e))
-        } else {
-          Err(e)
+    match result {
+      Ok(Ok(())) => reader
+        .take()
+        .ok_or_else(|| LuceneError::illegal_state("term vectors reader is missing")),
+      result => {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+          match result {
+            Ok(Err(error)) => match meta_in.as_mut() {
+              Some(meta) => Err(CodecUtil::check_footer_with_error(meta, error)),
+              None => Err(error),
+            },
+            Err(payload) => {
+              if let Some(meta) = meta_in.as_mut() {
+                let error = LuceneError::tragedy_from_panic(
+                  "panic while constructing term vectors reader",
+                  payload.as_ref(),
+                );
+                if let error @ LuceneError::CorruptIndex(_) =
+                  CodecUtil::check_footer_with_error(meta, error)
+                {
+                  return Err(error);
+                }
+              }
+              std::panic::resume_unwind(payload)
+            },
+            Ok(Ok(())) => unreachable!(),
+          }
+        }));
+        IOUtils::close_resources_while_handling_error((
+          reader.as_ref(),
+          fields_index_reader.as_ref(),
+          vectors_stream.as_ref(),
+          meta_in.as_ref(),
+        ))?;
+        match result {
+          Ok(Err(error)) => Err(error),
+          Ok(Ok(())) => Err(LuceneError::illegal_state(
+            "term vectors reader construction failed without an error",
+          )),
+          Err(payload) => std::panic::resume_unwind(payload),
         }
       },
-    };
-    if let Some(meta) = meta_in {
-      IOUtils::use_or_suppress_result(result, meta.close())
-    } else {
-      result
     }
   }
 

@@ -393,24 +393,19 @@ where
   fn close(&self) -> Result<()> {
     // Technically IndexWriter should already have synced all files, but do this
     // defensively and for applications that create outputs directly.
-    let flush_result = catch_unwind(AssertUnwindSafe(|| -> Result<()> {
-      if !self.closed.swap(true, Ordering::SeqCst) {
-        for file_name in self.cache_directory.list_all()? {
-          self.un_cache(&file_name)?;
+    IOUtils::close(0..3, |operation| match operation {
+      0 => {
+        if !self.closed.swap(true, Ordering::SeqCst) {
+          for file_name in self.cache_directory.list_all()? {
+            self.un_cache(&file_name)?;
+          }
         }
-      }
-      Ok(())
-    }));
-    let close_result =
-      IOUtils::close_refs_tuple((Some(&self.cache_directory), Some(&self.delegate)));
-
-    match flush_result {
-      Ok(result) => IOUtils::use_or_suppress_result(result, close_result),
-      Err(payload) => {
-        let _ = close_result;
-        resume_unwind(payload)
+        Ok(())
       },
-    }
+      1 => self.cache_directory.close(),
+      2 => self.delegate.close(),
+      _ => unreachable!(),
+    })
   }
 }
 

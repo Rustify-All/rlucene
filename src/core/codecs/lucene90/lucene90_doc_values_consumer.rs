@@ -821,7 +821,7 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
 
     let mut address_output =
       ByteBuffersIndexOutput::new(ByteBuffersDataOutput::new(), "temp", "temp");
-    let result = (|| -> Result<()> {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       let mut writer = DirectMonotonicWriter::get_instance(
         &mut self.meta,
         &mut address_output,
@@ -874,8 +874,10 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
         .meta
         .write_long((self.data.get_file_pointer()? - start) as i64)?;
       Ok(())
-    })();
-    IOUtils::use_or_suppress_result(result, address_output.close())
+    }));
+    let close_result =
+      std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| address_output.close()));
+    IOUtils::use_or_suppress_caught_result(result, close_result)
   }
   fn do_add_sorted_numeric_field(
     &mut self,

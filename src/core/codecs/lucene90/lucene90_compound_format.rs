@@ -113,7 +113,7 @@ impl Lucene90CompoundFormat {
       let file = &sized_file.name;
       let start_offset = data.align_file_pointer(BitUtil::LONG_BYTES)?;
       let mut file_input = directory.open_checksum_input(file)?;
-      let result = (|| -> Result<()> {
+      let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
         // just copies the index header, verifying that its id matches what
         // we expect
         CodecUtil::verify_and_copy_index_header(&mut file_input, data, si.get_id())?;
@@ -131,9 +131,10 @@ impl Lucene90CompoundFormat {
         CodecUtil::write_be_int(data, CodecUtil::FOOTER_MAGIC)?;
         CodecUtil::write_be_int(data, 0)?;
         CodecUtil::write_be_long(data, checksum)
-      })();
-      let close_result = file_input.close();
-      IOUtils::use_or_suppress_result(result, close_result)?;
+      }));
+      let close_result =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| file_input.close()));
+      IOUtils::use_or_suppress_caught_result(result, close_result)?;
       let end_offset = data.get_file_pointer()?;
       let length = end_offset - start_offset;
       // write entry for file
@@ -167,14 +168,17 @@ impl CompoundFormat for Lucene90CompoundFormat {
     let entries_file =
       IndexFileNames::segment_file_name(&si.name, "", Lucene90CompoundFormat::ENTRIES_EXTENSION);
     let mut data = dir.create_output(&data_file, context)?;
-    let mut entries = match dir.create_output(&entries_file, context) {
-      Ok(entries_output) => entries_output,
-      Err(err) => {
-        return IOUtils::use_or_suppress_result(Err(err), data.close());
+    let mut entries = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      dir.create_output(&entries_file, context)
+    })) {
+      Ok(Ok(entries_output)) => entries_output,
+      entries_result => {
+        let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| data.close()));
+        return IOUtils::use_or_suppress_caught_result(entries_result, close_result).map(|_| ());
       },
     };
 
-    let result = (|| -> Result<()> {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       CodecUtil::write_index_header(
         &mut data,
         Lucene90CompoundFormat::DATA_CODEC,
@@ -192,9 +196,11 @@ impl CompoundFormat for Lucene90CompoundFormat {
       self.write_compound_file(&mut entries, &mut data, dir, si)?;
       CodecUtil::write_footer(&mut data)?;
       CodecUtil::write_footer(&mut entries)
-    })();
-    let close_result = IOUtils::close([&mut entries, &mut data], Closeable::close);
-    IOUtils::use_or_suppress_result(result, close_result)
+    }));
+    let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      IOUtils::close([&mut entries, &mut data], Closeable::close)
+    }));
+    IOUtils::use_or_suppress_caught_result(result, close_result)
   }
 }
 #[derive(Debug, Clone, PartialEq, Eq)]

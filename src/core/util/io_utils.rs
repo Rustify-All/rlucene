@@ -206,9 +206,9 @@ impl IOUtils {
     P: AsRef<Path>,
   {
     for file in files {
-      if fs::remove_file(file.as_ref()).is_err() {
-        // Ignore the error and continue with the next file.
-      }
+      let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        fs::remove_file(file.as_ref())
+      }));
     }
   }
 
@@ -243,9 +243,7 @@ impl IOUtils {
     D: Directory + ?Sized,
   {
     for name in files {
-      if dir.delete_file(name).is_err() {
-        // Ignore the error and continue with the next file.
-      }
+      let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| dir.delete_file(name)));
     }
   }
   pub fn delete_files<'a, T, D>(dir: &D, names: T) -> Result<()>
@@ -253,10 +251,7 @@ impl IOUtils {
     T: IntoIterator<Item = &'a String>,
     D: Directory + ?Sized,
   {
-    for name in names {
-      dir.delete_file(name)?;
-    }
-    Ok(())
+    Self::close(names, |name| dir.delete_file(name))
   }
 
   /// Closes the given object.
@@ -420,6 +415,28 @@ impl IOUtils {
       (Ok(_), Err(err)) => Err(err),
       (Err(err), Ok(())) => Err(err),
       (Err(err), Err(close_err)) => Err(Self::use_or_suppress(Some(err), close_err)),
+    }
+  }
+
+  /// Combines a caught body result with a caught close result using Java
+  /// try-with-resources suppression semantics.
+  #[inline]
+  pub fn use_or_suppress_caught_result<T>(
+    result: std::thread::Result<Result<T>>,
+    close_result: std::thread::Result<Result<()>>,
+  ) -> Result<T> {
+    match result {
+      Ok(result) => match close_result {
+        Ok(close_result) => Self::use_or_suppress_result(result, close_result),
+        Err(payload) => match result {
+          Ok(_) => std::panic::resume_unwind(payload),
+          Err(error) => Err(Self::use_or_suppress(
+            Some(error),
+            LuceneError::tragedy_from_panic("panic while closing", payload.as_ref()),
+          )),
+        },
+      },
+      Err(payload) => std::panic::resume_unwind(payload),
     }
   }
 

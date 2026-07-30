@@ -105,20 +105,21 @@ impl CloseableRef for SingleInstanceLock {
       return Ok(());
     }
 
-    let mut result: Result<()> = Ok(());
-    {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       let mut inner = self.inner.lock();
-      let removed = inner.locks.remove(&self.lock_name);
-
-      if !removed {
-        result = Err(LuceneError::already_closed(format!(
+      if !inner.locks.remove(&self.lock_name) {
+        return Err(LuceneError::already_closed(format!(
           "Lock was already released: {}",
           self
         )));
       }
-    }
+      Ok(())
+    }));
     self.closed.store(true, Ordering::SeqCst);
-    result
+    match result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
 }
 

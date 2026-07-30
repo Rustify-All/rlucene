@@ -110,7 +110,7 @@ where
     let mut meta = state.directory.open_checksum_input(&meta_file_name)?;
 
     let mut footer_attempted = false;
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<i32> {
+    let mut result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<i32> {
       let result = (|| {
         let version_meta = CodecUtil::check_index_header(
           &mut meta,
@@ -134,35 +134,23 @@ where
       }
     }));
 
-    if let Err(payload) = &result
+    let footer_error = if let Err(payload) = &result
       && !footer_attempted
     {
-      let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let error = LuceneError::tragedy_from_panic(
-          "panic while reading flat vector metadata",
-          payload.as_ref(),
-        );
-        let _ = CodecUtil::check_footer_with_error(&mut meta, error);
-      }));
+      let error = LuceneError::tragedy_from_panic(
+        "panic while reading flat vector metadata",
+        payload.as_ref(),
+      );
+      Some(CodecUtil::check_footer_with_error(&mut meta, error))
+    } else {
+      None
+    };
+    if let Some(error @ LuceneError::CorruptIndex(_)) = footer_error {
+      result = Ok(Err(error));
     }
 
     let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| meta.close()));
-    match result {
-      Ok(result) => match close_result {
-        Ok(close_result) => IOUtils::use_or_suppress_result(result, close_result),
-        Err(payload) => match result {
-          Ok(_) => std::panic::resume_unwind(payload),
-          Err(mut error) => {
-            error.add_suppressed(LuceneError::tragedy_from_panic(
-              "panic while closing flat vector metadata",
-              payload.as_ref(),
-            ));
-            Err(error)
-          },
-        },
-      },
-      Err(payload) => std::panic::resume_unwind(payload),
-    }
+    IOUtils::use_or_suppress_caught_result(result, close_result)
   }
   fn open_data_input<D1, D2>(
     state: &SegmentReadState<D1>,

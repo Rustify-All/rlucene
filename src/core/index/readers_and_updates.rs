@@ -467,27 +467,29 @@ where
       {
         let mut fields_consumer = dv_format.fields_consumer(&state, &info.info)?;
 
-        let write_result = (|| {
-          let update_supplier = FunctionImpl::new(field_info.clone(), updates_to_apply);
+        let write_result =
+          std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+            let update_supplier = FunctionImpl::new(field_info.clone(), updates_to_apply);
 
-          inner.pending_deletes.on_doc_values_update(
-            &field_info,
-            update_supplier.apply(&field_info)?,
-            info,
-          )?;
-          if ty == DocValuesType::Binary {
-            let v =
-              DocValuesProducerBinary::new(update_supplier, field, reader, field_info.clone());
-            fields_consumer.add_binary_field(&state, &info.info, &field_info, &v)?
-          } else {
-            let v =
-              DocValuesProducerNumeric::new(update_supplier, field, reader, field_info.clone());
-            fields_consumer.add_numeric_field(&state, &info.info, &field_info, &v)?;
-          }
-          Ok(())
-        })();
-        let close_result = fields_consumer.close();
-        IOUtils::use_or_suppress_result(write_result, close_result)?;
+            inner.pending_deletes.on_doc_values_update(
+              &field_info,
+              update_supplier.apply(&field_info)?,
+              info,
+            )?;
+            if ty == DocValuesType::Binary {
+              let v =
+                DocValuesProducerBinary::new(update_supplier, field, reader, field_info.clone());
+              fields_consumer.add_binary_field(&state, &info.info, &field_info, &v)?
+            } else {
+              let v =
+                DocValuesProducerNumeric::new(update_supplier, field, reader, field_info.clone());
+              fields_consumer.add_numeric_field(&state, &info.info, &field_info, &v)?;
+            }
+            Ok(())
+          }));
+        let close_result =
+          std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| fields_consumer.close()));
+        IOUtils::use_or_suppress_caught_result(write_result, close_result)?;
       }
 
       info.advance_doc_values_gen();
@@ -575,7 +577,8 @@ where
     // error; this saves all codecs from having to do it:
     let tracking_dir = Arc::new(TrackingDirectoryWrapper::new(&dir));
 
-    let result = (|| -> Result<()> {
+    let mut success = false;
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       let codec = info.info.get_codec()?.clone();
 
       let reader = if let Some(reader) = inner.reader.as_ref() {
@@ -590,7 +593,7 @@ where
         reader
       };
 
-      let result = (|| -> Result<()> {
+      let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
         // clone FieldInfos so that we can update their dvGen separately from
         // the reader's infos and write them to a new fieldInfos_gen file.
         let mut max_field_number: i32 = -1;
@@ -652,7 +655,7 @@ where
         field_infos_files = Some(files);
 
         Ok(())
-      })();
+      }));
 
       if !matches!(
         inner.reader.as_ref(),
@@ -661,18 +664,25 @@ where
         reader.close()?;
       }
 
-      result
-    })();
+      match result {
+        Ok(result) => result?,
+        Err(payload) => std::panic::resume_unwind(payload),
+      }
+      success = true;
+      Ok(())
+    }));
 
-    if let Err(e) = result {
+    if !success {
       info.advance_next_write_field_infos_gen();
       info.advance_next_write_doc_values_gen();
       IOUtils::delete_files_ignoring_exceptions(
         &dir,
         &tracking_dir.get_created_files().lock().created_filenames,
       );
-
-      return Err(e);
+    }
+    match result {
+      Ok(result) => result?,
+      Err(payload) => std::panic::resume_unwind(payload),
     }
     // Prune the now-written DV updates:
     let mut bytes_freed: i64 = 0;
@@ -927,15 +937,19 @@ where
     true,
   )?;
 
-  let res: Result<()> = (|| {
+  let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
     inner.pending_deletes.on_new_reader(&new_reader, info)?;
     reader.dec_ref()?;
     Ok(())
-  })();
+  }));
 
-  if let Err(e) = res {
+  if !matches!(&res, Ok(Ok(()))) {
     new_reader.dec_ref()?;
-    return Err(e);
+    return match res {
+      Ok(Err(error)) => Err(error),
+      Err(payload) => std::panic::resume_unwind(payload),
+      Ok(Ok(())) => unreachable!(),
+    };
   }
   Ok(new_reader)
 }

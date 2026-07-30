@@ -81,15 +81,30 @@ where
       &context.with_read_advice_self(ReadAdvice::RandomPreload)?,
     )?;
 
-    CodecUtil::check_index_header(
-      &mut index_input,
-      &format!("{codec_name}Idx"),
-      fields_index_writer_const::VERSION_START,
-      fields_index_writer_const::VERSION_CURRENT,
-      id,
-      suffix,
-    )?;
-    CodecUtil::retrieve_checksum(&mut index_input)?;
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+      CodecUtil::check_index_header(
+        &mut index_input,
+        &format!("{codec_name}Idx"),
+        fields_index_writer_const::VERSION_START,
+        fields_index_writer_const::VERSION_CURRENT,
+        id,
+        suffix,
+      )?;
+      CodecUtil::retrieve_checksum(&mut index_input).map(|_| ())
+    }));
+    if !matches!(result, Ok(Ok(()))) {
+      let close_result =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| index_input.close()));
+      match close_result {
+        Ok(Ok(())) => {},
+        Ok(Err(error)) => return Err(error),
+        Err(payload) => std::panic::resume_unwind(payload),
+      }
+      match result {
+        Ok(result) => result?,
+        Err(payload) => std::panic::resume_unwind(payload),
+      }
+    }
 
     let docs_slice =
       index_input.random_access_slice(docs_start_pointer, docs_end_pointer - docs_start_pointer)?;

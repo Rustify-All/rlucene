@@ -108,8 +108,11 @@ where
   pub fn save_to_path(&mut self, path: &PathBuf) -> Result<()> {
     let file = File::create(path)?; // or: path.as_path()
     let mut out = OutputStreamDataOutput::new(file);
-    let result = self.save_with_same_data_out(&mut out);
-    IOUtils::use_or_suppress_result(result, out.close())
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      self.save_with_same_data_out(&mut out)
+    }));
+    let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| out.close()));
+    IOUtils::use_or_suppress_caught_result(result, close_result)
   }
   /// Reads the automaton from a file.
   pub fn read_from_path(_path: &Path, _outputs: Rc<RefCell<O>>) -> Result<Self> {

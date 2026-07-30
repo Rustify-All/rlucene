@@ -225,7 +225,7 @@ where
     let num_segments = infos.size();
     let mut readers = Vec::with_capacity(num_segments);
     let dir = writer.get_directory();
-    let result = (|| {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
       let mut segment_infos = infos.try_clone()?;
       let mut infos_upto = 0;
       for i in 0..num_segments {
@@ -258,20 +258,33 @@ where
         }
       }
       Ok(segment_infos)
-    })();
+    }));
     match result {
-      Ok(segment_infos) => (segment_infos, dir, readers),
-      Err(mut e) => {
-        if let Err(e1) = IOUtils::apply_to_all(&readers, IndexReader::dec_ref) {
-          e.add_suppressed(e1);
+      Ok(Ok(segment_infos)) => (segment_infos, dir, readers),
+      Ok(Err(mut error)) => {
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+          IOUtils::apply_to_all(&readers, IndexReader::dec_ref)
+        })) {
+          Ok(Err(close_error)) => error.add_suppressed(close_error),
+          Err(payload) => error.add_suppressed(LuceneError::tragedy_from_panic(
+            "panic while closing segment readers",
+            payload.as_ref(),
+          )),
+          Ok(Ok(())) => {},
         }
-        return Err(e);
+        return Err(error);
+      },
+      Err(payload) => {
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+          IOUtils::apply_to_all(&readers, IndexReader::dec_ref)
+        }));
+        std::panic::resume_unwind(payload)
       },
     }
   };
   // Clone pointer should be cheap
   let readers_backup = readers.clone();
-  let result: Result<_> = (|| {
+  let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
     let leaf_sorter = writer.get_config().get_leaf_sorter().cloned();
     writer.inc_ref_deleter(&segment_infos, Some(inner))?;
     StandardDirectoryReader::new(
@@ -283,14 +296,27 @@ where
       apply_all_deletes,
       write_all_deletes,
     )
-  })();
+  }));
   match result {
-    Ok(r) => Ok(r),
-    Err(mut e) => {
-      if let Err(e1) = IOUtils::apply_to_all(&readers_backup, IndexReader::dec_ref) {
-        e.add_suppressed(e1);
+    Ok(Ok(reader)) => Ok(reader),
+    Ok(Err(mut error)) => {
+      match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        IOUtils::apply_to_all(&readers_backup, IndexReader::dec_ref)
+      })) {
+        Ok(Err(close_error)) => error.add_suppressed(close_error),
+        Err(payload) => error.add_suppressed(LuceneError::tragedy_from_panic(
+          "panic while closing segment readers",
+          payload.as_ref(),
+        )),
+        Ok(Ok(())) => {},
       }
-      Err(e)
+      Err(error)
+    },
+    Err(payload) => {
+      let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        IOUtils::apply_to_all(&readers_backup, IndexReader::dec_ref)
+      }));
+      std::panic::resume_unwind(payload)
     },
   }
 }
@@ -312,7 +338,7 @@ where
 
   let mut new_readers: Vec<Option<DefaultLeafReader<D>>> =
     (0..infos.size()).map(|_| None).collect();
-  let result: Result<()> = (|| {
+  let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
     for i in (0..infos.size()).rev() {
       let commit_info = infos
         .info(i)
@@ -428,11 +454,15 @@ where
       new_readers[i] = Some(new_reader);
     }
     Ok(())
-  })();
+  }));
 
-  if let Err(e) = result {
+  if !matches!(&result, Ok(Ok(()))) {
     dec_ref_while_handling_exception(new_readers);
-    return Err(e);
+    return match result {
+      Ok(Err(error)) => Err(error),
+      Err(payload) => std::panic::resume_unwind(payload),
+      Ok(Ok(())) => unreachable!(),
+    };
   }
 
   let readers = new_readers
@@ -448,7 +478,7 @@ where
   I: IntoIterator<Item = Option<DefaultLeafReader<D>>>,
 {
   for reader in readers.into_iter().flatten() {
-    let _ = reader.dec_ref();
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| reader.dec_ref()));
   }
 }
 
@@ -526,18 +556,22 @@ where
   fn do_close(&self) -> Result<()> {
     // Try to close each reader, even if one returns an error.
     let sequential_sub_readers = self.get_sequential_sub_readers();
-    let result = IOUtils::apply_to_all(sequential_sub_readers, IndexReader::dec_ref);
-    let dec_ref_deleter_result = match &self.writer {
-      Some(writer) => match writer.dec_ref_deleter(&self.segment_infos, None) {
-        // This is OK, it just means our original writer was closed before we were,
-        // and this may leave some un-referenced files in the index, which is harmless.
-        // The next time IndexWriter is opened on the index, it will delete them.
-        Err(LuceneError::AlreadyClosed(_)) => Ok(()),
-        result => result,
-      },
-      None => Ok(()),
-    };
-    IOUtils::use_or_suppress_result(result, dec_ref_deleter_result)
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      IOUtils::apply_to_all(sequential_sub_readers, IndexReader::dec_ref)
+    }));
+    let dec_ref_deleter_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      match &self.writer {
+        Some(writer) => match writer.dec_ref_deleter(&self.segment_infos, None) {
+          // This is OK, it just means our original writer was closed before we were,
+          // and this may leave some un-referenced files in the index, which is harmless.
+          // The next time IndexWriter is opened on the index, it will delete them.
+          Err(LuceneError::AlreadyClosed(_)) => Ok(()),
+          result => result,
+        },
+        None => Ok(()),
+      }
+    }));
+    IOUtils::use_or_suppress_caught_result(result, dec_ref_deleter_result)
   }
 
   fn notify_reader_closed_listeners(&self) -> Result<()> {
@@ -756,7 +790,7 @@ where
     )?;
 
     let mut readers: Vec<Option<DefaultLeafReader<D>>> = (0..sis.size()).map(|_| None).collect();
-    let result = (|| {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
       for i in (0..sis.size()).rev() {
         let info = sis
           .info(i)
@@ -786,14 +820,16 @@ where
         false,
         false,
       )
-    })();
+    }));
     match result {
-      Ok(reader) => Ok(reader),
-      Err(error) => {
-        match IOUtils::close_while_handling_error(readers.iter().flatten(), IndexReader::dec_ref) {
-          Ok(()) => Err(error),
-          Err(close_error) => Err(close_error),
-        }
+      Ok(Ok(reader)) => Ok(reader),
+      Ok(Err(error)) => {
+        IOUtils::close_while_handling_error(readers.iter().flatten(), IndexReader::dec_ref)?;
+        Err(error)
+      },
+      Err(payload) => {
+        IOUtils::close_while_handling_error(readers.iter().flatten(), IndexReader::dec_ref)?;
+        std::panic::resume_unwind(payload)
       },
     }
   }

@@ -239,26 +239,46 @@ pub trait Directory: Display + CloseableRef + HasIdentity + Send + Sync {
     D: Directory + ?Sized,
   {
     let mut success = false;
-    let result = (|| -> Result<()> {
-      let mut is = from.open_input(src, &IOContext::read_once_io_context()?)?;
-      let mut os = match self.create_output(dest, context) {
-        Ok(os) => os,
-        Err(error) => return IOUtils::use_or_suppress_result(Err(error), is.close()),
-      };
-      let result = (|| -> Result<()> {
-        let length = IndexInput::length(&is)?;
-        os.copy_bytes(&mut is, length)?;
-        success = true;
-        Ok(())
-      })();
-      let result = IOUtils::use_or_suppress_result(result, os.close());
-      IOUtils::use_or_suppress_result(result, is.close())
-    })();
+    let mut input = None;
+    let mut output = None;
+    let body_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+      input = Some(from.open_input(src, &IOContext::read_once_io_context()?)?);
+      output = Some(self.create_output(dest, context)?);
+      let input = input
+        .as_mut()
+        .ok_or_else(|| LuceneError::illegal_state("copy source input is missing"))?;
+      let output = output
+        .as_mut()
+        .ok_or_else(|| LuceneError::illegal_state("copy destination output is missing"))?;
+      let length = IndexInput::length(input)?;
+      output.copy_bytes(input, length)?;
+      success = true;
+      Ok(())
+    }));
+    let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      IOUtils::close(0..2, |operation| match operation {
+        0 => match output.as_mut() {
+          Some(output) => output.close(),
+          None => Ok(()),
+        },
+        1 => match input.as_mut() {
+          Some(input) => input.close(),
+          None => Ok(()),
+        },
+        _ => unreachable!(),
+      })
+    }));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      IOUtils::use_or_suppress_caught_result(body_result, close_result)
+    }));
 
     if !success {
       IOUtils::delete_files_ignoring_exceptions(self, &[dest.to_string()]);
     }
-    result
+    match result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
 
   fn as_erased_directory(&self) -> Option<&dyn ErasedDirectory> {

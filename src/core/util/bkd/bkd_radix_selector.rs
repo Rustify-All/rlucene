@@ -179,30 +179,38 @@ impl BKDRadixSelector {
     } else {
       let mut left_writer =
         self.get_point_writer(partition_point - from, &format!("left{dim}"), temp_dir)?;
-      let mut right_writer =
-        match self.get_point_writer(to - partition_point, &format!("right{dim}"), temp_dir) {
-          Ok(right_writer) => right_writer,
-          Err(err) => {
-            return IOUtils::use_or_suppress_result(Err(err), left_writer.close());
-          },
-        };
+      let mut right_writer = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        self.get_point_writer(to - partition_point, &format!("right{dim}"), temp_dir)
+      })) {
+        Ok(Ok(right_writer)) => right_writer,
+        right_result => {
+          let close_result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| left_writer.close()));
+          return IOUtils::use_or_suppress_caught_result(right_result, close_result)
+            .map(|_| unreachable!());
+        },
+      };
       if let PointWriterEnum::Offline(offline_point_writer) = points.writer {
-        let partition_result = self.build_histogram_and_partition(
-          offline_point_writer,
-          &mut left_writer,
-          &mut right_writer,
-          from,
-          to,
-          partition_point,
-          0,
-          dim_common_prefix,
-          dim,
-          temp_dir,
-        );
-        let close_result = IOUtils::close([&mut right_writer, &mut left_writer], |writer| {
-          writer.close()
-        });
-        let partition = IOUtils::use_or_suppress_result(partition_result, close_result)?;
+        let partition_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+          self.build_histogram_and_partition(
+            offline_point_writer,
+            &mut left_writer,
+            &mut right_writer,
+            from,
+            to,
+            partition_point,
+            0,
+            dim_common_prefix,
+            dim,
+            temp_dir,
+          )
+        }));
+        let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+          IOUtils::close([&mut right_writer, &mut left_writer], |writer| {
+            writer.close()
+          })
+        }));
+        let partition = IOUtils::use_or_suppress_caught_result(partition_result, close_result)?;
 
         Ok(SelectorSlice::new(
           partition,
@@ -251,94 +259,104 @@ impl BKDRadixSelector {
       std::mem::take(&mut self.offline_buffer),
       temp_dir,
     )?;
-    let result = (|| -> Result<usize> {
-      debug_assert!(common_prefix_position > dim_common_prefix);
-      reader.next()?;
-      {
-        let point_value = reader.point_value()?;
-        let (value, packed_value_offset, _) = point_value.packed_value_doc_id_bytes();
-
-        let mut start = packed_value_offset + offset;
-        let mut end = start + self.config.bytes_per_dim;
-        self.scratch.copy_from(&value[start..end], 0);
-
-        start = packed_value_offset + self.config.packed_index_bytes_length();
-        end = start
-          + ((self.config.num_dims - self.config.num_index_dims) * self.config.bytes_per_dim)
-          + BitUtil::INT_BYTES;
-        self
-          .scratch
-          .copy_from(&value[start..end], self.config.bytes_per_dim);
-      }
-      let mut histogram_index;
-      for i in (from + 1)..to {
+    let body_result =
+      std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<usize> {
+        debug_assert!(common_prefix_position > dim_common_prefix);
         reader.next()?;
-        if common_prefix_position == dim_common_prefix {
-          {
-            let point_value = reader.point_value()?;
-            histogram_index = self.get_bucket(offset, common_prefix_position, point_value) as usize;
-            self.histogram[histogram_index] += 1;
-          }
-          for _ in (i + 1)..to {
-            reader.next()?;
-            let point_value = reader.point_value()?;
-            histogram_index = self.get_bucket(offset, common_prefix_position, point_value) as usize;
-            self.histogram[histogram_index] += 1;
-          }
-          break;
-        } else {
+        {
           let point_value = reader.point_value()?;
-          // Check common prefix and adjust histogram
-          let scratch_start_index =
-            std::cmp::min(dim_common_prefix, self.config.bytes_per_dim) as usize;
-          let scratch_end_index =
-            std::cmp::min(common_prefix_position, self.config.bytes_per_dim) as usize;
-          let (value, packed_value_offset, _length) = point_value.packed_value_doc_id_bytes();
-          let packed_value_start_index = (packed_value_offset + offset) + scratch_start_index;
-          let packed_value_end_index = (packed_value_offset + offset) + scratch_end_index;
-          let j = CoreHelper::miss_match(
-            &self.scratch[scratch_start_index..scratch_end_index],
-            &value[packed_value_start_index..packed_value_end_index],
-          );
-          if j == -1 {
-            if common_prefix_position > self.config.bytes_per_dim {
-              let start_tie_break = self.config.packed_index_bytes_length();
-              let end_tie_break =
-                start_tie_break + common_prefix_position - self.config.bytes_per_dim;
-              let k = CoreHelper::miss_match(
-                &self.scratch[self.config.bytes_per_dim..common_prefix_position],
-                &value
-                  [(packed_value_offset + start_tie_break)..(packed_value_offset + end_tie_break)],
-              );
-              if k != -1 {
-                common_prefix_position = self.config.bytes_per_dim + k as usize;
-                self.histogram.fill(0);
-                self.histogram[self.scratch[common_prefix_position] as usize] = i - from;
-              }
+          let (value, packed_value_offset, _) = point_value.packed_value_doc_id_bytes();
+
+          let mut start = packed_value_offset + offset;
+          let mut end = start + self.config.bytes_per_dim;
+          self.scratch.copy_from(&value[start..end], 0);
+
+          start = packed_value_offset + self.config.packed_index_bytes_length();
+          end = start
+            + ((self.config.num_dims - self.config.num_index_dims) * self.config.bytes_per_dim)
+            + BitUtil::INT_BYTES;
+          self
+            .scratch
+            .copy_from(&value[start..end], self.config.bytes_per_dim);
+        }
+        let mut histogram_index;
+        for i in (from + 1)..to {
+          reader.next()?;
+          if common_prefix_position == dim_common_prefix {
+            {
+              let point_value = reader.point_value()?;
+              histogram_index =
+                self.get_bucket(offset, common_prefix_position, point_value) as usize;
+              self.histogram[histogram_index] += 1;
             }
+            for _ in (i + 1)..to {
+              reader.next()?;
+              let point_value = reader.point_value()?;
+              histogram_index =
+                self.get_bucket(offset, common_prefix_position, point_value) as usize;
+              self.histogram[histogram_index] += 1;
+            }
+            break;
           } else {
-            common_prefix_position = dim_common_prefix + j as usize;
-            self.histogram.fill(0);
-            self.histogram[self.scratch[common_prefix_position] as usize] = i - from;
-          }
-          if common_prefix_position != self.bytes_sorted {
-            histogram_index = self.get_bucket(offset, common_prefix_position, point_value) as usize;
-            self.histogram[histogram_index] += 1;
+            let point_value = reader.point_value()?;
+            // Check common prefix and adjust histogram
+            let scratch_start_index =
+              std::cmp::min(dim_common_prefix, self.config.bytes_per_dim) as usize;
+            let scratch_end_index =
+              std::cmp::min(common_prefix_position, self.config.bytes_per_dim) as usize;
+            let (value, packed_value_offset, _length) = point_value.packed_value_doc_id_bytes();
+            let packed_value_start_index = (packed_value_offset + offset) + scratch_start_index;
+            let packed_value_end_index = (packed_value_offset + offset) + scratch_end_index;
+            let j = CoreHelper::miss_match(
+              &self.scratch[scratch_start_index..scratch_end_index],
+              &value[packed_value_start_index..packed_value_end_index],
+            );
+            if j == -1 {
+              if common_prefix_position > self.config.bytes_per_dim {
+                let start_tie_break = self.config.packed_index_bytes_length();
+                let end_tie_break =
+                  start_tie_break + common_prefix_position - self.config.bytes_per_dim;
+                let k = CoreHelper::miss_match(
+                  &self.scratch[self.config.bytes_per_dim..common_prefix_position],
+                  &value[(packed_value_offset + start_tie_break)
+                    ..(packed_value_offset + end_tie_break)],
+                );
+                if k != -1 {
+                  common_prefix_position = self.config.bytes_per_dim + k as usize;
+                  self.histogram.fill(0);
+                  self.histogram[self.scratch[common_prefix_position] as usize] = i - from;
+                }
+              }
+            } else {
+              common_prefix_position = dim_common_prefix + j as usize;
+              self.histogram.fill(0);
+              self.histogram[self.scratch[common_prefix_position] as usize] = i - from;
+            }
+            if common_prefix_position != self.bytes_sorted {
+              histogram_index =
+                self.get_bucket(offset, common_prefix_position, point_value) as usize;
+              self.histogram[histogram_index] += 1;
+            }
           }
         }
+        Ok(common_prefix_position)
+      }));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<usize> {
+      match &mut reader.point_value {
+        PointValueEnum::Offline(offline_point_value) => {
+          self.offline_buffer = std::mem::take(&mut offline_point_value.value);
+        },
+        _ => {
+          debug_assert!(false, "PointValueEnum must be Offline");
+        },
       }
-      Ok(common_prefix_position)
-    })();
-    match &mut reader.point_value {
-      PointValueEnum::Offline(offline_point_value) => {
-        self.offline_buffer = std::mem::take(&mut offline_point_value.value);
-      },
-      _ => {
-        debug_assert!(false, "PointValueEnum must be Offline");
-      },
-    }
-    let close_result = reader.close();
-    let common_prefix_position = IOUtils::use_or_suppress_result(result, close_result)?;
+      match body_result {
+        Ok(result) => result,
+        Err(payload) => std::panic::resume_unwind(payload),
+      }
+    }));
+    let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| reader.close()));
+    let common_prefix_position = IOUtils::use_or_suppress_caught_result(result, close_result)?;
     // Build partition buckets up to commonPrefix
     for i in 0..common_prefix_position {
       self.partition_bucket[i] = self.scratch[i] as i32;
@@ -447,20 +465,23 @@ impl BKDRadixSelector {
 
     // Create the delta points writer
     let mut delta_points = self.get_delta_point_writer(left, right, delta, iteration, temp_dir)?;
-    let partition_result = self.offline_partition(
-      points,
-      left,
-      right,
-      Some(&mut delta_points),
-      from,
-      to,
-      dim,
-      common_prefix,
-      0,
-      temp_dir,
-    );
-    let close_result = delta_points.close();
-    IOUtils::use_or_suppress_result(partition_result, close_result)?;
+    let partition_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      self.offline_partition(
+        points,
+        left,
+        right,
+        Some(&mut delta_points),
+        from,
+        to,
+        dim,
+        common_prefix,
+        0,
+        temp_dir,
+      )
+    }));
+    let close_result =
+      std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| delta_points.close()));
+    IOUtils::use_or_suppress_caught_result(partition_result, close_result)?;
     let new_partition_point = partition_point - from - left_count;
 
     // Depending on the concrete type of delta_points, call the appropriate
@@ -518,7 +539,7 @@ impl BKDRadixSelector {
       std::mem::take(&mut self.offline_buffer),
       temp_dir,
     )?;
-    let result = (|| -> Result<()> {
+    let body_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       while reader.next()? {
         let point_value = reader.point_value()?;
         let bucket = self.get_bucket(offset, byte_position, point_value);
@@ -538,17 +559,23 @@ impl BKDRadixSelector {
         }
       }
       Ok(())
-    })();
-    match &mut reader.point_value {
-      PointValueEnum::Offline(offline_point_value) => {
-        self.offline_buffer = std::mem::take(&mut offline_point_value.value);
-      },
-      _ => {
-        debug_assert!(false, "PointValueEnum must be Offline");
-      },
-    }
-    let close_result = reader.close();
-    IOUtils::use_or_suppress_result(result, close_result)?;
+    }));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+      match &mut reader.point_value {
+        PointValueEnum::Offline(offline_point_value) => {
+          self.offline_buffer = std::mem::take(&mut offline_point_value.value);
+        },
+        _ => {
+          debug_assert!(false, "PointValueEnum must be Offline");
+        },
+      }
+      match body_result {
+        Ok(result) => result,
+        Err(payload) => std::panic::resume_unwind(payload),
+      }
+    }));
+    let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| reader.close()));
+    IOUtils::use_or_suppress_caught_result(result, close_result)?;
     // Delete original file
     points.destroy(temp_dir)?;
     Ok(())

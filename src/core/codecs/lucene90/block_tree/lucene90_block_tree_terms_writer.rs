@@ -268,21 +268,44 @@ where
     D1: Directory<IndexOutput = O>,
     D2: Directory,
   {
-    Self::validate_settings(min_items_in_block, max_items_in_block)?;
-
-    if !(VERSION_START..=VERSION_CURRENT).contains(&version) {
-      return Err(LuceneError::illegal_argument(format!(
-        "Expected version in range [{}, {}], but got {}",
-        VERSION_START, VERSION_CURRENT, version
-      )));
-    }
-
-    let max_doc = segment_info.max_doc()?;
+    let mut max_doc = 0;
     let field_infos = Arc::clone(&state.field_infos);
-
-    let terms_name =
-      IndexFileNames::segment_file_name(&segment_info.name, &state.segment_suffix, TERMS_EXTENSION);
-    let mut terms_out = state.directory.create_output(&terms_name, state.context)?;
+    let mut terms_out = None;
+    let setup_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+      Self::validate_settings(min_items_in_block, max_items_in_block)?;
+      if !(VERSION_START..=VERSION_CURRENT).contains(&version) {
+        return Err(LuceneError::illegal_argument(format!(
+          "Expected version in range [{}, {}], but got {}",
+          VERSION_START, VERSION_CURRENT, version
+        )));
+      }
+      max_doc = segment_info.max_doc()?;
+      let terms_name = IndexFileNames::segment_file_name(
+        &segment_info.name,
+        &state.segment_suffix,
+        TERMS_EXTENSION,
+      );
+      terms_out = Some(state.directory.create_output(&terms_name, state.context)?);
+      Ok(())
+    }));
+    match setup_result {
+      Ok(Ok(())) => {},
+      Ok(Err(error)) => {
+        IOUtils::close_resources_while_handling_error((terms_out.as_mut(), &mut postings_writer))?;
+        return Err(error);
+      },
+      Err(payload) => {
+        IOUtils::close_resources_while_handling_error((terms_out.as_mut(), &mut postings_writer))?;
+        std::panic::resume_unwind(payload);
+      },
+    }
+    let mut terms_out = match terms_out {
+      Some(terms_out) => terms_out,
+      None => {
+        IOUtils::close_resources_while_handling_error(&mut postings_writer)?;
+        return Err(LuceneError::illegal_state("terms output is missing"));
+      },
+    };
     let mut meta_out = None;
     let mut index_out = None;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
@@ -340,6 +363,7 @@ where
           meta_out.as_mut(),
           &mut terms_out,
           index_out.as_mut(),
+          &mut postings_writer,
         ))?;
         return Err(error);
       },
@@ -348,6 +372,7 @@ where
           meta_out.as_mut(),
           &mut terms_out,
           index_out.as_mut(),
+          &mut postings_writer,
         ))?;
         std::panic::resume_unwind(payload);
       },
@@ -359,6 +384,7 @@ where
           meta_out.as_mut(),
           &mut terms_out,
           index_out.as_mut(),
+          &mut postings_writer,
         ))?;
         return Err(LuceneError::illegal_state(
           "terms outputs are missing after successful construction",
@@ -500,23 +526,13 @@ where
       CodecUtil::write_footer(&mut self.meta_out)
     }));
     match result {
-      Ok(Ok(())) => {
-        let outputs_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-          IOUtils::close(
-            [&mut self.meta_out, &mut self.terms_out, &mut self.index_out],
-            Closeable::close,
-          )
-        }));
-        let postings_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-          self.postings_writer.close()
-        }));
-        match (outputs_result, postings_result) {
-          (Ok(outputs_result), Ok(postings_result)) => {
-            IOUtils::use_or_suppress_result(outputs_result, postings_result)
-          },
-          (Err(payload), _) | (_, Err(payload)) => std::panic::resume_unwind(payload),
-        }
-      },
+      Ok(Ok(())) => IOUtils::close(0..4, |operation| match operation {
+        0 => self.meta_out.close(),
+        1 => self.terms_out.close(),
+        2 => self.index_out.close(),
+        3 => self.postings_writer.close(),
+        _ => unreachable!(),
+      }),
       Ok(Err(error)) => {
         IOUtils::close_resources_while_handling_error((
           &mut self.meta_out,

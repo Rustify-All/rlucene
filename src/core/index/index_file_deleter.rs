@@ -304,21 +304,17 @@ where
     if !self.commits_to_delete.load(SeqCst) {
       return Ok(());
     }
-    // Now compact commits to remove deleted ones (preserving the sort):
-    let mut write_to = 0;
-    for read_from in 0..self.commits.len() {
-      if !self.commits[read_from].is_deleted() {
-        if write_to != read_from {
-          self.commits.swap(read_from, write_to);
-        }
-        write_to += 1;
-      }
-    }
-    let removed = self.commits.split_off(write_to);
+    let removed = self
+      .commits
+      .iter()
+      .filter(|commit| commit.is_deleted())
+      .cloned()
+      .collect::<Vec<_>>();
 
-    // then decref all files that had been referred to by
+    // First decref all files that had been referred to by
     // the now-deleted commits:
-    let mut first_error = None;
+    let mut errors = Vec::new();
+    let mut first_panic = None;
     for commit in removed {
       if self.info_stream.is_enabled("IFD") {
         self.info_stream.message(
@@ -329,16 +325,41 @@ where
           ),
         )?;
       }
-      match self.dec_ref(commit.files.iter()) {
-        Ok(_) => {},
-        Err(e) => {
-          first_error = Some(IOUtils::use_or_suppress(first_error, e));
+      match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        self.dec_ref(commit.files.iter())
+      })) {
+        Ok(Ok(())) => {},
+        Ok(Err(error)) if first_panic.is_none() => {
+          errors.push(error);
         },
+        Ok(Err(_)) => {},
+        Err(payload) if !errors.is_empty() => {
+          errors.push(LuceneError::tragedy_from_panic(
+            "panic while decrementing file references",
+            payload.as_ref(),
+          ));
+        },
+        Err(payload) if first_panic.is_none() => first_panic = Some(payload),
+        Err(_) => {},
       }
     }
     self.commits_to_delete.store(false, SeqCst);
+
+    // Now compact commits to remove deleted ones (preserving the sort):
+    self.commits.retain(|commit| !commit.is_deleted());
+
+    if let Some(payload) = first_panic {
+      std::panic::resume_unwind(payload);
+    }
+    let mut first_error = None;
+    for mut error in errors.into_iter().rev() {
+      if let Some(suppressed) = first_error {
+        error.add_suppressed(suppressed);
+      }
+      first_error = Some(error);
+    }
     match first_error {
-      Some(e) => Err(e),
+      Some(error) => Err(error),
       None => Ok(()),
     }
   }
@@ -699,7 +720,6 @@ impl Messenger for MessengerImpl {
 
 use crate::core::index::index_writer::WRITE_LOCK_NAME;
 use crate::core::index::segment_infos::generation_from_segments_file_name;
-use crate::core::util::IOUtils;
 
 /// Set all gens beyond what we currently see in the directory, to avoid double-write in cases
 /// where the previous `IndexWriter` did not gracefully close/rollback (e.g. OS/machine crashed or

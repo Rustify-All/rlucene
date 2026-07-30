@@ -86,67 +86,99 @@ where
     let mut norms = HashMap::new();
     let mut input = state.directory.open_checksum_input(&meta_name)?;
 
-    let result = (|| -> Result<()> {
-      version = CodecUtil::check_index_header(
-        &mut input,
-        meta_codec,
-        Lucene90NormsFormat::VERSION_START,
-        Lucene90NormsFormat::VERSION_CURRENT,
-        segment_info.get_id(),
-        &state.segment_suffix,
-      )?;
-      norms = Self::read_fields(&mut input, &state.field_infos)?;
-      Ok(())
-    })();
-
-    let footer_result = match result {
-      Ok(()) => CodecUtil::check_footer(&mut input).map(|_| ()),
-      Err(e) => Err(CodecUtil::check_footer_with_error(&mut input, e)),
+    let mut footer_attempted = false;
+    let mut result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+      let result = (|| -> Result<()> {
+        version = CodecUtil::check_index_header(
+          &mut input,
+          meta_codec,
+          Lucene90NormsFormat::VERSION_START,
+          Lucene90NormsFormat::VERSION_CURRENT,
+          segment_info.get_id(),
+          &state.segment_suffix,
+        )?;
+        norms = Self::read_fields(&mut input, &state.field_infos)?;
+        Ok(())
+      })();
+      footer_attempted = true;
+      match result {
+        Ok(()) => CodecUtil::check_footer(&mut input).map(|_| ()),
+        Err(error) => Err(CodecUtil::check_footer_with_error(&mut input, error)),
+      }
+    }));
+    let footer_error = if let Err(payload) = &result
+      && !footer_attempted
+    {
+      let error =
+        LuceneError::tragedy_from_panic("panic while reading norms metadata", payload.as_ref());
+      Some(CodecUtil::check_footer_with_error(&mut input, error))
+    } else {
+      None
     };
-    IOUtils::use_or_suppress_result(footer_result, input.close())?;
+    if let Some(error @ LuceneError::CorruptIndex(_)) = footer_error {
+      result = Ok(Err(error));
+    }
+    let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| input.close()));
+    IOUtils::use_or_suppress_caught_result(result, close_result)?;
 
     let data_name =
       IndexFileNames::segment_file_name(&segment_info.name, &state.segment_suffix, data_extension);
 
     // Norms have a forward-only access pattern, so pass ReadAdvice::Normal
     // to perform readahead
-    let mut data = state.directory.open_input(
+    let mut data = Some(state.directory.open_input(
       &data_name,
       &state.context.with_read_advice_self(ReadAdvice::Normal)?,
-    )?;
+    )?);
 
     // Check header again in the data file
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<Self> {
+      let data_ref = data
+        .as_mut()
+        .ok_or_else(|| LuceneError::illegal_state("norms data input is missing"))?;
+      let version2 = CodecUtil::check_index_header(
+        data_ref,
+        data_codec,
+        Lucene90NormsFormat::VERSION_START,
+        Lucene90NormsFormat::VERSION_CURRENT,
+        segment_info.get_id(),
+        &state.segment_suffix,
+      )?;
 
-    let version2 = CodecUtil::check_index_header(
-      &mut data,
-      data_codec,
-      Lucene90NormsFormat::VERSION_START,
-      Lucene90NormsFormat::VERSION_CURRENT,
-      segment_info.get_id(),
-      &state.segment_suffix,
-    )?;
+      if version != version2 {
+        return Err(LuceneError::corrupt_index(format!(
+          "Format versions mismatch: meta={version}, data={version2} (resource={data_ref})"
+        )));
+      }
+      // NOTE: data file is too costly to verify checksum against all the
+      // bytes on open, but for now we at least verify proper
+      // structure of the checksum footer: which looks
+      // for FOOTER_MAGIC + algorithmID. This is cheap and can detect some
+      // forms of corruption such as file truncation.
+      CodecUtil::retrieve_checksum(data_ref)?;
 
-    if version != version2 {
-      return Err(LuceneError::corrupt_index(format!(
-        "Format versions mismatch: meta={version}, data={version2} (resource={data})"
-      )));
+      Ok(Self {
+        norms,
+        max_doc,
+        data: data
+          .take()
+          .ok_or_else(|| LuceneError::illegal_state("norms data input is missing"))?,
+        merging: false,
+        disi_inputs: HashMap::new().into(),
+        disi_jump_tables: HashMap::new().into(),
+        data_inputs: HashMap::new().into(),
+      })
+    }));
+    match result {
+      Ok(result @ Ok(_)) => result,
+      result => {
+        IOUtils::close_resources_while_handling_error(data.as_ref())?;
+        match result {
+          Ok(result) => result,
+          Err(payload) => std::panic::resume_unwind(payload),
+        }
+      },
     }
-    // NOTE: data file is too costly to verify checksum against all the
-    // bytes on open, but for now we at least verify proper
-    // structure of the checksum footer: which looks
-    // for FOOTER_MAGIC + algorithmID. This is cheap and can detect some
-    // forms of corruption such as file truncation.
-    CodecUtil::retrieve_checksum(&mut data)?;
-
-    Ok(Self {
-      norms,
-      max_doc,
-      data,
-      merging: false,
-      disi_inputs: HashMap::new().into(),
-      disi_jump_tables: HashMap::new().into(),
-      data_inputs: HashMap::new().into(),
-    })
   }
   fn read_fields(
     meta: &mut impl IndexInput,

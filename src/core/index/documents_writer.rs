@@ -29,9 +29,11 @@ use crate::core::index::term::Term;
 use crate::core::search::query::Query;
 use crate::core::store::directory::Directory;
 use crate::core::util::accountable::Accountable;
+use crate::core::util::close::Closeable;
 use crate::core::util::error::lucene_error::LuceneError;
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::info_stream::{InfoStream, InfoStreamMT};
+use crate::core::util::io_utils::IOUtils;
 use crate::core::util::supplier::Supplier;
 use parking_lot::{Mutex, MutexGuard};
 use std::collections::HashSet;
@@ -273,7 +275,7 @@ where
 
     let mut finalizer = LockAndAbortAllGuard::new(self);
 
-    let result = (|| -> Result<()> {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       self.flush_control.delete_queue.lock().clear();
       self.flush_control.per_thread_pool.lock_new_writers();
       finalizer.writers = self
@@ -303,19 +305,20 @@ where
           .message("DW", "finished lockAndAbortAll success=true")?;
       }
       Ok(())
-    })();
+    }));
 
-    match result {
-      Ok(()) => Ok(finalizer),
-      Err(e) => {
-        if self.info_stream.is_enabled("DW") {
-          self
-            .info_stream
-            .message("DW", "finished lockAndAbortAll success=false")?;
-        }
-        drop(finalizer);
-        Err(e)
-      },
+    if matches!(&result, Ok(Ok(()))) {
+      Ok(finalizer)
+    } else {
+      if self.info_stream.is_enabled("DW") {
+        self
+          .info_stream
+          .message("DW", "finished lockAndAbortAll success=false")?;
+      }
+      let close_result =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| finalizer.close()));
+      IOUtils::use_or_suppress_caught_result(result, close_result)?;
+      unreachable!()
     }
   }
   /// Returns how many documents were aborted.
@@ -327,12 +330,17 @@ where
   where
     L: LiveIndexWriterConfig,
   {
-    {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       let num = per_thread.state.get_num_docs_in_ram();
       self.subtract_flushed_num_docs(num);
       per_thread.dwpt.lock().abort()?;
+      Ok(())
+    }));
+    self.flush_control.do_on_abort(&per_thread, config)?;
+    match result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
     }
-    self.flush_control.do_on_abort(&per_thread, config)
   }
   /// returns the maximum sequence number for all previously completed operations
   pub(crate) fn get_max_completed_sequence_number(&self) -> i64 {
@@ -378,10 +386,19 @@ where
   pub(crate) fn any_deletions(&self) -> bool {
     self.flush_control.delete_queue.lock().any_changes(None)
   }
-  pub(crate) fn close(&self) {
+  pub(crate) fn close(&self) -> Result<()> {
     self.closed.store(true, Ordering::SeqCst);
-    self.flush_control.close();
-    self.flush_control.per_thread_pool.close();
+    IOUtils::close(0..2, |operation| match operation {
+      0 => {
+        self.flush_control.close();
+        Ok(())
+      },
+      1 => {
+        self.flush_control.per_thread_pool.close();
+        Ok(())
+      },
+      _ => unreachable!(),
+    })
   }
   /// Called if we hit an error at a bad time (when updating the index files) and must discard
   /// all currently buffered docs. This resets our state, discarding any docs added since last flush.
@@ -393,7 +410,7 @@ where
 
     let mut success = false;
 
-    let result = (|| -> Result<()> {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       self.flush_control.delete_queue.lock().clear();
 
       if self.info_stream.is_enabled("DW") {
@@ -405,9 +422,14 @@ where
         .per_thread_pool
         .filter_and_lock(|_| true)?
       {
-        let result = self.abort_documents_writer_per_thread(per_thread.clone(), config);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+          self.abort_documents_writer_per_thread(per_thread.clone(), config)
+        }));
         per_thread.unlock();
-        result?;
+        match result {
+          Ok(result) => result?,
+          Err(payload) => std::panic::resume_unwind(payload),
+        }
       }
 
       self
@@ -424,7 +446,7 @@ where
 
       success = true;
       Ok(())
-    })();
+    }));
 
     if success {
       debug_assert_eq!(
@@ -447,7 +469,10 @@ where
         .message("DW", &format!("done abort success={success}"))?;
     }
 
-    result
+    match result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
   fn pre_update(&self, writer: &IndexWriter<D>) -> Result<bool> {
     self.ensure_open()?;
@@ -498,30 +523,34 @@ where
     let mut flushing_dwpt_opt = None;
     let mut seq_no = 0;
     let config = &writer.config;
-    let result = (|| {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       // This must happen after we've pulled the DWPT because IW.close
       // waits for all DWPT to be released:
       self.ensure_open()?;
-      let res = dwpt_wrapper.dwpt.lock().update_documents(
-        docs,
-        del_node,
-        &self.flush_notifications,
-        &self.num_docs_in_ram,
-        writer,
-      );
+      let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        dwpt_wrapper.dwpt.lock().update_documents(
+          docs,
+          del_node,
+          &self.flush_notifications,
+          &self.num_docs_in_ram,
+          writer,
+        )
+      }));
       if dwpt_wrapper.state.is_aborted() {
         self.flush_control.do_on_abort(&dwpt_wrapper, config)?;
       }
-      if let Ok(sno) = &res {
-        seq_no = *sno;
-        flushing_dwpt_opt = {
-          let dw = &dwpt_wrapper.dwpt.lock();
-          self.flush_control.do_after_document(dw, config)?
-        };
+      match res {
+        Ok(result) => {
+          seq_no = result?;
+          flushing_dwpt_opt = {
+            let dw = &dwpt_wrapper.dwpt.lock();
+            self.flush_control.do_after_document(dw, config)?
+          };
+        },
+        Err(payload) => std::panic::resume_unwind(payload),
       }
-
-      res
-    })();
+      Ok(())
+    }));
 
     let release_result = {
       let inner = self.flush_control.inner.lock();
@@ -542,7 +571,10 @@ where
     };
 
     release_result?;
-    result?;
+    match result {
+      Ok(result) => result?,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
     if self.post_update(flushing_dwpt_opt, has_events, writer)? {
       seq_no = -seq_no;
     }
@@ -569,7 +601,7 @@ where
     loop {
       debug_assert!(!flushing_dwpt.state.has_flushed());
 
-      let res: Result<_> = (|| {
+      let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
         debug_assert!({
           let current_full_flush_del_queue = &self.inner.lock().current_full_flush_del_queue;
           current_full_flush_del_queue.is_none()
@@ -592,7 +624,7 @@ where
         // otherwise the deletes frozen by 'B' are not applied to 'A' and we
         // might miss to deletes documents in 'A'.
         let mut has_ticket = None;
-        let result = (|| {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
           debug_assert!(self.assert_ticket_queue_modification(&flushing_dwpt.state.delete_queue));
           let ticket = {
             let mut dwpt = flushing_dwpt.dwpt.lock();
@@ -605,45 +637,52 @@ where
               let flushing_docs_in_ram = flushing_dwpt.state.get_num_docs_in_ram();
               {
                 let mut dwpt = flushing_dwpt.dwpt.lock();
-                let result = (|| {
-                  let v = dwpt.flush(&self.flush_notifications, writer)?;
-                  match v {
-                    Some(new_segment) => {
-                      self
-                        .ticket_queue
-                        .add_segment(has_ticket.as_ref().unwrap(), new_segment)?;
-                      Ok(())
-                    },
-                    None => Err(LuceneError::illegal_state("flush_segment returned None")),
-                  }
-                })();
+                let result =
+                  std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+                    let v = dwpt.flush(&self.flush_notifications, writer)?;
+                    match v {
+                      Some(new_segment) => {
+                        self
+                          .ticket_queue
+                          .add_segment(has_ticket.as_ref().unwrap(), new_segment)?;
+                        Ok(())
+                      },
+                      None => Err(LuceneError::illegal_state("flush_segment returned None")),
+                    }
+                  }));
+                let success = matches!(&result, Ok(Ok(())));
                 self.subtract_flushed_num_docs(flushing_docs_in_ram);
                 if !dwpt.pending_files_to_delete().is_empty() {
                   let files = dwpt.pending_files_to_delete().clone();
                   self.flush_notifications.delete_unused_files(files)?;
                 }
-                if result.is_err() {
+                if !success {
                   let dir = dwpt.segment_info.dir.clone();
                   self.flush_notifications.flush_failed(std::mem::replace(
                     &mut dwpt.segment_info,
                     SegmentInfo::dummy(dir),
                   ))?
                 }
-                result
+                match result {
+                  Ok(result) => result,
+                  Err(payload) => std::panic::resume_unwind(payload),
+                }
               }
             },
             None => Err(LuceneError::illegal_state("ticket returned None")),
           }
-        })();
-        if result.is_err()
-          && let Some(ticket_idx) = has_ticket
-        {
+        }));
+        let success = matches!(&result, Ok(Ok(())));
+        if !success && let Some(ticket_idx) = has_ticket {
           // In the case of a failure make sure we are making progress and
           // apply all the deletes since the segment flush failed since the flush
           // The ticket could hold global deletes; see `FlushTicket::can_publish`.
           self.ticket_queue.mark_ticket_failed(ticket_idx)?;
         }
-        result?;
+        match result {
+          Ok(result) => result?,
+          Err(payload) => std::panic::resume_unwind(payload),
+        }
         //Now we are done and try to flush the ticket queue if the head of the
         // queue has already finished the flush.
         if self.ticket_queue.get_ticket_count() as usize
@@ -656,12 +695,15 @@ where
           self.flush_notifications.on_ticket_backlog()?;
         }
         Ok(())
-      })();
+      }));
       let config = &writer.config;
       self
         .flush_control
         .do_after_flush(None, flushing_dwpt, config)?;
-      res?;
+      match res {
+        Ok(result) => result?,
+        Err(payload) => std::panic::resume_unwind(payload),
+      }
       let v = self.flush_control.next_pending_flush(None, config)?;
 
       match v {
@@ -795,7 +837,7 @@ where
     });
 
     let mut anything_flushed = false;
-    let result: Result<()> = (|| {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       anything_flushed |= self.maybe_flush(writer)?;
       // If a concurrent flush is still in flight wait for it
       self.flush_control.wait_for_flush();
@@ -819,7 +861,7 @@ where
       // concurrently if we have very small ram buffers this happens quite frequently
       debug_assert!(!flushing_delete_queue.any_changes(None));
       Ok(())
-    })();
+    }));
     debug_assert!({
       let inner = self.inner.lock();
       Arc::ptr_eq(
@@ -830,28 +872,32 @@ where
     // all DWPT have been processed and this queue has been fully flushed to the
     // ticket-queue
     flushing_delete_queue.close()?;
-    result?;
+    match result {
+      Ok(result) => result?,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
     Ok(if anything_flushed { -seq_no } else { seq_no })
   }
   pub(crate) fn finish_full_flush<L>(&self, success: bool, config: &L) -> Result<()>
   where
     L: LiveIndexWriterConfig,
   {
-    if self.info_stream.is_enabled("DW") {
-      let thread_name = thread::current().name().unwrap_or("<unnamed>").to_string();
-      self.info_stream.message(
-        "DW",
-        &format!("{thread_name} finishFullFlush success={success}"),
-      )?;
-    }
-    let result = {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+      if self.info_stream.is_enabled("DW") {
+        let thread_name = thread::current().name().unwrap_or("<unnamed>").to_string();
+        self.info_stream.message(
+          "DW",
+          &format!("{thread_name} finishFullFlush success={success}"),
+        )?;
+      }
       debug_assert!(self.set_flushing_delete_queue(None, None));
       if success {
-        self.flush_control.finish_full_flush(config)
+        self.flush_control.finish_full_flush(config)?;
       } else {
-        self.flush_control.abort_full_flushes(self, config)
+        self.flush_control.abort_full_flushes(self, config)?;
       }
-    };
+      Ok(())
+    }));
     self
       .pending_changes_in_current_full_flush
       .store(false, Ordering::SeqCst);
@@ -859,7 +905,10 @@ where
     // flush
     self.apply_all_deletes()?;
 
-    result
+    match result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
 
   /// Returns the number of bytes currently being flushed
@@ -902,12 +951,12 @@ where
   }
 }
 
-impl<D, FN> Drop for LockAndAbortAllGuard<'_, D, FN>
+impl<D, FN> Closeable for LockAndAbortAllGuard<'_, D, FN>
 where
   D: Directory,
   FN: FlushNotifications,
 {
-  fn drop(&mut self) {
+  fn close(&mut self) -> Result<()> {
     if self
       .released
       .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -917,8 +966,7 @@ where
         self
           .documents_writer
           .info_stream
-          .message("DW", "unlockAllAbortedThread")
-          .unwrap_or_default();
+          .message("DW", "unlockAllAbortedThread")?;
       }
       self
         .documents_writer
@@ -929,6 +977,17 @@ where
         writer.unlock();
       }
     }
+    Ok(())
+  }
+}
+
+impl<D, FN> Drop for LockAndAbortAllGuard<'_, D, FN>
+where
+  D: Directory,
+  FN: FlushNotifications,
+{
+  fn drop(&mut self) {
+    self.close().unwrap_or_default();
   }
 }
 

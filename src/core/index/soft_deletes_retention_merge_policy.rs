@@ -560,26 +560,29 @@ where
   let max_doc = reader.max_doc()?;
   let mut searcher = IndexSearcher::new(reader.clone().get_context()?)?;
   searcher.set_query_cache(None);
-  let result = (|| -> Result<Option<FixedBitSet>> {
-    let query = searcher.rewrite(query)?;
-    let weight = searcher.create_weight(query, ScoreMode::CompleteNoScores, 1.0)?;
-    let context = &searcher.get_leaf_contexts()?[0];
-    let mut matches = FixedBitSet::new(max_doc as usize);
-    if let Some(mut scorer) = weight.scorer(context, &searcher)? {
-      loop {
-        let doc_id = scorer.iterator_mut().next_doc()?;
-        if doc_id == NO_MORE_DOCS {
-          break;
+  let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+    || -> Result<Option<FixedBitSet>> {
+      let query = searcher.rewrite(query)?;
+      let weight = searcher.create_weight(query, ScoreMode::CompleteNoScores, 1.0)?;
+      let context = &searcher.get_leaf_contexts()?[0];
+      let mut matches = FixedBitSet::new(max_doc as usize);
+      if let Some(mut scorer) = weight.scorer(context, &searcher)? {
+        loop {
+          let doc_id = scorer.iterator_mut().next_doc()?;
+          if doc_id == NO_MORE_DOCS {
+            break;
+          }
+          matches.set(doc_id as usize);
         }
-        matches.set(doc_id as usize);
+        Ok(Some(matches))
+      } else {
+        Ok(None)
       }
-      Ok(Some(matches))
-    } else {
-      Ok(None)
-    }
-  })();
+    },
+  ));
   drop(searcher);
-  IOUtils::use_or_suppress_result(result, reader.dec_ref())
+  let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| reader.dec_ref()));
+  IOUtils::use_or_suppress_caught_result(result, close_result)
 }
 
 fn new_reader_with_live_docs<D>(

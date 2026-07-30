@@ -119,14 +119,20 @@ where
     let fields_stream_fn =
       IndexFileNames::segment_file_name(segment, segment_suffix, FIELDS_EXTENSION);
     let mut meta_in = None;
-    let result: Result<Self> = (|| {
-      let mut fields_stream = dir.open_input(
+    let mut fields_stream = None;
+    let mut fields_index_reader = None;
+    let mut reader = None;
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+      fields_stream = Some(dir.open_input(
         &fields_stream_fn,
         &context.with_read_advice_self(ReadAdvice::Random)?,
-      )?;
+      )?);
+      let fields_stream_ref = fields_stream
+        .as_mut()
+        .ok_or_else(|| LuceneError::illegal_state("stored fields input is missing"))?;
 
       let version = CodecUtil::check_index_header(
-        &mut fields_stream,
+        fields_stream_ref,
         format_name,
         VERSION_START,
         VERSION_CURRENT,
@@ -136,7 +142,7 @@ where
 
       debug_assert_eq!(
         CodecUtil::index_header_length(format_name, segment_suffix),
-        fields_stream.get_file_pointer()?
+        fields_stream_ref.get_file_pointer()?
       );
 
       let meta_stream_fm =
@@ -164,14 +170,8 @@ where
       // structure of the checksum footer: which looks
       // for FOOTER_MAGIC + algorithmID. This is cheap and can detect some
       // forms of corruption such as file truncation.
-      CodecUtil::retrieve_checksum(&mut fields_stream)?;
-      let state = BlockState::new(
-        merging,
-        fields_stream,
-        compression_mode.new_decompressor(),
-        chunk_size,
-      );
-      let fields_index_reader = FieldsIndexReader::new(
+      CodecUtil::retrieve_checksum(fields_stream_ref)?;
+      fields_index_reader = Some(FieldsIndexReader::new(
         dir,
         si.name.to_string(),
         segment_suffix,
@@ -180,8 +180,11 @@ where
         si.get_id(),
         meta,
         context,
-      )?;
-      let max_pointer = fields_index_reader.get_max_pointer();
+      )?);
+      let max_pointer = fields_index_reader
+        .as_ref()
+        .ok_or_else(|| LuceneError::illegal_state("stored fields index input is missing"))?
+        .get_max_pointer();
 
       let num_chunks = meta.read_vlong()?;
       let num_dirty_chunks = meta.read_vlong()?;
@@ -202,10 +205,20 @@ where
           "Cannot have more dirty chunks than documents within dirty chunks: numDirtyChunks={num_dirty_chunks}, numDirtyDocs={num_dirty_docs} (resource={meta})"
         )));
       };
-      let reader = Self {
+      let state = BlockState::new(
+        merging,
+        fields_stream
+          .take()
+          .ok_or_else(|| LuceneError::illegal_state("stored fields input is missing"))?,
+        compression_mode.new_decompressor(),
+        chunk_size,
+      );
+      reader = Some(Self {
         version,
         field_infos,
-        index_reader: fields_index_reader,
+        index_reader: fields_index_reader
+          .take()
+          .ok_or_else(|| LuceneError::illegal_state("stored fields index input is missing"))?,
         max_pointer,
         chunk_size,
         compression_mode,
@@ -219,24 +232,53 @@ where
         prefetched_block_id_cache,
         prefetched_block_id_cache_index: 0,
         closed: AtomicBool::new(false),
-      };
+      });
       CodecUtil::check_footer(meta)?;
-      Ok(reader)
-    })();
-    let result = match result {
-      Ok(reader) => Ok(reader),
-      Err(e) => {
-        if let Some(ref mut meta) = meta_in {
-          Err(CodecUtil::check_footer_with_error(meta, e))
-        } else {
-          Err(e)
+      meta.close()?;
+      Ok(())
+    }));
+    match result {
+      Ok(Ok(())) => reader
+        .take()
+        .ok_or_else(|| LuceneError::illegal_state("stored fields reader is missing")),
+      result => {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+          match result {
+            Ok(Err(error)) => match meta_in.as_mut() {
+              Some(meta) => Err(CodecUtil::check_footer_with_error(meta, error)),
+              None => Err(error),
+            },
+            Err(payload) => {
+              if let Some(meta) = meta_in.as_mut() {
+                let error = LuceneError::tragedy_from_panic(
+                  "panic while constructing stored fields reader",
+                  payload.as_ref(),
+                );
+                if let error @ LuceneError::CorruptIndex(_) =
+                  CodecUtil::check_footer_with_error(meta, error)
+                {
+                  return Err(error);
+                }
+              }
+              std::panic::resume_unwind(payload)
+            },
+            Ok(Ok(())) => unreachable!(),
+          }
+        }));
+        IOUtils::close_resources_while_handling_error((
+          reader.as_ref(),
+          fields_index_reader.as_ref(),
+          fields_stream.as_ref(),
+          meta_in.as_ref(),
+        ))?;
+        match result {
+          Ok(Err(error)) => Err(error),
+          Ok(Ok(())) => Err(LuceneError::illegal_state(
+            "stored fields reader construction failed without an error",
+          )),
+          Err(payload) => std::panic::resume_unwind(payload),
         }
       },
-    };
-    if let Some(meta) = meta_in {
-      IOUtils::use_or_suppress_result(result, meta.close())
-    } else {
-      result
     }
   }
 
@@ -626,12 +668,10 @@ where
   /// Reset this block so that it stores state for the block that contains the
   /// given doc id.
   fn reset(&mut self, doc_id: i32, num_docs: i32) -> Result<()> {
-    let result: Result<()> = (|| {
-      self.do_reset(doc_id, num_docs)?;
-      Ok(())
-    })();
-
-    if result.is_err() {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      self.do_reset(doc_id, num_docs)
+    }));
+    if !matches!(&result, Ok(Ok(()))) {
       // if the read failed, set chunkDocs to 0 so that it does not
       // contain any docs anymore and is not reused. This should help
       // get consistent errors when trying to get several
@@ -639,7 +679,10 @@ where
       // force the header to be decoded again
       self.chunk_docs = 0;
     }
-    Ok(())
+    match result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
 
   fn do_reset(&mut self, doc_id: i32, num_docs: i32) -> Result<()> {

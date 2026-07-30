@@ -159,7 +159,7 @@ fn verify(bytes: &GrowableByteArrayDataOutput, expected: &[u8], total_length: us
   let mut output = OutputStreamDataOutput::new(&mut buffer);
   bytes.write_to_data_output(&mut output)?;
 
-  let data = output.os.into_inner().unwrap();
+  let data = output.os.unwrap().into_inner().unwrap();
   assert_eq!(data.len(), total_length);
 
   for i in 0..total_length {

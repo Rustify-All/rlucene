@@ -141,14 +141,17 @@ where
     let op_lock = self.base.lock();
     let index_commit = self.base.snapshot_with_lock(Some(&op_lock))?;
     let mut success = false;
-    let result = self.persist(&op_lock);
-    if result.is_ok() {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.persist(&op_lock)));
+    if matches!(&result, Ok(Ok(()))) {
       success = true;
     }
     if !success {
       let _ = self.base.release_with_lock(&index_commit, Some(&op_lock));
     }
-    result?;
+    match result {
+      Ok(result) => result?,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
     Ok(index_commit)
   }
 
@@ -158,14 +161,17 @@ where
     let op_lock = self.base.lock();
     self.base.release_with_lock(commit, Some(&op_lock))?;
     let mut success = false;
-    let result = self.persist(&op_lock);
-    if result.is_ok() {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.persist(&op_lock)));
+    if matches!(&result, Ok(Ok(()))) {
       success = true;
     }
     if !success {
       self.base.inc_ref_with_lock(commit, Some(&op_lock));
     }
-    result
+    match result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
 
   /// Deletes a snapshotted commit by generation. Once this method returns, the snapshot information
@@ -186,24 +192,39 @@ where
     let mut next_write_gen = self.next_write_gen.lock();
     let file_name = format!("{SNAPSHOTS_PREFIX}{}", *next_write_gen);
     let mut success = false;
-    let mut out = self.dir.create_output(&file_name, &IO_CONTEXT_DEFAULT)?;
-    let write_result = (|| {
-      CodecUtil::write_header(&mut out, CODEC_NAME, VERSION_CURRENT)?;
-      let ref_counts = self.base.ref_counts_with_lock(Some(op_lock));
-      out.write_vint(ref_counts.len() as i32)?;
-      for (generation, ref_count) in ref_counts {
-        out.write_vlong(generation)?;
-        out.write_vint(ref_count)?;
-      }
-      success = true;
-      Ok(())
-    })();
-    let close_result = out.close();
-    let result = IOUtils::use_or_suppress_result(write_result, close_result);
+    let mut out = None;
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+      out = Some(self.dir.create_output(&file_name, &IO_CONTEXT_DEFAULT)?);
+      let write_result =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+          let out = out
+            .as_mut()
+            .ok_or_else(|| LuceneError::illegal_state("snapshot output is missing"))?;
+          CodecUtil::write_header(out, CODEC_NAME, VERSION_CURRENT)?;
+          let ref_counts = self.base.ref_counts_with_lock(Some(op_lock));
+          out.write_vint(ref_counts.len() as i32)?;
+          for (generation, ref_count) in ref_counts {
+            out.write_vlong(generation)?;
+            out.write_vint(ref_count)?;
+          }
+          success = true;
+          Ok(())
+        }));
+      let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        out
+          .as_mut()
+          .ok_or_else(|| LuceneError::illegal_state("snapshot output is missing"))?
+          .close()
+      }));
+      IOUtils::use_or_suppress_caught_result(write_result, close_result)
+    }));
     if !success {
       IOUtils::delete_files_ignoring_exceptions(self.dir.as_ref(), std::iter::once(&file_name));
     }
-    result?;
+    match result {
+      Ok(result) => result?,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
 
     self.dir.sync(std::slice::from_ref(&file_name))?;
 
@@ -268,22 +289,30 @@ where
           snapshot_files.push(file.clone());
           let mut ref_counts = HashMap::new();
           let mut input = self.dir.open_input(&file, &IO_CONTEXT_DEFAULT)?;
-          let read_result = (|| {
-            CodecUtil::check_header(&mut input, CODEC_NAME, VERSION_START, VERSION_START)?;
-            let count = input.read_vint()?;
-            for _ in 0..count {
-              let commit_generation = input.read_vlong()?;
-              let ref_count = input.read_vint()?;
-              ref_counts.insert(commit_generation, ref_count);
-            }
-            Ok(())
-          })();
-          if let Err(error) = read_result
-            && io_error.is_none()
-          {
-            io_error = Some(error);
-          }
+          let read_result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+              let result = (|| -> Result<()> {
+                CodecUtil::check_header(&mut input, CODEC_NAME, VERSION_START, VERSION_START)?;
+                let count = input.read_vint()?;
+                for _ in 0..count {
+                  let commit_generation = input.read_vlong()?;
+                  let ref_count = input.read_vint()?;
+                  ref_counts.insert(commit_generation, ref_count);
+                }
+                Ok(())
+              })();
+              if let Err(error) = result
+                && io_error.is_none()
+              {
+                io_error = Some(error);
+              }
+              Ok(())
+            }));
           input.close()?;
+          match read_result {
+            Ok(result) => result?,
+            Err(payload) => std::panic::resume_unwind(payload),
+          }
 
           gen_loaded = gen_;
           self

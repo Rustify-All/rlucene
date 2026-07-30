@@ -119,15 +119,15 @@ where
   }
 
   fn read_short(&mut self) -> Result<i16> {
-    let result = BitUtil::get_i16_le(self.bytes.as_slice(), self.pos);
-    self.pos += 2;
-    Ok(result)
+    let pos = self.pos;
+    self.pos += BitUtil::SHORT_BYTES;
+    Ok(BitUtil::get_i16_le(self.bytes.as_slice(), pos))
   }
 
   fn read_int(&mut self) -> Result<i32> {
-    let value = BitUtil::get_i32_le(self.bytes.as_slice(), self.pos);
-    self.pos += 4;
-    Ok(value)
+    let pos = self.pos;
+    self.pos += BitUtil::INT_BYTES;
+    Ok(BitUtil::get_i32_le(self.bytes.as_slice(), pos))
   }
 
   fn read_group_vint(&mut self, dst: &mut [i32], offset: usize) -> Result<()> {
@@ -135,9 +135,9 @@ where
   }
 
   fn read_long(&mut self) -> Result<i64> {
-    let value = BitUtil::get_i64_le(self.bytes.as_slice(), self.pos);
-    self.pos += 8;
-    Ok(value)
+    let pos = self.pos;
+    self.pos += BitUtil::LONG_BYTES;
+    Ok(BitUtil::get_i64_le(self.bytes.as_slice(), pos))
   }
 
   fn skip_bytes(&mut self, num_bytes: i64) -> Result<()> {

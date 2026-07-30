@@ -136,7 +136,7 @@ where
   ) -> Result<(i32, HashMap<String, FileEntry>)> {
     let mut entries_stream = directory.open_checksum_input(entries_file_name)?;
     let mut footer_attempted = false;
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    let mut result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
       let result = (|| {
         let version = CodecUtil::check_index_header(
           &mut entries_stream,
@@ -160,34 +160,25 @@ where
       }
     }));
 
-    if let Err(payload) = &result
+    let footer_error = if let Err(payload) = &result
       && !footer_attempted
     {
-      let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let error =
-          LuceneError::tragedy_from_panic("panic while reading compound entries", payload.as_ref());
-        let _ = CodecUtil::check_footer_with_error(&mut entries_stream, error);
-      }));
+      let error =
+        LuceneError::tragedy_from_panic("panic while reading compound entries", payload.as_ref());
+      Some(CodecUtil::check_footer_with_error(
+        &mut entries_stream,
+        error,
+      ))
+    } else {
+      None
+    };
+    if let Some(error @ LuceneError::CorruptIndex(_)) = footer_error {
+      result = Ok(Err(error));
     }
 
     let close_result =
       std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| entries_stream.close()));
-    match result {
-      Ok(result) => match close_result {
-        Ok(close_result) => IOUtils::use_or_suppress_result(result, close_result),
-        Err(payload) => match result {
-          Ok(_) => std::panic::resume_unwind(payload),
-          Err(mut error) => {
-            error.add_suppressed(LuceneError::tragedy_from_panic(
-              "panic while closing compound entries",
-              payload.as_ref(),
-            ));
-            Err(error)
-          },
-        },
-      },
-      Err(payload) => std::panic::resume_unwind(payload),
-    }
+    IOUtils::use_or_suppress_caught_result(result, close_result)
   }
   fn read_mapping(entries_stream: &mut impl IndexInput) -> Result<HashMap<String, FileEntry>> {
     let num_entries = entries_stream.read_vint()?;

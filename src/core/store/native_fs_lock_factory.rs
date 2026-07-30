@@ -18,6 +18,7 @@ use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::fs::{File, Metadata, OpenOptions};
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -123,32 +124,39 @@ impl FSLockFactory for NativeFSLockFactory {
       .canonicalize()
       .map_err(|e| LuceneError::io_with_path(lock_file.to_string_lossy().to_string(), e))?;
     let real_path_str = real_path.to_string_lossy().to_string();
+    let metadata = file.metadata()?;
 
     let mut lock_held = self.lock_held.lock();
     if !lock_held.insert(real_path_str.clone()) {
       return Err(LuceneError::lock_obtain_failed(format!(
-        "Lock held by another program: {real_path_str}"
+        "Lock held by this virtual machine: {real_path_str}"
       )));
     }
-    match file.try_lock_exclusive() {
-      Ok(_) => {
-        let metadata = file.metadata()?;
-        let lock = NativeFSLock {
-          file,
-          path: real_path,
-          metadata,
-          closed: AtomicBool::new(false),
-          #[cfg(test)]
-          lock_released_for_test: AtomicBool::new(false),
-          close_lock: Mutex::new(()),
-        };
-        Ok(lock)
-      },
-      Err(_) => {
+    let result =
+      std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| file.try_lock_exclusive()));
+    match result {
+      Ok(Ok(())) => Ok(NativeFSLock {
+        file: Mutex::new(Some(file)),
+        path: real_path,
+        metadata,
+        closed: AtomicBool::new(false),
+        #[cfg(test)]
+        lock_released_for_test: AtomicBool::new(false),
+        close_lock: Mutex::new(()),
+      }),
+      Ok(Err(error)) => {
         lock_held.remove(&real_path_str);
-        Err(LuceneError::lock_obtain_failed(format!(
-          "Lock held by this machine: {real_path_str}"
-        )))
+        if error.kind() == ErrorKind::WouldBlock {
+          Err(LuceneError::lock_obtain_failed(format!(
+            "Lock held by another program: {real_path_str}"
+          )))
+        } else {
+          Err(LuceneError::io_with_path(real_path_str, error))
+        }
+      },
+      Err(payload) => {
+        lock_held.remove(&real_path_str);
+        std::panic::resume_unwind(payload)
       },
     }
   }
@@ -171,7 +179,7 @@ fn get_lock_held() -> Arc<Mutex<HashSet<String>>> {
 }
 
 pub struct NativeFSLock {
-  file: File,
+  file: Mutex<Option<File>>,
   pub(crate) path: PathBuf,
   pub(crate) metadata: Metadata,
   pub(crate) closed: AtomicBool,
@@ -183,7 +191,12 @@ pub struct NativeFSLock {
 impl NativeFSLock {
   #[cfg(test)]
   pub(crate) fn release_lock_for_test(&self) -> Result<()> {
-    self.file.unlock()?;
+    self
+      .file
+      .lock()
+      .as_ref()
+      .ok_or_else(|| LuceneError::already_closed("native file lock is closed"))?
+      .unlock()?;
     self.lock_released_for_test.store(true, Ordering::SeqCst);
     Ok(())
   }
@@ -220,12 +233,22 @@ impl CloseableRef for NativeFSLock {
   fn close(&self) -> Result<()> {
     let _guard = self.close_lock.lock();
     if !self.closed.load(Ordering::SeqCst) {
-      let unlock_result = self.file.unlock();
+      let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+        if let Some(file) = self.file.lock().take() {
+          let unlock_result = file.unlock();
+          drop(file);
+          unlock_result?;
+        }
+        Ok(())
+      }));
       self.closed.store(true, Ordering::SeqCst);
       let real_path_str = self.path.to_string_lossy().to_string();
       let locks = get_lock_held();
       locks.lock().remove(&real_path_str);
-      unlock_result?;
+      match result {
+        Ok(result) => result?,
+        Err(payload) => std::panic::resume_unwind(payload),
+      }
     }
     Ok(())
   }
@@ -265,7 +288,15 @@ impl Lock for NativeFSLock {
       )));
     }
 
-    let metadata = self.file.metadata().map_err(LuceneError::io)?;
+    let metadata = self
+      .file
+      .lock()
+      .as_ref()
+      .ok_or_else(|| {
+        LuceneError::already_closed(format!("Lock already released: {:?}", self.path))
+      })?
+      .metadata()
+      .map_err(LuceneError::io)?;
     if metadata.len() != 0 {
       return Err(LuceneError::illegal_state(format!(
         "Unexpected lock file size: {}, (lock: {:?})",

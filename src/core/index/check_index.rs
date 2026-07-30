@@ -1403,48 +1403,43 @@ where
       Ok(())
     }));
 
-    let mut panic_payload = None;
-    let body_result = match body_result {
-      Ok(body_result) => Some(body_result),
-      Err(payload) if fail_fast => {
-        panic_payload = Some(payload);
-        None
-      },
-      Err(payload) => Some(Err(LuceneError::tragedy_from_panic(
-        "CheckIndex segment check failed",
-        payload.as_ref(),
-      ))),
-    };
+    let result = panic::catch_unwind(AssertUnwindSafe(|| -> Result<SegmentInfoStatus> {
+      let body_result = match body_result {
+        Ok(body_result) => body_result,
+        Err(payload) if fail_fast => panic::resume_unwind(payload),
+        Err(payload) => Err(LuceneError::tragedy_from_panic(
+          "CheckIndex segment check failed",
+          payload.as_ref(),
+        )),
+      };
 
-    let result = body_result.map(|body_result| match body_result {
-      Ok(()) => Ok(segment_status),
-      Err(error) if fail_fast => Err(error),
-      Err(error) => {
-        let error_debug = format!("{error:?}");
-        segment_status.error = Some(error);
-        segment_status.to_lose_doc_count = to_lose_doc_count;
-        let report_result = (|| -> Result<()> {
+      match body_result {
+        Ok(()) => Ok(segment_status),
+        Err(error) if fail_fast => Err(error),
+        Err(error) => {
+          let error_debug = format!("{error:?}");
+          segment_status.error = Some(error);
+          segment_status.to_lose_doc_count = to_lose_doc_count;
           Self::msg(info_stream.as_deref_mut(), "FAILED")?;
           Self::msg(
             info_stream.as_deref_mut(),
             "    WARNING: exorciseIndex() would remove reference to this segment; full exception:",
           )?;
           Self::msg(info_stream.as_deref_mut(), &error_debug)?;
-          Self::msg(info_stream.as_deref_mut(), "")
-        })();
-        report_result.map(|()| segment_status)
-      },
-    });
-
+          Self::msg(info_stream, "")?;
+          Ok(segment_status)
+        },
+      }
+    }));
     let close_result = match reader.as_ref() {
       Some(reader) => reader.close(),
       None => Ok(()),
     };
     close_result?;
-    if let Some(payload) = panic_payload {
-      panic::resume_unwind(payload);
+    match result {
+      Ok(result) => result,
+      Err(payload) => panic::resume_unwind(payload),
     }
-    result.expect("body result is present unless a panic is resumed")
   }
 }
 
@@ -4852,9 +4847,26 @@ impl CheckIndex<DirectoryEnum, LockEnum, Sink> {
       },
     };
 
-    let mut checker: CheckIndex<_, _, Stdout> = match CheckIndex::new(Arc::clone(&directory)) {
-      Ok(checker) => checker,
-      Err(error) => return IOUtils::use_or_suppress_result(Err(error), directory.close()),
+    let checker_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      CheckIndex::new(Arc::clone(&directory))
+    }));
+    let mut checker: CheckIndex<_, _, Stdout> = match checker_result {
+      Ok(Ok(checker)) => checker,
+      Ok(Err(error)) => {
+        let close_result =
+          std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| directory.close()));
+        return match close_result {
+          Ok(close_result) => IOUtils::use_or_suppress_result(Err(error), close_result),
+          Err(payload) => Err(IOUtils::use_or_suppress(
+            Some(error),
+            LuceneError::tragedy_from_panic("panic while closing directory", payload.as_ref()),
+          )),
+        };
+      },
+      Err(payload) => {
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| directory.close()));
+        std::panic::resume_unwind(payload)
+      },
     };
     let mut options = Options {
       do_exorcise,
@@ -4866,9 +4878,17 @@ impl CheckIndex<DirectoryEnum, LockEnum, Sink> {
       dir_impl,
       out: Some(std::io::stdout()),
     };
-    let result = checker.do_check(&mut options);
-    let result = IOUtils::use_or_suppress_result(result, checker.close());
-    IOUtils::use_or_suppress_result(result, directory.close())
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      checker.do_check(&mut options)
+    }));
+    let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      IOUtils::close(0..2, |operation| match operation {
+        0 => checker.close(),
+        1 => directory.close(),
+        _ => unreachable!(),
+      })
+    }));
+    IOUtils::use_or_suppress_caught_result(result, close_result)
   }
 }
 

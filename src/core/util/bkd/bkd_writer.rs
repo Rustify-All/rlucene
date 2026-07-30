@@ -605,7 +605,7 @@ where
 
     let data_start_fp = data_out.get_file_pointer()?;
 
-    let result = (|| -> Result<()> {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       let mut parent_splits = vec![0i32; self.config.num_index_dims];
       self.build(
         0,
@@ -637,10 +637,10 @@ where
         "Temp directory should be empty"
       );
       Ok(())
-    })();
+    }));
     match result {
-      Ok(_) => {},
-      Err(e) => {
+      Ok(Ok(())) => {},
+      result => {
         let created_files = self
           .temp_dir
           .get_created_files()
@@ -648,7 +648,11 @@ where
           .created_filenames
           .clone();
         IOUtils::delete_files_ignoring_exceptions(&self.temp_dir, &created_files);
-        return Err(e);
+        return match result {
+          Ok(Err(error)) => Err(error),
+          Err(payload) => std::panic::resume_unwind(payload),
+          Ok(Ok(())) => unreachable!(),
+        };
       },
     }
 
@@ -1298,8 +1302,14 @@ where
         .contains(&writer.name)
       {
         let mut input = self.temp_dir.open_checksum_input(&writer.name)?;
-        let footer_error = CodecUtil::check_footer_with_error(&mut input, prior_exception);
-        return IOUtils::use_or_suppress_result(Err(footer_error), input.close());
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+          Err(CodecUtil::check_footer_with_error(
+            &mut input,
+            prior_exception,
+          ))
+        }));
+        let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| input.close()));
+        return IOUtils::use_or_suppress_caught_result(result, close_result);
       }
     }
     Err(prior_exception)
@@ -1386,7 +1396,7 @@ where
     let mut reader = source.get_reader(0, source_count, &self.temp_dir)?;
     let mut writer = HeapPointWriter::new(self.config.clone(), count);
 
-    let result: Result<_> = (|| {
+    let body_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       for _ in 0..count {
         let has_next = reader.next()?;
         debug_assert!(has_next);
@@ -1394,13 +1404,31 @@ where
       }
       source.destroy(&self.temp_dir)?;
       Ok(())
-    })();
-    let writer_close_result = writer.close();
-    let close_result = IOUtils::use_or_suppress_result(writer_close_result, reader.close());
+    }));
+    let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      IOUtils::close(0..2, |operation| match operation {
+        0 => writer.close(),
+        1 => reader.close(),
+        _ => unreachable!(),
+      })
+    }));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      IOUtils::use_or_suppress_caught_result(body_result, close_result)
+    }));
     source.take_data(reader.remove_points());
-    let result = IOUtils::use_or_suppress_result(result, close_result);
-    if let Err(err) = result {
-      return Err(self.verify_checksum(err, source).unwrap_err());
+    match result {
+      Ok(Ok(())) => {},
+      Ok(Err(error)) => return Err(self.verify_checksum(error, source).unwrap_err()),
+      Err(payload) => {
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+          let error = LuceneError::tragedy_from_panic(
+            "panic while switching BKD points to heap",
+            payload.as_ref(),
+          );
+          self.verify_checksum(error, source)
+        }));
+        std::panic::resume_unwind(payload)
+      },
     }
 
     Ok(PointWriterEnum::Heap(writer))
@@ -1693,7 +1721,7 @@ where
       .writer
       .get_reader(slice.start, slice.count, &self.temp_dir)?;
 
-    let result = (|| -> Result<()> {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       if !reader.next()? {
         return Ok(());
       }
@@ -1739,11 +1767,11 @@ where
         }
       }
       Ok(())
-    })();
-    let close_result = reader.close();
+    }));
+    let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| reader.close()));
     slice.writer.take_data(reader.remove_points());
 
-    IOUtils::use_or_suppress_result(result, close_result)
+    IOUtils::use_or_suppress_caught_result(result, close_result)
   }
   /// The point writer contains the data that is going to be splitted using
   /// radix selection. /* This method is used when we are merging
@@ -2033,10 +2061,18 @@ where
   }
   pub fn close(&mut self) -> Result<()> {
     self.finished = true;
-    if let Some(PointWriterEnum::Offline(ref mut offline_point_writer)) = self.point_writer
-      && let Some(out) = offline_point_writer.out.take()
-    {
-      self.temp_dir.delete_file(out.get_name())?;
+    if let Some(PointWriterEnum::Offline(offline_point_writer)) = self.point_writer.as_mut() {
+      let temp_file_name = offline_point_writer.name.clone();
+      let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        offline_point_writer.close()
+      }));
+      self.temp_dir.delete_file(&temp_file_name)?;
+      offline_point_writer.closed = true;
+      self.point_writer = None;
+      match close_result {
+        Ok(result) => result?,
+        Err(payload) => std::panic::resume_unwind(payload),
+      }
     }
     Ok(())
   }

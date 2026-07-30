@@ -17,6 +17,7 @@
 use crate::core::index::IndexFileNames;
 use crate::core::index::index_writer::IndexWriterDir;
 use crate::core::store::directory::Directory;
+use crate::core::util::IOUtils;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -59,9 +60,7 @@ where
   }
 
   pub fn inc_ref_single(&mut self, file_name: &str) -> Result<()> {
-    let rc = self.get_ref_count_internal(file_name);
-    let count = rc.count;
-    rc.inc_ref();
+    let count = self.get_ref_count_internal(file_name).count;
 
     if let Some(messenger) = &self.messenger {
       messenger.accept(
@@ -69,6 +68,7 @@ where
         &format!("IncRef \"{file_name}\": pre-incr count is {count}"),
       )?;
     }
+    self.get_ref_count_internal(file_name).inc_ref();
     Ok(())
   }
 
@@ -78,32 +78,35 @@ where
   where
     I: IntoIterator<Item = &'a String>,
   {
-    let mut to_delete = Vec::new();
-
-    for file_name in file_names {
-      if self.dec_ref_single(file_name.as_str())? {
-        to_delete.push(file_name)
-      }
-    }
-    self.delete_files(to_delete)
+    let mut to_delete = HashSet::new();
+    let dec_ref_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      IOUtils::close(file_names, |file_name| {
+        if self.dec_ref_single(file_name.as_str())? {
+          to_delete.insert(file_name);
+        }
+        Ok(())
+      })
+    }));
+    let delete_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      self.delete_files(to_delete.iter().copied())
+    }));
+    IOUtils::use_or_suppress_caught_result(dec_ref_result, delete_result)
   }
   /// Returns true if the file should be deleted
   fn dec_ref_single(&mut self, file_name: &str) -> Result<bool> {
-    let rc = self.get_ref_count_internal(file_name);
-    let count = rc.count;
-    let v = if rc.dec_ref() == 0 {
-      self.ref_counts.remove(file_name);
-      true
-    } else {
-      false
-    };
+    let count = self.get_ref_count_internal(file_name).count;
     if let Some(ref mut messenger) = self.messenger {
       messenger.accept(
         MsgType::Ref,
         &format!("DecRef \"{file_name}\": pre-decr count is {count}"),
       )?;
     }
-    Ok(v)
+    if self.get_ref_count_internal(file_name).dec_ref() == 0 {
+      self.ref_counts.remove(file_name);
+      Ok(true)
+    } else {
+      Ok(false)
+    }
   }
   fn get_ref_count_internal(&mut self, file_name: &str) -> &mut RefCount {
     self

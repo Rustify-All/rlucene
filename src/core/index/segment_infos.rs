@@ -283,37 +283,40 @@ where
     let generation = generation_from_segments_file_name(segment_file_name)?;
     let mut input = directory.open_checksum_input(segment_file_name)?;
 
-    let read_result = match SegmentInfos::read_commit_impl(
-      directory.clone(),
-      &mut input,
-      generation,
-      min_supported_major_version,
-    ) {
-      Err(error) => {
-        let is_unexpected_file_read_error = match &error {
-          LuceneError::Eof(_) | LuceneError::NoSuchFile(_) => true,
-          LuceneError::Io { source, .. } | LuceneError::IoWithPath { source, .. } => {
-            matches!(
-              source.kind(),
-              ErrorKind::NotFound | ErrorKind::UnexpectedEof
-            )
+    let read_result =
+      std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+        || match SegmentInfos::read_commit_impl(
+          directory.clone(),
+          &mut input,
+          generation,
+          min_supported_major_version,
+        ) {
+          Err(error) => {
+            let is_unexpected_file_read_error = match &error {
+              LuceneError::Eof(_) | LuceneError::NoSuchFile(_) => true,
+              LuceneError::Io { source, .. } | LuceneError::IoWithPath { source, .. } => {
+                matches!(
+                  source.kind(),
+                  ErrorKind::NotFound | ErrorKind::UnexpectedEof
+                )
+              },
+              _ => false,
+            };
+            if is_unexpected_file_read_error {
+              let mut corrupt_index_error = LuceneError::corrupt_index(format!(
+                "Unexpected file read error while reading index. (resource={input})"
+              ));
+              corrupt_index_error.add_suppressed(error);
+              Err(corrupt_index_error)
+            } else {
+              Err(error)
+            }
           },
-          _ => false,
-        };
-        if is_unexpected_file_read_error {
-          let mut corrupt_index_error = LuceneError::corrupt_index(format!(
-            "Unexpected file read error while reading index. (resource={input})"
-          ));
-          corrupt_index_error.add_suppressed(error);
-          Err(corrupt_index_error)
-        } else {
-          Err(error)
-        }
-      },
-      result => result,
-    };
-    let close_result = input.close();
-    IOUtils::use_or_suppress_result(read_result, close_result)
+          result => result,
+        },
+      ));
+    let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| input.close()));
+    IOUtils::use_or_suppress_caught_result(read_result, close_result)
   }
 
   /// Read the commit from the provided [`ChecksumIndexInput`].
@@ -332,7 +335,7 @@ where
     min_supported_major_version: i32,
   ) -> Result<Self> {
     let mut format = -1;
-    let read_result = (|| -> Result<Self> {
+    let read_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<Self> {
       // NOTE: as long as we want to return index_format_too_old (vs
       // corrupt_index), we need to read the magic ourselves.
       let magic = CodecUtil::read_be_int(input)?;
@@ -385,18 +388,27 @@ where
       infos.lucene_version = Some(lucene_version);
       Self::parse_segment_infos(directory, input, &mut infos, format)?;
       Ok(infos)
-    })();
+    }));
 
     if format >= VERSION_74 {
       match read_result {
-        Ok(infos) => {
+        Ok(Ok(infos)) => {
           CodecUtil::check_footer(input)?;
           Ok(infos)
         },
-        Err(error) => Err(CodecUtil::check_footer_with_error(input, error)),
+        Ok(Err(error)) => Err(CodecUtil::check_footer_with_error(input, error)),
+        Err(payload) => {
+          let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            CodecUtil::check_footer(input)
+          }));
+          std::panic::resume_unwind(payload)
+        },
       }
     } else {
-      read_result
+      match read_result {
+        Ok(result) => result,
+        Err(payload) => std::panic::resume_unwind(payload),
+      }
     }
   }
   pub fn parse_segment_infos(
@@ -597,31 +609,29 @@ where
     self.generation = next_generation;
 
     let mut success = false;
-    let result = match directory.create_output(&segment_file_name, &IO_CONTEXT_DEFAULT) {
-      Ok(mut segn_output) => {
-        let result = (|| -> Result<()> {
-          self.write(&mut segn_output)?;
-          segn_output.close()?;
-          let segment_files = vec![segment_file_name.clone()];
-          directory.sync(&segment_files)?;
-          success = true;
-          Ok(())
-        })();
-        if result.is_err() {
-          // We hit an error above; try to close the file but suppress any non-tragic error.
-          IOUtils::close_resources_while_handling_error(&mut segn_output)?;
-        }
-        result
-      },
-      Err(error) => Err(error),
-    };
+    let mut segn_output = None;
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+      segn_output = Some(directory.create_output(&segment_file_name, &IO_CONTEXT_DEFAULT)?);
+      let segn_output = segn_output.as_mut().unwrap();
+      self.write(segn_output)?;
+      segn_output.close()?;
+      let segment_files = vec![segment_file_name.clone()];
+      directory.sync(&segment_files)?;
+      success = true;
+      Ok(())
+    }));
     if success {
       self.pending_commit = true;
     } else {
+      // We hit an error above; try to close the file but suppress any non-tragic error.
+      IOUtils::close_resources_while_handling_error(segn_output.as_mut())?;
       // Try not to leave a truncated segments_N file in the index.
       IOUtils::delete_files_ignoring_exceptions(directory, std::iter::once(&segment_file_name));
     }
-    result
+    match result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
 
   /// Write the current `SegmentInfos` to the provided `IndexOutput`.
@@ -876,7 +886,7 @@ where
 
     let mut success_rename_and_sync = false;
 
-    let result = (|| -> Result<String> {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<String> {
       let src = IndexFileNames::file_name_from_generation(
         IndexFileNames::PENDING_SEGMENTS,
         "",
@@ -888,8 +898,9 @@ where
           .ok_or_else(|| LuceneError::illegal_state("Failed to generate destination file name."))?;
       directory.rename(&src, &dest)?;
 
-      let sync_result = directory.sync_metadata();
-      if sync_result.is_ok() {
+      let sync_result =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| directory.sync_metadata()));
+      if matches!(&sync_result, Ok(Ok(()))) {
         success_rename_and_sync = true;
       }
       if !success_rename_and_sync {
@@ -898,19 +909,26 @@ where
         // renamed file
         IOUtils::delete_files_ignoring_exceptions(directory, std::iter::once(&dest));
       }
-      sync_result?;
+      match sync_result {
+        Ok(result) => result?,
+        Err(payload) => std::panic::resume_unwind(payload),
+      }
       Ok(dest)
-    })();
+    }));
 
     if !success_rename_and_sync {
       // deletes pending_segments_N:
       self.rollback_commit(directory);
     }
-    if result.is_ok() {
-      self.pending_commit = false;
-      self.last_generation = self.generation;
+    match result {
+      Ok(Ok(dest)) => {
+        self.pending_commit = false;
+        self.last_generation = self.generation;
+        Ok(dest)
+      },
+      Ok(Err(error)) => Err(error),
+      Err(payload) => std::panic::resume_unwind(payload),
     }
-    result
   }
   /// Writes and syncs to the Directory, taking care to remove the segment
   /// file on error.

@@ -56,6 +56,7 @@ use crate::core::store::{IndexOutput, ReadAdvice};
 use crate::core::util::TryIntoInt;
 use crate::core::util::accountable::Accountable;
 use crate::core::util::bit_util::BitUtil;
+use crate::core::util::clone::TryClone;
 use crate::core::util::close::Closeable;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::hnsw::closeable_random_vector_scorer_supplier::CloseableRandomVectorScorerSupplier;
@@ -454,6 +455,7 @@ where
       off_heap_float_vector_values::DenseOffHeapVectorValues<I, F>,
     >,
     D,
+    I,
   >
   where
     I: IndexInput + 'a,
@@ -480,8 +482,9 @@ where
       segment_write_state.context,
     )?;
     let temp_vector_name = temp_vector_data.get_name().to_string();
-    let result =
-      (|| -> Result<Self::CloseableRandomVectorScorerSupplier<'_, D2::IndexInput, D2>> {
+    let mut vector_data_input = None;
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+      || -> Result<Self::CloseableRandomVectorScorerSupplier<'_, D2::IndexInput, D2>> {
         let docs_with_field = match field_info.get_vector_encoding() {
           VectorEncoding::BYTE(_) => {
             let mut merged_bytes = merge_byte_vector_values(field_info, merge_state)?;
@@ -493,19 +496,24 @@ where
           },
         };
         CodecUtil::write_footer(&mut temp_vector_data)?;
-        drop(temp_vector_data);
+        IOUtils::close_one(&mut temp_vector_data)?;
 
         let random_context = segment_write_state
           .context
           .with_read_advice_self(ReadAdvice::Random)?;
-        let mut vector_data_input = segment_write_state
-          .directory
-          .open_input(&temp_vector_name, &random_context)?;
-        let copy_len = vector_data_input.length()? - CodecUtil::footer_length();
+        vector_data_input = Some(
+          segment_write_state
+            .directory
+            .open_input(&temp_vector_name, &random_context)?,
+        );
+        let vector_data_input_ref = vector_data_input
+          .as_mut()
+          .ok_or_else(|| LuceneError::illegal_state("temporary vector data input is missing"))?;
+        let copy_len = vector_data_input_ref.length()? - CodecUtil::footer_length();
         self
           .vector_data
-          .copy_bytes(&mut vector_data_input, copy_len)?;
-        CodecUtil::retrieve_checksum(&mut vector_data_input)?;
+          .copy_bytes(vector_data_input_ref, copy_len)?;
+        CodecUtil::retrieve_checksum(vector_data_input_ref)?;
 
         let vector_data_length = self.vector_data.get_file_pointer()? - vector_data_offset;
         write_meta(
@@ -518,13 +526,14 @@ where
           &docs_with_field,
         )?;
 
+        let vector_values_input = vector_data_input_ref.try_clone()?;
         let random_vector_scorer_supplier = match field_info.get_vector_encoding() {
           VectorEncoding::BYTE(_) => self.flat_vectors_scorer.get_random_vector_scorer_supplier(
             *field_info.get_vector_similarity_function(),
             KnnVectorValuesEnm2::A(off_heap_byte_vector_values::DenseOffHeapVectorValues::new(
               field_info.get_vector_dimension() as usize,
               docs_with_field.cardinality() as usize,
-              vector_data_input,
+              vector_values_input,
               field_info.get_vector_dimension() as usize * VectorEncoding::BYTE(1).byte_size(),
               self.flat_vectors_scorer.clone(),
               *field_info.get_vector_similarity_function(),
@@ -536,7 +545,7 @@ where
               KnnVectorValuesEnm2::B(off_heap_float_vector_values::DenseOffHeapVectorValues::new(
                 field_info.get_vector_dimension() as usize,
                 docs_with_field.cardinality() as usize,
-                vector_data_input,
+                vector_values_input,
                 field_info.get_vector_dimension() as usize * VectorEncoding::FLOAT32(4).byte_size(),
                 self.flat_vectors_scorer.clone(),
                 *field_info.get_vector_similarity_function(),
@@ -544,21 +553,39 @@ where
             )?
           },
         };
+        let vector_data_input = vector_data_input
+          .take()
+          .ok_or_else(|| LuceneError::illegal_state("temporary vector data input is missing"))?;
         Ok(FlatCloseableRandomVectorScorerSupplier::new(
           docs_with_field.cardinality(),
           random_vector_scorer_supplier,
           segment_write_state.directory,
           temp_vector_name.clone(),
+          vector_data_input,
         ))
-      })();
+      },
+    ));
 
-    if result.is_err() {
-      IOUtils::delete_files_ignoring_exceptions(
-        segment_write_state.directory,
-        std::iter::once(&temp_vector_name),
-      );
+    match result {
+      Ok(Ok(supplier)) => Ok(supplier),
+      result => {
+        IOUtils::close_resources_while_handling_error((
+          &mut temp_vector_data,
+          vector_data_input.as_ref(),
+        ))?;
+        IOUtils::delete_files_ignoring_exceptions(
+          segment_write_state.directory,
+          std::iter::once(&temp_vector_name),
+        );
+        match result {
+          Ok(Err(error)) => Err(error),
+          Err(payload) => std::panic::resume_unwind(payload),
+          Ok(Ok(_)) => Err(LuceneError::illegal_state(
+            "flat vector merge entered failure handling after success",
+          )),
+        }
+      },
     }
-    result
   }
 }
 
@@ -742,38 +769,49 @@ impl FlatFieldVectorsWriter for FlatFieldWriter {
   }
 }
 
-pub struct FlatCloseableRandomVectorScorerSupplier<'a, S, D>
+pub struct FlatCloseableRandomVectorScorerSupplier<'a, S, D, I>
 where
   S: RandomVectorScorerSupplier,
   D: Directory,
+  I: IndexInput,
 {
   supplier: S,
   num_vectors: i32,
   dir: &'a D,
   temp_file: String,
+  vector_data_input: I,
   closed: bool,
 }
 
-impl<'a, S, D> FlatCloseableRandomVectorScorerSupplier<'a, S, D>
+impl<'a, S, D, I> FlatCloseableRandomVectorScorerSupplier<'a, S, D, I>
 where
   S: RandomVectorScorerSupplier,
   D: Directory,
+  I: IndexInput,
 {
-  pub(crate) fn new(num_vectors: i32, supplier: S, dir: &'a D, temp_file: String) -> Self {
+  pub(crate) fn new(
+    num_vectors: i32,
+    supplier: S,
+    dir: &'a D,
+    temp_file: String,
+    vector_data_input: I,
+  ) -> Self {
     Self {
       supplier,
       num_vectors,
       dir,
       temp_file,
+      vector_data_input,
       closed: false,
     }
   }
 }
 
-impl<S, D> RandomVectorScorerSupplier for FlatCloseableRandomVectorScorerSupplier<'_, S, D>
+impl<S, D, I> RandomVectorScorerSupplier for FlatCloseableRandomVectorScorerSupplier<'_, S, D, I>
 where
   S: RandomVectorScorerSupplier,
   D: Directory,
+  I: IndexInput,
 {
   type Scorer<'a>
     = S::Scorer<'a>
@@ -806,14 +844,16 @@ where
   }
 }
 
-impl<S, D> Closeable for FlatCloseableRandomVectorScorerSupplier<'_, S, D>
+impl<S, D, I> Closeable for FlatCloseableRandomVectorScorerSupplier<'_, S, D, I>
 where
   S: RandomVectorScorerSupplier,
   D: Directory,
+  I: IndexInput,
 {
   fn close(&mut self) -> Result<()> {
     if !self.closed {
       self.closed = true;
+      self.vector_data_input.close()?;
       self.dir.delete_file(&self.temp_file)
     } else {
       Ok(())
@@ -821,19 +861,22 @@ where
   }
 }
 
-impl<S, D> CloseableRandomVectorScorerSupplier for FlatCloseableRandomVectorScorerSupplier<'_, S, D>
+impl<S, D, I> CloseableRandomVectorScorerSupplier
+  for FlatCloseableRandomVectorScorerSupplier<'_, S, D, I>
 where
   S: RandomVectorScorerSupplier,
   D: Directory,
+  I: IndexInput,
 {
   fn total_vector_count(&self) -> Result<i32> {
     Ok(self.num_vectors)
   }
 }
-impl<S, D> Drop for FlatCloseableRandomVectorScorerSupplier<'_, S, D>
+impl<S, D, I> Drop for FlatCloseableRandomVectorScorerSupplier<'_, S, D, I>
 where
   S: RandomVectorScorerSupplier,
   D: Directory,
+  I: IndexInput,
 {
   fn drop(&mut self) {
     let _ = self.close();

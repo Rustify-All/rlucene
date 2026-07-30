@@ -175,20 +175,26 @@ where
       Ordering::SeqCst,
     );
 
-    if self.info_stream.is_enabled("DWPT") {
-      self.info_stream.message("DWPT", "now abort")?;
-    }
+    let abort_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+      if self.info_stream.is_enabled("DWPT") {
+        self.info_stream.message("DWPT", "now abort")?;
+      }
 
-    let abort_result = (|| {
-      self.indexing_chain.abort()?;
-      Ok(())
-    })();
-    self.pending_updates.clear();
-
+      let indexing_chain_result =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.indexing_chain.abort()));
+      self.pending_updates.clear();
+      match indexing_chain_result {
+        Ok(result) => result,
+        Err(payload) => std::panic::resume_unwind(payload),
+      }
+    }));
     if self.info_stream.is_enabled("DWPT") {
       self.info_stream.message("DWPT", "done abort")?;
     }
-    abort_result
+    match abort_result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
   #[allow(clippy::too_many_arguments)]
   pub(crate) fn new<L>(
@@ -346,7 +352,7 @@ where
       .map_err(|payload| {
         LuceneError::illegal_state(LuceneError::panic_payload_message(payload.as_ref()))
       });
-    let result = (|| -> Result<i64> {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<i64> {
       let mut docs_iter = docs_iter?.peekable();
       loop {
         let doc = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| docs_iter.next()))
@@ -373,33 +379,39 @@ where
 
         self.reserve_one_doc()?;
         let doc_id = self.state.num_docs_in_ram.fetch_add(1, Ordering::SeqCst);
-        let process_result = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-          doc.into_iter().collect::<Vec<Fields>>()
-        })) {
-          Ok(mut doc_fields) => {
-            if let Some(parent) = &self.parent_field
-              && !has_next_doc
-            {
-              doc_fields.insert(
-                0,
-                ReservedField::new(NumericDocValuesField::new(parent, -1)).into(),
-              );
+        let process_result =
+          std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+              doc.into_iter().collect::<Vec<Fields>>()
+            })) {
+              Ok(mut doc_fields) => {
+                if let Some(parent) = &self.parent_field
+                  && !has_next_doc
+                {
+                  doc_fields.insert(
+                    0,
+                    ReservedField::new(NumericDocValuesField::new(parent, -1)).into(),
+                  );
+                }
+                self.indexing_chain.process_document(
+                  doc_id,
+                  doc_fields,
+                  &mut self.segment_info,
+                  &mut self.field_infos,
+                  index_writer_config,
+                  &self.aborting_exception,
+                )
+              },
+              Err(payload) => Err(LuceneError::illegal_state(
+                LuceneError::panic_payload_message(payload.as_ref()),
+              )),
             }
-            self.indexing_chain.process_document(
-              doc_id,
-              doc_fields,
-              &mut self.segment_info,
-              &mut self.field_infos,
-              index_writer_config,
-              &self.aborting_exception,
-            )
-          },
-          Err(payload) => Err(LuceneError::illegal_state(
-            LuceneError::panic_payload_message(payload.as_ref()),
-          )),
-        };
+          }));
         num_docs_in_ram.fetch_add(1, Ordering::SeqCst);
-        process_result?;
+        match process_result {
+          Ok(process_result) => process_result?,
+          Err(payload) => std::panic::resume_unwind(payload),
+        }
       }
 
       let num_docs = self.state.num_docs_in_ram.load(SeqCst) - docs_in_ram_before;
@@ -410,16 +422,25 @@ where
       all_docs_indexed = true;
       let written = self.finish_documents(delete_node, docs_in_ram_before)?;
       Ok(written)
-    })();
+    }));
 
-    if result.is_err() && !all_docs_indexed && !self.state.aborted.load(Ordering::SeqCst) {
-      // the iterator threw an error that is not aborting
-      // go and mark all docs from this block as deleted
-      let to_delete = self.state.num_docs_in_ram.load(SeqCst) - docs_in_ram_before;
-      self.delete_last_docs(to_delete)?;
-    }
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<i64> {
+      if !all_docs_indexed && !self.state.aborted.load(Ordering::SeqCst) {
+        // the iterator threw an error that is not aborting
+        // go and mark all docs from this block as deleted
+        let to_delete = self.state.num_docs_in_ram.load(SeqCst) - docs_in_ram_before;
+        self.delete_last_docs(to_delete)?;
+      }
+      match result {
+        Ok(result) => result,
+        Err(payload) => std::panic::resume_unwind(payload),
+      }
+    }));
     self.maybe_abort("updateDocuments", flush_notifications, writer)?;
-    result
+    match result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
 
   fn finish_documents(&mut self, delete_node: Option<Arc<Node>>, doc_id_upto: i32) -> Result<i64> {
@@ -776,9 +797,12 @@ where
       Some(v) if !self.state.aborted.load(Ordering::SeqCst) => {
         // if we are not already aborted, we can abort
         let err = v.clone();
-        let result = self.abort();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.abort()));
         flush_notifications.on_tragic_event(err, location, writer)?;
-        result
+        match result {
+          Ok(result) => result,
+          Err(payload) => std::panic::resume_unwind(payload),
+        }
       },
       _ => Ok(()),
     }
@@ -827,7 +851,7 @@ where
         new_segment.size_in_bytes()?,
       ))?;
 
-      let result: Result<()> = (|| {
+      let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
         if index_writer_config.get_use_compound_file() {
           let original_files = new_segment.info.files()?.clone();
           if let Some(segment_info) = Arc::get_mut(&mut new_segment.info) {
@@ -914,8 +938,8 @@ where
         }
 
         Ok(())
-      })();
-      if result.is_err() && self.info_stream.is_enabled("DWPT") {
+      }));
+      if !matches!(&result, Ok(Ok(()))) && self.info_stream.is_enabled("DWPT") {
         self.info_stream.message(
           "DWPT",
           &format!(
@@ -924,7 +948,10 @@ where
           ),
         )?;
       }
-      result
+      match result {
+        Ok(result) => result,
+        Err(payload) => std::panic::resume_unwind(payload),
+      }
     })();
     res
   }

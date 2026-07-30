@@ -149,22 +149,30 @@ impl DocIdSetBuilder {
     self.buffer.clear();
   }
   pub fn build(&mut self) -> Result<DocIdSetBuilderEnum> {
-    if self.bit_set.is_some() {
-      debug_assert!(self.counter >= 0);
-      let cost = (self.counter as f64 / self.num_values_per_doc).round();
-      let result = BitDocIdSet::with_cost(self.bit_set.take(), cost as i64)?;
-      Ok(DocIdSetBuilderEnum::BitDoc(result))
-    } else {
-      self.buffer.sort();
-      if self.multi_valued {
-        self.buffer.dedup();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      if self.bit_set.is_some() {
+        debug_assert!(self.counter >= 0);
+        let cost = (self.counter as f64 / self.num_values_per_doc).round();
+        let result = BitDocIdSet::with_cost(self.bit_set.take(), cost as i64)?;
+        Ok(DocIdSetBuilderEnum::BitDoc(result))
       } else {
-        debug_assert!(self.no_dups());
+        self.buffer.sort();
+        if self.multi_valued {
+          self.buffer.dedup();
+        } else {
+          debug_assert!(self.no_dups());
+        }
+        self.buffer.push(NO_MORE_DOCS);
+        let l = self.buffer.len() - 1;
+        let result = IntArrayDocIdSet::new(std::mem::take(&mut self.buffer), l as i32)?;
+        Ok(DocIdSetBuilderEnum::IntArray(result))
       }
-      self.buffer.push(NO_MORE_DOCS);
-      let l = self.buffer.len() - 1;
-      let result = IntArrayDocIdSet::new(std::mem::take(&mut self.buffer), l as i32)?;
-      Ok(DocIdSetBuilderEnum::IntArray(result))
+    }));
+    self.buffer.clear();
+    self.bit_set = None;
+    match result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
     }
   }
   fn no_dups(&self) -> bool {

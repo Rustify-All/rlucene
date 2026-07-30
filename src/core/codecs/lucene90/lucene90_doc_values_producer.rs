@@ -120,80 +120,112 @@ where
 
     {
       let mut input = state.directory.open_checksum_input(&meta_name)?;
-
-      let result = (|| -> Result<()> {
-        version = CodecUtil::check_index_header(
-          &mut input,
-          meta_codec,
-          Lucene90DocValuesFormat::VERSION_START,
-          Lucene90DocValuesFormat::VERSION_CURRENT,
-          segment_info.get_id(),
-          &state.segment_suffix,
-        )?;
-        Self::read_fields(
-          &mut input,
-          &state.field_infos,
-          &mut numerics,
-          &mut binaries,
-          &mut sorted,
-          &mut sorted_sets,
-          &mut sorted_numerics,
-          &mut skippers,
-        )
-      })();
-
-      let footer_result = match result {
-        Ok(()) => CodecUtil::check_footer(&mut input).map(|_| ()),
-        Err(e) => Err(CodecUtil::check_footer_with_error(&mut input, e)),
+      let mut footer_attempted = false;
+      let mut result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+        let result = (|| -> Result<()> {
+          version = CodecUtil::check_index_header(
+            &mut input,
+            meta_codec,
+            Lucene90DocValuesFormat::VERSION_START,
+            Lucene90DocValuesFormat::VERSION_CURRENT,
+            segment_info.get_id(),
+            &state.segment_suffix,
+          )?;
+          Self::read_fields(
+            &mut input,
+            &state.field_infos,
+            &mut numerics,
+            &mut binaries,
+            &mut sorted,
+            &mut sorted_sets,
+            &mut sorted_numerics,
+            &mut skippers,
+          )
+        })();
+        footer_attempted = true;
+        match result {
+          Ok(()) => CodecUtil::check_footer(&mut input).map(|_| ()),
+          Err(error) => Err(CodecUtil::check_footer_with_error(&mut input, error)),
+        }
+      }));
+      let footer_error = if let Err(payload) = &result
+        && !footer_attempted
+      {
+        let error = LuceneError::tragedy_from_panic(
+          "panic while reading doc values metadata",
+          payload.as_ref(),
+        );
+        Some(CodecUtil::check_footer_with_error(&mut input, error))
+      } else {
+        None
       };
-      IOUtils::use_or_suppress_result(footer_result, input.close())?;
+      if let Some(error @ LuceneError::CorruptIndex(_)) = footer_error {
+        result = Ok(Err(error));
+      }
+      let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| input.close()));
+      IOUtils::use_or_suppress_caught_result(result, close_result)?;
     }
 
     let data_name =
       IndexFileNames::segment_file_name(&segment_info.name, &state.segment_suffix, data_extension);
     // Doc-values have a forward-only access pattern, so pass
     // ReadAdvice.NORMAL to perform readahead.
-    let mut data;
-    {
-      data = state.directory.open_input(
-        &data_name,
-        &state.context.with_read_advice_self(ReadAdvice::Normal)?,
+    let mut data = Some(state.directory.open_input(
+      &data_name,
+      &state.context.with_read_advice_self(ReadAdvice::Normal)?,
+    )?);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<Self> {
+      let data_ref = data
+        .as_mut()
+        .ok_or_else(|| LuceneError::illegal_state("doc values data input is missing"))?;
+      let version2 = CodecUtil::check_index_header(
+        data_ref,
+        data_codec,
+        Lucene90DocValuesFormat::VERSION_START,
+        Lucene90DocValuesFormat::VERSION_CURRENT,
+        segment_info.get_id(),
+        &state.segment_suffix,
       )?;
+
+      if version != version2 {
+        return Err(LuceneError::corrupt_index(format!(
+          "Format versions mismatch: meta={version}, data={version2} (resource={data_ref})"
+        )));
+      }
+      // NOTE: data file is too costly to verify checksum against all the
+      // bytes on open, but for now we at least verify proper
+      // structure of the checksum footer: which looks
+      // for FOOTER_MAGIC + algorithmID. This is cheap and can detect some
+      // forms of corruption such as file truncation.
+      CodecUtil::retrieve_checksum(data_ref)?;
+
+      Ok(Self {
+        numerics,
+        binaries,
+        sorted,
+        sorted_sets,
+        sorted_numerics,
+        skippers,
+        data: Arc::new(
+          data
+            .take()
+            .ok_or_else(|| LuceneError::illegal_state("doc values data input is missing"))?,
+        ),
+        max_doc,
+        version,
+        merging: false,
+      })
+    }));
+    match result {
+      Ok(result @ Ok(_)) => result,
+      result => {
+        IOUtils::close_resources_while_handling_error(data.as_ref())?;
+        match result {
+          Ok(result) => result,
+          Err(payload) => std::panic::resume_unwind(payload),
+        }
+      },
     }
-
-    let version2 = CodecUtil::check_index_header(
-      &mut data,
-      data_codec,
-      Lucene90DocValuesFormat::VERSION_START,
-      Lucene90DocValuesFormat::VERSION_CURRENT,
-      segment_info.get_id(),
-      &state.segment_suffix,
-    )?;
-
-    if version != version2 {
-      return Err(LuceneError::corrupt_index(format!(
-        "Format versions mismatch: meta={version}, data={version2} (resource={data})"
-      )));
-    }
-    // NOTE: data file is too costly to verify checksum against all the
-    // bytes on open, but for now we at least verify proper
-    // structure of the checksum footer: which looks
-    // for FOOTER_MAGIC + algorithmID. This is cheap and can detect some
-    // forms of corruption such as file truncation.
-    CodecUtil::retrieve_checksum(&mut data)?;
-
-    Ok(Self {
-      numerics,
-      binaries,
-      sorted,
-      sorted_sets,
-      sorted_numerics,
-      skippers,
-      data: Arc::new(data),
-      max_doc,
-      version,
-      merging: false,
-    })
   }
   #[allow(clippy::too_many_arguments)]
   fn with_merging(

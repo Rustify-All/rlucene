@@ -20,33 +20,42 @@ use byteorder::WriteBytesExt;
 
 use crate::core::store::data_output::DataOutput;
 use crate::core::util::close::Closeable;
-use crate::core::util::error::lucene_error::Result;
+use crate::core::util::error::lucene_error::{LuceneError, Result};
 /// A [`DataOutput`] wrapping a plain [`OutputStream`](Write).
 pub struct OutputStreamDataOutput<W: Write> {
-  pub os: BufWriter<W>,
+  pub os: Option<BufWriter<W>>,
 }
 impl<W: Write> OutputStreamDataOutput<W> {
   pub fn new(os: W) -> OutputStreamDataOutput<W> {
     OutputStreamDataOutput {
-      os: BufWriter::new(os),
+      os: Some(BufWriter::new(os)),
     }
+  }
+
+  fn output_stream(&mut self) -> Result<&mut BufWriter<W>> {
+    self
+      .os
+      .as_mut()
+      .ok_or_else(|| LuceneError::already_closed("this DataOutput is closed"))
   }
 }
 
 impl<W: Write> Closeable for OutputStreamDataOutput<W> {
   fn close(&mut self) -> Result<()> {
-    self.os.flush()?;
+    if let Some(mut output_stream) = self.os.take() {
+      output_stream.flush()?;
+    }
     Ok(())
   }
 }
 
 impl<W: Write> DataOutput for OutputStreamDataOutput<W> {
   fn write_byte(&mut self, b: u8) -> Result<()> {
-    Ok(self.os.write_u8(b)?)
+    Ok(self.output_stream()?.write_u8(b)?)
   }
 
   fn write_bytes_range(&mut self, b: &[u8], offset: usize, length: usize) -> Result<()> {
     let end = offset + length;
-    Ok(self.os.write_all(&b[offset..end])?)
+    Ok(self.output_stream()?.write_all(&b[offset..end])?)
   }
 }

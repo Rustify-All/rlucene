@@ -579,18 +579,12 @@ where
   O: IndexOutput,
 {
   fn close(&mut self) -> Result<()> {
-    let output_close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-      IOUtils::close([&mut self.meta, &mut self.vector_index], Closeable::close)
-    }));
-    let delegate_close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-      self.flat_vector_writer.close()
-    }));
-    match (output_close_result, delegate_close_result) {
-      (Ok(output_close_result), Ok(delegate_close_result)) => {
-        IOUtils::use_or_suppress_result(output_close_result, delegate_close_result)
-      },
-      (Err(payload), _) | (_, Err(payload)) => std::panic::resume_unwind(payload),
-    }
+    IOUtils::close(0..3, |operation| match operation {
+      0 => self.meta.close(),
+      1 => self.vector_index.close(),
+      2 => self.flat_vector_writer.close(),
+      _ => unreachable!(),
+    })
   }
 }
 
@@ -645,63 +639,86 @@ where
     D2: Directory,
     CR: CodecReader,
   {
-    let scorer_supplier = self.flat_vector_writer.merge_one_field_to_index(
+    let mut scorer_supplier = self.flat_vector_writer.merge_one_field_to_index(
       field_info.as_ref(),
       merge_state,
       segment_write_state,
     )?;
-    let vector_index_offset = self.vector_index.get_file_pointer()?;
-    let total_vector_count = scorer_supplier.total_vector_count()?;
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+      let vector_index_offset = self.vector_index.get_file_pointer()?;
 
-    let mut graph = None;
-    let mut vector_index_node_offsets = Vec::new();
+      let mut graph = None;
+      let mut vector_index_node_offsets = Vec::new();
 
-    if total_vector_count > 0 {
-      let mut merger =
-        Self::create_graph_merger(field_info.clone(), scorer_supplier, self.m, self.beam_width);
+      if scorer_supplier.total_vector_count()? > 0 {
+        let mut merger = Self::create_graph_merger(
+          field_info.clone(),
+          &scorer_supplier,
+          self.m,
+          self.beam_width,
+        );
 
-      for i in 0..merge_state.live_docs.len() {
-        if !has_vector_values(&merge_state.field_infos[i], &field_info.name)? {
-          continue;
+        for i in 0..merge_state.live_docs.len() {
+          if !has_vector_values(&merge_state.field_infos[i], &field_info.name)? {
+            continue;
+          }
+
+          if let Some(reader) = merge_state.knn_vectors_readers[i].as_ref() {
+            merger.add_reader(i, reader, i, merge_state.live_docs[i].as_ref())?;
+          }
         }
+        let merged_graph = match field_info.get_vector_encoding() {
+          VectorEncoding::BYTE(_) => merger.merge(
+            merge_byte_vector_values(field_info.as_ref(), merge_state)?,
+            segment_write_state.info_stream.clone(),
+            scorer_supplier.total_vector_count()?,
+            merge_state.knn_vectors_readers.as_ref(),
+            merge_state.doc_maps.as_ref(),
+          )?,
+          VectorEncoding::FLOAT32(_) => merger.merge(
+            merge_float_vector_values(field_info.as_ref(), merge_state)?,
+            segment_write_state.info_stream.clone(),
+            scorer_supplier.total_vector_count()?,
+            merge_state.knn_vectors_readers.as_ref(),
+            merge_state.doc_maps.as_ref(),
+          )?,
+        };
 
-        if let Some(reader) = merge_state.knn_vectors_readers[i].as_ref() {
-          merger.add_reader(i, reader, i, merge_state.live_docs[i].as_ref())?;
-        }
+        graph = Some(merged_graph);
+        vector_index_node_offsets = Self::write_graph(&mut self.vector_index, graph.as_mut())?;
       }
-      let merged_graph = match field_info.get_vector_encoding() {
-        VectorEncoding::BYTE(_) => merger.merge(
-          merge_byte_vector_values(field_info.as_ref(), merge_state)?,
-          segment_write_state.info_stream.clone(),
-          total_vector_count,
-          merge_state.knn_vectors_readers.as_ref(),
-          merge_state.doc_maps.as_ref(),
-        )?,
-        VectorEncoding::FLOAT32(_) => merger.merge(
-          merge_float_vector_values(field_info.as_ref(), merge_state)?,
-          segment_write_state.info_stream.clone(),
-          total_vector_count,
-          merge_state.knn_vectors_readers.as_ref(),
-          merge_state.doc_maps.as_ref(),
-        )?,
-      };
 
-      graph = Some(merged_graph);
-      vector_index_node_offsets = Self::write_graph(&mut self.vector_index, graph.as_mut())?;
+      let vector_index_length = self.vector_index.get_file_pointer()? - vector_index_offset;
+      Self::write_meta(
+        &mut self.vector_index,
+        &mut self.meta,
+        self.m,
+        field_info,
+        vector_index_offset.try_convert()?,
+        vector_index_length.try_convert()?,
+        scorer_supplier.total_vector_count()?,
+        graph.as_mut(),
+        &vector_index_node_offsets,
+      )
+    }));
+
+    match result {
+      Ok(Ok(())) => scorer_supplier.close(),
+      Ok(Err(error)) => {
+        IOUtils::close_while_handling_error(
+          std::iter::once(&mut scorer_supplier),
+          Closeable::close,
+        )?;
+        Err(error)
+      },
+      Err(payload) => {
+        IOUtils::close_while_handling_error(
+          std::iter::once(&mut scorer_supplier),
+          Closeable::close,
+        )?;
+        std::panic::resume_unwind(payload)
+      },
     }
-
-    let vector_index_length = self.vector_index.get_file_pointer()? - vector_index_offset;
-    Self::write_meta(
-      &mut self.vector_index,
-      &mut self.meta,
-      self.m,
-      field_info,
-      vector_index_offset.try_convert()?,
-      vector_index_length.try_convert()?,
-      total_vector_count,
-      graph.as_mut(),
-      &vector_index_node_offsets,
-    )
   }
 
   fn finish(&mut self) -> Result<()> {

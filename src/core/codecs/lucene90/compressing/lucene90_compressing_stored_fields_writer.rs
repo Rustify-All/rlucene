@@ -102,56 +102,93 @@ where
     let segment = si.name.clone();
     let compressor = compression_mode.new_compressor();
     let buffered_docs = ByteBuffersDataOutput::new_resettable_instance();
+    let num_stored_fields = vec![0; 16];
+    let end_offsets = vec![0; 16];
 
     let meta_file = IndexFileNames::segment_file_name(&segment, segment_suffix, META_EXTENSION);
-    let mut meta_stream;
-    let mut fields_stream;
-    {
-      meta_stream = directory.create_output(&meta_file, context)?;
+    let mut directory = Some(directory);
+    let mut meta_stream = None;
+    let mut fields_stream = None;
+    let mut index_writer = None;
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+      let dir = directory
+        .as_ref()
+        .ok_or_else(|| LuceneError::illegal_state("directory is missing"))?;
+      meta_stream = Some(dir.create_output(&meta_file, context)?);
+      let meta = meta_stream
+        .as_mut()
+        .ok_or_else(|| LuceneError::illegal_state("metadata output is missing"))?;
+      CodecUtil::write_index_header(
+        meta,
+        &format!("{}Meta", INDEX_CODEC_NAME),
+        VERSION_CURRENT,
+        si.get_id(),
+        segment_suffix,
+      )?;
+      debug_assert_eq!(
+        CodecUtil::index_header_length(&format!("{}Meta", INDEX_CODEC_NAME), segment_suffix),
+        meta.get_file_pointer()?
+      );
 
       let fields_file =
         IndexFileNames::segment_file_name(&segment, segment_suffix, FIELDS_EXTENSION);
-      fields_stream = directory.create_output(&fields_file, context)?;
+      fields_stream = Some(dir.create_output(&fields_file, context)?);
+      let fields = fields_stream
+        .as_mut()
+        .ok_or_else(|| LuceneError::illegal_state("stored fields output is missing"))?;
+      CodecUtil::write_index_header(
+        fields,
+        format_name,
+        VERSION_CURRENT,
+        si.get_id(),
+        segment_suffix,
+      )?;
+      debug_assert_eq!(
+        CodecUtil::index_header_length(format_name, segment_suffix),
+        fields.get_file_pointer()?
+      );
+
+      index_writer = Some(FieldsIndexWriter::new(
+        directory
+          .take()
+          .ok_or_else(|| LuceneError::illegal_state("directory is missing"))?,
+        &segment,
+        segment_suffix,
+        INDEX_EXTENSION,
+        INDEX_CODEC_NAME,
+        *si.get_id(),
+        block_shift,
+        context.clone(),
+      )?);
+
+      meta_stream
+        .as_mut()
+        .ok_or_else(|| LuceneError::illegal_state("metadata output is missing"))?
+        .write_vint(chunk_size)
+    }));
+    match result {
+      Ok(Ok(())) => {},
+      result => {
+        IOUtils::close_resources_while_handling_error((
+          meta_stream.as_mut(),
+          fields_stream.as_mut(),
+          index_writer.as_mut(),
+        ))?;
+        return match result {
+          Ok(Err(error)) => Err(error),
+          Err(payload) => std::panic::resume_unwind(payload),
+          Ok(Ok(())) => Err(LuceneError::illegal_state(
+            "stored fields writer initialization entered failure handling after success",
+          )),
+        };
+      },
     }
-
-    let index_writer = FieldsIndexWriter::new(
-      directory,
-      &segment,
-      segment_suffix,
-      INDEX_EXTENSION,
-      INDEX_CODEC_NAME,
-      *si.get_id(),
-      block_shift,
-      context.clone(),
-    )?;
-
-    CodecUtil::write_index_header(
-      &mut meta_stream,
-      &format!("{}Meta", INDEX_CODEC_NAME),
-      VERSION_CURRENT,
-      si.get_id(),
-      segment_suffix,
-    )?;
-
-    debug_assert_eq!(
-      CodecUtil::index_header_length(&format!("{}Meta", INDEX_CODEC_NAME), segment_suffix),
-      meta_stream.get_file_pointer()?
-    );
-
-    CodecUtil::write_index_header(
-      &mut fields_stream,
-      format_name,
-      VERSION_CURRENT,
-      si.get_id(),
-      segment_suffix,
-    )?;
-
-    debug_assert_eq!(
-      CodecUtil::index_header_length(format_name, segment_suffix),
-      fields_stream.get_file_pointer()?
-    );
-
-    meta_stream.write_vint(chunk_size)?;
+    let meta_stream =
+      meta_stream.ok_or_else(|| LuceneError::illegal_state("metadata output is missing"))?;
+    let fields_stream =
+      fields_stream.ok_or_else(|| LuceneError::illegal_state("stored fields output is missing"))?;
+    let index_writer =
+      index_writer.ok_or_else(|| LuceneError::illegal_state("fields index writer is missing"))?;
 
     Ok(Self {
       segment,
@@ -161,8 +198,8 @@ where
       chunk_size,
       max_docs_per_chunk,
       buffered_docs,
-      num_stored_fields: vec![0; 16],
-      end_offsets: vec![0; 16],
+      num_stored_fields,
+      end_offsets,
       doc_base: 0,
       num_buffered_docs: 0,
       num_chunks: 0,
@@ -483,14 +520,20 @@ where
       return Ok(());
     }
 
-    let close_result = IOUtils::close(
-      [&mut self.meta_stream, &mut self.fields_stream],
-      Closeable::close,
-    );
-    let close_result = IOUtils::use_or_suppress_result(close_result, self.index_writer.close());
-    let close_result = IOUtils::use_or_suppress_result(close_result, self.compressor.close());
+    let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      IOUtils::close(0..4, |operation| match operation {
+        0 => self.meta_stream.close(),
+        1 => self.fields_stream.close(),
+        2 => self.index_writer.close(),
+        3 => self.compressor.close(),
+        _ => unreachable!(),
+      })
+    }));
     self.closed = true;
-    close_result
+    match close_result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
 }
 

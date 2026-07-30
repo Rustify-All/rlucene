@@ -63,7 +63,7 @@ where
     let mut inner = self.inner.lock();
     self.inc_tickets();
     let mut success = false;
-    let result = (|| {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
       let ticket_opt = ticket_supplier.get_mut()?;
       if let Some(ticket) = ticket_opt {
         let id = ticket.id.clone();
@@ -74,11 +74,14 @@ where
       } else {
         Ok(None)
       }
-    })();
+    }));
     if !success {
       self.dec_tickets();
     }
-    result
+    match result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
   fn inc_tickets(&self) {
     // incrementAndGet
@@ -155,14 +158,17 @@ where
           let head = inner.value.remove(&id).unwrap();
           (id, head)
         };
-        let result = consumer(head);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| consumer(head)));
         {
           let mut inner = self.inner.lock();
           let polled = inner.queue.pop_front().unwrap();
           self.dec_tickets();
           debug_assert!(polled == id);
         }
-        result?;
+        match result {
+          Ok(result) => result?,
+          Err(payload) => std::panic::resume_unwind(payload),
+        }
       } else {
         break;
       }

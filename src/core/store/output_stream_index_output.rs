@@ -32,7 +32,7 @@ pub struct OutputStreamIndexOutput<W>
 where
   W: Write,
 {
-  os: XBufferedOutputStream<W>,
+  os: Option<XBufferedOutputStream<W>>,
   bytes_written: usize,
   flushed_on_close: bool,
   name: String,
@@ -66,12 +66,19 @@ where
     }
     let os = XBufferedOutputStream::new(inner, buffer_size);
     Ok(Self {
-      os,
+      os: Some(os),
       bytes_written: 0,
       flushed_on_close: false,
       name: name.to_string(),
       resource_description: resource_description.to_string(),
     })
+  }
+
+  fn output_stream(&mut self) -> Result<&mut XBufferedOutputStream<W>> {
+    self
+      .os
+      .as_mut()
+      .ok_or_else(|| LuceneError::already_closed("this IndexOutput is closed"))
   }
 }
 
@@ -81,28 +88,28 @@ where
 {
   fn write_byte(&mut self, b: u8) -> Result<()> {
     self.bytes_written += 1;
-    self.os.write_u8(b)
+    self.output_stream()?.write_u8(b)
   }
 
   fn write_bytes_range(&mut self, b: &[u8], offset: usize, length: usize) -> Result<()> {
     let end = offset + length;
     self.bytes_written += length;
-    self.os.write_bytes(&b[offset..end])
+    self.output_stream()?.write_bytes(&b[offset..end])
   }
 
   fn write_int(&mut self, i: i32) -> Result<()> {
     self.bytes_written += 4;
-    self.os.write_i32(i)
+    self.output_stream()?.write_i32(i)
   }
 
   fn write_short(&mut self, i: i16) -> Result<()> {
     self.bytes_written += 2;
-    self.os.write_i16(i)
+    self.output_stream()?.write_i16(i)
   }
 
   fn write_long(&mut self, i: i64) -> Result<()> {
     self.bytes_written += 8;
-    self.os.write_i64(i)
+    self.output_stream()?.write_i64(i)
   }
 }
 
@@ -120,9 +127,11 @@ where
   W: Write,
 {
   fn close(&mut self) -> Result<()> {
-    if !self.flushed_on_close {
+    if let Some(mut output_stream) = self.os.take()
+      && !self.flushed_on_close
+    {
       self.flushed_on_close = true;
-      self.os.flush()?;
+      output_stream.flush()?;
     }
     Ok(())
   }
@@ -137,8 +146,9 @@ where
   }
 
   fn get_checksum(&mut self) -> Result<u64> {
-    self.os.checksum = self.os.hasher.clone().finalize();
-    Ok(self.os.checksum as u64)
+    let output_stream = self.output_stream()?;
+    output_stream.checksum = output_stream.hasher.clone().finalize();
+    Ok(output_stream.checksum as u64)
   }
 
   fn get_name(&self) -> &str {
