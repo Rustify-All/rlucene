@@ -720,14 +720,30 @@ where
 
   pub(crate) fn abort(&mut self) -> Result<()> {
     self.context.reset();
-    let result = (|| -> Result<()> {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       self.stored_fields_consumer.abort()?;
       self.vector_values_consumer.abort();
       Ok(())
-    })();
-    let close_result = self.terms_hash.abort();
+    }));
+    let close_result =
+      std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.terms_hash.abort()));
     self.field_hash.fill(-1);
-    IOUtils::use_or_suppress_result(result, close_result)
+    match result {
+      Ok(result) => match close_result {
+        Ok(close_result) => IOUtils::use_or_suppress_result(result, close_result),
+        Err(payload) => match result {
+          Ok(()) => std::panic::resume_unwind(payload),
+          Err(mut error) => {
+            error.add_suppressed(LuceneError::tragedy_from_panic(
+              "panic while aborting terms hash",
+              payload.as_ref(),
+            ));
+            Err(error)
+          },
+        },
+      },
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
 
   fn rehash(&mut self) {

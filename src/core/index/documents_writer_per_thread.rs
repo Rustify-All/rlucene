@@ -175,20 +175,26 @@ where
       Ordering::SeqCst,
     );
 
-    if self.info_stream.is_enabled("DWPT") {
-      self.info_stream.message("DWPT", "now abort")?;
-    }
+    let abort_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+      if self.info_stream.is_enabled("DWPT") {
+        self.info_stream.message("DWPT", "now abort")?;
+      }
 
-    let abort_result = (|| {
-      self.indexing_chain.abort()?;
-      Ok(())
-    })();
-    self.pending_updates.clear();
-
+      let indexing_chain_result =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.indexing_chain.abort()));
+      self.pending_updates.clear();
+      match indexing_chain_result {
+        Ok(result) => result,
+        Err(payload) => std::panic::resume_unwind(payload),
+      }
+    }));
     if self.info_stream.is_enabled("DWPT") {
       self.info_stream.message("DWPT", "done abort")?;
     }
-    abort_result
+    match abort_result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
   #[allow(clippy::too_many_arguments)]
   pub(crate) fn new<L>(
@@ -776,9 +782,12 @@ where
       Some(v) if !self.state.aborted.load(Ordering::SeqCst) => {
         // if we are not already aborted, we can abort
         let err = v.clone();
-        let result = self.abort();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.abort()));
         flush_notifications.on_tragic_event(err, location, writer)?;
-        result
+        match result {
+          Ok(result) => result,
+          Err(payload) => std::panic::resume_unwind(payload),
+        }
       },
       _ => Ok(()),
     }
