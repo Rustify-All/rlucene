@@ -327,12 +327,17 @@ where
   where
     L: LiveIndexWriterConfig,
   {
-    {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       let num = per_thread.state.get_num_docs_in_ram();
       self.subtract_flushed_num_docs(num);
       per_thread.dwpt.lock().abort()?;
+      Ok(())
+    }));
+    self.flush_control.do_on_abort(&per_thread, config)?;
+    match result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
     }
-    self.flush_control.do_on_abort(&per_thread, config)
   }
   /// returns the maximum sequence number for all previously completed operations
   pub(crate) fn get_max_completed_sequence_number(&self) -> i64 {
@@ -393,7 +398,7 @@ where
 
     let mut success = false;
 
-    let result = (|| -> Result<()> {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       self.flush_control.delete_queue.lock().clear();
 
       if self.info_stream.is_enabled("DW") {
@@ -405,9 +410,14 @@ where
         .per_thread_pool
         .filter_and_lock(|_| true)?
       {
-        let result = self.abort_documents_writer_per_thread(per_thread.clone(), config);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+          self.abort_documents_writer_per_thread(per_thread.clone(), config)
+        }));
         per_thread.unlock();
-        result?;
+        match result {
+          Ok(result) => result?,
+          Err(payload) => std::panic::resume_unwind(payload),
+        }
       }
 
       self
@@ -424,7 +434,7 @@ where
 
       success = true;
       Ok(())
-    })();
+    }));
 
     if success {
       debug_assert_eq!(
@@ -447,7 +457,10 @@ where
         .message("DW", &format!("done abort success={success}"))?;
     }
 
-    result
+    match result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
   fn pre_update(&self, writer: &IndexWriter<D>) -> Result<bool> {
     self.ensure_open()?;
@@ -569,7 +582,7 @@ where
     loop {
       debug_assert!(!flushing_dwpt.state.has_flushed());
 
-      let res: Result<_> = (|| {
+      let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
         debug_assert!({
           let current_full_flush_del_queue = &self.inner.lock().current_full_flush_del_queue;
           current_full_flush_del_queue.is_none()
@@ -592,7 +605,7 @@ where
         // otherwise the deletes frozen by 'B' are not applied to 'A' and we
         // might miss to deletes documents in 'A'.
         let mut has_ticket = None;
-        let result = (|| {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
           debug_assert!(self.assert_ticket_queue_modification(&flushing_dwpt.state.delete_queue));
           let ticket = {
             let mut dwpt = flushing_dwpt.dwpt.lock();
@@ -605,45 +618,52 @@ where
               let flushing_docs_in_ram = flushing_dwpt.state.get_num_docs_in_ram();
               {
                 let mut dwpt = flushing_dwpt.dwpt.lock();
-                let result = (|| {
-                  let v = dwpt.flush(&self.flush_notifications, writer)?;
-                  match v {
-                    Some(new_segment) => {
-                      self
-                        .ticket_queue
-                        .add_segment(has_ticket.as_ref().unwrap(), new_segment)?;
-                      Ok(())
-                    },
-                    None => Err(LuceneError::illegal_state("flush_segment returned None")),
-                  }
-                })();
+                let result =
+                  std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+                    let v = dwpt.flush(&self.flush_notifications, writer)?;
+                    match v {
+                      Some(new_segment) => {
+                        self
+                          .ticket_queue
+                          .add_segment(has_ticket.as_ref().unwrap(), new_segment)?;
+                        Ok(())
+                      },
+                      None => Err(LuceneError::illegal_state("flush_segment returned None")),
+                    }
+                  }));
+                let success = matches!(&result, Ok(Ok(())));
                 self.subtract_flushed_num_docs(flushing_docs_in_ram);
                 if !dwpt.pending_files_to_delete().is_empty() {
                   let files = dwpt.pending_files_to_delete().clone();
                   self.flush_notifications.delete_unused_files(files)?;
                 }
-                if result.is_err() {
+                if !success {
                   let dir = dwpt.segment_info.dir.clone();
                   self.flush_notifications.flush_failed(std::mem::replace(
                     &mut dwpt.segment_info,
                     SegmentInfo::dummy(dir),
                   ))?
                 }
-                result
+                match result {
+                  Ok(result) => result,
+                  Err(payload) => std::panic::resume_unwind(payload),
+                }
               }
             },
             None => Err(LuceneError::illegal_state("ticket returned None")),
           }
-        })();
-        if result.is_err()
-          && let Some(ticket_idx) = has_ticket
-        {
+        }));
+        let success = matches!(&result, Ok(Ok(())));
+        if !success && let Some(ticket_idx) = has_ticket {
           // In the case of a failure make sure we are making progress and
           // apply all the deletes since the segment flush failed since the flush
           // The ticket could hold global deletes; see `FlushTicket::can_publish`.
           self.ticket_queue.mark_ticket_failed(ticket_idx)?;
         }
-        result?;
+        match result {
+          Ok(result) => result?,
+          Err(payload) => std::panic::resume_unwind(payload),
+        }
         //Now we are done and try to flush the ticket queue if the head of the
         // queue has already finished the flush.
         if self.ticket_queue.get_ticket_count() as usize
@@ -656,12 +676,15 @@ where
           self.flush_notifications.on_ticket_backlog()?;
         }
         Ok(())
-      })();
+      }));
       let config = &writer.config;
       self
         .flush_control
         .do_after_flush(None, flushing_dwpt, config)?;
-      res?;
+      match res {
+        Ok(result) => result?,
+        Err(payload) => std::panic::resume_unwind(payload),
+      }
       let v = self.flush_control.next_pending_flush(None, config)?;
 
       match v {

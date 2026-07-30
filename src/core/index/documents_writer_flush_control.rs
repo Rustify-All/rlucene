@@ -868,12 +868,17 @@ where
   {
     let mut inner = self.inner.lock();
 
-    let result = self.abort_pending_flushes(Some(&mut inner), config, documents_writer);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      self.abort_pending_flushes(Some(&mut inner), config, documents_writer)
+    }));
 
     inner.full_flush_mark_done = false;
     inner.full_flush = false;
 
-    result
+    match result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
 
   pub(crate) fn abort_pending_flushes<FN, L>(
@@ -890,49 +895,62 @@ where
       Some(inner) => inner,
       None => &mut *self.inner.lock(),
     };
-    let result = (|| -> Result<()> {
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       let flush_queue = std::mem::take(&mut inner.flush_queue);
 
       for dwpt_wrapper in flush_queue {
-        let _ = (|| -> Result<()> {
-          let num_docs_in_ram = {
-            let dwpt = dwpt_wrapper.dwpt.lock();
-            dwpt.get_num_docs_in_ram()
-          };
-          documents_writer.subtract_flushed_num_docs(num_docs_in_ram);
-          dwpt_wrapper.dwpt.lock().abort()?;
-          Ok(())
-        })();
+        let abort_result =
+          std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+            let num_docs_in_ram = {
+              let dwpt = dwpt_wrapper.dwpt.lock();
+              dwpt.get_num_docs_in_ram()
+            };
+            documents_writer.subtract_flushed_num_docs(num_docs_in_ram);
+            dwpt_wrapper.dwpt.lock().abort()?;
+            Ok(())
+          }));
 
         self.do_after_flush(Some(inner), dwpt_wrapper.clone(), config)?;
+        match abort_result {
+          Ok(_) => {},
+          Err(payload) => std::panic::resume_unwind(payload),
+        }
       }
 
       let blocked_flushes = std::mem::take(&mut inner.blocked_flushes);
 
       for dwpt_wrapper in blocked_flushes {
-        let _ = (|| -> Result<()> {
-          // add the blockedFlushes for correct accounting in doAfterFlush
-          self.add_flushing_dwpt(dwpt_wrapper.clone(), inner);
-          let num_docs_in_ram = {
-            let dwpt = dwpt_wrapper.dwpt.lock();
-            dwpt.get_num_docs_in_ram()
-          };
-          documents_writer.subtract_flushed_num_docs(num_docs_in_ram);
-          dwpt_wrapper.dwpt.lock().abort()?;
-          Ok(())
-        })();
+        let abort_result =
+          std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+            // add the blockedFlushes for correct accounting in doAfterFlush
+            self.add_flushing_dwpt(dwpt_wrapper.clone(), inner);
+            let num_docs_in_ram = {
+              let dwpt = dwpt_wrapper.dwpt.lock();
+              dwpt.get_num_docs_in_ram()
+            };
+            documents_writer.subtract_flushed_num_docs(num_docs_in_ram);
+            dwpt_wrapper.dwpt.lock().abort()?;
+            Ok(())
+          }));
         self.do_after_flush(Some(inner), dwpt_wrapper.clone(), config)?;
+        match abort_result {
+          Ok(_) => {},
+          Err(payload) => std::panic::resume_unwind(payload),
+        }
       }
 
       Ok(())
-    })();
+    }));
 
     inner.flush_queue.clear();
     inner.blocked_flushes.clear();
 
     self.update_stall_state(inner, config)?;
 
-    result
+    match result {
+      Ok(result) => result,
+      Err(payload) => std::panic::resume_unwind(payload),
+    }
   }
 
   /// Returns `true` if a full flush is currently running
