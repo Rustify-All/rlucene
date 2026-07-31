@@ -50,7 +50,7 @@ use crate::core::index::indexable_field::IndexableField;
 use crate::core::index::indexable_field_type::IndexableFieldType;
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
-use crate::core::index::merge_policy::MergePolicy;
+use crate::core::index::merge_policy::{MergePolicy, MergePolicyEnum};
 use crate::core::index::multi_bits;
 use crate::core::index::no_merge_policy::NoMergePolicy;
 use crate::core::index::segment_infos::{
@@ -2650,7 +2650,12 @@ fn test_merge_exception_is_tragic() -> Result<()> {
     do_fail: false,
   }));
 
-  let config = new_index_writer_config(&mut random)?;
+  let mut config = new_index_writer_config(&mut random)?;
+  if let MergePolicyEnum::Tiered(merge_policy) = config.get_merge_policy_mut()
+    && merge_policy.get_max_merged_segment_mb() < 0.2
+  {
+    merge_policy.set_max_merged_segment_mb(0.2)?;
+  }
   if let crate::core::index::merge_scheduler::MergeSchedulerEnum::Concurrent(scheduler) =
     config.get_merge_scheduler()
   {
@@ -2674,7 +2679,7 @@ fn test_merge_exception_is_tragic() -> Result<()> {
   }
 
   assert!(writer.get_tragic_exception().get().is_some());
-  assert!(INDEX_WRITER_ACCESS.is_closed(&writer));
+  assert!(!writer.is_open());
   assert!(did_fail.load(Ordering::SeqCst));
 
   if let crate::core::index::merge_scheduler::MergeSchedulerEnum::Concurrent(scheduler) =
