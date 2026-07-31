@@ -1972,7 +1972,7 @@ where
             }
           },
           Err(payload) => {
-            let _inner = self.inner.lock();
+            let mut inner = self.inner.lock();
             if merge.is_aborted() {
               if self.info_stream.is_enabled("IW") {
                 self.info_stream.message(
@@ -1986,7 +1986,9 @@ where
               "panic while creating compound merge file",
               payload.as_ref(),
             );
-            return self.handle_merge_exception(error, merge).map(|()| 0);
+            return self
+              .handle_merge_exception(error, merge, Some(&mut inner))
+              .map(|()| 0);
           },
         }
 
@@ -2115,11 +2117,18 @@ where
     }
     Ok(max_doc)
   }
-  fn add_merge_exception<CR>(&self, merge: &OneMerge<D, CR>, error: LuceneError)
-  where
+  fn add_merge_exception<CR>(
+    &self,
+    merge: &OneMerge<D, CR>,
+    error: LuceneError,
+    inner: Option<&mut Inner<D>>,
+  ) where
     CR: CodecReader,
   {
-    let mut inner = self.inner.lock();
+    let inner = match inner {
+      Some(inner) => inner,
+      None => &mut *self.inner.lock(),
+    };
     if !inner
       .merge_exceptions
       .iter()
@@ -5374,7 +5383,12 @@ where
     Ok(true)
   }
 
-  fn handle_merge_exception<CR>(&self, t: LuceneError, merge: &OneMerge<D, CR>) -> Result<()>
+  fn handle_merge_exception<CR>(
+    &self,
+    t: LuceneError,
+    merge: &OneMerge<D, CR>,
+    inner: Option<&mut Inner<D>>,
+  ) -> Result<()>
   where
     CR: CodecReader,
   {
@@ -5393,7 +5407,7 @@ where
     // forceMerge is waiting on us it sees the root
     // cause exception:
     merge.set_exception(t.clone());
-    self.add_merge_exception(merge, t.clone());
+    self.add_merge_exception(merge, t.clone(), inner);
 
     if matches!(t, LuceneError::MergeAborted(_)) {
       // We can ignore this exception (it happens when
@@ -5440,7 +5454,7 @@ where
         };
       let inner_result = match inner_result {
         Ok(()) => Ok(()),
-        Err(e) => self.handle_merge_exception(e, merge),
+        Err(e) => self.handle_merge_exception(e, merge, None),
       };
 
       {
@@ -9104,10 +9118,11 @@ where
         success = true;
         Ok(())
       },
-      Ok(Err(err)) => self.writer().handle_merge_exception(err, &merge),
+      Ok(Err(err)) => self.writer().handle_merge_exception(err, &merge, None),
       Err(payload) => self.writer().handle_merge_exception(
         LuceneError::tragedy_from_panic("panic while addIndexes reader merge", payload.as_ref()),
         &merge,
+        None,
       ),
     };
     {
