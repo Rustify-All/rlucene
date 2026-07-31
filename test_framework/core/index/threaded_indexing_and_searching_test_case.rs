@@ -29,6 +29,7 @@ use crate::core::index::index_writer::{
 };
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
+use crate::core::index::merge_policy::MergePolicyEnum;
 use crate::core::index::multi_terms;
 use crate::core::index::segment_reader::DefaultLeafReader;
 use crate::core::index::stored_fields::StoredFields;
@@ -410,6 +411,9 @@ where
     let mut config = new_index_writer_config_with_analyzer(random, analyzer)?;
     config.set_commit_on_close(false);
     config.set_info_stream(InfoStreamEnum::from(FailOnNonBulkMergesInfoStream));
+    if let MergePolicyEnum::MockRandom(merge_policy) = config.get_merge_policy_mut() {
+      merge_policy.set_do_non_bulk_merges(false);
+    }
     ensure_sane_iwc_on_nightly(&mut config)?;
     config.set_merged_segment_warmer(Some(IndexReaderWarmerEnum::custom(MergedSegmentWarmer {
       warmed: self.state().warmed.clone(),
