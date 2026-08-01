@@ -14,9 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use derive_getters::Getters;
-
-#[derive(Debug, PartialEq, Eq, Clone, Getters)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct FlushInfo {
   num_docs: i32,
   estimated_segment_size: i64,
@@ -28,5 +26,13 @@ impl FlushInfo {
       num_docs,
       estimated_segment_size,
     }
+  }
+
+  pub fn get_num_docs(&self) -> i32 {
+    self.num_docs
+  }
+
+  pub fn get_estimated_segment_size(&self) -> i64 {
+    self.estimated_segment_size
   }
 }

@@ -14,10 +14,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use derive_getters::Getters;
-
 /// Subreader slice from a parent composite reader.
-#[derive(Debug, Clone, PartialEq, Eq, Getters, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ReaderSlice {
   pub start: usize,
   pub length: i32,
@@ -30,5 +28,17 @@ impl ReaderSlice {
       length,
       reader_index,
     }
+  }
+
+  pub fn get_start(&self) -> usize {
+    self.start
+  }
+
+  pub fn get_length(&self) -> i32 {
+    self.length
+  }
+
+  pub fn get_reader_index(&self) -> i32 {
+    self.reader_index
   }
 }

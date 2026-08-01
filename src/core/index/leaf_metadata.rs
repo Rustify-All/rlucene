@@ -14,14 +14,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use derive_getters::Getters;
 use std::sync::Arc;
 
 use crate::core::search::sort::Sort;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::version::{LATEST, Version};
 
-#[derive(Getters, Clone)]
+#[derive(Clone)]
 #[cfg_attr(test, derive(Default))] // for test
 pub struct LeafMetaData {
   /// The major version of the Lucene format used to create this segment.
@@ -64,5 +63,21 @@ impl LeafMetaData {
       sort,
       has_blocks,
     })
+  }
+
+  pub fn get_created_version_major(&self) -> i32 {
+    self.created_version_major
+  }
+
+  pub fn get_min_version(&self) -> &Option<Version> {
+    &self.min_version
+  }
+
+  pub fn get_sort(&self) -> &Option<Arc<Sort>> {
+    &self.sort
+  }
+
+  pub fn get_has_blocks(&self) -> bool {
+    self.has_blocks
   }
 }

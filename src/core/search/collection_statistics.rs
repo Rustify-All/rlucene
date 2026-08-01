@@ -16,7 +16,6 @@
  */
 use crate::core::util::error::lucene_error::LuceneError;
 use crate::core::util::error::lucene_error::Result;
-use derive_getters::Getters;
 /// Contains statistics for a collection (field).
 ///
 /// This struct holds statistics across all documents for scoring purposes:
@@ -52,7 +51,6 @@ use derive_getters::Getters;
 ///   This is the sum of term-document pairs—the sum of [`TermStatistics::doc_freq()`](crate::core::search::term_statistics::TermStatistics::get_doc_freq) across all terms,
 ///   and also the sum of each document’s unique term count. Always positive, at least `doc_count()`,  
 ///   and never exceeds `sum_total_term_freq()`. See [`Terms::sum_doc_freq()`](crate::core::index::terms::Terms::get_sum_doc_freq).
-#[derive(Getters)]
 pub struct CollectionStatistics {
   field: String,
   max_doc: i64,
@@ -117,5 +115,25 @@ impl CollectionStatistics {
       sum_total_term_freq,
       sum_doc_freq,
     })
+  }
+
+  pub fn get_field(&self) -> &String {
+    &self.field
+  }
+
+  pub fn get_max_doc(&self) -> i64 {
+    self.max_doc
+  }
+
+  pub fn get_doc_count(&self) -> i64 {
+    self.doc_count
+  }
+
+  pub fn get_sum_total_term_freq(&self) -> i64 {
+    self.sum_total_term_freq
+  }
+
+  pub fn get_sum_doc_freq(&self) -> i64 {
+    self.sum_doc_freq
   }
 }

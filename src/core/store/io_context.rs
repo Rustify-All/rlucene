@@ -14,7 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use derive_getters::Getters;
 use std::sync::LazyLock;
 
 use crate::core::store::ReadAdvice;
@@ -49,7 +48,7 @@ pub static IO_CONTEXT_READ_ONCE: LazyLock<IOContext> =
 /// * `merge_info` - Must be provided when `context == MERGE`.
 /// * `flush_info` - Must be provided when `context == FLUSH`.
 /// * `read_advice` - Advice regarding the read access pattern.
-#[derive(Clone, Debug, PartialEq, Eq, Getters)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IOContext {
   pub(crate) context: Context,
   read_advice: ReadAdvice,
@@ -91,6 +90,22 @@ impl IOContext {
       merge_info,
       flush_info,
     })
+  }
+
+  pub fn get_context(&self) -> &Context {
+    &self.context
+  }
+
+  pub fn get_read_advice(&self) -> &ReadAdvice {
+    &self.read_advice
+  }
+
+  pub fn get_merge_info(&self) -> &Option<MergeInfo> {
+    &self.merge_info
+  }
+
+  pub fn get_flush_info(&self) -> &Option<FlushInfo> {
+    &self.flush_info
   }
 
   pub fn with_read_advice(read_advice: ReadAdvice) -> Result<IOContext> {

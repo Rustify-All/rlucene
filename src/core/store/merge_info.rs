@@ -14,9 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use derive_getters::Getters;
-
-#[derive(Debug, PartialEq, Eq, Clone, Getters)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct MergeInfo {
   total_max_doc: i32,
   estimated_merge_bytes: i64,
@@ -37,5 +35,21 @@ impl MergeInfo {
       is_external,
       merge_max_num_segments,
     }
+  }
+
+  pub fn get_total_max_doc(&self) -> i32 {
+    self.total_max_doc
+  }
+
+  pub fn get_estimated_merge_bytes(&self) -> i64 {
+    self.estimated_merge_bytes
+  }
+
+  pub fn get_is_external(&self) -> bool {
+    self.is_external
+  }
+
+  pub fn get_merge_max_num_segments(&self) -> i32 {
+    self.merge_max_num_segments
   }
 }

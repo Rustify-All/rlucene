@@ -17,7 +17,6 @@
 use crate::core::index::term::Term;
 use crate::core::util::error::lucene_error::LuceneError;
 use crate::core::util::error::lucene_error::Result;
-use derive_getters::Getters;
 use std::sync::Arc;
 
 /// Contains statistics for a specific term
@@ -57,7 +56,7 @@ use std::sync::Arc;
 ///   This value is always a positive number, always at least `doc_freq()`,  
 ///   and never exceeds [`CollectionStatistics::sum_total_term_freq()`](crate::core::search::collection_statistics::CollectionStatistics::get_sum_total_term_freq).
 ///   See also: [`TermsEnum::total_term_freq()`](crate::core::index::terms_enum::TermsEnum::total_term_freq)
-#[derive(Getters, Debug)]
+#[derive(Debug)]
 pub struct TermStatistics {
   term: Arc<Term>,
   doc_freq: i64,
@@ -96,5 +95,17 @@ impl TermStatistics {
       doc_freq,
       total_term_freq,
     })
+  }
+
+  pub fn get_term(&self) -> &Arc<Term> {
+    &self.term
+  }
+
+  pub fn get_doc_freq(&self) -> i64 {
+    self.doc_freq
+  }
+
+  pub fn get_total_term_freq(&self) -> i64 {
+    self.total_term_freq
   }
 }
