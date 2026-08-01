@@ -1,3 +1,7 @@
+# Rust edition used to parse source files when invoking rustfmt directly
+edition = "2024"
+# Rust style edition used to keep rustfmt and cargo fmt consistent
+style_edition = "2024"
 # Maximum width of each line
 max_width = 100
 # Use tab characters for indentation, spaces for alignment
