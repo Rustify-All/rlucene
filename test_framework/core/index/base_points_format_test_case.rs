@@ -732,7 +732,33 @@ pub trait BasePointsFormatTestCase:
         }
       }
     }
-    // TODO switchIndex 及 save_dir/save_w 尚未迁移。
+    // 20% of the time we add into a separate directory, then at some point use
+    // addIndexes to bring the indexed point values to the main directory:
+    let mut source_dir = None;
+    let mut source_w = None;
+    let mut add_indexes_at = 0;
+    if random.random_range(0..5) == 1 {
+      let other_dir = get_directory(random, num_values)?;
+      let other_iwc = if use_real_writer {
+        let analyzer = MockAnalyzer::new(random);
+        new_index_writer_config_with_analyzer(random, analyzer)?
+      } else {
+        new_index_writer_config(random)?
+      };
+      if expect_exceptions
+        && let MergeSchedulerEnum::Concurrent(cms) = other_iwc.get_merge_scheduler()
+      {
+        cms.set_suppress_exceptions();
+      }
+      source_w = Some(RandomIndexWriter::with_config(
+        random,
+        other_dir.clone(),
+        other_iwc,
+      ));
+      source_dir = Some(other_dir);
+      add_indexes_at = TestUtil::next_int(random, 1, num_values as i32 - 1) as usize;
+    }
+
     let field_type = {
       let mut field_type = FieldType::new();
       field_type.set_dimensions_with_index(num_dims, num_index_dims, num_bytes_per_dim)?;
@@ -746,7 +772,13 @@ pub trait BasePointsFormatTestCase:
       let id = ids.map_or(ord as i32, |values| values[ord]);
       if id != last_id {
         if let Some(prev_doc) = doc.take() {
-          if use_real_writer {
+          if let Some(source_w) = &source_w {
+            if use_real_writer {
+              source_w.w.add_document(prev_doc)?;
+            } else {
+              source_w.add_document(random, prev_doc)?;
+            }
+          } else if use_real_writer {
             w.w.add_document(prev_doc)?;
           } else {
             w.add_document(random, prev_doc)?;
@@ -770,7 +802,13 @@ pub trait BasePointsFormatTestCase:
       last_id = id;
 
       if random.random_range(0..30) == 17 {
-        if use_real_writer {
+        if let Some(source_w) = &source_w {
+          if use_real_writer {
+            source_w.w.add_document(Document::new())?;
+          } else {
+            source_w.add_document(random, Document::new())?;
+          }
+        } else if use_real_writer {
           w.w.add_document(Document::new())?;
         } else {
           w.add_document(random, Document::new())?;
@@ -791,7 +829,13 @@ pub trait BasePointsFormatTestCase:
           Store::No,
           &mut field_types,
         )?);
-        if use_real_writer {
+        if let Some(source_w) = &source_w {
+          if use_real_writer {
+            source_w.w.add_document(xdoc)?;
+          } else {
+            source_w.add_document(random, xdoc)?;
+          }
+        } else if use_real_writer {
           w.w.add_document(xdoc)?;
         } else {
           w.add_document(random, xdoc)?;
@@ -800,7 +844,16 @@ pub trait BasePointsFormatTestCase:
           println!("add doc doc-to-delete");
         }
         if random.random_range(0..5) == 1 {
-          if use_real_writer {
+          if let Some(source_w) = &source_w {
+            if use_real_writer {
+              source_w
+                .w
+                .delete_documents_with_terms(vec![Term::from_text("nukeme", "yes")])?;
+            } else {
+              source_w
+                .delete_documents_with_terms(random, vec![Term::from_text("nukeme", "yes")])?;
+            }
+          } else if use_real_writer {
             w.w
               .delete_documents_with_terms(vec![Term::from_text("nukeme", "yes")])?;
           } else {
@@ -814,6 +867,15 @@ pub trait BasePointsFormatTestCase:
         for (dim, value) in doc_values[ord].iter().enumerate().take(num_dims) {
           println!("    dim={} value={:?}", dim, value);
         }
+      }
+
+      if source_w.is_some() && ord >= add_indexes_at {
+        self.switch_index(
+          random,
+          source_w.take().expect("source writer must exist"),
+          source_dir.take().expect("source directory must exist"),
+          &w,
+        )?;
       }
     }
 
@@ -1081,6 +1143,55 @@ pub trait BasePointsFormatTestCase:
     assert_eq!(2, s.count(IntPoint::new_exact_query("int2", 42)?)?);
     w.close(random)?;
     Ok(())
+  }
+
+  fn switch_index<R, D>(
+    &self,
+    random: &mut R,
+    w: RandomIndexWriter<DirEnum>,
+    dir: Arc<DirEnum>,
+    save_w: &RandomIndexWriter<D>,
+  ) -> Result<()>
+  where
+    R: Rng + ?Sized,
+    D: Directory + 'static,
+  {
+    if random.random_bool(0.5) {
+      // Add via readers:
+      let reader = w.get_reader(random)?;
+      let body_result = if random.random_bool(0.5) {
+        // Add via CodecReaders:
+        let context = (&reader).get_context()?;
+        let readers = context
+          .leaves()?
+          .iter()
+          .map(|context| context.reader().clone())
+          .collect::<Vec<_>>();
+        if cfg!(feature = "test_log_verbose") {
+          println!("TEST: now use addIndexes(CodecReader[]) to switch writers");
+        }
+        save_w
+          .add_indexes_from_codec_readers(random, readers)
+          .map(|_| ())
+      } else {
+        if cfg!(feature = "test_log_verbose") {
+          println!("TEST: now use TestUtil.addIndexesSlowly(DirectoryReader[]) to switch writers");
+        }
+        TestUtil::add_indexes_slowly(&save_w.w, std::slice::from_ref(&reader))
+      };
+      IOUtils::use_or_suppress_result(body_result, reader.close())?;
+    } else {
+      // Add via directory:
+      if cfg!(feature = "test_log_verbose") {
+        println!("TEST: now use addIndexes(Directory[]) to switch writers");
+      }
+      w.close(random)?;
+      save_w
+        .w
+        .add_indexes_from_directory(std::slice::from_ref(&dir))?;
+    }
+    let close_result = w.close(random);
+    IOUtils::use_or_suppress_result(close_result, dir.close())
   }
 
   fn test_merge_missing<R>(&self, random: &mut R) -> Result<()>

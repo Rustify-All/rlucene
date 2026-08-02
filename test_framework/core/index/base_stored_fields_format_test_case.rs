@@ -22,6 +22,7 @@ use crate::core::document::int_point::IntPoint;
 use crate::core::document::numeric_doc_values_field::NumericDocValuesField;
 use crate::core::document::stored_field::StoredField;
 use crate::core::document::string_field::StringField;
+use crate::core::document::text_field::TYPE_STORED;
 use crate::core::index::BytesRef;
 use crate::core::index::base_composite_reader::{
   BCRStoredFieldsImpl, BCRTermVectorsImpl, BaseCompositeReader, BaseCompositeReaderBase,
@@ -46,24 +47,30 @@ use crate::core::index::numeric_doc_values::NumericDocValues;
 use crate::core::index::stored_field_visitor::StoredFieldVisitor;
 use crate::core::index::stored_fields::{RawStoredFieldsReader, StoredFields};
 use crate::core::index::term::Term;
+use crate::core::index::two_phase_commit::TwoPhaseCommit;
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
 use crate::core::search::knn_collector::KnnCollector;
+use crate::core::search::sort::Sort;
+use crate::core::search::sort_field::{SortField, SortFieldType};
 use crate::core::search::term_query::TermQuery;
+use crate::core::store::directory::DirEnum;
 use crate::core::util::bits::Bits;
 use crate::core::util::close::CloseableRef;
 use crate::core::util::dummy::dummy_comparator::DummyComparator;
 use crate::core::util::error::lucene_error::Result;
+use crate::core::util::io_utils::IOUtils;
 use crate::core::util::number::Number;
 use crate::test_framework::core::analysis::mock_analyzer::MockAnalyzer;
 use crate::test_framework::core::index::base_index_file_format_test_case::{
   BaseIndexFileFormatTestCase, BaseIndexFileFormatTestCaseDefaults,
 };
+use crate::test_framework::core::index::mismatched_codec_reader::MismatchedCodecReader;
 use crate::test_framework::core::index::random_index_writer::RandomIndexWriter;
 use crate::test_framework::core::util::line_file_docs::LineFileDocs;
 use crate::test_framework::core::util::lucene_test_case::{
-  at_least, create_temp_dir, create_temp_dir_with_prefix, new_directory_shared, new_field,
-  new_fs_directory, new_index_writer_config, new_index_writer_config_with_analyzer,
-  new_searcher_with_reader, new_string_field,
+  at_least, create_temp_dir, create_temp_dir_with_prefix, get_only_leaf_reader,
+  new_directory_shared, new_field, new_fs_directory, new_index_writer_config,
+  new_index_writer_config_with_analyzer, new_searcher_with_reader, new_string_field,
 };
 use crate::test_framework::core::util::test_util::TestUtil;
 use rand::Rng;
@@ -794,7 +801,6 @@ pub trait BaseStoredFieldsFormatTestCase:
   where
     R: Rng + ?Sized,
   {
-    // TODO IMPORTANT MMAP未实现
     let dir = new_fs_directory(random, create_temp_dir_with_prefix("testBigDocuments")?)?;
     let analyzer = MockAnalyzer::new(random);
     let mut iwc = new_index_writer_config_with_analyzer(random, analyzer)?;
@@ -922,20 +928,243 @@ pub trait BaseStoredFieldsFormatTestCase:
     Ok(())
   }
 
-  fn test_mismatched_fields<R>(&self, _random: &mut R) -> Result<()>
+  /// Mix up field numbers, merge, and check that data is correct.
+  fn test_mismatched_fields<R>(&self, random: &mut R) -> Result<()>
   where
     R: Rng + ?Sized,
   {
-    // addIndexesSlowly未实现
-    Ok(())
+    let mut dirs = Vec::with_capacity(10);
+    for _ in 0..10 {
+      let dir = new_directory_shared(random)?;
+      let iw = IndexWriter::new(dir.clone(), IndexWriterConfig::new()?)?;
+      let mut doc = Document::new();
+      for j in 0..10 {
+        // Add fields where name=value (e.g. 3=3) so we can detect if stuff gets screwed up.
+        doc.add(StringField::from_string(
+          j.to_string(),
+          j.to_string(),
+          Store::Yes,
+        )?);
+      }
+      for _ in 0..10 {
+        iw.add_document(doc.clone())?;
+      }
+
+      let reader = self.maybe_wrap_with_merging_reader(directory_reader::open_from_writer(&iw)?)?;
+      let target_dir = new_directory_shared(random)?;
+      let adder = IndexWriter::new(target_dir.clone(), IndexWriterConfig::new()?)?;
+      if random.random_bool(0.5) {
+        // Mix up fields explicitly. Rust expresses Java's MismatchedDirectoryReader at the
+        // CodecReader boundary used by addIndexesSlowly.
+        let leaf = get_only_leaf_reader(&reader)?;
+        let mismatched = MismatchedCodecReader::new(leaf, random)?;
+        adder.add_indexes_from_codec_readers(vec![mismatched])?;
+      } else {
+        TestUtil::add_indexes_slowly(&adder, std::slice::from_ref(&reader))?;
+      }
+      adder.commit()?;
+      adder.close()?;
+
+      let close_result = reader.close();
+      let close_result = IOUtils::use_or_suppress_result(close_result, iw.close());
+      IOUtils::use_or_suppress_result(close_result, dir.close())?;
+      dirs.push(target_dir);
+    }
+
+    let everything = new_directory_shared(random)?;
+    let iw = IndexWriter::new(everything.clone(), IndexWriterConfig::new()?)?;
+    iw.add_indexes_from_directory(&dirs)?;
+    iw.force_merge(1)?;
+
+    let reader = directory_reader::open_from_writer(&iw)?;
+    let leaf = get_only_leaf_reader(&reader)?;
+    let mut stored_fields = leaf.stored_fields()?;
+    for i in 0..leaf.max_doc()? {
+      let doc = stored_fields.document(i)?;
+      assert_eq!(10, doc.get_fields().len());
+      for j in 0..10 {
+        assert_eq!(
+          Some(j.to_string()),
+          doc.get(&j.to_string())?.map(|value| value.into_owned())
+        );
+      }
+    }
+
+    let close_result = iw.close();
+    let close_result = IOUtils::use_or_suppress_result(close_result, reader.close());
+    let close_result = IOUtils::use_or_suppress_result(close_result, everything.close());
+
+    dirs.iter().fold(close_result, |result, dir| {
+      IOUtils::use_or_suppress_result(result, dir.close())
+    })
   }
-  /// Test realistic data, which typically compresses better than random data.
-  fn test_random_stored_fields_with_index_sort<R>(&self, _random: &mut R) -> Result<()>
+
+  fn test_random_stored_fields_with_index_sort<R>(&self, random: &mut R) -> Result<()>
   where
     R: Rng + ?Sized,
   {
-    // TODO IMPORTANT 多线程未实现
-    Ok(())
+    let sort_fields = if random.random_bool(0.5) {
+      vec![
+        SortField::new(Some("sort-1"), SortFieldType::Long)?,
+        SortField::new(Some("sort-2"), SortFieldType::Int)?,
+      ]
+    } else {
+      vec![SortField::new(Some("sort-1"), SortFieldType::Long)?]
+    };
+    let mut stored_fields = Vec::new();
+    let num_fields = TestUtil::next_int(random, 1, 10);
+    for i in 0..num_fields {
+      stored_fields.push(format!("f-{i}"));
+    }
+    let mut store_type = FieldType::from_ref(&*TYPE_STORED)?;
+    store_type.set_stored(true)?;
+    let document_factory = |random: &mut R,
+                            stored_fields: &mut Vec<String>,
+                            field_types: &mut HashMap<String, FieldType>,
+                            id: &str|
+     -> Result<Document> {
+      let mut doc = Document::new();
+      doc.add(StringField::from_string(
+        "id",
+        id,
+        if random.random_bool(0.5) {
+          Store::Yes
+        } else {
+          Store::No
+        },
+      )?);
+      if random.random_range(0..100) <= 5 {
+        stored_fields.shuffle(random);
+      }
+      for field_name in stored_fields.iter() {
+        if random.random_bool(0.5) {
+          let value = TestUtil::random_unicode_string_with_len(random, 100);
+          doc.add(new_field(
+            random,
+            field_name,
+            value,
+            &store_type,
+            field_types,
+          )?);
+        }
+      }
+      for sort_field in &sort_fields {
+        doc.add(NumericDocValuesField::new(
+          sort_field
+            .get_field()
+            .expect("index sort field must have a name"),
+          TestUtil::next_int(random, 0, 10_000) as i64,
+        ));
+      }
+      Ok(doc)
+    };
+
+    let mut docs = HashMap::new();
+    let mut field_types = HashMap::new();
+    let num_docs = at_least(random, 100);
+    for i in 0..num_docs {
+      let id = i.to_string();
+      docs.insert(
+        id.clone(),
+        document_factory(random, &mut stored_fields, &mut field_types, &id)?,
+      );
+    }
+
+    let dir = new_directory_shared(random)?;
+    let mut iwc = new_index_writer_config(random)?;
+    iwc.set_max_buffered_docs(TestUtil::next_int(random, 5, 20));
+    iwc.set_index_sort(Sort::with_fields(sort_fields.clone())?)?;
+    let iw = RandomIndexWriter::with_config(random, dir.clone(), iwc);
+    let mut added_ids = Vec::new();
+    let verify_stored_fields = |random: &mut R,
+                                iw: &RandomIndexWriter<DirEnum>,
+                                added_ids: &[String],
+                                docs: &HashMap<String, Document>|
+     -> Result<()> {
+      if added_ids.is_empty() {
+        return Ok(());
+      }
+      let reader = self.maybe_wrap_with_merging_reader(iw.get_reader(random)?)?;
+      let searcher = new_searcher_with_reader(reader)?;
+      let body_result = (|| {
+        let mut actual_stored_fields = searcher.stored_fields()?;
+        let iters = TestUtil::next_int(random, 1, 10);
+        for _ in 0..iters {
+          let test_id = &added_ids[random.random_range(0..added_ids.len())];
+          if cfg!(feature = "test_log_verbose") {
+            println!("TEST: test id={test_id}");
+          }
+          let hits = searcher.search(TermQuery::new(Term::from_text("id", test_id)), 1)?;
+          assert_eq!(1, hits.total_hits.value());
+          let expected_fields = docs[test_id]
+            .get_fields()
+            .iter()
+            .filter(|field| field.field_type().stored())
+            .collect::<Vec<_>>();
+          let actual_doc = actual_stored_fields.document(hits.score_docs[0].doc)?;
+          assert_eq!(expected_fields.len(), actual_doc.get_fields().len());
+          for expected_field in expected_fields {
+            let actual_fields = actual_doc.get_fields_with_name(expected_field.name());
+            assert_eq!(1, actual_fields.len());
+            assert_eq!(
+              expected_field.string_value()?,
+              actual_fields[0].string_value()?
+            );
+          }
+        }
+        Ok(())
+      })();
+      IOUtils::use_or_suppress_result(body_result, searcher.get_index_reader().close())
+    };
+
+    let mut ids = docs.keys().cloned().collect::<Vec<_>>();
+    ids.shuffle(random);
+    for id in ids {
+      if random.random_range(0..100) < 5 {
+        // Add via foreign reader.
+        let other_dir = new_directory_shared(random)?;
+        let mut other_iwc = new_index_writer_config(random)?;
+        other_iwc.set_index_sort(Sort::with_fields(sort_fields.clone())?)?;
+        let other_iw = RandomIndexWriter::with_config(random, other_dir.clone(), other_iwc);
+        other_iw.add_document(random, docs[&id].clone())?;
+        let other_reader = other_iw.get_reader(random)?;
+        let body_result = TestUtil::add_indexes_slowly(&iw.w, std::slice::from_ref(&other_reader));
+        let close_result = IOUtils::use_or_suppress_result(body_result, other_reader.close());
+        let close_result = IOUtils::use_or_suppress_result(close_result, other_iw.close(random));
+        IOUtils::use_or_suppress_result(close_result, other_dir.close())?;
+      } else {
+        // Add normally.
+        iw.add_document(random, docs[&id].clone())?;
+      }
+      added_ids.push(id.clone());
+      if random.random_range(0..100) < 5 {
+        let deleting_id = added_ids.remove(random.random_range(0..added_ids.len()));
+        if random.random_bool(0.5) {
+          iw.delete_documents_with_queries(
+            random,
+            vec![TermQuery::new(Term::from_text("id", &deleting_id)).into()],
+          )?;
+        } else {
+          let new_doc =
+            document_factory(random, &mut stored_fields, &mut field_types, &deleting_id)?;
+          docs.insert(deleting_id.clone(), new_doc.clone());
+          iw.update_document_with_term(random, Term::from_text("id", deleting_id), new_doc)?;
+        }
+      }
+      if random.random_range(0..100) < 5 {
+        verify_stored_fields(random, &iw, &added_ids, &docs)?;
+      }
+      if random.random_range(0..100) < 2 {
+        let max_num_segments = TestUtil::next_int(random, 1, 3);
+        iw.force_merge(random, max_num_segments)?;
+      }
+    }
+    verify_stored_fields(random, &iw, &added_ids, &docs)?;
+    let max_num_segments = TestUtil::next_int(random, 1, 3);
+    iw.force_merge(random, max_num_segments)?;
+    verify_stored_fields(random, &iw, &added_ids, &docs)?;
+    let close_result = iw.close(random);
+    IOUtils::use_or_suppress_result(close_result, dir.close())
   }
 
   fn test_line_file_docs<R>(&self, random: &mut R) -> Result<()>

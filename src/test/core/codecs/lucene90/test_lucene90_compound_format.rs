@@ -55,22 +55,22 @@ mod base_compound_format_test_case_tests {
 
   #[test]
   fn test_double_close() -> Result<()> {
-    run_case(|case, _random| case.test_double_close())
+    run_case(|case, random| case.test_double_close(random))
   }
 
   #[test]
   fn test_pass_io_context() -> Result<()> {
-    run_case(|case, _random| case.test_pass_io_context())
+    run_case(|case, random| case.test_pass_io_context(random))
   }
 
   #[test]
   fn test_large_cfs() -> Result<()> {
-    run_case(|case, _random| case.test_large_cfs())
+    run_case(|case, random| case.test_large_cfs(random))
   }
 
   #[test]
   fn test_list_all() -> Result<()> {
-    run_case(|case, _random| case.test_list_all())
+    run_case(|case, random| case.test_list_all(random))
   }
 
   #[test]

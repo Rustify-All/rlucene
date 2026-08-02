@@ -90,6 +90,7 @@ use std::sync::Arc;
 ///
 /// This [`StoredFieldsFormat`] does not support individual documents larger
 /// than `(2^31 - 2^14)` bytes.
+#[derive(Clone)]
 pub struct Lucene90StoredFieldsFormat {
   pub mode: Mode,
 }
@@ -208,6 +209,7 @@ static BEST_SPEED_MODE: CompressionModeEnum =
   CompressionModeEnum::LZ4Dict(LZ4WithPresetDictCompressionMode);
 
 /// Configuration option for stored fields.
+#[derive(Clone, Copy)]
 pub enum Mode {
   /// Trade compression ratio for retrieval speed.
   BestSpeed,

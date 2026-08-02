@@ -21,7 +21,9 @@ use crate::core::codecs::lucene90_doc_values_format::Lucene90DocValuesFormat;
 use crate::core::codecs::lucene90_live_docs_format::Lucene90LiveDocsFormat;
 use crate::core::codecs::lucene90_norms_format::Lucene90NormsFormat;
 use crate::core::codecs::lucene90_points_format::Lucene90PointsFormat;
-use crate::core::codecs::lucene90_stored_fields_format::Lucene90StoredFieldsFormat;
+use crate::core::codecs::lucene90_stored_fields_format::{
+  Lucene90StoredFieldsFormat, Mode as StoredFieldsMode,
+};
 use crate::core::codecs::lucene90_term_vectors_format::Lucene90TermVectorsFormat;
 use crate::core::codecs::lucene94::lucene94_field_infos_format::Lucene94FieldInfosFormat;
 use crate::core::codecs::lucene99::lucene99_hnsw_vectors_format::Lucene99HnswVectorsFormat;
@@ -38,6 +40,24 @@ use crate::core::codecs::perfield::per_field_postings_format::{
 };
 use crate::core::util::error::lucene_error::Result;
 use std::fmt::{Display, Formatter};
+
+/// Configuration option for the codec.
+#[derive(Clone, Copy)]
+pub enum Mode {
+  /// Trade compression ratio for retrieval speed.
+  BestSpeed,
+  /// Trade retrieval speed for compression ratio.
+  BestCompression,
+}
+
+impl Mode {
+  fn stored_mode(self) -> StoredFieldsMode {
+    match self {
+      Self::BestSpeed => StoredFieldsMode::BestSpeed,
+      Self::BestCompression => StoredFieldsMode::BestCompression,
+    }
+  }
+}
 
 type DefaultPostingsFormat = Lucene101PostingsFormat;
 type DefaultDocValuesFormat = Lucene90DocValuesFormat;
@@ -88,11 +108,20 @@ pub struct Lucene101Codec {
   postings_format: Lucene101CodecPostingsFormat,
   doc_values_format: Lucene101CodecDocValuesFormat,
   knn_vectors_format: Lucene101CodecKnnVectorsFormat,
+  stored_fields_format: Lucene90StoredFieldsFormat,
 }
 
 impl Default for Lucene101Codec {
   fn default() -> Self {
+    Self::with_mode(Mode::BestSpeed)
+  }
+}
+
+impl Lucene101Codec {
+  /// Instantiates a new codec, specifying the stored fields compression mode to use.
+  pub fn with_mode(mode: Mode) -> Self {
     Self {
+      stored_fields_format: Lucene90StoredFieldsFormat::with_mode(mode.stored_mode()),
       postings_format: PerFieldPostingsFormat::new(Lucene101CodecPostingsFormatBase {
         default_postings_format: DefaultPostingsFormat::new(),
       }),
@@ -135,7 +164,7 @@ impl Codec for Lucene101Codec {
   }
 
   fn stored_fields_format(&self) -> Self::StoredFieldsFormat {
-    Lucene90StoredFieldsFormat::default()
+    self.stored_fields_format.clone()
   }
 
   fn term_vectors_format(&self) -> Self::TermVectorsFormat {

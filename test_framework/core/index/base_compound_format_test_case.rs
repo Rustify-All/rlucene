@@ -15,10 +15,11 @@
  * limitations under the License.
  */
 use crate::test_framework::core::util::lucene_test_case::{
-  at_least_usize, create_temp_dir_with_prefix, new_directory_shared, new_io_context,
-  new_mock_fs_directory, random,
+  at_least_usize, create_temp_dir_with_prefix, new_directory_shared, new_fs_directory,
+  new_io_context, new_mock_fs_directory,
 };
 use std::collections::{HashMap, HashSet};
+use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 use rand::Rng;
@@ -32,10 +33,13 @@ use crate::core::document::field::{FieldBase, Store};
 use crate::core::document::stored_field::StoredField;
 use crate::core::document::string_field::StringField;
 use crate::core::document::text_field::TextField;
+use crate::core::index::index_reader::Identity;
 use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::segment_infos::SegmentInfos;
 use crate::core::store::IndexOutput;
 use crate::core::store::directory::Directory;
+use crate::core::store::flush_info::FlushInfo;
+use crate::core::store::nrt_caching_directory::NRTCachingDirectory;
 use crate::core::store::{DataInput, DataOutput, IOContext};
 use crate::core::store::{IO_CONTEXT_DEFAULT, IndexInput};
 use crate::core::util::bit_set::BitSet;
@@ -44,7 +48,7 @@ use crate::core::util::clone::TryClone as OtherClone;
 use crate::core::util::close::{Closeable, CloseableRef};
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::io_utils::IOUtils;
-use crate::core::util::{LATEST, StringHelper};
+use crate::core::util::{HasIdentity, LATEST, StringHelper};
 use crate::test_framework::core::index::base_index_file_format_test_case::{
   BaseIndexFileFormatTestCase, BaseIndexFileFormatTestCaseDefaults, FileTrackingDirectoryWrapper,
   ReadBytesDirectoryWrapper,
@@ -151,29 +155,107 @@ pub trait BaseCompoundFormatTestCase:
     }
     Ok(())
   }
-  fn test_double_close(&self) -> Result<()> {
-    // Rust Lucene not need close manually
-    Ok(())
-  }
-  /// This test ensures that IOContext is passed correctly in contexts like
-  /// NRTCachingDir. It checks that IOContext is properly propagated when
-  /// interacting with the `Directory`.
-  fn test_pass_io_context(&self) -> Result<()> {
-    // TODO: FilterDirectory not implement, so this test could not be
-    // implemented
-    Ok(())
-  }
-  fn test_large_cfs(&self) -> Result<()> {
-    // TODO: NRTCachingDirectory not implement, so this test could not be
-    // implemented
-    Ok(())
-  }
-  fn test_list_all(&self) -> Result<()> {
-    let mut random = random();
-    // riw should sometimes create docvalues fields, etc
-    let dir = new_directory_shared(&mut random)?;
+  // test that a second call to close() behaves according to Closeable
+  fn test_double_close<R>(&self, random: &mut R) -> Result<()>
+  where
+    R: Rng + ?Sized,
+  {
+    let test_file = "_123.test";
 
-    let riw = RandomIndexWriter::new(&mut random, dir.clone())?;
+    let dir = new_directory_shared(random)?;
+    let mut si = new_segment_info(random, dir.clone(), "_123")?;
+    let mut out = dir.create_output(test_file, &IO_CONTEXT_DEFAULT)?;
+    let body_result = (|| {
+      CodecUtil::write_index_header(&mut out, "Foo", 0, si.get_id(), "suffix")?;
+      out.write_int(3)?;
+      CodecUtil::write_footer(&mut out)
+    })();
+    IOUtils::use_or_suppress_result(body_result, out.close())?;
+
+    si.set_files(HashSet::from([test_file.to_string()]))?;
+    si.get_codec()?
+      .compound_format()
+      .write(dir.as_ref(), &si, &IO_CONTEXT_DEFAULT)?;
+    let cfs = si
+      .get_codec()?
+      .compound_format()
+      .get_compound_reader(dir.as_ref(), &si)?;
+    assert_eq!(1, cfs.list_all()?.len());
+    cfs.close()?;
+    cfs.close()?; // second close should not throw exception
+    dir.close()
+  }
+
+  // LUCENE-5724: things like NRTCachingDir rely upon IOContext being properly passed down
+  fn test_pass_io_context<R>(&self, random: &mut R) -> Result<()>
+  where
+    R: Rng + ?Sized,
+  {
+    let test_file = "_123.test";
+    let my_context = Arc::new(IO_CONTEXT_DEFAULT.clone());
+
+    let dir = Arc::new(IOContextAssertingDirectoryWrapper::new(
+      new_directory_shared(random)?,
+      my_context.clone(),
+    ));
+    let mut si = new_segment_info(random, dir.clone(), "_123")?;
+    let mut out = dir.create_output(test_file, my_context.as_ref())?;
+    let body_result = (|| {
+      CodecUtil::write_index_header(&mut out, "Foo", 0, si.get_id(), "suffix")?;
+      out.write_int(3)?;
+      CodecUtil::write_footer(&mut out)
+    })();
+    IOUtils::use_or_suppress_result(body_result, out.close())?;
+
+    si.set_files(HashSet::from([test_file.to_string()]))?;
+    si.get_codec()?
+      .compound_format()
+      .write(dir.as_ref(), &si, my_context.as_ref())?;
+    dir.close()
+  }
+
+  // LUCENE-5724: actually test we play nice with NRTCachingDir and massive file
+  fn test_large_cfs<R>(&self, random: &mut R) -> Result<()>
+  where
+    R: Rng + ?Sized,
+  {
+    let test_file = "_123.test";
+    let context = IOContext::with_flush(FlushInfo::new(0, 512 * 1024 * 1024))?;
+
+    let fs_dir = new_fs_directory(
+      random,
+      create_temp_dir_with_prefix("BaseCompoundFormatTestCase")?,
+    )?;
+    let dir = Arc::new(NRTCachingDirectory::new(fs_dir, 2.0, 25.0));
+
+    let mut si = new_segment_info(random, dir.clone(), "_123")?;
+    let mut out = dir.create_output(test_file, &context)?;
+    let body_result = (|| {
+      CodecUtil::write_index_header(&mut out, "Foo", 0, si.get_id(), "suffix")?;
+      let bytes = [0u8; 512];
+      for _ in 0..1024 * 1024 {
+        out.write_bytes_range(&bytes, 0, bytes.len())?;
+      }
+      CodecUtil::write_footer(&mut out)
+    })();
+    IOUtils::use_or_suppress_result(body_result, out.close())?;
+
+    si.set_files(HashSet::from([test_file.to_string()]))?;
+    si.get_codec()?
+      .compound_format()
+      .write(dir.as_ref(), &si, &context)?;
+
+    dir.close()
+  }
+
+  // Just tests that we can open all files returned by listAll
+  fn test_list_all<R>(&self, random: &mut R) -> Result<()>
+  where
+    R: Rng + ?Sized,
+  {
+    let dir = new_directory_shared(random)?;
+    // riw should sometimes create docvalues fields, etc
+    let riw = RandomIndexWriter::new(random, dir.clone())?;
 
     let mut doc = Document::new();
     // these fields should sometimes get term vectors, etc
@@ -184,18 +266,18 @@ pub trait BaseCompoundFormatTestCase:
 
     for i in 0..100 {
       id_field.set_string_value(i.to_string())?;
-      body_field.set_string_value(TestUtil::random_unicode_string(&mut random))?;
+      body_field.set_string_value(TestUtil::random_unicode_string(random))?;
       let mut doc = Document::new();
       doc.add(id_field.clone());
       doc.add(body_field.clone());
-      riw.add_document(&mut random, doc)?;
+      riw.add_document(random, doc)?;
 
       if random.random_range(0..7) == 0 {
-        riw.commit(&mut random)?;
+        riw.commit(random)?;
       }
     }
 
-    riw.close(&mut random)?;
+    riw.close(random)?;
 
     let infos = SegmentInfos::read_latest_commit(dir.clone())?;
 
@@ -209,12 +291,14 @@ pub trait BaseCompoundFormatTestCase:
         let files = cfs_dir.list_all()?;
 
         for file in files {
-          cfs_dir.open_input(&file, &IOContext::default_io_context()?)?;
+          let input = cfs_dir.open_input(&file, &IO_CONTEXT_DEFAULT)?;
+          input.close()?;
         }
+        cfs_dir.close()?;
       }
     }
 
-    Ok(())
+    dir.close()
   }
   /// Test that the compound file system (CFS) reader is read-only by
   /// attempting to create an output.
@@ -852,6 +936,118 @@ pub trait BaseCompoundFormatTestCase:
     compound_dir.close()?;
     dir.close()?;
     Ok(())
+  }
+}
+
+/// The named Rust equivalent of the anonymous `FilterDirectory` used by
+/// `testPassIOContext`.
+struct IOContextAssertingDirectoryWrapper<D>
+where
+  D: Directory,
+{
+  in_: D,
+  expected_context: Arc<IOContext>,
+  identity: Identity,
+}
+
+impl<D> IOContextAssertingDirectoryWrapper<D>
+where
+  D: Directory,
+{
+  fn new(in_: D, expected_context: Arc<IOContext>) -> Self {
+    Self {
+      in_,
+      expected_context,
+      identity: Identity::new(),
+    }
+  }
+}
+
+impl<D> Directory for IOContextAssertingDirectoryWrapper<D>
+where
+  D: Directory,
+{
+  fn list_all(&self) -> Result<Vec<String>> {
+    self.in_.list_all()
+  }
+
+  fn delete_file(&self, name: &str) -> Result<()> {
+    self.in_.delete_file(name)
+  }
+
+  fn file_length(&self, name: &str) -> Result<usize> {
+    self.in_.file_length(name)
+  }
+
+  type IndexOutput = D::IndexOutput;
+
+  fn create_output(&self, name: &str, context: &IOContext) -> Result<Self::IndexOutput> {
+    assert!(std::ptr::eq(self.expected_context.as_ref(), context));
+    self.in_.create_output(name, context)
+  }
+
+  fn create_temp_output(
+    &self,
+    prefix: &str,
+    suffix: &str,
+    context: &IOContext,
+  ) -> Result<Self::IndexOutput> {
+    self.in_.create_temp_output(prefix, suffix, context)
+  }
+
+  fn sync(&self, names: &[String]) -> Result<()> {
+    self.in_.sync(names)
+  }
+
+  fn sync_metadata(&self) -> Result<()> {
+    self.in_.sync_metadata()
+  }
+
+  fn rename(&self, source: &str, dest: &str) -> Result<()> {
+    self.in_.rename(source, dest)
+  }
+
+  type IndexInput = D::IndexInput;
+
+  fn open_input(&self, name: &str, context: &IOContext) -> Result<Self::IndexInput> {
+    self.in_.open_input(name, context)
+  }
+
+  type Lock = D::Lock;
+
+  fn obtain_lock(&self, name: &str) -> Result<Self::Lock> {
+    self.in_.obtain_lock(name)
+  }
+
+  fn get_pending_deletions(&self) -> Result<HashSet<String>> {
+    self.in_.get_pending_deletions()
+  }
+}
+
+impl<D> Display for IOContextAssertingDirectoryWrapper<D>
+where
+  D: Directory,
+{
+  fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+    write!(formatter, "FilterDirectory({})", self.in_)
+  }
+}
+
+impl<D> CloseableRef for IOContextAssertingDirectoryWrapper<D>
+where
+  D: Directory,
+{
+  fn close(&self) -> Result<()> {
+    self.in_.close()
+  }
+}
+
+impl<D> HasIdentity for IOContextAssertingDirectoryWrapper<D>
+where
+  D: Directory,
+{
+  fn identity(&self) -> &Identity {
+    &self.identity
   }
 }
 

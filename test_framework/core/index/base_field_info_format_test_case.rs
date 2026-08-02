@@ -576,8 +576,6 @@ pub trait BaseFieldInfoFormatTestCase:
     )?;
     Ok(value)
   }
-  // TODO: addRandomFields()
-
   fn create_field_info() -> Result<FieldInfo> {
     FieldInfo::new(
       "field",

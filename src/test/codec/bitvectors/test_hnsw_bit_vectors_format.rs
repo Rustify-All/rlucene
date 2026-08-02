@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 use crate::codec::bitvectors::hnsw_bit_vectors_format::HnswBitVectorsFormat;
+use crate::core::codecs::Codecs;
 use crate::core::codecs::lucene99::lucene99_hnsw_vectors_format::{
   MAXIMUM_BEAM_WIDTH, MAXIMUM_MAX_CONN,
 };
@@ -35,13 +36,71 @@ use crate::core::search::knn_collector::KnnCollector;
 use crate::core::search::top_knn_collector::TopKnnCollector;
 use crate::core::util::close::CloseableRef;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
+use crate::core::util::vector_util::VectorUtil;
+use crate::test_framework::core::index::base_index_file_format_test_case::{
+  BaseIndexFileFormatTestCase, BaseIndexFileFormatTestCaseDefaults,
+};
 use crate::test_framework::core::util::lucene_test_case::{
   get_only_leaf_reader, new_directory_shared, random,
 };
 use crate::test_framework::core::util::test_util::TestUtil;
+use rand::{Rng, RngExt};
 
 #[allow(dead_code)] // for quick search
 struct TestHnswBitVectorsFormat;
+
+struct TestHnswBitVectorsFormatDefaults;
+
+impl BaseIndexFileFormatTestCaseDefaults<TestHnswBitVectorsFormat>
+  for TestHnswBitVectorsFormatDefaults
+{
+  fn add_random_fields<R>(
+    _test_case: &TestHnswBitVectorsFormat,
+    random: &mut R,
+    document: &mut Document,
+  ) -> Result<()>
+  where
+    R: Rng + ?Sized,
+  {
+    let mut vector = vec![0.0; 30];
+    let mut square_sum = 0.0;
+    while square_sum == 0.0 {
+      square_sum = 0.0;
+      for value in &mut vector {
+        *value = random.random::<f32>();
+        square_sum += *value * *value;
+      }
+    }
+    VectorUtil::l2normalize(&mut vector)?;
+    let vector = vector
+      .into_iter()
+      .map(|value| (value * 127.0) as i8 as u8)
+      .collect();
+    document.add(KnnByteVectorField::with_similarity_function(
+      "v2",
+      vector,
+      VectorSimilarityFunction::DotProduct,
+    )?);
+    Ok(())
+  }
+}
+
+impl BaseIndexFileFormatTestCase for TestHnswBitVectorsFormat {
+  type Defaults = TestHnswBitVectorsFormatDefaults;
+
+  fn get_codec(&self) -> Result<Codecs> {
+    Ok(TestUtil::always_knn_vectors_format(HnswBitVectorsFormat::new()?).into())
+  }
+}
+
+fn run_case<F>(f: F) -> Result<()>
+where
+  F: FnOnce(&TestHnswBitVectorsFormat, &mut rand::prelude::StdRng) -> Result<()>,
+{
+  let mut random = random();
+  let case = TestHnswBitVectorsFormat;
+  f(&case, &mut random)
+}
 
 #[test]
 fn test_float_vector_fails() -> Result<()> {
@@ -175,4 +234,30 @@ fn test_limits() -> Result<()> {
     Err(LuceneError::IllegalArgument(_))
   ));
   Ok(())
+}
+
+mod base_index_file_format_test_case_test {
+  use super::run_case;
+  use crate::core::util::error::lucene_error::Result;
+  use crate::test_framework::core::index::base_index_file_format_test_case::BaseIndexFileFormatTestCase;
+
+  #[test]
+  fn test_merge_stability() -> Result<()> {
+    run_case(|case, random| case.test_merge_stability(random))
+  }
+
+  #[test]
+  fn test_multi_close() -> Result<()> {
+    run_case(|case, random| case.test_multi_close(random))
+  }
+
+  #[test]
+  fn test_random_exceptions() -> Result<()> {
+    run_case(|case, random| case.test_random_exceptions(random))
+  }
+
+  #[test]
+  fn test_check_integrity_reads_all_bytes() -> Result<()> {
+    run_case(|case, random| case.test_check_integrity_reads_all_bytes(random))
+  }
 }
