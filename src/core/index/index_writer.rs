@@ -5461,10 +5461,26 @@ where
         let mut inner = self.inner.lock();
         // Readers are already closed in commitMerge if we didn't hit
         // an exc:
-        if !success {
-          self.close_merge_readers(merge, true, false, Some(&mut inner))?;
-        }
+        let close_result = if !success {
+          Some(std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+            || self.close_merge_readers(merge, true, false, Some(&mut inner)),
+          )))
+        } else {
+          None
+        };
+        // Important that merge_finish runs before any close failure is propagated, else we hang
+        // waiting for our merge thread to be removed from running_merges.
         self.merge_finish(&merge.stat, Some(&mut inner));
+        if let Some(close_result) = close_result {
+          let close_result = match close_result {
+            Ok(result) => result,
+            Err(payload) => Err(LuceneError::tragedy_from_panic(
+              "panic while closing merge readers",
+              payload.as_ref(),
+            )),
+          };
+          close_result?;
+        }
 
         if !success {
           if self.info_stream.is_enabled("IW") {
