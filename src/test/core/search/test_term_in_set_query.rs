@@ -67,7 +67,7 @@ use crate::test_framework::core::index::random_index_writer::RandomIndexWriter;
 use crate::test_framework::core::search::query_utils::QueryUtils;
 use crate::test_framework::core::util::lucene_test_case::{
   at_least, new_bytes_ref_from_bytes, new_bytes_ref_from_string, new_directory_shared,
-  new_searcher_with_reader, random,
+  new_searcher, new_searcher_with_reader, random,
 };
 use crate::test_framework::core::util::test_util::TestUtil;
 use rand::RngExt;
@@ -117,7 +117,7 @@ fn test_all_docs_in_field_term() -> Result<()> {
   }
 
   let reader = writer.get_reader(&mut random)?;
-  let searcher = new_searcher_with_reader(reader)?;
+  let searcher = new_searcher(&mut random, reader)?;
 
   let mut query_terms = other_terms;
   query_terms.push(dense_term);
@@ -161,7 +161,7 @@ fn test_duel() -> Result<()> {
     }
     writer.commit(&mut random)?;
     let reader = writer.get_reader(&mut random)?;
-    let searcher = new_searcher_with_reader(reader)?;
+    let searcher = new_searcher(&mut random, reader)?;
     writer.close(&mut random)?;
 
     if searcher.get_index_reader().num_docs()? == 0 {
@@ -313,7 +313,7 @@ fn test_skipper_optimization_gap_assumption() -> Result<()> {
 
   writer.commit(&mut random)?;
   let reader = writer.get_reader(&mut random)?;
-  let searcher = new_searcher_with_reader(reader)?;
+  let searcher = new_searcher(&mut random, reader)?;
   writer.close(&mut random)?;
 
   let query_terms = vec![

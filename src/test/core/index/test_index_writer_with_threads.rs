@@ -795,7 +795,7 @@ where
       }));
     }
 
-    let mut open = writer.get_reader(random)?;
+    let mut open = directory_reader::open_from_writer(&writer.w)?;
     assert_eq!(1, open.num_docs()?);
     barrier.wait();
     while done.load(Ordering::SeqCst) < num_threads {

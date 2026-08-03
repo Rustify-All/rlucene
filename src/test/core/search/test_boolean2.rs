@@ -45,7 +45,7 @@ use crate::test_framework::core::search::query_utils::QueryUtils;
 use crate::test_framework::core::util::DefaultIndexSearchCR;
 use crate::test_framework::core::util::lucene_test_case::{
   at_least_usize, create_temp_dir, new_directory_shared, new_fs_directory,
-  new_index_writer_config_with_analyzer, new_log_merge_policy, new_searcher_with_reader, random,
+  new_index_writer_config_with_analyzer, new_log_merge_policy, new_searcher, random,
 };
 use crate::test_framework::core::util::test_util::TestUtil;
 use rand::SeedableRng;
@@ -132,7 +132,7 @@ where
   writer.close(random)?;
   drop(writer);
   let little_reader = directory_reader::open(directory.clone())?;
-  let mut searcher = new_searcher_with_reader(little_reader)?;
+  let mut searcher = new_searcher(random, little_reader)?;
   // this is intentionally using the baseline sim, because it compares against bigSearcher (which
   // uses a random one)
   searcher.set_similarity(classic_similarity::new());
@@ -171,7 +171,7 @@ where
   }
 
   let single_segment_reader = directory_reader::open(single_segment_directory.clone())?;
-  let mut single_segment_searcher = new_searcher_with_reader(single_segment_reader)?;
+  let mut single_segment_searcher = new_searcher(random, single_segment_reader)?;
   single_segment_searcher.set_similarity(searcher.get_similarity());
 
   let dir2 = copy_of(random, directory.as_ref())?;
@@ -222,7 +222,7 @@ where
   }
 
   let reader = w.get_reader(random)?;
-  let big_searcher = new_searcher_with_reader(reader)?;
+  let big_searcher = new_searcher(random, reader)?;
   w.close(random)?;
   Ok(TestBoolean2Context {
     searcher,
