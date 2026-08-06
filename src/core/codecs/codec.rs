@@ -817,6 +817,7 @@ pub fn for_name(name: &str) -> Result<Codecs> {
     | "FastDecompressionCompressingStoredFieldsData"
     | "HighCompressionCompressingStoredFieldsData"
     | "DummyCompressingStoredFieldsData"
+    | "DeflateWithPresetCompressingStoredFieldsData"
     | "LZ4WithPresetCompressingStoredFieldsData" => {
       CompressingCodec::for_name(name).map(Codecs::Compressing)
     },
