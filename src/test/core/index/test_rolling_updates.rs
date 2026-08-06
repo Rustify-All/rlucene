@@ -14,6 +14,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use crate::codec::memory::direct_postings_format::DirectPostingsFormat;
+use crate::core::codecs::codec;
 use crate::core::document::document::Document;
 use crate::core::document::field::{FieldBase, Store};
 use crate::core::document::field_type::FieldType;
@@ -58,10 +60,9 @@ fn test_rolling_updates() -> Result<()> {
 
   let mut docs = LineFileDocs::new(&mut doc_random)?;
 
-  // TODO IMPORTANT DirectPostingsFormat 和 TestUtil::always_postings_format 尚未迁移。
-  // if random.random_bool(0.5) {
-  //   Codec::set_default(TestUtil::always_postings_format(DirectPostingsFormat::new()));
-  // }
+  if random.random_bool(0.5) {
+    codec::set_default(TestUtil::always_postings_format(DirectPostingsFormat::new()));
+  }
 
   let mut analyzer = MockAnalyzer::new(&mut random);
   analyzer.set_max_token_length(TestUtil::next_int(&mut random, 1, MAX_TERM_LENGTH));
