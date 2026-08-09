@@ -1095,7 +1095,7 @@ pub trait BaseIndexFileFormatTestCase: Sized {
             config.set_codec(self.get_codec()?);
             writer = IndexWriter::new(dir.clone(), config)?;
           },
-          Err(error @ (LuceneError::Io { .. } | LuceneError::IoWithPath { .. })) => {
+          Err(error) if error.is_io_error() => {
             self.handle_fake_io_exception(error, &mut exception_log)?;
             allow_already_closed = true;
           },
@@ -1141,7 +1141,7 @@ pub trait BaseIndexFileFormatTestCase: Sized {
               config.set_codec(self.get_codec()?);
               writer = IndexWriter::new(dir.clone(), config)?;
             },
-            Err(error @ (LuceneError::Io { .. } | LuceneError::IoWithPath { .. })) => {
+            Err(error) if error.is_io_error() => {
               self.handle_fake_io_exception(error, &mut exception_log)?;
               allow_already_closed = true;
             },
@@ -1151,10 +1151,13 @@ pub trait BaseIndexFileFormatTestCase: Sized {
       }
 
       dir.set_random_io_exception_rate_on_open(0.0);
-      if let Err(error @ (LuceneError::Io { .. } | LuceneError::IoWithPath { .. })) = writer.close()
-      {
-        self.handle_fake_io_exception(error, &mut exception_log)?;
-        let _ = writer.rollback();
+      match writer.close() {
+        Ok(()) => {},
+        Err(error) if error.is_io_error() => {
+          self.handle_fake_io_exception(error, &mut exception_log)?;
+          let _ = writer.rollback();
+        },
+        Err(error) => return Err(error),
       }
       dir.close()
     })();
@@ -1181,12 +1184,16 @@ pub trait BaseIndexFileFormatTestCase: Sized {
     error: LuceneError,
     exception_log: &mut Vec<String>,
   ) -> Result<()> {
-    if error.to_string().contains("a random IOException") {
-      exception_log.push(format!("TEST: got expected fake exc: {error}"));
-      Ok(())
-    } else {
-      Err(error)
+    let mut current: Option<&(dyn std::error::Error + 'static)> = Some(&error);
+    while let Some(exception) = current {
+      if exception.to_string().starts_with("a random IOException") {
+        exception_log.push(format!("TEST: got expected fake exc: {error}"));
+        return Ok(());
+      }
+      current = exception.source();
     }
+
+    Err(error)
   }
 
   /// Returns `false` if only the regular fields reader should be tested, and `true` if only the
