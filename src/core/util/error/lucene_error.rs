@@ -617,6 +617,7 @@ impl LuceneError {
         | LuceneError::LockHeldByOther(_)
         | LuceneError::LockObtainFailed(_)
         | LuceneError::LockReleaseFailed(_)
+        | LuceneError::MergeAborted(_)
         | LuceneError::NoSuchFile(_)
     )
   }

@@ -90,17 +90,18 @@ fn test_add_document_on_disk_full() -> Result<()> {
       match add_result {
         Ok(()) => match writer.commit() {
           Ok(_) => index_exists = true,
-          Err(
-            LuceneError::Io { .. }
-            | LuceneError::IoWithPath { .. }
-            | LuceneError::IllegalState(_)
-            | LuceneError::AlreadyClosed(_),
-          ) => {
+          Err(error)
+            if error.is_io_error()
+              || matches!(
+                &error,
+                LuceneError::IllegalState(_) | LuceneError::AlreadyClosed(_)
+              ) =>
+          {
             hit_error = true;
           },
           Err(error) => return Err(error),
         },
-        Err(LuceneError::Io { .. } | LuceneError::IoWithPath { .. }) => {
+        Err(error) if error.is_io_error() => {
           hit_error = true;
         },
         Err(error) => return Err(error),
@@ -112,12 +113,13 @@ fn test_add_document_on_disk_full() -> Result<()> {
         } else {
           match writer.close() {
             Ok(()) => {},
-            Err(
-              LuceneError::Io { .. }
-              | LuceneError::IoWithPath { .. }
-              | LuceneError::IllegalState(_)
-              | LuceneError::AlreadyClosed(_),
-            ) => {
+            Err(error)
+              if error.is_io_error()
+                || matches!(
+                  &error,
+                  LuceneError::IllegalState(_) | LuceneError::AlreadyClosed(_)
+                ) =>
+            {
               dir.set_max_size_in_bytes(0);
               match writer.close() {
                 Ok(()) | Err(LuceneError::AlreadyClosed(_)) => {},
@@ -559,7 +561,7 @@ fn test_corruption_after_disk_full_during_merge() -> Result<()> {
   ftdm.set_do_fail();
   dir.fail_on(Box::new(ftdm.clone()));
   match w.commit() {
-    Err(LuceneError::Io { .. } | LuceneError::IoWithPath { .. }) => {},
+    Err(error) if error.is_io_error() => {},
     Err(error) => {
       return Err(LuceneError::illegal_state(format!(
         "expected IOException, got {error}"
@@ -608,7 +610,7 @@ fn test_immediate_disk_full() -> Result<()> {
     custom_type,
   ));
   match writer.add_document(doc) {
-    Err(LuceneError::Io { .. } | LuceneError::IoWithPath { .. }) => {},
+    Err(error) if error.is_io_error() => {},
     Err(error) => {
       return Err(LuceneError::illegal_state(format!(
         "expected IOException, got {error}"

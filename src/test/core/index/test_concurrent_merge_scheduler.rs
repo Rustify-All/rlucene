@@ -177,7 +177,7 @@ fn test_flush_exceptions() -> Result<()> {
             return Err(LuceneError::illegal_state("failed to hit IOException"));
           }
         },
-        Err(error @ (LuceneError::Io { .. } | LuceneError::IoWithPath { .. })) => {
+        Err(error) if error.is_io_error() => {
           if cfg!(feature = "test_log_verbose") {
             eprintln!("{error:?}");
           }

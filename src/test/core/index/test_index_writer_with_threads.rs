@@ -103,8 +103,9 @@ where
         add_count.fetch_add(1, Ordering::SeqCst);
       },
       Err(error)
-        if error.to_string().contains("fake disk full at")
-          || error.to_string().contains("now failing on purpose") =>
+        if error.is_io_error()
+          && (error.to_string().contains("fake disk full at")
+            || error.to_string().contains("now failing on purpose")) =>
       {
         thread::sleep(Duration::from_millis(1));
         if full_count >= 5 {
@@ -333,7 +334,7 @@ where
         assert!(writer.is_deleter_closed()?);
         false
       },
-      Err(error @ (LuceneError::Io { .. } | LuceneError::IoWithPath { .. })) => {
+      Err(error) if error.is_io_error() => {
         if cfg!(feature = "test_log_verbose") {
           eprintln!("{error:?}");
         }
@@ -412,10 +413,7 @@ where
     Ok(())
   })();
   assert!(
-    matches!(
-      result,
-      Err(LuceneError::Io { .. }) | Err(LuceneError::IoWithPath { .. })
-    ),
+    matches!(&result, Err(error) if error.is_io_error()),
     "expected IOException, got {result:?}"
   );
 

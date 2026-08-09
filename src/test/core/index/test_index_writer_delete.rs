@@ -830,7 +830,7 @@ fn do_test_operations_on_disk_full(updates: bool) -> Result<()> {
             done = true;
           }
         },
-        Err(error @ (LuceneError::Io { .. } | LuceneError::IoWithPath { .. })) => {
+        Err(error) if error.is_io_error() => {
           err = Some(error);
           if x == 1 {
             return Err(LuceneError::illegal_state(format!(
@@ -1144,7 +1144,7 @@ fn test_error_in_docs_writer_add() -> Result<()> {
     doc.add(TextField::from_string("city", text[i], Store::Yes)?);
     match modifier.add_document(doc) {
       Ok(_) => {},
-      Err(error @ LuceneError::Io { .. }) | Err(error @ LuceneError::IoWithPath { .. }) => {
+      Err(error) if error.is_io_error() => {
         if cfg!(feature = "test_log_verbose") {
           println!("TEST: got expected exc:\n{error:?}");
         }

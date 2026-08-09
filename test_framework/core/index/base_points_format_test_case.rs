@@ -293,7 +293,7 @@ pub trait BasePointsFormatTestCase:
             msg.message
           );
         },
-        Err(e @ (LuceneError::Io { .. } | LuceneError::IoWithPath { .. })) => {
+        Err(e) if e.is_io_error() => {
           done = self.handle_possibly_fake_exception(e)?;
         },
         Err(e) => return Err(e),
@@ -305,7 +305,7 @@ pub trait BasePointsFormatTestCase:
 
   // TODO: merge w/ BaseIndexFileFormatTestCase.handleFakeIOException
   fn handle_possibly_fake_exception(&self, e: LuceneError) -> Result<bool> {
-    let mut current = Some(&e);
+    let mut current: Option<&(dyn std::error::Error + 'static)> = Some(&e);
     while let Some(err) = current {
       let message = err.to_string();
       if message.contains("a random IOException")
@@ -313,7 +313,7 @@ pub trait BasePointsFormatTestCase:
       {
         return Ok(true);
       }
-      current = err.get_suppressed()?;
+      current = err.source();
     }
 
     Err(e)
