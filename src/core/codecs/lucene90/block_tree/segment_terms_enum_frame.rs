@@ -23,6 +23,7 @@ use crate::core::codecs::postings_reader_base::PostingsReaderBase;
 use crate::core::index::BytesRef;
 use crate::core::index::index_options::IndexOptions;
 use crate::core::index::terms_enum::SeekStatus;
+use crate::core::store::buffered_index_input::BUFFER_SIZE;
 use crate::core::store::{ByteArrayDataInput, DataInput, IndexInput};
 use crate::core::util::array_util::ArrayUtil;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
@@ -218,7 +219,10 @@ impl SegmentTermsEnumFrame {
     ste.init_index_input()?;
 
     // TODO: Could we know the number of bytes to prefetch?
-    ste.input.as_mut().unwrap().prefetch(fp as usize, 1)?;
+    let input = ste.input.as_mut().unwrap();
+    let fp = fp as usize;
+    let prefetch_length = BUFFER_SIZE.min(input.length()?.saturating_sub(fp)).max(1);
+    input.prefetch(fp, prefetch_length)?;
     Ok(())
   }
   /* Does initial decode of next block of terms; this
