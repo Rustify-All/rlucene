@@ -2635,6 +2635,9 @@ where
         )?;
       }
 
+      // Don't bother saving any changes in our segmentInfos
+      self.reader_pool.close(&mut inner.segment_infos)?;
+
       self.test_point("rollback before checkpoint")?;
       // Ask deleter to locate unreferenced files & remove
       // them ... only when we are not experiencing a tragedy, else
@@ -2656,8 +2659,6 @@ where
       self
         .last_commit_change_count
         .store(inner.change_count, Ordering::SeqCst);
-      // Don't bother saving any changes in our segmentInfos
-      self.reader_pool.close(&mut inner.segment_infos)?;
       // Must set closed while inside same sync block where we call deleter.refresh, else
       // concurrent threads may try to sneak a flush in,
       // after we leave this sync block and before we enter the sync block in the finally clause
