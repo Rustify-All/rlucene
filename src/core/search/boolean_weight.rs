@@ -37,10 +37,7 @@ use crate::core::util::error::lucene_error::{LuceneError, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-pub struct BooleanWeight<IRC>
-where
-  IRC: IndexReaderContext,
-{
+pub struct BooleanWeight<IRC> {
   pub(crate) similarity: Arc<SimilarityEnum>,
   pub(crate) weighted_clauses: Vec<WeightedBooleanClause<IRC>>,
   pub(crate) query: BooleanQuery,
@@ -394,10 +391,7 @@ where
     self
   }
 }
-pub(crate) struct WeightedBooleanClause<IRC>
-where
-  IRC: IndexReaderContext,
-{
+pub(crate) struct WeightedBooleanClause<IRC> {
   pub(crate) clause: BooleanClause,
   pub(crate) weight: QueryWeight<IRC>,
 }
