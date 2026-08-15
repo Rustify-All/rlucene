@@ -193,10 +193,7 @@ impl QueryBase for IndexSortSortedNumericDocValuesRangeQuery {
   }
 }
 
-pub struct IndexSortSortedNumericDocValuesRangeQueryWeight<IRC>
-where
-  IRC: IndexReaderContext,
-{
+pub struct IndexSortSortedNumericDocValuesRangeQueryWeight<IRC> {
   query: IndexSortSortedNumericDocValuesRangeQuery,
   base: ConstantScoreWeight,
   score_mode: ScoreMode,
