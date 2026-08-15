@@ -45,10 +45,7 @@ struct SerialIOState {
 
 /// A [`Directory`] wrapper that counts the number of times that Lucene may wait for I/O to
 /// return serially. Lower counts mean that Lucene better takes advantage of I/O parallelism.
-pub struct SerialIOCountingDirectory<D>
-where
-  D: Directory,
-{
+pub struct SerialIOCountingDirectory<D> {
   in_: D,
   state: Arc<SerialIOState>,
   id: Identity,
@@ -207,10 +204,7 @@ where
   }
 }
 
-pub struct SerializedIOCountingIndexInput<I>
-where
-  I: IndexInput<IndexInput = I>,
-{
+pub struct SerializedIOCountingIndexInput<I> {
   in_: I,
   slice_offset: usize,
   slice_length: usize,
