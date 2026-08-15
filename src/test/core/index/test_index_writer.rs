@@ -4349,10 +4349,7 @@ fn test_delete_happens_before_while_flush() -> Result<()> {
   Ok(())
 }
 
-struct BlockOnIndexingChainFlushDirectory<D>
-where
-  D: Directory,
-{
+struct BlockOnIndexingChainFlushDirectory<D> {
   in_: D,
   latch: Arc<CountDownLatch>,
   in_flush: Arc<CountDownLatch>,
