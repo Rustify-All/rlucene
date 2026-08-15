@@ -167,10 +167,7 @@ impl IntoBoxQuery for BrokenExplainTermQuery {
   }
 }
 
-pub(crate) struct BrokenExplainWeight<IRC>
-where
-  IRC: IndexReaderContext,
-{
+pub(crate) struct BrokenExplainWeight<IRC> {
   query: Arc<Query>,
   in_: QueryWeight<IRC>,
 }
@@ -652,10 +649,7 @@ impl IntoBoxQuery for AssertNeedsScores {
   }
 }
 
-struct AssertNeedsScoresWeight<IRC>
-where
-  IRC: IndexReaderContext,
-{
+struct AssertNeedsScoresWeight<IRC> {
   query: Arc<Query>,
   inner_weight: QueryWeight<IRC>,
 }
