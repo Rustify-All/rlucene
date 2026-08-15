@@ -190,10 +190,7 @@ pub fn set_default_query_caching_policy(query_caching_policy: Arc<QueryCachingPo
   }
 }
 
-pub struct IndexSearcher<IRC>
-where
-  IRC: IndexReaderContext + 'static,
-{
+pub struct IndexSearcher<IRC: 'static> {
   hook: IndexSearcherHook,
   pub reader_context: IRC,
   similarity: Arc<SimilarityEnum>,

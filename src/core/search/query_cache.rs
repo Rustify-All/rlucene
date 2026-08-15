@@ -40,10 +40,7 @@ where
     IRC: IndexReaderContext + 'static;
 }
 pub type BoxQueryCache<IRC> = Box<dyn QueryCache<IRC> + Send + Sync>;
-pub enum QueryCacheEnum<IRC>
-where
-  IRC: IndexReaderContext,
-{
+pub enum QueryCacheEnum<IRC> {
   Lru(Arc<LRUQueryCache<MinSegmentSizePredicate>>),
   Custom(BoxQueryCache<IRC>),
 }
