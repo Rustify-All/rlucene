@@ -85,10 +85,7 @@ impl NormsFormat for AssertingNormsFormat {
   }
 }
 
-pub struct AssertingNormsConsumer<NC>
-where
-  NC: NormsConsumer,
-{
+pub struct AssertingNormsConsumer<NC> {
   in_: NC,
   max_doc: i32,
 }
@@ -139,10 +136,7 @@ where
   }
 }
 
-pub struct AssertingNormsProducer<NP>
-where
-  NP: NormsProducer,
-{
+pub struct AssertingNormsProducer<NP> {
   in_: Arc<NP>,
   max_doc: i32,
   merging: bool,
