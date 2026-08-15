@@ -200,10 +200,7 @@ impl Accountable for NamedQuery {
   }
 }
 
-struct NamedWeight<IRC>
-where
-  IRC: IndexReaderContext,
-{
+struct NamedWeight<IRC> {
   in_: QueryWeight<IRC>,
   name: String,
 }
