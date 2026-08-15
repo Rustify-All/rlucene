@@ -32,7 +32,6 @@ use parking_lot::{Mutex, RwLockWriteGuard};
 use rand::RngExt;
 use rand::prelude::StdRng;
 use std::collections::HashMap;
-use std::marker::PhantomData;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 
@@ -57,16 +56,15 @@ impl Predicate<TopParentMeta> for RandomSegmentSkippingPredicate {
   }
 }
 
-pub struct CachingSearcherFactory<IR, P>
+pub struct CachingSearcherFactory<P>
 where
   P: Predicate<TopParentMeta>,
 {
   query_cache: Arc<LRUQueryCache<P>>,
   query_caching_policy: Arc<QueryCachingPolicyEnum>,
-  marker: PhantomData<fn() -> IR>,
 }
 
-impl<IR, P> CachingSearcherFactory<IR, P>
+impl<P> CachingSearcherFactory<P>
 where
   P: Predicate<TopParentMeta>,
 {
@@ -77,12 +75,11 @@ where
     Self {
       query_cache,
       query_caching_policy,
-      marker: PhantomData,
     }
   }
 }
 
-impl<IR, P> SearcherFactoryBase<IR> for CachingSearcherFactory<IR, P>
+impl<IR, P> SearcherFactoryBase<IR> for CachingSearcherFactory<P>
 where
   IR: IndexReader + 'static,
   IR::ContextKind: IndexReaderContextKind<Arc<IR>>,

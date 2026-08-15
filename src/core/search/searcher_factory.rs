@@ -73,7 +73,7 @@ pub(crate) enum SearcherFactoryHook<IR> {
   #[cfg(test)]
   Tracking(TrackingSearcherFactory<IR>),
   #[cfg(test)]
-  CachingRandom(CachingSearcherFactory<IR, RandomSegmentSkippingPredicate>),
+  CachingRandom(CachingSearcherFactory<RandomSegmentSkippingPredicate>),
 }
 
 impl<IR> Default for SearcherFactoryHook<IR> {
