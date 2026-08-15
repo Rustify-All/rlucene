@@ -35,10 +35,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// This mirrors Java's `BaseDirectoryWrapper extends FilterDirectory` by
 /// directly implementing `Directory` and forwarding the common operations to
 /// the wrapped directory.
-pub struct BaseDirectoryWrapper<D>
-where
-  D: Directory,
-{
+pub struct BaseDirectoryWrapper<D> {
   pub(crate) in_: D,
   check_index_on_close: AtomicBool,
   level_for_check_on_close: i32,
