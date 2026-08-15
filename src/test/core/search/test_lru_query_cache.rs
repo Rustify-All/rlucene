@@ -2343,10 +2343,7 @@ fn test_cache_has_fast_count() -> Result<()> {
   w.close(&mut random)
 }
 
-struct WeightWrapper<IRC>
-where
-  IRC: IndexReaderContext,
-{
+struct WeightWrapper<IRC> {
   in_: Arc<QueryWeight<IRC>>,
   scorer_called: Arc<AtomicBool>,
   bulk_scorer_called: Arc<AtomicBool>,
@@ -2426,10 +2423,7 @@ where
   }
 }
 
-struct WeightWrapperScorerSupplier<IRC>
-where
-  IRC: IndexReaderContext,
-{
+struct WeightWrapperScorerSupplier<IRC> {
   in_: Arc<QueryWeight<IRC>>,
   scorer: Option<QueryWeightSsScorer>,
   cost: i64,
