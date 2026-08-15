@@ -184,10 +184,7 @@ impl Hash for IndexOrDocValuesQuery {
   }
 }
 
-pub struct IndexOrDocValuesQueryWeight<IRC>
-where
-  IRC: IndexReaderContext,
-{
+pub struct IndexOrDocValuesQueryWeight<IRC> {
   dv_weight: QueryWeight<IRC>,
   index_weight: QueryWeight<IRC>,
   query: Arc<Query>,
@@ -283,10 +280,7 @@ where
     Ok(count)
   }
 }
-pub struct IndexOrDocValuesQuerySs<IRC>
-where
-  IRC: IndexReaderContext,
-{
+pub struct IndexOrDocValuesQuerySs<IRC> {
   index_scorer_supplier: QueryWeightSs<IRC>,
   dv_scorer_supplier: QueryWeightSs<IRC>,
 }
