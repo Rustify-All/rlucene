@@ -1315,7 +1315,7 @@ where
 // }
 struct IntersectVisitorImpl<'a, R>
 where
-  R: Rng + ?Sized,
+  R: ?Sized,
 {
   hits: &'a mut BitSet,
   query_min: &'a [Vec<u8>],
