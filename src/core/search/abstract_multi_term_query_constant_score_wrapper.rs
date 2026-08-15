@@ -592,10 +592,7 @@ impl TermAndState {
     }
   }
 }
-pub(crate) struct WeightOrDocIdSetIterator<IRC, D>
-where
-  IRC: IndexReaderContext,
-{
+pub(crate) struct WeightOrDocIdSetIterator<IRC, D> {
   pub(crate) weight: Option<QueryWeight<IRC>>,
   pub(crate) iterator: Option<D>,
 }
