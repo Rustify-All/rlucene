@@ -57,9 +57,7 @@ mod native_fs_lock_factory_tests {
 
   fn release_native_lock(lock: &<DirEnum as Directory>::Lock) -> Result<()> {
     match lock {
-      LockEnum2::A(lock) | LockEnum2::B(lock) => match lock {
-        LockEnum2::A(lock) | LockEnum2::B(lock) => release_raw_native_lock(lock),
-      },
+      LockEnum2::A(lock) | LockEnum2::B(lock) => release_raw_native_lock(lock),
     }
   }
 

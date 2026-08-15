@@ -1418,12 +1418,12 @@ impl Directory for DirEnum {
     Ok(BufferedChecksumIndexInput::new(input))
   }
 
-  type Lock = LockEnum2<<RawDirWrapper as Directory>::Lock, <MockDirWrapper as Directory>::Lock>;
+  type Lock = <RawDirWrapper as Directory>::Lock;
 
   fn obtain_lock(&self, name: &str) -> Result<Self::Lock> {
     match self {
-      Self::A(directory) => Ok(LockEnum2::A(directory.obtain_lock(name)?)),
-      Self::B(directory) => Ok(LockEnum2::B(directory.obtain_lock(name)?)),
+      Self::A(directory) => directory.obtain_lock(name),
+      Self::B(directory) => directory.obtain_lock(name),
     }
   }
 
