@@ -1011,10 +1011,7 @@ impl Accountable for LeafCache {
     Ok(self.ram_bytes_used.load(Ordering::SeqCst))
   }
 }
-pub struct CachingWrapperWeight<P, IRC>
-where
-  IRC: IndexReaderContext,
-{
+pub struct CachingWrapperWeight<P, IRC> {
   in_: QueryWeight<IRC>,
   base: ConstantScoreWeight,
   policy: Arc<QueryCachingPolicyEnum>,
@@ -1232,10 +1229,7 @@ where
     Some(self.in_)
   }
 }
-pub struct ScorerSupplierImpl1<C, P, IRC>
-where
-  IRC: IndexReaderContext,
-{
+pub struct ScorerSupplierImpl1<C, P, IRC> {
   cost: i64,
   skip_cache_factor: f32,
   supplier: QueryWeightSs<IRC>,
