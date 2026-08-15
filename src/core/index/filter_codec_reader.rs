@@ -34,8 +34,7 @@ use std::sync::Arc;
 pub struct FilterCodecReader;
 
 pub enum FilterCodecReaderBits<B> {
-  Original(B),
-  Hard(B),
+  Single(B),
   Mixed(FilterCodecReaderMixedBits<B>),
 }
 
@@ -55,8 +54,7 @@ where
 {
   fn clone(&self) -> Self {
     match self {
-      Self::Original(bits) => Self::Original(bits.clone()),
-      Self::Hard(bits) => Self::Hard(bits.clone()),
+      Self::Single(bits) => Self::Single(bits.clone()),
       Self::Mixed(bits) => Self::Mixed(bits.clone()),
     }
   }
@@ -68,8 +66,7 @@ where
 {
   fn identity(&self) -> &Identity {
     match self {
-      Self::Original(bits) => bits.identity(),
-      Self::Hard(bits) => bits.identity(),
+      Self::Single(bits) => bits.identity(),
       Self::Mixed(bits) => bits.identity(),
     }
   }
@@ -81,32 +78,28 @@ where
 {
   fn get(&self, index: usize) -> Result<bool> {
     match self {
-      Self::Original(bits) => bits.get(index),
-      Self::Hard(bits) => bits.get(index),
+      Self::Single(bits) => bits.get(index),
       Self::Mixed(bits) => bits.get(index),
     }
   }
 
   fn length(&self) -> usize {
     match self {
-      Self::Original(bits) => bits.length(),
-      Self::Hard(bits) => bits.length(),
+      Self::Single(bits) => bits.length(),
       Self::Mixed(bits) => bits.length(),
     }
   }
 
   fn copy_of(&self) -> Result<crate::core::util::fixed_bit_set::FixedBitSet> {
     match self {
-      Self::Original(bits) => bits.copy_of(),
-      Self::Hard(bits) => bits.copy_of(),
+      Self::Single(bits) => bits.copy_of(),
       Self::Mixed(bits) => bits.copy_of(),
     }
   }
 
   fn to_string(&self) -> String {
     match self {
-      Self::Original(bits) => bits.to_string(),
-      Self::Hard(bits) => bits.to_string(),
+      Self::Single(bits) => bits.to_string(),
       Self::Mixed(bits) => bits.to_string(),
     }
   }
@@ -433,7 +426,7 @@ where
       FilterCodecReaderHook::Default => self
         .reader
         .get_live_docs()
-        .map(|live_docs| live_docs.map(FilterCodecReaderBits::Original)),
+        .map(|live_docs| live_docs.map(FilterCodecReaderBits::Single)),
       FilterCodecReaderHook::LiveDocs { live_docs, .. } => Ok(live_docs.clone()),
     }
   }

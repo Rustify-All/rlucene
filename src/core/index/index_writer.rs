@@ -1662,7 +1662,7 @@ where
                     Some(wrapped_live_docs) => {
                       FilterCodecReaderBits::mixed(hard_live_docs, wrapped_live_docs)
                     },
-                    None => FilterCodecReaderBits::Hard(hard_live_docs),
+                    None => FilterCodecReaderBits::Single(hard_live_docs),
                   };
                   let num_docs = wrapped_reader.num_docs()? - hard_delete_count;
                   live_docs_wrapped_reader = Some((live_docs, num_docs));
