@@ -168,10 +168,7 @@ fn test_mdw_inside_of_mdw() -> Result<()> {
 }
 
 // just shields the wrapped directory from being closed
-struct PreventCloseDirectoryWrapper<D>
-where
-  D: Directory,
-{
+struct PreventCloseDirectoryWrapper<D> {
   in_: D,
   id: Identity,
 }
