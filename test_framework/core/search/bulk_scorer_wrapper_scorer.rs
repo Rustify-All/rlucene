@@ -26,10 +26,7 @@ use std::cell::RefCell;
 use std::fmt::{Display, Formatter};
 
 /// A BulkScorer-backed scorer.
-pub struct BulkScorerWrapperScorer<BS>
-where
-  BS: BulkScorer,
-{
+pub struct BulkScorerWrapperScorer<BS> {
   disi: DocIdSetIteratorImpl<BS>,
 }
 impl<BS> BulkScorerWrapperScorer<BS>
@@ -125,10 +122,7 @@ impl<'a> LeafCollector for LeafCollectorImpl<'a> {
   }
 }
 
-struct DocIdSetIteratorImpl<BS>
-where
-  BS: BulkScorer,
-{
+struct DocIdSetIteratorImpl<BS> {
   scorer: RefCell<BS>,
   i: i32,
   doc: i32,
