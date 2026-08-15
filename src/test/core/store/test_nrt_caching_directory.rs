@@ -25,7 +25,7 @@ use crate::core::search::index_searcher::IndexSearcher;
 use crate::core::search::term_query::TermQuery;
 use crate::core::store::directory::{DirEnum, Directory};
 use crate::core::store::flush_info::FlushInfo;
-use crate::core::store::index_input::IndexInputEnum2;
+use crate::core::store::index_input::NRTCachingIndexInput;
 use crate::core::store::nrt_caching_directory::{NRTCachingDirectory, NRTCachingDirectoryHook};
 use crate::core::store::single_instance_lock_factory::SingleInstanceLockFactory;
 use crate::core::store::{
@@ -50,8 +50,7 @@ use std::sync::Arc;
 
 type ByteBuffersNRTCachingDirectory =
   NRTCachingDirectory<ByteBuffersDirectory<SingleInstanceLockFactory>>;
-type ByteBuffersNRTCachingIndexInput =
-  IndexInputEnum2<ByteBuffersIndexInputOwned, ByteBuffersIndexInputOwned>;
+type ByteBuffersNRTCachingIndexInput = NRTCachingIndexInput<ByteBuffersIndexInputOwned>;
 
 #[allow(dead_code)] // for quick search
 pub struct TestNRTCachingDirectory;

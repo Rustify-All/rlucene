@@ -66,7 +66,6 @@ where
 
 impl<'a, D1, D2, CR> SegmentMerger<'a, D1, D2, CR>
 where
-  D1: Directory,
   D2: Directory,
   CR: CodecReader,
 {

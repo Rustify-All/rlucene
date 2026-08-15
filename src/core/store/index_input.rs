@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use crate::core::store::byte_buffers_index_input::ByteBuffersIndexInputOwned;
 use crate::core::store::memory_segment_index_input::MemorySegmentIndexInput;
 use crate::core::store::nio_fs_directory::NIOFSIndexInput;
 use crate::core::store::random_access_input::{
@@ -1033,6 +1034,16 @@ either_index_input!(
     >,
     random_access_enum = RandomAccessInputEnum3
     { A: A, B: B, C: C }
+);
+either_index_input!(
+    pub NRTCachingIndexInput<I>,
+    index_input = NRTCachingIndexInput<I::IndexInput>,
+    random_access = RandomAccessInputEnum2<
+        <ByteBuffersIndexInputOwned as IndexInput>::RandomAccessSlice,
+        I::RandomAccessSlice,
+    >,
+    random_access_enum = RandomAccessInputEnum2
+    { A: ByteBuffersIndexInputOwned, B: I }
 );
 either_index_input!(
     pub BuiltInFSIndexInput,

@@ -1659,12 +1659,10 @@ where
                 if hard_delete_count > 0 {
                   let hard_live_docs = hard_live_docs.clone();
                   let live_docs = match wrapped_live_docs {
-                    Some(wrapped_live_docs) => LiveDocsBits::Mixed(BitsImpl {
-                      hard_live_docs,
-                      wrapped_live_docs,
-                      id: Identity::new(),
-                    }),
-                    None => LiveDocsBits::Hard(hard_live_docs),
+                    Some(wrapped_live_docs) => {
+                      FilterCodecReaderBits::mixed(hard_live_docs, wrapped_live_docs)
+                    },
+                    None => FilterCodecReaderBits::Hard(hard_live_docs),
                   };
                   let num_docs = wrapped_reader.num_docs()? - hard_delete_count;
                   live_docs_wrapped_reader = Some((live_docs, num_docs));
@@ -1742,7 +1740,7 @@ where
 
           // This makes merging more expensive as it disables some bulk merging optimizations,
           // so only do this if a present DocMap is returned.
-          let v = vec![CodecReaderEnum2::B(wrap_with_doc_map(
+          let v = vec![ReorderedMergeCodecReader::B(wrap_with_doc_map(
             merged_view,
             doc_map,
             None,
@@ -1751,14 +1749,14 @@ where
         } else {
           let mut v = Vec::with_capacity(merge_readers.len());
           for cr in merge_readers.into_iter() {
-            v.push(CodecReaderEnum2::A(cr));
+            v.push(ReorderedMergeCodecReader::A(cr));
           }
           new_merge_readers = v;
         }
       } else {
         let mut v = Vec::with_capacity(merge_readers.len());
         for cr in merge_readers.into_iter() {
-          v.push(CodecReaderEnum2::A(cr));
+          v.push(ReorderedMergeCodecReader::A(cr));
         }
         new_merge_readers = v;
       }
@@ -3656,7 +3654,7 @@ where
       let merged_reader = wrap(readers.clone())?;
       let doc_map_opt = merge.reorder(&merged_reader, self.directory.as_ref())?;
       if let Some(doc_map) = doc_map_opt {
-        new_merge_readers = vec![CodecReaderEnum2::B(wrap_with_doc_map(
+        new_merge_readers = vec![ReorderedMergeCodecReader::B(wrap_with_doc_map(
           merged_reader,
           doc_map,
           None,
@@ -3664,14 +3662,14 @@ where
       } else {
         let mut v = Vec::with_capacity(readers.len());
         for reader in readers {
-          v.push(CodecReaderEnum2::A(reader));
+          v.push(ReorderedMergeCodecReader::A(reader));
         }
         new_merge_readers = v;
       }
     } else {
       let mut v = Vec::with_capacity(readers.len());
       for reader in readers {
-        v.push(CodecReaderEnum2::A(reader));
+        v.push(ReorderedMergeCodecReader::A(reader));
       }
       new_merge_readers = v;
     }
@@ -7374,105 +7372,6 @@ where
   }
 }
 
-pub(crate) enum LiveDocsBits<B> {
-  Hard(B),
-  Mixed(BitsImpl<B>),
-}
-
-impl<B> Clone for LiveDocsBits<B>
-where
-  B: Clone,
-{
-  fn clone(&self) -> Self {
-    match self {
-      LiveDocsBits::Hard(hard_live_docs) => LiveDocsBits::Hard(hard_live_docs.clone()),
-      LiveDocsBits::Mixed(mixed_live_docs) => LiveDocsBits::Mixed(mixed_live_docs.clone()),
-    }
-  }
-}
-
-impl<B> HasIdentity for LiveDocsBits<B>
-where
-  B: HasIdentity,
-{
-  fn identity(&self) -> &Identity {
-    match self {
-      LiveDocsBits::Hard(hard_live_docs) => hard_live_docs.identity(),
-      LiveDocsBits::Mixed(mixed_live_docs) => mixed_live_docs.identity(),
-    }
-  }
-}
-
-impl<B> Bits for LiveDocsBits<B>
-where
-  B: Bits,
-{
-  fn get(&self, index: usize) -> Result<bool> {
-    match self {
-      LiveDocsBits::Hard(hard_live_docs) => hard_live_docs.get(index),
-      LiveDocsBits::Mixed(mixed_live_docs) => mixed_live_docs.get(index),
-    }
-  }
-
-  fn length(&self) -> usize {
-    match self {
-      LiveDocsBits::Hard(hard_live_docs) => hard_live_docs.length(),
-      LiveDocsBits::Mixed(mixed_live_docs) => mixed_live_docs.length(),
-    }
-  }
-
-  fn copy_of(&self) -> Result<FixedBitSet> {
-    match self {
-      LiveDocsBits::Hard(hard_live_docs) => hard_live_docs.copy_of(),
-      LiveDocsBits::Mixed(mixed_live_docs) => mixed_live_docs.copy_of(),
-    }
-  }
-
-  fn to_string(&self) -> String {
-    match self {
-      LiveDocsBits::Hard(hard_live_docs) => hard_live_docs.to_string(),
-      LiveDocsBits::Mixed(mixed_live_docs) => mixed_live_docs.to_string(),
-    }
-  }
-}
-
-pub(crate) struct BitsImpl<B> {
-  hard_live_docs: B,
-  wrapped_live_docs: B,
-  id: Identity,
-}
-
-impl<B> Clone for BitsImpl<B>
-where
-  B: Clone,
-{
-  fn clone(&self) -> Self {
-    Self {
-      hard_live_docs: self.hard_live_docs.clone(),
-      wrapped_live_docs: self.wrapped_live_docs.clone(),
-      id: Identity::new(),
-    }
-  }
-}
-
-impl<B> HasIdentity for BitsImpl<B> {
-  fn identity(&self) -> &Identity {
-    &self.id
-  }
-}
-
-impl<B> Bits for BitsImpl<B>
-where
-  B: Bits,
-{
-  fn get(&self, index: usize) -> Result<bool> {
-    Ok(self.hard_live_docs.get(index)? && self.wrapped_live_docs.get(index)?)
-  }
-
-  fn length(&self) -> usize {
-    self.hard_live_docs.length()
-  }
-}
 impl<D> MergeContext<D> for IndexWriter<D>
 where
   D: Directory,
@@ -7954,7 +7853,7 @@ use crate::core::document::fields::Fields;
 use crate::core::index::binary_doc_values_field_updates::BinaryDocValuesFieldUpdates;
 use crate::core::index::buffered_updates::MAX_INT;
 use crate::core::index::caching_merge_context::CachingMergeContext;
-use crate::core::index::codec_reader::{CodecReader, CodecReaderEnum2};
+use crate::core::index::codec_reader::{CodecReader, ReorderedMergeCodecReader};
 use crate::core::index::directory_reader::DirectoryReader;
 use crate::core::index::doc_values_field_updates::{
   DocValuesFieldIterator, DocValuesFieldUpdates, DocValuesFieldUpdatesBase,
@@ -7969,9 +7868,11 @@ use crate::core::index::documents_writer_flush_queue::FlushTicket;
 use crate::core::index::dummy::dummy_doc_map_sorter::DummyDocMap;
 use crate::core::index::dummy::dummy_index_commit::DummyIndexCommit;
 use crate::core::index::field_infos::{FieldInfos, FieldNumbers, FieldNumbersLock};
-use crate::core::index::filter_codec_reader::{CodecReaderImpl, wrap_live_docs};
+use crate::core::index::filter_codec_reader::{
+  CodecReaderImpl, FilterCodecReaderBits, wrap_live_docs,
+};
 use crate::core::index::index_commit::IndexCommit;
-use crate::core::index::index_reader::{Identity, IndexReader, IndexReaderContextType};
+use crate::core::index::index_reader::{IndexReader, IndexReaderContextType};
 use crate::core::index::index_reader_context::IndexReaderContext;
 use crate::core::index::index_writer_config::{DISABLE_AUTO_FLUSH, IndexWriterConfig, OpenMode};
 use crate::core::index::index_writer_event_listener::IndexWriterEventListener;
@@ -8182,7 +8083,6 @@ pub(crate) fn create_compound_file<D, T, D2>(
 ) -> Result<()>
 where
   D: Directory,
-  D2: Directory,
   T: IOConsumer<HashSet<String>>,
 {
   // maybe this check is not needed, but why take the risk?

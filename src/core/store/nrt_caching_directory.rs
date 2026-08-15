@@ -20,7 +20,7 @@ use crate::core::store::byte_buffers_directory::{BBOutputToInput, BYTE_BUFFERS_D
 use crate::core::store::directory::{Directory, DirectoryEnum2};
 use crate::core::store::single_instance_lock_factory::SingleInstanceLockFactory;
 use crate::core::store::{
-  ByteBuffersDirectory, IOContext, IndexInputEnum2, IndexOutput, IndexOutputEnum2,
+  ByteBuffersDirectory, IOContext, IndexOutput, IndexOutputEnum2, NRTCachingIndexInput,
 };
 use crate::core::util::accountable::Accountable;
 use crate::core::util::close::{Closeable, CloseableRef};
@@ -295,16 +295,18 @@ where
     self.delegate.rename(source, dest)
   }
 
-  type IndexInput = IndexInputEnum2<<CacheDirectory as Directory>::IndexInput, D::IndexInput>;
+  type IndexInput = NRTCachingIndexInput<D::IndexInput>;
 
   fn open_input(&self, name: &str, context: &IOContext) -> Result<Self::IndexInput> {
     let _guard = self.lock.lock();
     if self.cache_directory.file_exists(name)? {
-      Ok(IndexInputEnum2::A(
+      Ok(NRTCachingIndexInput::A(
         self.cache_directory.open_input(name, context)?,
       ))
     } else {
-      Ok(IndexInputEnum2::B(self.delegate.open_input(name, context)?))
+      Ok(NRTCachingIndexInput::B(
+        self.delegate.open_input(name, context)?,
+      ))
     }
   }
 

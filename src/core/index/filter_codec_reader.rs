@@ -16,12 +16,15 @@
  */
 use crate::core::index::codec_reader::CodecReader;
 use crate::core::index::field_infos::FieldInfos;
-use crate::core::index::index_reader::{IndexReader, IndexReaderBase, LeafReaderContextKind};
+use crate::core::index::index_reader::{
+  Identity, IndexReader, IndexReaderBase, LeafReaderContextKind,
+};
 use crate::core::index::leaf_metadata::LeafMetaData;
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::term::Term;
 use crate::core::search::knn_collector::KnnCollector;
-use crate::core::util::bits::{Bits, BitsEnum2};
+use crate::core::util::HasIdentity;
+use crate::core::util::bits::Bits;
 use crate::core::util::error::lucene_error::Result;
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
@@ -30,12 +33,132 @@ use std::sync::Arc;
 #[allow(dead_code)]
 pub struct FilterCodecReader;
 
+pub enum FilterCodecReaderBits<B> {
+  Original(B),
+  Hard(B),
+  Mixed(FilterCodecReaderMixedBits<B>),
+}
+
+impl<B> FilterCodecReaderBits<B> {
+  pub(crate) fn mixed(hard_live_docs: B, wrapped_live_docs: B) -> Self {
+    Self::Mixed(FilterCodecReaderMixedBits {
+      hard_live_docs,
+      wrapped_live_docs,
+      id: Identity::new(),
+    })
+  }
+}
+
+impl<B> Clone for FilterCodecReaderBits<B>
+where
+  B: Clone,
+{
+  fn clone(&self) -> Self {
+    match self {
+      Self::Original(bits) => Self::Original(bits.clone()),
+      Self::Hard(bits) => Self::Hard(bits.clone()),
+      Self::Mixed(bits) => Self::Mixed(bits.clone()),
+    }
+  }
+}
+
+impl<B> HasIdentity for FilterCodecReaderBits<B>
+where
+  B: HasIdentity,
+{
+  fn identity(&self) -> &Identity {
+    match self {
+      Self::Original(bits) => bits.identity(),
+      Self::Hard(bits) => bits.identity(),
+      Self::Mixed(bits) => bits.identity(),
+    }
+  }
+}
+
+impl<B> Bits for FilterCodecReaderBits<B>
+where
+  B: Bits,
+{
+  fn get(&self, index: usize) -> Result<bool> {
+    match self {
+      Self::Original(bits) => bits.get(index),
+      Self::Hard(bits) => bits.get(index),
+      Self::Mixed(bits) => bits.get(index),
+    }
+  }
+
+  fn length(&self) -> usize {
+    match self {
+      Self::Original(bits) => bits.length(),
+      Self::Hard(bits) => bits.length(),
+      Self::Mixed(bits) => bits.length(),
+    }
+  }
+
+  fn copy_of(&self) -> Result<crate::core::util::fixed_bit_set::FixedBitSet> {
+    match self {
+      Self::Original(bits) => bits.copy_of(),
+      Self::Hard(bits) => bits.copy_of(),
+      Self::Mixed(bits) => bits.copy_of(),
+    }
+  }
+
+  fn to_string(&self) -> String {
+    match self {
+      Self::Original(bits) => bits.to_string(),
+      Self::Hard(bits) => bits.to_string(),
+      Self::Mixed(bits) => bits.to_string(),
+    }
+  }
+}
+
+pub struct FilterCodecReaderMixedBits<B> {
+  hard_live_docs: B,
+  wrapped_live_docs: B,
+  id: Identity,
+}
+
+impl<B> Clone for FilterCodecReaderMixedBits<B>
+where
+  B: Clone,
+{
+  fn clone(&self) -> Self {
+    Self {
+      hard_live_docs: self.hard_live_docs.clone(),
+      wrapped_live_docs: self.wrapped_live_docs.clone(),
+      id: Identity::new(),
+    }
+  }
+}
+
+impl<B> HasIdentity for FilterCodecReaderMixedBits<B> {
+  fn identity(&self) -> &Identity {
+    &self.id
+  }
+}
+
+impl<B> Bits for FilterCodecReaderMixedBits<B>
+where
+  B: Bits,
+{
+  fn get(&self, index: usize) -> Result<bool> {
+    Ok(self.hard_live_docs.get(index)? && self.wrapped_live_docs.get(index)?)
+  }
+
+  fn length(&self) -> usize {
+    self.hard_live_docs.length()
+  }
+}
+
 /// Returns a filtered codec reader with the given live docs and numDocs.
-pub(crate) fn wrap_live_docs<CR, B>(
+pub(crate) fn wrap_live_docs<CR>(
   reader: CR,
-  live_docs: Option<B>,
+  live_docs: Option<FilterCodecReaderBits<CR::Bits>>,
   num_docs: i32,
-) -> CodecReaderImpl<CR, B> {
+) -> CodecReaderImpl<CR>
+where
+  CR: CodecReader,
+{
   CodecReaderImpl::new_with_live_docs(reader, live_docs, num_docs)
 }
 
@@ -48,12 +171,18 @@ enum FilterCodecReaderHook<B> {
   },
 }
 
-pub struct CodecReaderImpl<CR, B> {
+pub struct CodecReaderImpl<CR>
+where
+  CR: CodecReader,
+{
   reader: CR,
-  hook: FilterCodecReaderHook<B>,
+  hook: FilterCodecReaderHook<FilterCodecReaderBits<CR::Bits>>,
 }
 
-impl<CR, B> CodecReaderImpl<CR, B> {
+impl<CR> CodecReaderImpl<CR>
+where
+  CR: CodecReader,
+{
   pub(crate) fn new(reader: CR) -> Self {
     Self {
       reader,
@@ -61,7 +190,11 @@ impl<CR, B> CodecReaderImpl<CR, B> {
     }
   }
 
-  fn new_with_live_docs(reader: CR, live_docs: Option<B>, num_docs: i32) -> Self {
+  fn new_with_live_docs(
+    reader: CR,
+    live_docs: Option<FilterCodecReaderBits<CR::Bits>>,
+    num_docs: i32,
+  ) -> Self {
     Self {
       reader,
       hook: FilterCodecReaderHook::LiveDocs {
@@ -77,10 +210,10 @@ impl<CR, B> CodecReaderImpl<CR, B> {
   }
 }
 
-impl<CR, B> Clone for CodecReaderImpl<CR, B>
+impl<CR> Clone for CodecReaderImpl<CR>
 where
-  CR: Clone,
-  B: Clone,
+  CR: CodecReader + Clone,
+  CR::Bits: Clone,
 {
   fn clone(&self) -> Self {
     let hook = match &self.hook {
@@ -102,9 +235,9 @@ where
   }
 }
 
-impl<CR, B> Display for CodecReaderImpl<CR, B>
+impl<CR> Display for CodecReaderImpl<CR>
 where
-  CR: Display,
+  CR: CodecReader,
 {
   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
     match &self.hook {
@@ -116,10 +249,10 @@ where
   }
 }
 
-impl<CR, B> IndexReader for CodecReaderImpl<CR, B>
+impl<CR> IndexReader for CodecReaderImpl<CR>
 where
   CR: CodecReader,
-  B: Bits + Clone,
+  CR::Bits: Clone,
 {
   type ContextKind = LeafReaderContextKind;
 
@@ -187,10 +320,10 @@ where
   }
 }
 
-impl<CR, B> LeafReader for CodecReaderImpl<CR, B>
+impl<CR> LeafReader for CodecReaderImpl<CR>
 where
   CR: CodecReader,
-  B: Bits + Clone,
+  CR::Bits: Clone,
 {
   type CacheHelper = CR::CacheHelper;
 
@@ -293,15 +426,15 @@ where
     self.reader.get_field_infos()
   }
 
-  type Bits = BitsEnum2<CR::Bits, B>;
+  type Bits = FilterCodecReaderBits<CR::Bits>;
 
   fn get_live_docs(&self) -> Result<Option<Self::Bits>> {
     match &self.hook {
       FilterCodecReaderHook::Default => self
         .reader
         .get_live_docs()
-        .map(|live_docs| live_docs.map(BitsEnum2::A)),
-      FilterCodecReaderHook::LiveDocs { live_docs, .. } => Ok(live_docs.clone().map(BitsEnum2::B)),
+        .map(|live_docs| live_docs.map(FilterCodecReaderBits::Original)),
+      FilterCodecReaderHook::LiveDocs { live_docs, .. } => Ok(live_docs.clone()),
     }
   }
 
@@ -320,10 +453,10 @@ where
   }
 }
 
-impl<CR, B> CodecReader for CodecReaderImpl<CR, B>
+impl<CR> CodecReader for CodecReaderImpl<CR>
 where
   CR: CodecReader,
-  B: Bits + Clone,
+  CR::Bits: Clone,
 {
   type StoredFieldsReader = CR::StoredFieldsReader;
   type TermVectorsReader = CR::TermVectorsReader;

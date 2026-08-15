@@ -930,6 +930,21 @@ either_codec_reader!(
     }
 );
 
+either_codec_reader!(
+    pub(crate) ReorderedMergeCodecReader<CR, DM>
+    where [
+        CR: CodecReader + Clone,
+        DM: crate::core::index::sorter::DocMap + Clone,
+    ]
+    {
+        A: CR,
+        B: crate::core::index::sorting_codec_reader::SortingCodecReader<
+            SlowCompositeCodecReader<CR>,
+            DM,
+        >,
+    }
+);
+
 pub enum SoftDeletesCodecReader<CR>
 where
   CR: CodecReader,
