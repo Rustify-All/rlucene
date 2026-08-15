@@ -162,10 +162,7 @@ impl QueryBase for ConstantScoreQuery {
   }
 }
 
-pub struct ConstantScoreQueryWeight<IRC>
-where
-  IRC: IndexReaderContext,
-{
+pub struct ConstantScoreQueryWeight<IRC> {
   base: ConstantScoreWeight,
   inner_weight: QueryWeight<IRC>,
   score_mode: ScoreMode,
@@ -245,10 +242,7 @@ where
     self.inner_weight.count(context, searcher)
   }
 }
-pub struct ScorerSupplierImpl<IRC>
-where
-  IRC: IndexReaderContext,
-{
+pub struct ScorerSupplierImpl<IRC> {
   score_mode: ScoreMode,
   inner_scorer_supplier: QueryWeightSs<IRC>,
   score: f32,
