@@ -170,10 +170,7 @@ impl PointsFormat for AssertingNeedsIndexSortPointsFormat {
   }
 }
 
-pub struct AssertingNeedsIndexSortPointsWriter<PW>
-where
-  PW: PointsWriter,
-{
+pub struct AssertingNeedsIndexSortPointsWriter<PW> {
   writer: PW,
   needs_index_sort: Arc<AtomicBool>,
   num_calls: Arc<AtomicI32>,
