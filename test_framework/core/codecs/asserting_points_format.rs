@@ -36,10 +36,7 @@ use std::sync::Arc;
 use std::thread::ThreadId;
 
 /// Just like the default point format but with additional asserts.
-pub struct AssertingPointsFormat<PF = DefaultPointsFormat>
-where
-  PF: PointsFormat,
-{
+pub struct AssertingPointsFormat<PF = DefaultPointsFormat> {
   in_: PF,
 }
 
@@ -105,10 +102,7 @@ where
   }
 }
 
-pub struct AssertingPointsReader<PR>
-where
-  PR: PointsReader,
-{
+pub struct AssertingPointsReader<PR> {
   in_: Arc<PR>,
   max_doc: i32,
   field_infos: Arc<FieldInfos>,
@@ -186,10 +180,7 @@ where
   }
 }
 
-pub struct AssertingPointsWriter<PW>
-where
-  PW: PointsWriter,
-{
+pub struct AssertingPointsWriter<PW> {
   in_: PW,
 }
 
