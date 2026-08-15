@@ -204,10 +204,7 @@ fn test_exceptions() -> Result<()> {
   Ok(())
 }
 
-struct FaultyFSDirectory<D>
-where
-  D: Directory,
-{
+struct FaultyFSDirectory<D> {
   in_: D,
   do_fail: Arc<AtomicBool>,
   id: Identity,
@@ -320,10 +317,7 @@ where
   }
 }
 
-struct FaultyIndexInput<I>
-where
-  I: IndexInput<IndexInput = I>,
-{
+struct FaultyIndexInput<I> {
   do_fail: Arc<AtomicBool>,
   delegate: I,
   count: i32,
