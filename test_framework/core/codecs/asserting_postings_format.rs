@@ -112,10 +112,7 @@ impl PostingsFormat for AssertingPostingsFormat {
   }
 }
 
-pub struct AssertingFieldsProducer<FP>
-where
-  FP: FieldsProducer,
-{
+pub struct AssertingFieldsProducer<FP> {
   in_: FP,
 }
 
