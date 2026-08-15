@@ -247,10 +247,7 @@ impl Hash for DisjunctionMaxQuery {
   }
 }
 /// the Weight for DisjunctionMaxQuery, used to normalize, score and explain these queries
-pub struct DisjunctionMaxWeight<IRC>
-where
-  IRC: IndexReaderContext,
-{
+pub struct DisjunctionMaxWeight<IRC> {
   parent_query: Arc<Query>,
   tie_breaker_multiplier: f32,
   score_mode: ScoreMode,
@@ -407,10 +404,7 @@ where
   }
 }
 
-pub struct ScorerSupplierImpl<IRC>
-where
-  IRC: IndexReaderContext,
-{
+pub struct ScorerSupplierImpl<IRC> {
   cost: i64,
   scorer_suppliers: Vec<QueryWeightSs<IRC>>,
   tie_breaker_multiplier: f32,
