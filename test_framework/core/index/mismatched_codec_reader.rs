@@ -39,10 +39,7 @@ use rand::Rng;
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 /// Shuffles field numbers around to try to trip bugs where field numbers are assumed to always be consistent across segments.
-pub struct MismatchedCodecReader<CR>
-where
-  CR: CodecReader,
-{
+pub struct MismatchedCodecReader<CR> {
   in_: CR,
   shuffled: Arc<FieldInfos>,
 }
@@ -337,10 +334,7 @@ where
   }
 }
 
-pub struct MismatchedStoredFieldsReader<SFR>
-where
-  SFR: StoredFieldsReader,
-{
+pub struct MismatchedStoredFieldsReader<SFR> {
   in_: SFR,
   shuffled: Arc<FieldInfos>,
 }
@@ -411,10 +405,7 @@ where
   }
 }
 
-pub struct MismatchedDocValuesProducer<DVP>
-where
-  DVP: DocValuesProducer,
-{
+pub struct MismatchedDocValuesProducer<DVP> {
   in_: DVP,
   shuffled: Arc<FieldInfos>,
   orig: Arc<FieldInfos>,
@@ -500,10 +491,7 @@ where
   }
 }
 
-pub struct MismatchedNormsProducer<NP>
-where
-  NP: NormsProducer,
-{
+pub struct MismatchedNormsProducer<NP> {
   in_: NP,
   shuffled: Arc<FieldInfos>,
   orig: Arc<FieldInfos>,
