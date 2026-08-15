@@ -34,7 +34,9 @@ use crate::core::search::sort_field::SortFieldType::Doc;
 use crate::core::search::term_query::TermQuery;
 use crate::core::search::top_docs::TopDocsLike;
 use crate::core::search::top_score_doc_collector_manager::TopScoreDocCollectorManager;
-use crate::core::store::directory::{DirEnum, Directory, DirectoryEnum2, MockDirWrapper};
+use crate::core::store::directory::{DirEnum, Directory, MockDirWrapper};
+#[cfg(feature = "nightly")]
+use crate::core::store::lock::LockEnum2;
 use crate::core::store::{IOContext, NoLockFactory};
 use crate::core::util::HasIdentity;
 use crate::core::util::close::{Closeable, CloseableRef};
@@ -166,6 +168,168 @@ where
 
   fn ensure_open(&self) -> Result<()> {
     self.in_.ensure_open()
+  }
+}
+
+#[cfg(feature = "nightly")]
+type AddIndexesSourceDirectory = DirEnum;
+#[cfg(feature = "nightly")]
+type AddIndexesTargetDirectory = MockDirWrapper;
+#[cfg(feature = "nightly")]
+type AddIndexesSourceFilterDirectory = AddIndexesFilterDirectory<AddIndexesSourceDirectory>;
+
+#[cfg(feature = "nightly")]
+enum AddIndexesTestDirectory {
+  Target(AddIndexesTargetDirectory),
+  Filter(AddIndexesSourceFilterDirectory),
+}
+
+#[cfg(feature = "nightly")]
+impl Display for AddIndexesTestDirectory {
+  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::Target(directory) => Display::fmt(directory, f),
+      Self::Filter(directory) => Display::fmt(directory, f),
+    }
+  }
+}
+
+#[cfg(feature = "nightly")]
+impl HasIdentity for AddIndexesTestDirectory {
+  fn identity(&self) -> &Identity {
+    match self {
+      Self::Target(directory) => directory.identity(),
+      Self::Filter(directory) => directory.identity(),
+    }
+  }
+}
+
+#[cfg(feature = "nightly")]
+impl CloseableRef for AddIndexesTestDirectory {
+  fn close(&self) -> Result<()> {
+    match self {
+      Self::Target(directory) => directory.close(),
+      Self::Filter(directory) => directory.close(),
+    }
+  }
+}
+
+#[cfg(feature = "nightly")]
+impl Directory for AddIndexesTestDirectory {
+  fn list_all(&self) -> Result<Vec<String>> {
+    match self {
+      Self::Target(directory) => directory.list_all(),
+      Self::Filter(directory) => directory.list_all(),
+    }
+  }
+
+  fn delete_file(&self, name: &str) -> Result<()> {
+    match self {
+      Self::Target(directory) => directory.delete_file(name),
+      Self::Filter(directory) => directory.delete_file(name),
+    }
+  }
+
+  fn file_length(&self, name: &str) -> Result<usize> {
+    match self {
+      Self::Target(directory) => directory.file_length(name),
+      Self::Filter(directory) => directory.file_length(name),
+    }
+  }
+
+  type IndexOutput = <AddIndexesTargetDirectory as Directory>::IndexOutput;
+
+  fn create_output(&self, name: &str, context: &IOContext) -> Result<Self::IndexOutput> {
+    match self {
+      Self::Target(directory) => directory.create_output(name, context),
+      Self::Filter(directory) => directory.create_output(name, context),
+    }
+  }
+
+  fn create_temp_output(
+    &self,
+    prefix: &str,
+    suffix: &str,
+    context: &IOContext,
+  ) -> Result<Self::IndexOutput> {
+    match self {
+      Self::Target(directory) => directory.create_temp_output(prefix, suffix, context),
+      Self::Filter(directory) => directory.create_temp_output(prefix, suffix, context),
+    }
+  }
+
+  fn sync(&self, names: &[String]) -> Result<()> {
+    match self {
+      Self::Target(directory) => directory.sync(names),
+      Self::Filter(directory) => directory.sync(names),
+    }
+  }
+
+  fn sync_metadata(&self) -> Result<()> {
+    match self {
+      Self::Target(directory) => directory.sync_metadata(),
+      Self::Filter(directory) => directory.sync_metadata(),
+    }
+  }
+
+  fn rename(&self, source: &str, dest: &str) -> Result<()> {
+    match self {
+      Self::Target(directory) => directory.rename(source, dest),
+      Self::Filter(directory) => directory.rename(source, dest),
+    }
+  }
+
+  type IndexInput = <AddIndexesTargetDirectory as Directory>::IndexInput;
+
+  fn open_input(&self, name: &str, context: &IOContext) -> Result<Self::IndexInput> {
+    match self {
+      Self::Target(directory) => directory.open_input(name, context),
+      Self::Filter(directory) => directory.open_input(name, context),
+    }
+  }
+
+  type Lock = LockEnum2<
+    <AddIndexesTargetDirectory as Directory>::Lock,
+    <AddIndexesSourceFilterDirectory as Directory>::Lock,
+  >;
+
+  fn obtain_lock(&self, name: &str) -> Result<Self::Lock> {
+    match self {
+      Self::Target(directory) => directory.obtain_lock(name).map(LockEnum2::A),
+      Self::Filter(directory) => directory.obtain_lock(name).map(LockEnum2::B),
+    }
+  }
+
+  fn copy_from<D>(&self, from: &D, src: &str, dest: &str, context: &IOContext) -> Result<()>
+  where
+    D: Directory + ?Sized,
+  {
+    match self {
+      Self::Target(directory) => directory.copy_from(from, src, dest, context),
+      Self::Filter(directory) => directory.copy_from(from, src, dest, context),
+    }
+  }
+
+  fn get_pending_deletions(&self) -> Result<std::collections::HashSet<String>> {
+    match self {
+      Self::Target(directory) => directory.get_pending_deletions(),
+      Self::Filter(directory) => directory.get_pending_deletions(),
+    }
+  }
+
+  #[cfg(debug_assertions)]
+  fn is_fs_directory(&self) -> bool {
+    match self {
+      Self::Target(directory) => directory.is_fs_directory(),
+      Self::Filter(directory) => directory.is_fs_directory(),
+    }
+  }
+
+  fn ensure_open(&self) -> Result<()> {
+    match self {
+      Self::Target(directory) => directory.ensure_open(),
+      Self::Filter(directory) => directory.ensure_open(),
+    }
   }
 }
 
@@ -519,11 +683,6 @@ fn test_multi_reader_beyond_limit() -> Result<()> {
 fn test_add_too_many_indexes_dir() -> Result<()> {
   let mut random = random();
 
-  type SourceDirectory = DirEnum;
-  type TargetDirectory = MockDirWrapper;
-  type FilterDirectory = AddIndexesFilterDirectory<SourceDirectory>;
-  type TestDirectory = DirectoryEnum2<TargetDirectory, FilterDirectory>;
-
   // we cheat and add the same one over again... IW wants a write lock on each
   let source = Arc::new(new_directory_with_lock_factory(&mut random, NoLockFactory)?);
   let w = IndexWriter::new(source.clone(), IndexWriterConfig::new()?)?;
@@ -536,7 +695,7 @@ fn test_add_too_many_indexes_dir() -> Result<()> {
 
   // wrap this with disk full, so test fails faster and doesn't fill up real disks.
   let target = new_mock_directory(&mut random)?;
-  let target_dir = Arc::new(TestDirectory::A(target.clone()));
+  let target_dir = Arc::new(AddIndexesTestDirectory::Target(target.clone()));
   let w = IndexWriter::new(target_dir, IndexWriterConfig::new()?)?;
   w.commit()?; // don't confuse checkindex
   target.set_max_size_in_bytes(target.size_in_bytes()? as i64 + 65536); // 64KB
@@ -545,9 +704,9 @@ fn test_add_too_many_indexes_dir() -> Result<()> {
   let mut dirs = Vec::new();
   for _ in 0..dirs_len {
     // bypass iw check for duplicate dirs
-    dirs.push(Arc::new(TestDirectory::B(FilterDirectory::new(
-      source.clone(),
-    ))));
+    dirs.push(Arc::new(AddIndexesTestDirectory::Filter(
+      AddIndexesSourceFilterDirectory::new(source.clone()),
+    )));
   }
 
   match w.add_indexes_from_directory(&dirs) {

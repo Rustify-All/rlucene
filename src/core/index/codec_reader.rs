@@ -31,6 +31,7 @@ use crate::core::index::doc_values_skipper::DocValuesSkipperEnum2;
 use crate::core::index::doc_values_type::DocValuesType;
 use crate::core::index::field_info::FieldInfo;
 use crate::core::index::fields::Fields;
+use crate::core::index::filter_directory_reader::DelegatingCacheHelper;
 use crate::core::index::float_vector_values::FloatVectorValuesEnum2;
 use crate::core::index::index_options::IndexOptions;
 use crate::core::index::index_reader::{CacheHelperEnum2, IndexReader, LeafReaderContextKind};
@@ -49,6 +50,7 @@ use crate::core::search::knn_collector::KnnCollector;
 use crate::core::util::CoreHelper;
 use crate::core::util::bits::{Bits, BitsEnum2};
 use crate::core::util::error::lucene_error::{LuceneError, Result};
+use crate::core::util::fixed_bit_set::FixedBitSet;
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
@@ -928,17 +930,376 @@ either_codec_reader!(
     }
 );
 
-either_codec_reader!(
-    pub SoftDeletesCodecReader<CR>
-    where [
-        CR: CodecReader,
-        CR::ReaderCacheHelper: Clone,
-    ]
-    {
-        A: CR,
-        B: crate::core::index::soft_deletes_directory_reader_wrapper::SoftDeletesFilterCodecReader<CR>,
+pub enum SoftDeletesCodecReader<CR>
+where
+  CR: CodecReader,
+  CR::ReaderCacheHelper: Clone,
+{
+  A(CR),
+  B(crate::core::index::soft_deletes_directory_reader_wrapper::SoftDeletesFilterCodecReader<CR>),
+}
+
+impl<CR> Clone for SoftDeletesCodecReader<CR>
+where
+  CR: CodecReader + Clone,
+  CR::ReaderCacheHelper: Clone,
+{
+  fn clone(&self) -> Self {
+    match self {
+      Self::A(inner) => Self::A(inner.clone()),
+      Self::B(inner) => Self::B(inner.clone()),
     }
-);
+  }
+}
+
+impl<CR> Display for SoftDeletesCodecReader<CR>
+where
+  CR: CodecReader,
+  CR::ReaderCacheHelper: Clone,
+{
+  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::A(inner) => write!(f, "{}", inner),
+      Self::B(inner) => write!(f, "{}", inner),
+    }
+  }
+}
+
+impl<CR> IndexReader for SoftDeletesCodecReader<CR>
+where
+  CR: CodecReader,
+  CR::ReaderCacheHelper: Clone,
+{
+  type ContextKind = LeafReaderContextKind;
+  type TermVectors = CR::TermVectors;
+
+  fn term_vectors(&self) -> Result<Self::TermVectors> {
+    match self {
+      Self::A(inner) => IndexReader::term_vectors(inner),
+      Self::B(inner) => IndexReader::term_vectors(inner),
+    }
+  }
+
+  fn max_doc(&self) -> Result<i32> {
+    match self {
+      Self::A(inner) => inner.max_doc(),
+      Self::B(inner) => inner.max_doc(),
+    }
+  }
+
+  fn num_docs(&self) -> Result<i32> {
+    match self {
+      Self::A(inner) => inner.num_docs(),
+      Self::B(inner) => inner.num_docs(),
+    }
+  }
+
+  type StoredFields = CR::StoredFields;
+
+  fn stored_fields(&self) -> Result<Self::StoredFields> {
+    match self {
+      Self::A(inner) => IndexReader::stored_fields(inner),
+      Self::B(inner) => IndexReader::stored_fields(inner),
+    }
+  }
+
+  type ReaderCacheHelper =
+    CacheHelperEnum2<CR::ReaderCacheHelper, DelegatingCacheHelper<CR::ReaderCacheHelper>>;
+
+  fn get_reader_cache_helper(&self) -> Result<Option<Self::ReaderCacheHelper>> {
+    match self {
+      Self::A(inner) => Ok(inner.get_reader_cache_helper()?.map(CacheHelperEnum2::A)),
+      Self::B(inner) => Ok(inner.get_reader_cache_helper()?.map(CacheHelperEnum2::B)),
+    }
+  }
+
+  fn doc_freq(&self, term: &crate::core::index::term::Term) -> Result<i32> {
+    match self {
+      Self::A(inner) => IndexReader::doc_freq(inner, term),
+      Self::B(inner) => IndexReader::doc_freq(inner, term),
+    }
+  }
+
+  fn total_term_freq(&self, term: &crate::core::index::term::Term) -> Result<i64> {
+    match self {
+      Self::A(inner) => inner.total_term_freq(term),
+      Self::B(inner) => inner.total_term_freq(term),
+    }
+  }
+
+  fn get_sum_doc_freq(&self, field: &str) -> Result<i64> {
+    match self {
+      Self::A(inner) => IndexReader::get_sum_doc_freq(inner, field),
+      Self::B(inner) => IndexReader::get_sum_doc_freq(inner, field),
+    }
+  }
+
+  fn get_doc_count(&self, field: &str) -> Result<i32> {
+    match self {
+      Self::A(inner) => IndexReader::get_doc_count(inner, field),
+      Self::B(inner) => IndexReader::get_doc_count(inner, field),
+    }
+  }
+
+  fn get_sum_total_term_freq(&self, field: &str) -> Result<i64> {
+    match self {
+      Self::A(inner) => IndexReader::get_sum_total_term_freq(inner, field),
+      Self::B(inner) => IndexReader::get_sum_total_term_freq(inner, field),
+    }
+  }
+
+  fn index_base(&self) -> &crate::core::index::index_reader::IndexReaderBase {
+    match self {
+      Self::A(inner) => inner.index_base(),
+      Self::B(inner) => inner.index_base(),
+    }
+  }
+}
+
+impl<CR> LeafReader for SoftDeletesCodecReader<CR>
+where
+  CR: CodecReader,
+  CR::ReaderCacheHelper: Clone,
+{
+  type CacheHelper = CR::CacheHelper;
+
+  fn get_core_cache_helper(&self) -> Result<Option<Self::CacheHelper>> {
+    match self {
+      Self::A(inner) => inner.get_core_cache_helper(),
+      Self::B(inner) => inner.get_core_cache_helper(),
+    }
+  }
+
+  type Terms = CR::Terms;
+
+  fn terms(&self, field: &str) -> Result<Option<Self::Terms>> {
+    match self {
+      Self::A(inner) => LeafReader::terms(inner, field),
+      Self::B(inner) => LeafReader::terms(inner, field),
+    }
+  }
+
+  type NumericDocValues = CR::NumericDocValues;
+
+  fn get_numeric_doc_values(&self, field: &str) -> Result<Option<Self::NumericDocValues>> {
+    match self {
+      Self::A(inner) => LeafReader::get_numeric_doc_values(inner, field),
+      Self::B(inner) => LeafReader::get_numeric_doc_values(inner, field),
+    }
+  }
+
+  type BinaryDocValues = CR::BinaryDocValues;
+
+  fn get_binary_doc_values(&self, field: &str) -> Result<Option<Self::BinaryDocValues>> {
+    match self {
+      Self::A(inner) => LeafReader::get_binary_doc_values(inner, field),
+      Self::B(inner) => LeafReader::get_binary_doc_values(inner, field),
+    }
+  }
+
+  type SortedDocValues = CR::SortedDocValues;
+
+  fn get_sorted_doc_values(&self, field: &str) -> Result<Option<Self::SortedDocValues>> {
+    match self {
+      Self::A(inner) => LeafReader::get_sorted_doc_values(inner, field),
+      Self::B(inner) => LeafReader::get_sorted_doc_values(inner, field),
+    }
+  }
+
+  type SortedNumericDocValues = CR::SortedNumericDocValues;
+
+  fn get_sorted_numeric_doc_values(
+    &self,
+    field: &str,
+  ) -> Result<Option<Self::SortedNumericDocValues>> {
+    match self {
+      Self::A(inner) => LeafReader::get_sorted_numeric_doc_values(inner, field),
+      Self::B(inner) => LeafReader::get_sorted_numeric_doc_values(inner, field),
+    }
+  }
+
+  type SortedSetDocValues = CR::SortedSetDocValues;
+
+  fn get_sorted_set_doc_values(&self, field: &str) -> Result<Option<Self::SortedSetDocValues>> {
+    match self {
+      Self::A(inner) => LeafReader::get_sorted_set_doc_values(inner, field),
+      Self::B(inner) => LeafReader::get_sorted_set_doc_values(inner, field),
+    }
+  }
+
+  type NormNumericDocValues = CR::NormNumericDocValues;
+
+  fn get_norm_values(&self, field: &str) -> Result<Option<Self::NormNumericDocValues>> {
+    match self {
+      Self::A(inner) => LeafReader::get_norm_values(inner, field),
+      Self::B(inner) => LeafReader::get_norm_values(inner, field),
+    }
+  }
+
+  type DocValuesSkipper = CR::DocValuesSkipper;
+
+  fn get_doc_values_skipper(&self, field: &str) -> Result<Option<Self::DocValuesSkipper>> {
+    match self {
+      Self::A(inner) => LeafReader::get_doc_values_skipper(inner, field),
+      Self::B(inner) => LeafReader::get_doc_values_skipper(inner, field),
+    }
+  }
+
+  type FloatVectorValues = CR::FloatVectorValues;
+
+  fn get_float_vector_values(&self, field: &str) -> Result<Option<Self::FloatVectorValues>> {
+    match self {
+      Self::A(inner) => LeafReader::get_float_vector_values(inner, field),
+      Self::B(inner) => LeafReader::get_float_vector_values(inner, field),
+    }
+  }
+
+  type ByteVectorValues = CR::ByteVectorValues;
+
+  fn get_byte_vector_values(&self, field: &str) -> Result<Option<Self::ByteVectorValues>> {
+    match self {
+      Self::A(inner) => LeafReader::get_byte_vector_values(inner, field),
+      Self::B(inner) => LeafReader::get_byte_vector_values(inner, field),
+    }
+  }
+
+  fn search_nearest_vectors_f32<B, K>(
+    &self,
+    field: &str,
+    target: Vec<f32>,
+    knn_collector: &mut K,
+    accept_docs: Option<B>,
+  ) -> Result<()>
+  where
+    B: Bits,
+    K: KnnCollector,
+  {
+    match self {
+      Self::A(inner) => {
+        LeafReader::search_nearest_vectors_f32(inner, field, target, knn_collector, accept_docs)
+      },
+      Self::B(inner) => {
+        LeafReader::search_nearest_vectors_f32(inner, field, target, knn_collector, accept_docs)
+      },
+    }
+  }
+
+  fn search_nearest_vectors_u8<B, K>(
+    &self,
+    field: &str,
+    target: Vec<u8>,
+    knn_collector: &mut K,
+    accept_docs: Option<B>,
+  ) -> Result<()>
+  where
+    B: Bits,
+    K: KnnCollector,
+  {
+    match self {
+      Self::A(inner) => {
+        LeafReader::search_nearest_vectors_u8(inner, field, target, knn_collector, accept_docs)
+      },
+      Self::B(inner) => {
+        LeafReader::search_nearest_vectors_u8(inner, field, target, knn_collector, accept_docs)
+      },
+    }
+  }
+
+  fn get_field_infos(&self) -> Result<Arc<crate::core::index::field_infos::FieldInfos>> {
+    match self {
+      Self::A(inner) => inner.get_field_infos(),
+      Self::B(inner) => inner.get_field_infos(),
+    }
+  }
+
+  type Bits = BitsEnum2<CR::Bits, Arc<FixedBitSet>>;
+
+  fn get_live_docs(&self) -> Result<Option<Self::Bits>> {
+    match self {
+      Self::A(inner) => inner.get_live_docs().map(|opt| opt.map(BitsEnum2::A)),
+      Self::B(inner) => inner.get_live_docs().map(|opt| opt.map(BitsEnum2::B)),
+    }
+  }
+
+  type PointValues = CR::PointValues;
+
+  fn get_point_values(&self, field: &str) -> Result<Option<Self::PointValues>> {
+    match self {
+      Self::A(inner) => LeafReader::get_point_values(inner, field),
+      Self::B(inner) => LeafReader::get_point_values(inner, field),
+    }
+  }
+
+  fn get_metadata(&self) -> Result<&crate::core::index::leaf_metadata::LeafMetaData> {
+    match self {
+      Self::A(inner) => inner.get_metadata(),
+      Self::B(inner) => inner.get_metadata(),
+    }
+  }
+}
+
+impl<CR> CodecReader for SoftDeletesCodecReader<CR>
+where
+  CR: CodecReader,
+  CR::ReaderCacheHelper: Clone,
+{
+  type StoredFieldsReader = CR::StoredFieldsReader;
+  type TermVectorsReader = CR::TermVectorsReader;
+  type NormsProducer = CR::NormsProducer;
+  type DocValuesProducer = CR::DocValuesProducer;
+  type FieldsProducer = CR::FieldsProducer;
+  type PointsReader = CR::PointsReader;
+  type KnnVectorsReader = CR::KnnVectorsReader;
+
+  fn get_fields_reader(&self) -> Result<Option<Self::StoredFieldsReader>> {
+    match self {
+      Self::A(inner) => inner.get_fields_reader(),
+      Self::B(inner) => inner.get_fields_reader(),
+    }
+  }
+
+  fn get_term_vectors_reader(&self) -> Result<Option<Self::TermVectorsReader>> {
+    match self {
+      Self::A(inner) => inner.get_term_vectors_reader(),
+      Self::B(inner) => inner.get_term_vectors_reader(),
+    }
+  }
+
+  fn get_norms_reader(&self) -> Result<Option<Self::NormsProducer>> {
+    match self {
+      Self::A(inner) => inner.get_norms_reader(),
+      Self::B(inner) => inner.get_norms_reader(),
+    }
+  }
+
+  fn get_doc_values_reader(&self) -> Result<Option<Self::DocValuesProducer>> {
+    match self {
+      Self::A(inner) => inner.get_doc_values_reader(),
+      Self::B(inner) => inner.get_doc_values_reader(),
+    }
+  }
+
+  fn get_postings_reader(&self) -> Result<Option<Self::FieldsProducer>> {
+    match self {
+      Self::A(inner) => inner.get_postings_reader(),
+      Self::B(inner) => inner.get_postings_reader(),
+    }
+  }
+
+  fn get_points_reader(&self) -> Result<Option<Self::PointsReader>> {
+    match self {
+      Self::A(inner) => inner.get_points_reader(),
+      Self::B(inner) => inner.get_points_reader(),
+    }
+  }
+
+  fn get_vector_reader(&self) -> Result<Option<Self::KnnVectorsReader>> {
+    match self {
+      Self::A(inner) => inner.get_vector_reader(),
+      Self::B(inner) => inner.get_vector_reader(),
+    }
+  }
+}
 
 impl<CR> CodecReader for Arc<CR>
 where

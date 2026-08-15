@@ -14,6 +14,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#[cfg(test)]
+use crate::core::codecs::CodecLiveDocsBits;
 use crate::core::index::codec_reader::CodecReader;
 use crate::core::index::index_reader::IndexReader;
 use crate::core::index::index_writer::Inner;
@@ -40,8 +42,6 @@ use crate::core::search::score_mode::ScoreMode;
 use crate::core::store::directory::Directory;
 use crate::core::util::bit_set::BitSet;
 use crate::core::util::bits::Bits;
-#[cfg(test)]
-use crate::core::util::bits::BitsEnum2;
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::fixed_bit_set::FixedBitSet;
 use crate::core::util::io_utils::IOUtils;
@@ -599,7 +599,7 @@ where
     }
     #[cfg(test)]
     {
-      Arc::new(BitsEnum2::A(bits.to_read_only_bits()))
+      Arc::new(CodecLiveDocsBits::Lucene90(bits.to_read_only_bits()))
     }
   });
   Ok(Arc::new(SegmentReader::new_from_reader(

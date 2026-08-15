@@ -17,7 +17,7 @@
 use crate::core::index::base_composite_reader::{
   BCRStoredFieldsImpl, BCRTermVectorsImpl, BaseCompositeReader, BaseCompositeReaderBase,
 };
-use crate::core::index::codec_reader::{CodecReader, CodecReaderEnum2};
+use crate::core::index::codec_reader::CodecReader;
 use crate::core::index::composite_reader::CompositeReader;
 use crate::core::index::directory_reader::{DirectoryReader, DirectoryReaderBase};
 use crate::core::index::filter_directory_reader::{FilterDirectoryReader, SubReaderWrapper};
@@ -26,7 +26,9 @@ use crate::core::index::index_writer::IndexWriter;
 use crate::core::index::term::Term;
 use crate::core::util::dummy::dummy_comparator::DummyComparator;
 use crate::core::util::error::lucene_error::Result;
-use crate::test_framework::core::index::merging_codec_reader::MergingCodecReader;
+use crate::test_framework::core::index::merging_codec_reader::{
+  MergingCodecReader, MergingCodecReaderEnum,
+};
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
@@ -36,21 +38,23 @@ impl<CR> SubReaderWrapper<CR> for MergingSubReaderWrapper
 where
   CR: CodecReader,
 {
-  type LeafReader1 = CodecReaderEnum2<CR, MergingCodecReader<CR>>;
+  type LeafReader1 = MergingCodecReaderEnum<CR>;
 
   fn wrap_readers(&self, readers: Vec<CR>) -> Result<Vec<Self::LeafReader1>> {
     Ok(
       readers
         .into_iter()
-        .map(|reader| CodecReaderEnum2::B(MergingCodecReader::new(reader)))
+        .map(|reader| MergingCodecReaderEnum::Merging(MergingCodecReader::new(reader)))
         .collect(),
     )
   }
 
-  type LeafReader2 = CodecReaderEnum2<CR, MergingCodecReader<CR>>;
+  type LeafReader2 = MergingCodecReaderEnum<CR>;
 
   fn wrap(&self, reader: CR) -> Result<Self::LeafReader2> {
-    Ok(CodecReaderEnum2::B(MergingCodecReader::new(reader)))
+    Ok(MergingCodecReaderEnum::Merging(MergingCodecReader::new(
+      reader,
+    )))
   }
 }
 
@@ -63,8 +67,7 @@ where
   DR::LeafReader: CodecReader + Clone,
 {
   in_: DR,
-  base:
-    BaseCompositeReaderBase<CodecReaderEnum2<DR::LeafReader, MergingCodecReader<DR::LeafReader>>>,
+  base: BaseCompositeReaderBase<MergingCodecReaderEnum<DR::LeafReader>>,
   index_base: IndexReaderBase,
 }
 
@@ -99,7 +102,7 @@ where
   DR: DirectoryReader,
   DR::LeafReader: CodecReader + Clone,
 {
-  type LeafReader = CodecReaderEnum2<DR::LeafReader, MergingCodecReader<DR::LeafReader>>;
+  type LeafReader = MergingCodecReaderEnum<DR::LeafReader>;
   type SubReader = Self::LeafReader;
 
   fn get_sequential_sub_readers(&self) -> &[Self::SubReader] {

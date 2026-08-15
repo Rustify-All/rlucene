@@ -16,12 +16,20 @@
  */
 use crate::core::index::codec_reader::CodecReader;
 use crate::core::index::concurrent_merge_scheduler::ConcurrentMergeScheduler;
+use crate::core::index::index_reader::Identity;
 use crate::core::index::index_writer::Inner;
 use crate::core::index::merge_policy::{MergeStat, OneMerge};
+use crate::core::index::merge_rate_limiter::MergeRateLimiter;
 use crate::core::index::merge_trigger::MergeTrigger;
 use crate::core::index::no_merge_scheduler::NoMergeScheduler;
 use crate::core::index::serial_merge_scheduler::SerialMergeScheduler;
-use crate::core::store::directory::{Directory, DirectoryEnum3};
+use crate::core::store::IOContext;
+use crate::core::store::buffered_checksum_index_input::BufferedChecksumIndexInput;
+use crate::core::store::directory::Directory;
+use crate::core::store::rate_limited_directory::{
+  RateLimitedDirectory, RateLimitedIndexOutputEnum,
+};
+use crate::core::util::HasIdentity;
 use crate::core::util::close::CloseableRef;
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::info_stream::InfoStreamMT;
@@ -38,6 +46,9 @@ use crate::test_framework::core::index::test_add_indexes::{
 use crate::test_framework::core::index::test_index_writer_merge_policy::LatchedSerialMergeScheduler;
 #[cfg(test)]
 use crate::test_framework::core::index::test_index_writer_merging::MyMergeScheduler;
+use std::collections::HashSet;
+use std::fmt::{Display, Formatter};
+use std::sync::Arc;
 
 /// Expert: [IndexWriter] uses an instance implementing this
 /// trait to execute the merges selected by a [MergePolicy].
@@ -147,6 +158,180 @@ impl CloseableRef for MergeSchedulerEnum {
   }
 }
 
+pub enum MergeSchedulerDirectory<D>
+where
+  D: Directory,
+{
+  Direct(D),
+  RateLimited(RateLimitedDirectory<D, Arc<MergeRateLimiter>>),
+}
+
+impl<D> Display for MergeSchedulerDirectory<D>
+where
+  D: Directory,
+{
+  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::Direct(directory) => directory.fmt(f),
+      Self::RateLimited(directory) => directory.fmt(f),
+    }
+  }
+}
+
+impl<D> HasIdentity for MergeSchedulerDirectory<D>
+where
+  D: Directory,
+{
+  fn identity(&self) -> &Identity {
+    match self {
+      Self::Direct(directory) => directory.identity(),
+      Self::RateLimited(directory) => directory.identity(),
+    }
+  }
+}
+
+impl<D> CloseableRef for MergeSchedulerDirectory<D>
+where
+  D: Directory,
+{
+  fn close(&self) -> Result<()> {
+    match self {
+      Self::Direct(directory) => directory.close(),
+      Self::RateLimited(directory) => directory.close(),
+    }
+  }
+}
+
+impl<D> Directory for MergeSchedulerDirectory<D>
+where
+  D: Directory,
+{
+  fn list_all(&self) -> Result<Vec<String>> {
+    match self {
+      Self::Direct(directory) => directory.list_all(),
+      Self::RateLimited(directory) => directory.list_all(),
+    }
+  }
+
+  fn delete_file(&self, name: &str) -> Result<()> {
+    match self {
+      Self::Direct(directory) => directory.delete_file(name),
+      Self::RateLimited(directory) => directory.delete_file(name),
+    }
+  }
+
+  fn file_length(&self, name: &str) -> Result<usize> {
+    match self {
+      Self::Direct(directory) => directory.file_length(name),
+      Self::RateLimited(directory) => directory.file_length(name),
+    }
+  }
+
+  type IndexOutput = RateLimitedIndexOutputEnum<D::IndexOutput, Arc<MergeRateLimiter>>;
+
+  fn create_output(&self, name: &str, context: &IOContext) -> Result<Self::IndexOutput> {
+    match self {
+      Self::Direct(directory) => directory
+        .create_output(name, context)
+        .map(RateLimitedIndexOutputEnum::B),
+      Self::RateLimited(directory) => directory.create_output(name, context),
+    }
+  }
+
+  fn create_temp_output(
+    &self,
+    prefix: &str,
+    suffix: &str,
+    context: &IOContext,
+  ) -> Result<Self::IndexOutput> {
+    match self {
+      Self::Direct(directory) => directory
+        .create_temp_output(prefix, suffix, context)
+        .map(RateLimitedIndexOutputEnum::B),
+      Self::RateLimited(directory) => directory.create_temp_output(prefix, suffix, context),
+    }
+  }
+
+  fn sync(&self, names: &[String]) -> Result<()> {
+    match self {
+      Self::Direct(directory) => directory.sync(names),
+      Self::RateLimited(directory) => directory.sync(names),
+    }
+  }
+
+  fn sync_metadata(&self) -> Result<()> {
+    match self {
+      Self::Direct(directory) => directory.sync_metadata(),
+      Self::RateLimited(directory) => directory.sync_metadata(),
+    }
+  }
+
+  fn rename(&self, source: &str, dest: &str) -> Result<()> {
+    match self {
+      Self::Direct(directory) => directory.rename(source, dest),
+      Self::RateLimited(directory) => directory.rename(source, dest),
+    }
+  }
+
+  type IndexInput = D::IndexInput;
+
+  fn open_input(&self, name: &str, context: &IOContext) -> Result<Self::IndexInput> {
+    match self {
+      Self::Direct(directory) => directory.open_input(name, context),
+      Self::RateLimited(directory) => directory.open_input(name, context),
+    }
+  }
+
+  fn open_checksum_input(
+    &self,
+    name: &str,
+  ) -> Result<BufferedChecksumIndexInput<Self::IndexInput>> {
+    let input = self.open_input(name, &IOContext::default_io_context()?)?;
+    Ok(BufferedChecksumIndexInput::new(input))
+  }
+
+  type Lock = D::Lock;
+
+  fn obtain_lock(&self, name: &str) -> Result<Self::Lock> {
+    match self {
+      Self::Direct(directory) => directory.obtain_lock(name),
+      Self::RateLimited(directory) => directory.obtain_lock(name),
+    }
+  }
+
+  fn copy_from<F>(&self, from: &F, src: &str, dest: &str, context: &IOContext) -> Result<()>
+  where
+    F: Directory + ?Sized,
+  {
+    match self {
+      Self::Direct(directory) => directory.copy_from(from, src, dest, context),
+      Self::RateLimited(directory) => directory.copy_from(from, src, dest, context),
+    }
+  }
+
+  fn get_pending_deletions(&self) -> Result<HashSet<String>> {
+    match self {
+      Self::Direct(directory) => directory.get_pending_deletions(),
+      Self::RateLimited(directory) => directory.get_pending_deletions(),
+    }
+  }
+
+  #[cfg(debug_assertions)]
+  fn is_fs_directory(&self) -> bool {
+    match self {
+      Self::Direct(directory) => directory.is_fs_directory(),
+      Self::RateLimited(directory) => directory.is_fs_directory(),
+    }
+  }
+
+  fn ensure_open(&self) -> Result<()> {
+    match self {
+      Self::Direct(directory) => directory.ensure_open(),
+      Self::RateLimited(directory) => directory.ensure_open(),
+    }
+  }
+}
+
 impl MergeScheduler for MergeSchedulerEnum {
   fn merge<MS, D>(&self, merge_source: MS, trigger: MergeTrigger) -> Result<()>
   where
@@ -174,11 +359,7 @@ impl MergeScheduler for MergeSchedulerEnum {
   }
 
   type Directory<D>
-    = DirectoryEnum3<
-    <SerialMergeScheduler as MergeScheduler>::Directory<D>,
-    <NoMergeScheduler as MergeScheduler>::Directory<D>,
-    <ConcurrentMergeScheduler as MergeScheduler>::Directory<D>,
-  >
+    = MergeSchedulerDirectory<D>
   where
     D: Directory;
 
@@ -187,21 +368,35 @@ impl MergeScheduler for MergeSchedulerEnum {
     D: Directory,
   {
     match self {
-      MergeSchedulerEnum::Serial(s) => Ok(DirectoryEnum3::A(s.wrap_for_merge(in_)?)),
-      MergeSchedulerEnum::No(n) => Ok(DirectoryEnum3::B(n.wrap_for_merge(in_)?)),
-      MergeSchedulerEnum::Concurrent(c) => Ok(DirectoryEnum3::C(c.wrap_for_merge(in_)?)),
+      MergeSchedulerEnum::Serial(s) => Ok(MergeSchedulerDirectory::Direct(s.wrap_for_merge(in_)?)),
+      MergeSchedulerEnum::No(n) => Ok(MergeSchedulerDirectory::Direct(n.wrap_for_merge(in_)?)),
+      MergeSchedulerEnum::Concurrent(c) => {
+        Ok(MergeSchedulerDirectory::RateLimited(c.wrap_for_merge(in_)?))
+      },
       #[cfg(test)]
-      MergeSchedulerEnum::SerialTest(s) => Ok(DirectoryEnum3::A(s.wrap_for_merge(in_)?)),
+      MergeSchedulerEnum::SerialTest(s) => {
+        Ok(MergeSchedulerDirectory::Direct(s.wrap_for_merge(in_)?))
+      },
       #[cfg(test)]
-      MergeSchedulerEnum::LatchedSerial(s) => Ok(DirectoryEnum3::A(s.wrap_for_merge(in_)?)),
+      MergeSchedulerEnum::LatchedSerial(s) => {
+        Ok(MergeSchedulerDirectory::Direct(s.wrap_for_merge(in_)?))
+      },
       #[cfg(test)]
-      MergeSchedulerEnum::KnnMergeScheduler(s) => Ok(DirectoryEnum3::A(s.wrap_for_merge(in_)?)),
+      MergeSchedulerEnum::KnnMergeScheduler(s) => {
+        Ok(MergeSchedulerDirectory::Direct(s.wrap_for_merge(in_)?))
+      },
       #[cfg(test)]
-      MergeSchedulerEnum::IndexWriterMerging(s) => Ok(DirectoryEnum3::A(s.wrap_for_merge(in_)?)),
+      MergeSchedulerEnum::IndexWriterMerging(s) => {
+        Ok(MergeSchedulerDirectory::Direct(s.wrap_for_merge(in_)?))
+      },
       #[cfg(test)]
-      MergeSchedulerEnum::PartialAddIndexes(s) => Ok(DirectoryEnum3::A(s.wrap_for_merge(in_)?)),
+      MergeSchedulerEnum::PartialAddIndexes(s) => {
+        Ok(MergeSchedulerDirectory::Direct(s.wrap_for_merge(in_)?))
+      },
       #[cfg(test)]
-      MergeSchedulerEnum::CountingAddIndexes(s) => Ok(DirectoryEnum3::A(s.wrap_for_merge(in_)?)),
+      MergeSchedulerEnum::CountingAddIndexes(s) => {
+        Ok(MergeSchedulerDirectory::Direct(s.wrap_for_merge(in_)?))
+      },
     }
   }
 

@@ -147,13 +147,13 @@ mod base_stored_fields_format_test_case_test {
 }
 
 mod compression_numeric_encoding_tests {
+  use crate::core::codecs::CodecStoredFieldsReader;
   use crate::core::codecs::compressing::lucene90_compressing_stored_fields_reader::{
     read_tlong, read_zdouble, read_zfloat,
   };
   use crate::core::codecs::compressing::lucene90_compressing_stored_fields_writer::{
     DAY, HOUR, SECOND, write_tlong, write_zdouble, write_zfloat,
   };
-  use crate::core::codecs::stored_fields_reader::StoredFieldsReaderEnum2;
   use crate::core::document::document::Document;
   use crate::core::document::stored_field::StoredField;
   use crate::core::index::codec_reader::CodecReader;
@@ -389,7 +389,7 @@ mod compression_numeric_encoding_tests {
         let reader = leaf
           .get_fields_reader()?
           .expect("stored fields reader should exist");
-        let StoredFieldsReaderEnum2::A(reader) = reader else {
+        let CodecStoredFieldsReader::Lucene90(reader) = reader else {
           panic!("compressing codec should use Lucene90 stored fields");
         };
         assert!(reader.get_num_dirty_docs()? > 0);
@@ -416,7 +416,7 @@ mod compression_numeric_encoding_tests {
     let reader = leaf
       .get_fields_reader()?
       .expect("stored fields reader should exist");
-    let StoredFieldsReaderEnum2::A(reader) = reader else {
+    let CodecStoredFieldsReader::Lucene90(reader) = reader else {
       panic!("compressing codec should use Lucene90 stored fields");
     };
     // At most 2: the 5 chunks from 5 doc segment will be collapsed into a single chunk.

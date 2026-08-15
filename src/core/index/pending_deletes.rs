@@ -29,8 +29,6 @@ use crate::core::store::IOContext;
 use crate::core::store::directory::Directory;
 use crate::core::store::tracking_directory_wrapper::TrackingDirectoryWrapper;
 use crate::core::util::bits::Bits;
-#[cfg(test)]
-use crate::core::util::bits::BitsEnum2;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::fixed_bit_set::FixedBitSet;
 use crate::core::util::{HasIdentity, IOUtils};
@@ -232,7 +230,7 @@ impl PendingDeletesBase for PendingDeletes {
           }
           #[cfg(test)]
           {
-            Arc::new(BitsEnum2::A(bits.to_read_only_bits()))
+            Arc::new(CodecLiveDocsBits::Lucene90(bits.to_read_only_bits()))
           }
         },
       };

@@ -17,7 +17,7 @@
 use crate::core::index::base_composite_reader::{
   BCRStoredFieldsImpl, BCRTermVectorsImpl, BaseCompositeReader, BaseCompositeReaderBase,
 };
-use crate::core::index::codec_reader::{CodecReader, CodecReaderEnum2};
+use crate::core::index::codec_reader::CodecReader;
 use crate::core::index::composite_reader::CompositeReader;
 use crate::core::index::directory_reader::{DirectoryReader, DirectoryReaderBase};
 use crate::core::index::index_reader::{CompositeReaderContextKind, IndexReader, IndexReaderBase};
@@ -25,7 +25,7 @@ use crate::core::index::index_writer::IndexWriter;
 use crate::core::index::term::Term;
 use crate::core::util::dummy::dummy_comparator::DummyComparator;
 use crate::core::util::error::lucene_error::Result;
-use crate::test_framework::core::index::merging_codec_reader::MergingCodecReader;
+use crate::test_framework::core::index::merging_codec_reader::MergingCodecReaderEnum;
 use crate::test_framework::core::index::merging_directory_reader_wrapper::MergingDirectoryReaderWrapper;
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
@@ -37,8 +37,7 @@ where
   DR::LeafReader: CodecReader + Clone,
 {
   in_: DR,
-  base:
-    BaseCompositeReaderBase<CodecReaderEnum2<DR::LeafReader, MergingCodecReader<DR::LeafReader>>>,
+  base: BaseCompositeReaderBase<MergingCodecReaderEnum<DR::LeafReader>>,
   index_base: IndexReaderBase,
 }
 
@@ -69,7 +68,7 @@ where
       .get_sequential_sub_readers()
       .iter()
       .cloned()
-      .map(CodecReaderEnum2::A)
+      .map(MergingCodecReaderEnum::Default)
       .collect();
     let index_base = IndexReaderBase::new();
     let base = BaseCompositeReaderBase::new::<DummyComparator>(readers, None, &index_base)?;
@@ -93,7 +92,7 @@ where
   DR: DirectoryReader,
   DR::LeafReader: CodecReader + Clone,
 {
-  type LeafReader = CodecReaderEnum2<DR::LeafReader, MergingCodecReader<DR::LeafReader>>;
+  type LeafReader = MergingCodecReaderEnum<DR::LeafReader>;
   type SubReader = Self::LeafReader;
 
   fn get_sequential_sub_readers(&self) -> &[Self::SubReader] {
