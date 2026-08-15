@@ -733,11 +733,7 @@ pub struct IOStats {
   /// Bytes written through merges.
   pub(crate) merge_bytes_written: i64,
 }
-pub struct MockMergeContext<D, F>
-where
-  D: Directory,
-  F: Fn(&SegmentCommitInfo<D>) -> Result<i32>,
-{
+pub struct MockMergeContext<D, F> {
   num_deletes_func: F,
   dir: PhantomData<D>,
   merging_segments: HashSet<String>,
