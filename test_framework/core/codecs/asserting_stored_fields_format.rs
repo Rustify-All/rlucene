@@ -94,10 +94,7 @@ impl StoredFieldsFormat for AssertingStoredFieldsFormat {
   }
 }
 
-pub struct AssertingStoredFieldsReader<SFR>
-where
-  SFR: StoredFieldsReader,
-{
+pub struct AssertingStoredFieldsReader<SFR> {
   in_: SFR,
   max_doc: i32,
   merging: AtomicBool,
@@ -196,10 +193,7 @@ enum Status {
   Finished,
 }
 
-pub struct AssertingStoredFieldsWriter<SFW>
-where
-  SFW: StoredFieldsWriter,
-{
+pub struct AssertingStoredFieldsWriter<SFW> {
   in_: SFW,
   num_written: i32,
   doc_status: Status,
