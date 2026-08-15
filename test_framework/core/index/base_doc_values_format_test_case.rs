@@ -984,10 +984,7 @@ pub trait DocValuesWrapper {
   fn doc_id(&self) -> i32;
 }
 
-pub struct NumericDocValuesWrapper<DV>
-where
-  DV: NumericDocValues,
-{
+pub struct NumericDocValuesWrapper<DV> {
   numeric_doc_values: DV,
 }
 
@@ -1067,10 +1064,7 @@ impl TestDocValueSkipper for NumericTestDocValueSkipper {
   }
 }
 
-pub struct SortedNumericDocValuesWrapper<DV>
-where
-  DV: SortedNumericDocValues,
-{
+pub struct SortedNumericDocValuesWrapper<DV> {
   sorted_numeric_doc_values: DV,
   max: i64,
   min: i64,
@@ -1180,10 +1174,7 @@ impl TestDocValueSkipper for SortedNumericTestDocValueSkipper {
   }
 }
 
-pub struct SortedDocValuesWrapper<DV>
-where
-  DV: SortedDocValues,
-{
+pub struct SortedDocValuesWrapper<DV> {
   sorted_doc_values: DV,
 }
 
@@ -1263,10 +1254,7 @@ impl TestDocValueSkipper for SortedTestDocValueSkipper {
   }
 }
 
-pub struct SortedSetDocValuesWrapper<DV>
-where
-  DV: SortedSetDocValues,
-{
+pub struct SortedSetDocValuesWrapper<DV> {
   sorted_set_doc_values: DV,
   max: i64,
   min: i64,
