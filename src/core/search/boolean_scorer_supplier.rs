@@ -52,10 +52,7 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 
-pub struct BooleanScorerSupplier<IRC>
-where
-  IRC: IndexReaderContext,
-{
+pub struct BooleanScorerSupplier<IRC> {
   pub(crate) subs: HashMap<Occur, Vec<QueryWeightSs<IRC>>>,
   score_mode: ScoreMode,
   min_should_match: i32,
