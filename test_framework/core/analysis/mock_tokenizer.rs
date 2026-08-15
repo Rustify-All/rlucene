@@ -88,10 +88,7 @@ pub const DEFAULT_MAX_TOKEN_LENGTH: i32 = 255;
 /// - An internal state-machine is used for checking consumer consistency. These checks can be
 ///   disabled with [`MockTokenizer::set_enable_checks`].
 /// - For convenience, optionally lowercases terms that it outputs.
-pub struct MockTokenizer<R>
-where
-  R: Rng,
-{
+pub struct MockTokenizer<R> {
   tokenizer_base: TokenizerBase,
   run_automaton: CharacterRunAutomaton,
   lower_case: bool,
