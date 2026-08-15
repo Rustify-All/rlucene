@@ -147,7 +147,7 @@ where
   }
 }
 
-struct RandomGen<'a, R: Rng + ?Sized> {
+struct RandomGen<'a, R: ?Sized> {
   random: &'a mut R,
   // we use the default Locale/TZ since LuceneTestCase randomizes it
   base: DateTime<Local>,
