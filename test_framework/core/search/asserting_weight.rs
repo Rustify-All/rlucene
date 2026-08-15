@@ -34,10 +34,7 @@ use crate::test_framework::core::util::lucene_test_case::{random_from_seed, usua
 use rand::RngExt;
 use std::sync::Arc;
 
-pub(crate) struct AssertingWeight<IRC>
-where
-  IRC: IndexReaderContext,
-{
+pub(crate) struct AssertingWeight<IRC> {
   random_seed: u64,
   in_: QueryWeight<IRC>,
   _score_mode: ScoreMode,
@@ -135,10 +132,7 @@ where
   }
 }
 
-struct AssertingScorerSupplier<IRC>
-where
-  IRC: IndexReaderContext,
-{
+struct AssertingScorerSupplier<IRC> {
   random_seed: u64,
   score_mode: ScoreMode,
   in_scorer_supplier: QueryWeightSs<IRC>,
