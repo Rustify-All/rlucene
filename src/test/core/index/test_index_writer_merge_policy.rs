@@ -1453,10 +1453,7 @@ fn test_force_merge_with_pending_hard_and_soft_delete_file() -> Result<()> {
   Ok(())
 }
 
-struct MockAssertFileExistDirectory<D>
-where
-  D: Directory,
-{
+struct MockAssertFileExistDirectory<D> {
   in_: D,
   path: PathBuf,
   id: Identity,
@@ -1584,10 +1581,7 @@ where
   }
 }
 
-struct MockAssertFileExistIndexInput<I>
-where
-  I: IndexInput,
-{
+struct MockAssertFileExistIndexInput<I> {
   name: String,
   delegate: I,
   file_path: PathBuf,
