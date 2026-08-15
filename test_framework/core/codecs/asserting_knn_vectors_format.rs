@@ -224,10 +224,7 @@ where
   }
 }
 
-pub struct AssertingKnnVectorsReader<KVR>
-where
-  KVR: KnnVectorsReader,
-{
+pub struct AssertingKnnVectorsReader<KVR> {
   delegate: KVR,
   fis: Arc<FieldInfos>,
   merge_instance: bool,

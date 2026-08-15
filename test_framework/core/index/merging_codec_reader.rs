@@ -31,10 +31,7 @@ use std::sync::Arc;
 
 /// [`CodecReader`] wrapper that performs all reads using the merging instance of the index
 /// formats.
-pub struct MergingCodecReader<CR>
-where
-  CR: CodecReader,
-{
+pub struct MergingCodecReader<CR> {
   in_: CR,
 }
 

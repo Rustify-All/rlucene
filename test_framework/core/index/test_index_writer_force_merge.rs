@@ -258,10 +258,7 @@ impl PostingsFormat for BlockingOnMergePostingsFormat {
   }
 }
 
-pub struct BlockingOnMergeFieldsConsumer<C>
-where
-  C: FieldsConsumer,
-{
+pub struct BlockingOnMergeFieldsConsumer<C> {
   in_: C,
   barrier: Arc<Barrier>,
 }
@@ -387,10 +384,7 @@ impl DocValuesFormat for BlockingOnMergeDocValuesFormat {
   }
 }
 
-pub struct BlockingOnMergeDocValuesConsumer<C>
-where
-  C: DocValuesConsumer,
-{
+pub struct BlockingOnMergeDocValuesConsumer<C> {
   in_: C,
   barrier: Arc<Barrier>,
 }

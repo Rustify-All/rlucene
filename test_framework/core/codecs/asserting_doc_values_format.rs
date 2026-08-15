@@ -135,10 +135,7 @@ impl DocValuesFormat for AssertingDocValuesFormat {
   }
 }
 
-pub struct AssertingDocValuesConsumer<DVC>
-where
-  DVC: DocValuesConsumer,
-{
+pub struct AssertingDocValuesConsumer<DVC> {
   in_: DVC,
   max_doc: i32,
 }
@@ -358,10 +355,7 @@ where
   }
 }
 
-pub struct AssertingDocValuesProducer<DVP>
-where
-  DVP: DocValuesProducer,
-{
+pub struct AssertingDocValuesProducer<DVP> {
   in_: Arc<DVP>,
   asserting: bool,
   field_infos: Option<Arc<FieldInfos>>,

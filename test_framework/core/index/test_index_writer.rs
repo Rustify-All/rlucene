@@ -396,10 +396,7 @@ where
   }
 }
 
-pub struct SoftUpdatesConcurrentlyOneMergeUnaryOperator<D>
-where
-  D: Directory,
-{
+pub struct SoftUpdatesConcurrentlyOneMergeUnaryOperator<D> {
   merge_away_soft_deletes: Arc<AtomicBool>,
   _marker: PhantomData<fn() -> D>,
 }

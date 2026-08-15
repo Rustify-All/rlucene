@@ -126,10 +126,7 @@ impl DocValuesFormat for MergeRecordingDocValueFormatWrapper {
   }
 }
 
-pub struct MergeRecordingDocValuesConsumer<DVC>
-where
-  DVC: DocValuesConsumer,
-{
+pub struct MergeRecordingDocValuesConsumer<DVC> {
   consumer: DVC,
   state: Arc<Mutex<MergeRecordingState>>,
 }

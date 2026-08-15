@@ -80,10 +80,7 @@ fn assert_thread(object: &str, creation_thread: ThreadId) {
 }
 
 /// A [`LeafReader`] that can be used to apply additional checks for tests.
-pub struct AssertingLeafReader<LR>
-where
-  LR: LeafReader,
-{
+pub struct AssertingLeafReader<LR> {
   in_: LR,
   index_base: IndexReaderBase,
 }
@@ -153,10 +150,7 @@ where
 }
 
 /// Wraps [`StoredFields`] with additional assertions.
-pub struct AssertingStoredFields<S>
-where
-  S: StoredFields,
-{
+pub struct AssertingStoredFields<S> {
   in_: S,
   creation_thread: ThreadId,
 }
@@ -192,10 +186,7 @@ where
 }
 
 /// Wraps [`TermVectors`] with additional assertions.
-pub struct AssertingTermVectors<TV>
-where
-  TV: TermVectors,
-{
+pub struct AssertingTermVectors<TV> {
   in_: TV,
   creation_thread: ThreadId,
 }
@@ -247,10 +238,7 @@ where
 }
 
 /// Wraps [`Fields`] with additional assertions.
-pub struct AssertingFields<F>
-where
-  F: Fields,
-{
+pub struct AssertingFields<F> {
   in_: F,
   creation_thread: ThreadId,
 }
@@ -294,10 +282,7 @@ where
 }
 
 /// Wraps [`Terms`] with additional assertions.
-pub struct AssertingTerms<T>
-where
-  T: Terms,
-{
+pub struct AssertingTerms<T> {
   in_: T,
   creation_thread: ThreadId,
   asserting: bool,
@@ -452,10 +437,7 @@ enum AssertingTermsEnumState {
   TwoPhaseSeeking,
 }
 
-pub struct AssertingTermsEnum<TE>
-where
-  TE: TermsEnum,
-{
+pub struct AssertingTermsEnum<TE> {
   in_: TE,
   creation_thread: ThreadId,
   state: AssertingTermsEnumState,
@@ -798,10 +780,7 @@ enum DocsEnumState {
 }
 
 /// Wraps a docs enum with additional checks.
-pub struct AssertingPostingsEnum<PE>
-where
-  PE: PostingsEnum,
-{
+pub struct AssertingPostingsEnum<PE> {
   in_: PE,
   creation_thread: ThreadId,
   state: DocsEnumState,
@@ -1060,10 +1039,7 @@ where
 }
 
 /// Wraps an [`ImpactsEnum`] with additional checks.
-pub struct AssertingImpactsEnum<IE>
-where
-  IE: ImpactsEnum,
-{
+pub struct AssertingImpactsEnum<IE> {
   asserting_postings: AssertingPostingsEnum<IE>,
   last_shallow_target: i32,
   valid_for: Option<Arc<AtomicI32>>,
@@ -1233,10 +1209,7 @@ where
 
 impl<IE> ImpactsEnum for AssertingImpactsEnum<IE> where IE: ImpactsEnum {}
 
-pub struct AssertingImpacts<I>
-where
-  I: Impacts,
-{
+pub struct AssertingImpacts<I> {
   in_: I,
   current_valid_for: Option<Arc<AtomicI32>>,
   valid_for: i32,
@@ -1306,10 +1279,7 @@ where
 }
 
 /// Wraps a [`NumericDocValues`] with additional assertions.
-pub struct AssertingNumericDocValues<DV>
-where
-  DV: NumericDocValues,
-{
+pub struct AssertingNumericDocValues<DV> {
   asserting: bool,
   creation_thread: ThreadId,
   in_: DV,
@@ -1435,10 +1405,7 @@ where
 }
 
 /// Wraps a [`BinaryDocValues`] with additional assertions.
-pub struct AssertingBinaryDocValues<DV>
-where
-  DV: BinaryDocValues,
-{
+pub struct AssertingBinaryDocValues<DV> {
   asserting: bool,
   creation_thread: ThreadId,
   in_: DV,
@@ -1564,10 +1531,7 @@ where
 }
 
 /// Wraps a [`SortedDocValues`] with additional assertions.
-pub struct AssertingSortedDocValues<DV>
-where
-  DV: SortedDocValues,
-{
+pub struct AssertingSortedDocValues<DV> {
   asserting: bool,
   creation_thread: ThreadId,
   in_: DV,
@@ -2284,10 +2248,7 @@ where
 }
 
 /// Wraps a [`DocValuesSkipper`] with additional assertions.
-pub struct AssertingDocValuesSkipper<S>
-where
-  S: DocValuesSkipper,
-{
+pub struct AssertingDocValuesSkipper<S> {
   creation_thread: ThreadId,
   in_: S,
 }
@@ -2395,10 +2356,7 @@ where
 }
 
 /// Wraps [`PointValues`] with additional assertions.
-pub struct AssertingPointValues<PV>
-where
-  PV: PointValues,
-{
+pub struct AssertingPointValues<PV> {
   creation_thread: ThreadId,
   in_: PV,
 }
@@ -2501,10 +2459,7 @@ where
   }
 }
 
-pub struct AssertingPointTree<PT>
-where
-  PT: PointTree,
-{
+pub struct AssertingPointTree<PT> {
   in_: PT,
   num_data_dims: usize,
   num_index_dims: usize,
@@ -2596,10 +2551,7 @@ where
   }
 }
 
-pub struct AssertingMutablePointTree<MPT>
-where
-  MPT: MutablePointTree,
-{
+pub struct AssertingMutablePointTree<MPT> {
   in_: MPT,
   num_data_dims: usize,
   num_index_dims: usize,
@@ -2722,10 +2674,7 @@ where
 
 /// Validates in the 1D case that all points are visited in order, and point
 /// values are in bounds of the last cell checked.
-pub struct AssertingIntersectVisitor<'a, IV>
-where
-  IV: IntersectVisitor,
-{
+pub struct AssertingIntersectVisitor<'a, IV> {
   in_: &'a mut IV,
   num_data_dims: usize,
   num_index_dims: usize,
@@ -2874,10 +2823,7 @@ where
 }
 
 /// Wraps [`Bits`] with additional assertions.
-pub struct AssertingBits<B>
-where
-  B: Bits,
-{
+pub struct AssertingBits<B> {
   creation_thread: ThreadId,
   in_: B,
   identity: Identity,

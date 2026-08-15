@@ -197,10 +197,7 @@ impl PostingsFormat for MergeRecordingPostingsFormatWrapper {
   }
 }
 
-pub struct MergeRecordingFieldsConsumer<FC>
-where
-  FC: FieldsConsumer,
-{
+pub struct MergeRecordingFieldsConsumer<FC> {
   consumer: FC,
   state: Arc<Mutex<MergeRecordingState>>,
 }

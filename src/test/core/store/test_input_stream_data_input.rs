@@ -93,7 +93,7 @@ fn test_skip_off_end() -> Result<()> {
 }
 
 /// Panics on byte reads to ensure `skip_bytes` does not invoke `read`.
-struct NoReadInputStreamDataInput<R: Read + Seek> {
+struct NoReadInputStreamDataInput<R> {
   input: InputStreamDataInput<R>,
 }
 

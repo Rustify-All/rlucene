@@ -91,10 +91,7 @@ impl TermVectorsFormat for AssertingTermVectorsFormat {
   }
 }
 
-pub struct AssertingTermVectorsReader<TVR>
-where
-  TVR: TermVectorsReader,
-{
+pub struct AssertingTermVectorsReader<TVR> {
   in_: TVR,
 }
 
@@ -193,10 +190,7 @@ enum Status {
   Finished,
 }
 
-pub struct AssertingTermVectorsWriter<TVW>
-where
-  TVW: TermVectorsWriter,
-{
+pub struct AssertingTermVectorsWriter<TVW> {
   in_: TVW,
   doc_status: Status,
   field_status: Status,

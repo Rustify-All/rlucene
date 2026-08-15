@@ -951,10 +951,7 @@ pub trait BaseCompoundFormatTestCase:
 
 /// The named Rust equivalent of the anonymous `FilterDirectory` used by
 /// `testPassIOContext`.
-struct IOContextAssertingDirectoryWrapper<D>
-where
-  D: Directory,
-{
+struct IOContextAssertingDirectoryWrapper<D> {
   in_: D,
   expected_context: Arc<IOContext>,
   identity: Identity,

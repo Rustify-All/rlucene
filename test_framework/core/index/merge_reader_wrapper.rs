@@ -111,10 +111,7 @@ where
 /// Rust would require cloning it, but stored-fields merge instances must not be cloned. The `Arc`
 /// keeps every returned handle attached to the same reader, while the `Mutex` provides the mutable
 /// access required by [`StoredFields`].
-pub(crate) struct MergeReaderWrapperStoredFields<SFR>
-where
-  SFR: StoredFieldsReader,
-{
+pub(crate) struct MergeReaderWrapperStoredFields<SFR> {
   in_: Arc<Mutex<SFR>>,
 }
 

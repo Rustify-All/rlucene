@@ -1375,10 +1375,7 @@ where
     new_directory_shared(random)
   }
 }
-struct VerifyIntersectVisitor<'a, B>
-where
-  B: Bits,
-{
+struct VerifyIntersectVisitor<'a, B> {
   hits: &'a mut bit_set::BitSet,
   query_min: &'a [Vec<u8>],
   query_max: &'a [Vec<u8>],
@@ -1468,10 +1465,7 @@ impl IntersectVisitor for BasicIntersectVisitor<'_> {
   }
 }
 
-struct AllPointDocsDeletedIntersectVisitor<'a, B>
-where
-  B: Bits,
-{
+struct AllPointDocsDeletedIntersectVisitor<'a, B> {
   seen: &'a mut FixedBitSet,
   live_docs: Option<&'a B>,
   doc_id_to_id: &'a [i32],
