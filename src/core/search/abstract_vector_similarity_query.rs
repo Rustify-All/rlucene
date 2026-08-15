@@ -209,10 +209,7 @@ impl KnnCollectorManager for VectorSimilarityCollectorManager {
   }
 }
 
-struct AbstractVectorSimilarityQueryWeight<Q, IRC, QT>
-where
-  IRC: IndexReaderContext,
-{
+struct AbstractVectorSimilarityQueryWeight<Q, IRC, QT> {
   parent_query: Arc<Query>,
   query: Q,
   filter_weight: Option<QueryWeight<IRC>>,
