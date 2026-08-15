@@ -138,16 +138,12 @@ struct SubDocs {
   deleted: bool,
 }
 
-struct MergedSegmentWarmer<D>
-where
-  D: Directory,
-{
+struct MergedSegmentWarmer {
   warmed: Arc<Mutex<HashSet<CacheKey>>>,
-  marker: std::marker::PhantomData<fn() -> D>,
   seed: u64,
 }
 
-impl<D> IndexReaderWarmer<D> for MergedSegmentWarmer<D>
+impl<D> IndexReaderWarmer<D> for MergedSegmentWarmer
 where
   D: Directory + 'static,
 {
@@ -417,7 +413,6 @@ where
     ensure_sane_iwc_on_nightly(&mut config)?;
     config.set_merged_segment_warmer(Some(IndexReaderWarmerEnum::custom(MergedSegmentWarmer {
       warmed: self.state().warmed.clone(),
-      marker: std::marker::PhantomData,
       seed: random.random(),
     })));
     let writer = IndexWriter::new(directory.clone(), config)?;
