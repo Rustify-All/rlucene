@@ -26,10 +26,7 @@ use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 /// Filters the incoming reader and makes all documents appear deleted.
-pub struct AllDeletedFilterReader<LR>
-where
-  LR: LeafReader,
-{
+pub struct AllDeletedFilterReader<LR> {
   reader: LR,
   live_docs: MatchNoBits,
   index_base: IndexReaderBase,
