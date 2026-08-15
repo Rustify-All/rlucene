@@ -32,18 +32,12 @@ use std::thread;
 
 static NEXT_HANDLE_ID: AtomicUsize = AtomicUsize::new(0);
 
-struct MockIndexOutputState<O>
-where
-  O: IndexOutput,
-{
+struct MockIndexOutputState<O> {
   out: O,
   closed: bool,
 }
 
-pub(crate) struct MockIndexOutputHandle<O>
-where
-  O: IndexOutput,
-{
+pub(crate) struct MockIndexOutputHandle<O> {
   state: Arc<Mutex<MockIndexOutputState<O>>>,
   name: String,
 }
