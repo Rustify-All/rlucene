@@ -487,8 +487,7 @@ where
 
 struct SimpleCollectorImp<'a, IRC>
 where
-  IRC: IndexReaderContext + 'static,
-  IRC::LeafReader: Clone,
+  IRC: 'static,
 {
   weight: QueryWeight<IRC>,
   leaf_ptr: usize,
