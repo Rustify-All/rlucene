@@ -55,10 +55,7 @@ use std::thread;
 #[allow(dead_code)] // for quick search
 struct TestIndexWriterMaxDocs;
 
-struct AddIndexesFilterDirectory<D>
-where
-  D: Directory,
-{
+struct AddIndexesFilterDirectory<D> {
   id: Identity,
   in_: Arc<D>,
 }
