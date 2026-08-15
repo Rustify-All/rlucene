@@ -66,7 +66,7 @@ fn test_skip_bytes() -> Result<()> {
   Ok(())
 }
 
-struct InterceptingChecksumIndexInput<T: IndexInput> {
+struct InterceptingChecksumIndexInput<T> {
   base: BufferedChecksumIndexInput<T>,
   read_bytes: Vec<u8>,
   off: usize,
