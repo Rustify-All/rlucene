@@ -1230,10 +1230,7 @@ pub trait BaseStoredFieldsFormatTestCase:
 }
 
 /// A dummy filter reader that reverses the order of documents in stored fields.
-struct DummyFilterLeafReader<LR>
-where
-  LR: LeafReader,
-{
+struct DummyFilterLeafReader<LR> {
   in_: LR,
   index_base: IndexReaderBase,
 }
@@ -1270,10 +1267,7 @@ where
   }
 }
 
-struct ReversedStoredFields<S>
-where
-  S: StoredFields,
-{
+struct ReversedStoredFields<S> {
   in_: S,
   max_doc: i32,
 }
