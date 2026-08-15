@@ -658,7 +658,7 @@ impl CheckHits {
 
 struct ExplanationAsserterManager<'a, IRC>
 where
-  IRC: IndexReaderContext + 'static,
+  IRC: 'static,
 {
   q: Query,
   default_field_name: &'a str,
@@ -698,7 +698,7 @@ where
 
 struct MatchesAsserterManager<'a, IRC>
 where
-  IRC: IndexReaderContext + 'static,
+  IRC: 'static,
 {
   query: Query,
   searcher: &'a IndexSearcher<IRC>,
@@ -736,7 +736,7 @@ where
 /// constructed.
 struct ExplanationAsserter<'a, IRC>
 where
-  IRC: IndexReaderContext + 'static,
+  IRC: 'static,
 {
   q: Query,
   s: &'a IndexSearcher<IRC>,
@@ -844,7 +844,7 @@ where
 /// [`Matches`](crate::core::search::matches::Matches).
 struct MatchesAsserter<'a, IRC>
 where
-  IRC: IndexReaderContext + 'static,
+  IRC: 'static,
 {
   query: Query,
   searcher: &'a IndexSearcher<IRC>,
