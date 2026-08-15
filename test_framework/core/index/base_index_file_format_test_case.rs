@@ -103,10 +103,7 @@ impl Drop for DefaultCodecGuard {
   }
 }
 
-struct ReaderNormsProducer<'a, LR>
-where
-  LR: LeafReader,
-{
+struct ReaderNormsProducer<'a, LR> {
   reader: &'a LR,
 }
 
@@ -129,10 +126,7 @@ where
   }
 }
 
-struct OneDocFields<'a, LR>
-where
-  LR: LeafReader,
-{
+struct OneDocFields<'a, LR> {
   one_doc_reader: &'a LR,
   indexed_fields: Vec<String>,
 }
@@ -316,10 +310,7 @@ impl NumericDocValues for OneDocNormValues {
 }
 
 /// A directory that tracks created files that have not been deleted.
-pub(crate) struct FileTrackingDirectoryWrapper<D>
-where
-  D: Directory,
-{
+pub(crate) struct FileTrackingDirectoryWrapper<D> {
   in_: D,
   files: Mutex<HashSet<String>>,
   identity: Identity,
@@ -437,10 +428,7 @@ where
   }
 }
 
-pub(crate) struct ReadBytesIndexInputWrapper<I>
-where
-  I: IndexInput,
-{
+pub(crate) struct ReadBytesIndexInputWrapper<I> {
   in_: I,
   read_bytes: Arc<Mutex<FixedBitSet>>,
   file_offset: usize,
@@ -564,10 +552,7 @@ where
   }
 }
 
-pub(crate) struct ReadBytesDirectoryWrapper<D>
-where
-  D: Directory,
-{
+pub(crate) struct ReadBytesDirectoryWrapper<D> {
   in_: D,
   read_bytes: Mutex<HashMap<String, Arc<Mutex<FixedBitSet>>>>,
   identity: Identity,
