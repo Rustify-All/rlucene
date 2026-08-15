@@ -132,11 +132,7 @@ impl QueryBase for RandomApproximationQuery {
   }
 }
 
-pub struct RandomApproximationWeight<LR>
-where
-  LR: IndexReaderContext + 'static,
-  IRCLeafReader<LR>: 'static,
-{
+pub struct RandomApproximationWeight<LR> {
   query: Arc<Query>,
   random_seed: u64,
   in_: QueryWeight<LR>,
