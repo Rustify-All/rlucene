@@ -16,7 +16,7 @@
  */
 use crate::core::codecs::hnsw::default_flat_vector_scorer::DefaultFlatVectorScorer;
 use crate::core::codecs::hnsw::flat_vector_scorer_util::GET_LUCENE99_FLAT_VECTORS_SCORER;
-use crate::core::codecs::hnsw::flat_vectors_scorer::{FlatVectorsScorer, FlatVectorsScorerEnum2};
+use crate::core::codecs::hnsw::flat_vectors_scorer::FlatVectorsScorer;
 use crate::core::codecs::lucene95::off_heap_byte_vector_values::DenseOffHeapVectorValues as DenseOffHeapByteVectorValues;
 use crate::core::codecs::lucene95::off_heap_float_vector_values::DenseOffHeapVectorValues as DenseOffHeapFloatVectorValues;
 use crate::core::index::knn_vector_values::KnnVectorValuesEnm2;
@@ -39,22 +39,14 @@ struct TestFlatVectorScorer;
 type TestIndexInput = <DirEnum as Directory>::IndexInput;
 type TestByteVectorValues = DenseOffHeapByteVectorValues<TestIndexInput, FlatVectorsScores>;
 type TestFloatVectorValues = DenseOffHeapFloatVectorValues<TestIndexInput, FlatVectorsScores>;
-type FlatVectorsScores = FlatVectorsScorerEnum2<DefaultFlatVectorScorer, DefaultFlatVectorScorer>;
-impl Clone for FlatVectorsScores {
-  fn clone(&self) -> Self {
-    match self {
-      FlatVectorsScorerEnum2::A(inner) => FlatVectorsScorerEnum2::A(inner.clone()),
-      FlatVectorsScorerEnum2::B(inner) => FlatVectorsScorerEnum2::B(inner.clone()),
-    }
-  }
-}
+type FlatVectorsScores = DefaultFlatVectorScorer;
 fn set_up<R>(random: &mut R) -> Result<(Vec<FlatVectorsScores>, Arc<DirEnum>)>
 where
   R: Rng + ?Sized,
 {
   let scorers = vec![
-    FlatVectorsScorerEnum2::A(DefaultFlatVectorScorer),
-    FlatVectorsScorerEnum2::B(GET_LUCENE99_FLAT_VECTORS_SCORER.clone()),
+    DefaultFlatVectorScorer,
+    GET_LUCENE99_FLAT_VECTORS_SCORER.clone(),
   ];
   let dir = new_directory_shared(random)?;
   Ok((scorers, dir))
