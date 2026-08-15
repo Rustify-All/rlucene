@@ -1792,7 +1792,7 @@ fn test_clause_sets_immutability() -> Result<()> {
 
 struct CollectorManagerImpl<'a, IRC>
 where
-  IRC: IndexReaderContext + 'static,
+  IRC: 'static,
 {
   searcher: &'a IndexSearcher<IRC>,
   matched: Arc<AtomicBool>,
@@ -1832,7 +1832,7 @@ where
 
 struct SimpleCollectorImpl<'a, IRC>
 where
-  IRC: IndexReaderContext + 'static,
+  IRC: 'static,
 {
   doc_base: i32,
   matched: Arc<AtomicBool>,
