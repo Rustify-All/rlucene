@@ -1670,10 +1670,7 @@ where
   }
 }
 
-struct MaxScoreWrapperScorer<S>
-where
-  S: Scorer,
-{
+struct MaxScoreWrapperScorer<S> {
   max_range: i32,
   max_score: f32,
   last_shallow_target: i32,
@@ -1860,10 +1857,7 @@ impl QueryBase for MaxScoreWrapperQuery {
   }
 }
 
-struct MaxScoreWrapperQueryWeight<IRC>
-where
-  IRC: IndexReaderContext,
-{
+struct MaxScoreWrapperQueryWeight<IRC> {
   max_range: i32,
   max_score: f32,
   weight: QueryWeight<IRC>,
@@ -1935,10 +1929,7 @@ where
   }
 }
 
-struct ScorerSupplierImpl<IRC>
-where
-  IRC: IndexReaderContext,
-{
+struct ScorerSupplierImpl<IRC> {
   supplier: QueryWeightSs<IRC>,
   max_range: i32,
   max_score: f32,
