@@ -203,10 +203,7 @@ pub(super) trait TestLucene90StoredFieldsFormatTests:
   }
 }
 
-pub struct CountingPrefetchDirectory<D>
-where
-  D: Directory,
-{
+pub struct CountingPrefetchDirectory<D> {
   in_: D,
   count: Arc<AtomicUsize>,
   id: Identity,
@@ -312,10 +309,7 @@ where
   }
 }
 
-pub struct CountingPrefetchIndexInput<I>
-where
-  I: IndexInput,
-{
+pub struct CountingPrefetchIndexInput<I> {
   count: Arc<AtomicUsize>,
   in_: I,
 }
