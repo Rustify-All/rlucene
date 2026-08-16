@@ -28,7 +28,7 @@ use crate::core::codecs::lucene90::lucene90_doc_values_producer::{
 };
 use crate::core::codecs::lucene90_doc_values_producer::{
   BaseSortedSetDocValuesOrdinals, DenseBaseSortedSetDocValues,
-  SparseBaseSortedSetDocValuesImpl, SparseBinaryDocValuesBase,
+  SparseBaseSortedSetDocValues, SparseBinaryDocValuesBase,
 };
 use crate::core::index::BytesRef;
 use crate::core::index::doc_values_iterator::DocValuesIterator;
@@ -137,7 +137,7 @@ where
   I: IndexInput,
 {
   Dense(DenseBaseSortedSetDocValues<I::RandomAccessSlice>),
-  Sparse(SparseBaseSortedSetDocValuesImpl<I::IndexInput, I::RandomAccessSlice>),
+  Sparse(SparseBaseSortedSetDocValues<I>),
   Impl(BaseSortedSetDocValuesOrdinals<I>),
 }
 

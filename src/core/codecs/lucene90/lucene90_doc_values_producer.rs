@@ -982,7 +982,7 @@ where
           ords_entry.base.dense_rank_power,
           ords_entry.base.num_values as i64,
         )?;
-        BaseSortedSetDocValuesEnum::Sparse(SparseBaseSortedSetDocValuesImpl::new(
+        BaseSortedSetDocValuesEnum::Sparse(SparseBaseSortedSetDocValues::new(
           disi, values, addresses,
         ))
       } else {
@@ -2352,33 +2352,26 @@ where
   type SortedDocValues = DummySortedDocValues;
 }
 
-pub struct SparseBaseSortedSetDocValuesImpl<I, R>
+pub struct SparseBaseSortedSetDocValues<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
-  disi: IndexedDISIImpl<I, R>,
+  disi: IndexedDISIImpl<I::IndexInput, I::RandomAccessSlice>,
   set: bool,
   curr: i64,
   count: i32,
-  value: DirectPackedEnum<R>,
-  addresses: DirectMonotonicReader<R>,
+  value: DirectPackedEnum<I::RandomAccessSlice>,
+  addresses: DirectMonotonicReader<I::RandomAccessSlice>,
 }
 
-pub type SparseBaseSortedSetDocValues<I> = SparseBaseSortedSetDocValuesImpl<
-  <I as IndexInput>::IndexInput,
-  <I as IndexInput>::RandomAccessSlice,
->;
-
-impl<I, R> SparseBaseSortedSetDocValuesImpl<I, R>
+impl<I> SparseBaseSortedSetDocValues<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn new(
-    disi: IndexedDISIImpl<I, R>,
-    value: DirectPackedEnum<R>,
-    addresses: DirectMonotonicReader<R>,
+    disi: IndexedDISIImpl<I::IndexInput, I::RandomAccessSlice>,
+    value: DirectPackedEnum<I::RandomAccessSlice>,
+    addresses: DirectMonotonicReader<I::RandomAccessSlice>,
   ) -> Self {
     Self {
       disi,
@@ -2401,10 +2394,9 @@ where
   }
 }
 
-impl<I, R> DocValuesIterator for SparseBaseSortedSetDocValuesImpl<I, R>
+impl<I> DocValuesIterator for SparseBaseSortedSetDocValues<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn advance_exact(&mut self, target: i32) -> Result<bool> {
     self.set = false;
@@ -2412,10 +2404,9 @@ where
   }
 }
 
-impl<I, R> DocIdSetIterator for SparseBaseSortedSetDocValuesImpl<I, R>
+impl<I> DocIdSetIterator for SparseBaseSortedSetDocValues<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn doc_id(&self) -> i32 {
     self.disi.doc_id()
@@ -2436,10 +2427,9 @@ where
   }
 }
 
-impl<I, R> SortedSetDocValues for SparseBaseSortedSetDocValuesImpl<I, R>
+impl<I> SortedSetDocValues for SparseBaseSortedSetDocValues<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn next_ord(&mut self) -> Result<i64> {
     self.set()?;
@@ -2456,8 +2446,7 @@ where
   type TermsEnum<'a>
     = DummyTermsEnum
   where
-    I: 'a,
-    R: 'a;
+    I: 'a;
 
   fn terms_enum(&mut self) -> Result<Self::TermsEnum<'_>> {
     Err(LuceneError::unsupported_operation(""))
