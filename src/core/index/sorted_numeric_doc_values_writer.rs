@@ -61,7 +61,6 @@ type BufferedMultiSortedNumericDocValues = BufferedSortedNumericDocValues<DocsWi
 pub(crate) enum SortedNumericDocValuesWriterValues {
   Single(BufferedSingleSortedNumericDocValues),
   Multi(BufferedMultiSortedNumericDocValues),
-  SortedSingle(SortingSortedNumericDocValues<BufferedSingleSortedNumericDocValues>),
   SortedMulti(SortingSortedNumericDocValues<BufferedMultiSortedNumericDocValues>),
 }
 
@@ -70,7 +69,6 @@ impl DocValuesIterator for SortedNumericDocValuesWriterValues {
     match self {
       Self::Single(values) => values.advance_exact(target),
       Self::Multi(values) => values.advance_exact(target),
-      Self::SortedSingle(values) => values.advance_exact(target),
       Self::SortedMulti(values) => values.advance_exact(target),
     }
   }
@@ -81,7 +79,6 @@ impl DocIdSetIterator for SortedNumericDocValuesWriterValues {
     match self {
       Self::Single(values) => values.doc_id(),
       Self::Multi(values) => values.doc_id(),
-      Self::SortedSingle(values) => values.doc_id(),
       Self::SortedMulti(values) => values.doc_id(),
     }
   }
@@ -90,7 +87,6 @@ impl DocIdSetIterator for SortedNumericDocValuesWriterValues {
     match self {
       Self::Single(values) => values.next_doc(),
       Self::Multi(values) => values.next_doc(),
-      Self::SortedSingle(values) => values.next_doc(),
       Self::SortedMulti(values) => values.next_doc(),
     }
   }
@@ -99,7 +95,6 @@ impl DocIdSetIterator for SortedNumericDocValuesWriterValues {
     match self {
       Self::Single(values) => values.advance(target),
       Self::Multi(values) => values.advance(target),
-      Self::SortedSingle(values) => values.advance(target),
       Self::SortedMulti(values) => values.advance(target),
     }
   }
@@ -108,7 +103,6 @@ impl DocIdSetIterator for SortedNumericDocValuesWriterValues {
     match self {
       Self::Single(values) => values.slow_advance(target),
       Self::Multi(values) => values.slow_advance(target),
-      Self::SortedSingle(values) => values.slow_advance(target),
       Self::SortedMulti(values) => values.slow_advance(target),
     }
   }
@@ -117,7 +111,6 @@ impl DocIdSetIterator for SortedNumericDocValuesWriterValues {
     match self {
       Self::Single(values) => values.cost(),
       Self::Multi(values) => values.cost(),
-      Self::SortedSingle(values) => values.cost(),
       Self::SortedMulti(values) => values.cost(),
     }
   }
@@ -128,7 +121,6 @@ impl SortedNumericDocValues for SortedNumericDocValuesWriterValues {
     match self {
       Self::Single(values) => values.next_value(),
       Self::Multi(values) => values.next_value(),
-      Self::SortedSingle(values) => values.next_value(),
       Self::SortedMulti(values) => values.next_value(),
     }
   }
@@ -137,7 +129,6 @@ impl SortedNumericDocValues for SortedNumericDocValuesWriterValues {
     match self {
       Self::Single(values) => values.doc_value_count(),
       Self::Multi(values) => values.doc_value_count(),
-      Self::SortedSingle(values) => values.doc_value_count(),
       Self::SortedMulti(values) => values.doc_value_count(),
     }
   }
@@ -146,7 +137,6 @@ impl SortedNumericDocValues for SortedNumericDocValuesWriterValues {
     match self {
       Self::Single(values) => values.is_single_valued(),
       Self::Multi(values) => values.is_single_valued(),
-      Self::SortedSingle(values) => values.is_single_valued(),
       Self::SortedMulti(values) => values.is_single_valued(),
     }
   }
@@ -156,7 +146,7 @@ impl SortedNumericDocValues for SortedNumericDocValuesWriterValues {
   fn get_numeric_doc_values(&mut self) -> Result<Self::NumericDocValues> {
     match self {
       Self::Single(values) => values.get_numeric_doc_values(),
-      Self::Multi(_) | Self::SortedSingle(_) | Self::SortedMulti(_) => {
+      Self::Multi(_) | Self::SortedMulti(_) => {
         Err(LuceneError::unsupported_operation(""))
       },
     }
@@ -344,12 +334,13 @@ impl DocValuesWriter for SortedNumericDocValuesWriter {
       return Ok(());
     }
 
+    let value_counts = value_counts.unwrap();
     let sorted = if let Some(sort_map) = sort_map {
-      let mut v = SortedNumericDocValuesWriter::get_values(
+      let mut v = BufferedSortedNumericDocValues::new(
         &values,
-        value_counts.as_ref(),
-        &self.docs_with_field,
-      )?;
+        &value_counts,
+        self.docs_with_field.iterator()?,
+      );
       Some(LongValues::new(
         segment_info.max_doc()? as usize,
         sort_map,
@@ -438,7 +429,7 @@ pub(crate) struct DocValuesProducerImpl2 {
   docs_with_field: DocsWithFieldSet,
   values: PackedLongValues,
   sorted: Option<LongValues>,
-  value_counts: Option<PackedLongValues>,
+  value_counts: PackedLongValues,
 }
 
 impl CloseableRef for DocValuesProducerImpl2 {}
@@ -449,7 +440,7 @@ impl DocValuesProducerImpl2 {
     docs_with_field: DocsWithFieldSet,
     values: PackedLongValues,
     sorted: Option<LongValues>,
-    value_counts: Option<PackedLongValues>,
+    value_counts: PackedLongValues,
   ) -> Result<Self> {
     Ok(Self {
       field_info,
@@ -474,26 +465,18 @@ impl DocValuesProducer for DocValuesProducerImpl2 {
     if !Arc::ptr_eq(&self.field_info, field_info_in) {
       return Err(LuceneError::illegal_state("wrong fieldInfo"));
     }
-    let buf = SortedNumericDocValuesWriter::get_values(
+    let buf = BufferedSortedNumericDocValues::new(
       &self.values,
-      self.value_counts.as_ref(),
-      &self.docs_with_field,
-    )?;
-    match (buf, &self.sorted) {
-      (SortedNumericDocValuesWriterValues::Single(values), Some(sorted)) => {
-        Ok(SortedNumericDocValuesWriterValues::SortedSingle(
-          SortingSortedNumericDocValues::new(values, sorted.clone()),
-        ))
-      },
-      (SortedNumericDocValuesWriterValues::Multi(values), Some(sorted)) => {
+      &self.value_counts,
+      self.docs_with_field.iterator()?,
+    );
+    match &self.sorted {
+      Some(sorted) => {
         Ok(SortedNumericDocValuesWriterValues::SortedMulti(
-          SortingSortedNumericDocValues::new(values, sorted.clone()),
+          SortingSortedNumericDocValues::new(buf, sorted.clone()),
         ))
       },
-      (values, None) => Ok(values),
-      _ => Err(LuceneError::illegal_state(
-        "get_values must return unsorted values",
-      )),
+      None => Ok(SortedNumericDocValuesWriterValues::Multi(buf)),
     }
   }
 
