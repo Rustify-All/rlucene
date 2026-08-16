@@ -47,7 +47,6 @@ use crate::test_framework::core::util::test_util::TestUtil;
 use rand::{Rng, RngExt};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Display, Formatter};
-use std::marker::PhantomData;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
@@ -150,7 +149,7 @@ pub trait BaseMergePolicyTestCase {
     let mut infos = SegmentInfos::new(LATEST.major)?;
     let directory = new_directory_shared(random)?;
 
-    let context = MockMergeContext::new(|_s| Ok(0));
+    let context = MockMergeContext::new(|_s: &SegmentCommitInfo<_>| Ok(0));
     let num_segs = random.random_range(0..10);
 
     for _ in 0..num_segs {
@@ -227,7 +226,8 @@ pub trait BaseMergePolicyTestCase {
     let mut stats = IOStats::default();
     let seg_name_generator = AtomicU64::new(0);
 
-    let merge_context = MockMergeContext::new(|s| Ok(s.get_del_count()));
+    let merge_context =
+      MockMergeContext::new(|s: &SegmentCommitInfo<_>| Ok(s.get_del_count()));
     let mut segment_infos = SegmentInfos::new(LATEST.major)?;
 
     let avg_doc_size_mb = 5.0 / 1024.0; // 5kB
@@ -334,7 +334,8 @@ pub trait BaseMergePolicyTestCase {
     let mut stats = IOStats::default();
     let seg_name_generator = AtomicU64::new(0);
 
-    let merge_context = MockMergeContext::new(|s| Ok(s.get_del_count()));
+    let merge_context =
+      MockMergeContext::new(|s: &SegmentCommitInfo<_>| Ok(s.get_del_count()));
     let mut segment_infos = SegmentInfos::new(LATEST.major)?;
 
     let avg_doc_size_mb = 5.0 / 1024.0; // 5kB
@@ -448,7 +449,8 @@ pub trait BaseMergePolicyTestCase {
     let mut stats = IOStats::default();
     let seg_name_generator = AtomicU64::new(0);
 
-    let merge_context = MockMergeContext::new(|s| Ok(s.get_del_count()));
+    let merge_context =
+      MockMergeContext::new(|s: &SegmentCommitInfo<_>| Ok(s.get_del_count()));
     let mut segment_infos = SegmentInfos::new(LATEST.major)?;
 
     let avg_doc_size_mb = 10.0 / 1024.0 / 1024.0;
@@ -733,22 +735,16 @@ pub struct IOStats {
   /// Bytes written through merges.
   pub(crate) merge_bytes_written: i64,
 }
-pub struct MockMergeContext<D, F> {
+pub struct MockMergeContext<F> {
   num_deletes_func: F,
-  dir: PhantomData<D>,
   merging_segments: HashSet<String>,
   info_stream: InfoStreamMT,
 }
 
-impl<D, F> MockMergeContext<D, F>
-where
-  D: Directory,
-  F: Fn(&SegmentCommitInfo<D>) -> Result<i32>,
-{
+impl<F> MockMergeContext<F> {
   pub fn new(num_deletes_func: F) -> Self {
     Self {
       num_deletes_func,
-      dir: PhantomData,
       merging_segments: HashSet::new(),
       info_stream: InfoStreamMT::default(),
     }
@@ -757,7 +753,7 @@ where
     self.merging_segments = merging_segments;
   }
 }
-impl<D, F> MergeContext<D> for MockMergeContext<D, F>
+impl<D, F> MergeContext<D> for MockMergeContext<F>
 where
   D: Directory,
   F: Fn(&SegmentCommitInfo<D>) -> Result<i32>,

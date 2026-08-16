@@ -131,7 +131,7 @@ fn test_increasing_segment_sizes() -> Result<()> {
   let merge_policy = LogMergePolicy::<LogDocMergePolicy>::log_doc();
   let mut stats = IOStats::default();
   let seg_name_generator = AtomicU64::new(0);
-  let merge_context = MockMergeContext::new(|s| Ok(s.get_del_count()));
+  let merge_context = MockMergeContext::new(|s: &SegmentCommitInfo<_>| Ok(s.get_del_count()));
   let fake_directory = Arc::new(FakeDirectory::new());
   let mut segment_infos = SegmentInfos::new(LATEST.major)?;
 
@@ -175,7 +175,7 @@ fn test_one_small_middle_segment() -> Result<()> {
   let merge_policy = LogMergePolicy::<LogDocMergePolicy>::log_doc();
   let mut stats = IOStats::default();
   let seg_name_generator = AtomicU64::new(0);
-  let merge_context = MockMergeContext::new(|s| Ok(s.get_del_count()));
+  let merge_context = MockMergeContext::new(|s: &SegmentCommitInfo<_>| Ok(s.get_del_count()));
   let fake_directory = Arc::new(FakeDirectory::new());
   let mut segment_infos = SegmentInfos::new(LATEST.major)?;
 
@@ -241,7 +241,7 @@ fn test_many_small_middle_segment() -> Result<()> {
   let merge_policy = LogMergePolicy::<LogDocMergePolicy>::log_doc();
   let mut stats = IOStats::default();
   let seg_name_generator = AtomicU64::new(0);
-  let merge_context = MockMergeContext::new(|s| Ok(s.get_del_count()));
+  let merge_context = MockMergeContext::new(|s: &SegmentCommitInfo<_>| Ok(s.get_del_count()));
   let fake_directory = Arc::new(FakeDirectory::new());
   let mut segment_infos = SegmentInfos::new(LATEST.major)?;
 
@@ -306,7 +306,7 @@ fn test_reject_unbalanced_merges() -> Result<()> {
   merge_policy.set_min_merge_docs(10_000);
   let mut stats = IOStats::default();
   let seg_name_generator = AtomicU64::new(0);
-  let merge_context = MockMergeContext::new(|s| Ok(s.get_del_count()));
+  let merge_context = MockMergeContext::new(|s: &SegmentCommitInfo<_>| Ok(s.get_del_count()));
   let fake_directory = Arc::new(FakeDirectory::new());
   let mut segment_infos = SegmentInfos::new(LATEST.major)?;
 
@@ -375,7 +375,7 @@ fn test_pack_large_segments() -> Result<()> {
   merge_policy.set_max_merge_docs(10_000);
   let mut stats = IOStats::default();
   let seg_name_generator = AtomicU64::new(0);
-  let merge_context = MockMergeContext::new(|s| Ok(s.get_del_count()));
+  let merge_context = MockMergeContext::new(|s: &SegmentCommitInfo<_>| Ok(s.get_del_count()));
   let fake_directory = Arc::new(FakeDirectory::new());
   let mut segment_infos = SegmentInfos::new(LATEST.major)?;
 
@@ -418,7 +418,7 @@ fn test_ignore_large_segments() -> Result<()> {
   merge_policy.set_max_merge_docs(10_000);
   let mut stats = IOStats::default();
   let seg_name_generator = AtomicU64::new(0);
-  let merge_context = MockMergeContext::new(|s| Ok(s.get_del_count()));
+  let merge_context = MockMergeContext::new(|s: &SegmentCommitInfo<_>| Ok(s.get_del_count()));
   let fake_directory = Arc::new(FakeDirectory::new());
   let mut segment_infos = SegmentInfos::new(LATEST.major)?;
 
@@ -473,7 +473,7 @@ fn test_full_flush_merges() -> Result<()> {
 
   let seg_name_generator = AtomicU64::new(0);
   let mut stats = IOStats::default();
-  let merge_context = MockMergeContext::new(|s| Ok(s.get_del_count()));
+  let merge_context = MockMergeContext::new(|s: &SegmentCommitInfo<_>| Ok(s.get_del_count()));
   let fake_directory = Arc::new(FakeDirectory::new());
   let mut segment_infos = SegmentInfos::new(LATEST.major)?;
 

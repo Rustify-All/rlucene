@@ -29,6 +29,7 @@ use crate::core::index::leaf_reader_context::LeafReaderContext;
 use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
 use crate::core::index::merge_policy::{MergePolicy, MergePolicyEnum, MergeSpecification};
 use crate::core::index::merge_trigger::MergeTrigger;
+use crate::core::index::segment_commit_info::SegmentCommitInfo;
 use crate::core::index::segment_infos::SegmentInfos;
 use crate::core::index::serial_merge_scheduler::SerialMergeScheduler;
 use crate::core::index::term::Term;
@@ -736,7 +737,7 @@ fn test_forced_merges_use_least_number_of_merges() -> Result<()> {
     max_segment_count_after_force_merge as usize,
     &segments_to_merge(&infos),
     None,
-    &MockMergeContext::new(|s| Ok(s.get_del_count())),
+    &MockMergeContext::new(|s: &SegmentCommitInfo<_>| Ok(s.get_del_count())),
   )? {
     Some(spec) => spec,
     None => {
@@ -785,7 +786,7 @@ fn test_forced_merges_use_least_number_of_merges() -> Result<()> {
     max_segment_count_after_force_merge as usize,
     &segments_to_merge(&infos),
     None,
-    &MockMergeContext::new(|s| Ok(s.get_del_count())),
+    &MockMergeContext::new(|s: &SegmentCommitInfo<_>| Ok(s.get_del_count())),
   )? {
     Some(spec) => spec,
     None => {
@@ -832,7 +833,8 @@ fn test_forced_merge_with_pending() -> Result<()> {
     )?)?;
   }
 
-  let mut merge_context = MockMergeContext::new(|s| Ok(s.get_del_count()));
+  let mut merge_context =
+    MockMergeContext::new(|s: &SegmentCommitInfo<_>| Ok(s.get_del_count()));
   let merging = infos.info(0).unwrap();
   merge_context.set_merging_segments(HashSet::from([merging.info.get_id_key().to_string()]));
 
@@ -1185,7 +1187,7 @@ fn test_many_max_size_segments() -> Result<()> {
     MergeTrigger::SegmentFlush,
     &infos,
     None,
-    &MockMergeContext::new(|s| Ok(s.get_del_count())),
+    &MockMergeContext::new(|s: &SegmentCommitInfo<_>| Ok(s.get_del_count())),
   )?;
   assert!(merge_spec.is_none());
 
@@ -1206,7 +1208,7 @@ fn test_many_max_size_segments() -> Result<()> {
     MergeTrigger::SegmentFlush,
     &infos,
     None,
-    &MockMergeContext::new(|s| Ok(s.get_del_count())),
+    &MockMergeContext::new(|s: &SegmentCommitInfo<_>| Ok(s.get_del_count())),
   )?;
   assert!(merge_spec.is_some());
 
@@ -1241,7 +1243,7 @@ fn test_merge_purely_to_reclaim_deletes() -> Result<()> {
     MergeTrigger::Explicit,
     &infos,
     None,
-    &MockMergeContext::new(|s| Ok(s.get_del_count())),
+    &MockMergeContext::new(|s: &SegmentCommitInfo<_>| Ok(s.get_del_count())),
   )?;
   assert!(merge_spec.is_none());
 
@@ -1250,7 +1252,7 @@ fn test_merge_purely_to_reclaim_deletes() -> Result<()> {
     MergeTrigger::Explicit,
     &infos,
     None,
-    &MockMergeContext::new(|s| Ok(s.get_del_count())),
+    &MockMergeContext::new(|s: &SegmentCommitInfo<_>| Ok(s.get_del_count())),
   )?;
   assert!(merge_spec.is_none());
 
@@ -1262,7 +1264,7 @@ fn test_merge_purely_to_reclaim_deletes() -> Result<()> {
     MergeTrigger::Explicit,
     &infos,
     None,
-    &MockMergeContext::new(|s| Ok(s.get_del_count())),
+    &MockMergeContext::new(|s: &SegmentCommitInfo<_>| Ok(s.get_del_count())),
   )?;
   assert!(merge_spec.is_some());
 
@@ -1273,7 +1275,7 @@ fn test_merge_size_is_less_than_floor_size() -> Result<()> {
   let mut random = random();
   let fake_directory = Arc::new(FakeDirectory::new());
 
-  let merge_context = MockMergeContext::new(|s| Ok(s.get_del_count()));
+  let merge_context = MockMergeContext::new(|s: &SegmentCommitInfo<_>| Ok(s.get_del_count()));
 
   let mut infos = SegmentInfos::new(LATEST.major)?;
   for i in 0..50 {
@@ -1336,7 +1338,7 @@ fn test_full_flush_merges() -> Result<()> {
 
   let seg_name_generator = AtomicU64::new(0);
   let mut stats = IOStats::default();
-  let merge_context = MockMergeContext::new(|s| Ok(s.get_del_count()));
+  let merge_context = MockMergeContext::new(|s: &SegmentCommitInfo<_>| Ok(s.get_del_count()));
   let mut segment_infos = SegmentInfos::new(LATEST.major)?;
 
   let mp = TieredMergePolicy::new();

@@ -18,6 +18,7 @@ use crate::core::index::codec_reader::CodecReader;
 use crate::core::index::index_writer::SOURCE_FLUSH;
 use crate::core::index::merge_policy::{MergePolicy, MergePolicyEnum, MergeSpecification};
 use crate::core::index::merge_trigger::MergeTrigger;
+use crate::core::index::segment_commit_info::SegmentCommitInfo;
 use crate::core::index::segment_infos::SegmentInfos;
 use crate::core::store::directory::Directory;
 use crate::core::util::LATEST;
@@ -137,7 +138,8 @@ fn test_find_full_flush_merges() -> Result<()> {
       segment_infos.add(sci)?;
     }
 
-    let mut merge_context = MockMergeContext::new(|s| Ok(s.get_del_count()));
+    let mut merge_context =
+      MockMergeContext::new(|s: &SegmentCommitInfo<_>| Ok(s.get_del_count()));
     merge_context.set_merging_segments(merging_segments.clone());
 
     let merge_spec = merge_policy.find_full_flush_merges(
