@@ -71,7 +71,7 @@ use crate::core::codecs::stored_fields_format::StoredFieldsFormat;
 #[cfg(test)]
 use crate::core::codecs::stored_fields_reader::{DefaultStoredFieldsReader, StoredFieldsReader};
 #[cfg(test)]
-use crate::core::codecs::stored_fields_writer::{StoredFieldsWriter, StoredFieldsWriterEnum2};
+use crate::core::codecs::stored_fields_writer::StoredFieldsWriter;
 use crate::core::codecs::term_vectors_format::TermVectorsFormat;
 #[cfg(test)]
 use crate::core::codecs::term_vectors_reader::TermVectorsReaderEnum2;
@@ -80,14 +80,17 @@ use crate::core::codecs::term_vectors_writer::TermVectorsWriterEnum2;
 #[cfg(test)]
 use crate::core::document::document::Document;
 #[cfg(test)]
+use crate::core::index::BytesRef;
+#[cfg(test)]
 use crate::core::index::codec_reader::CodecReader;
 #[cfg(test)]
 use crate::core::index::doc_values_iterator::DocValuesIterator;
 #[cfg(test)]
 use crate::core::index::field_info::FieldInfo;
 #[cfg(test)]
-use crate::core::index::fields::Fields;
 use crate::core::index::field_infos::FieldInfos;
+#[cfg(test)]
+use crate::core::index::fields::Fields;
 use crate::core::index::index_reader::Identity;
 #[cfg(test)]
 use crate::core::index::knn_vector_values::{DocIndexIterator, KnnVectorValues};
@@ -111,6 +114,8 @@ use crate::core::index::stored_fields::{RawStoredFieldsReader, StoredFields};
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
 #[cfg(test)]
 use crate::core::search::vector_scorer::VectorScorer;
+#[cfg(test)]
+use crate::core::store::DataInput;
 use crate::core::store::directory::Directory;
 use crate::core::store::{IOContext, IndexInput, IndexOutput};
 use crate::core::util::HasIdentity;
@@ -1126,16 +1131,150 @@ impl<I: IndexInput> StoredFieldsReader for CodecStoredFieldsReader<I> {
 pub type CodecStoredFieldsWriter<D> =
   <Lucene90StoredFieldsFormat as StoredFieldsFormat>::StoredFieldsWriter<D>;
 #[cfg(test)]
-pub type CodecStoredFieldsWriter<D> = StoredFieldsWriterEnum2<
-  StoredFieldsWriterEnum2<
-    <Lucene90StoredFieldsFormat as StoredFieldsFormat>::StoredFieldsWriter<D>,
-    <AssertingStoredFieldsFormat as StoredFieldsFormat>::StoredFieldsWriter<D>,
-  >,
-  StoredFieldsWriterEnum2<
-    <CrankyLucene101StoredFieldsFormat as StoredFieldsFormat>::StoredFieldsWriter<D>,
-    <CrankyAssertingStoredFieldsFormat as StoredFieldsFormat>::StoredFieldsWriter<D>,
-  >,
->;
+pub enum CodecStoredFieldsWriter<D: Directory> {
+  Lucene90(<Lucene90StoredFieldsFormat as StoredFieldsFormat>::StoredFieldsWriter<D>),
+  Asserting(<AssertingStoredFieldsFormat as StoredFieldsFormat>::StoredFieldsWriter<D>),
+  CrankyLucene101(<CrankyLucene101StoredFieldsFormat as StoredFieldsFormat>::StoredFieldsWriter<D>),
+  CrankyAsserting(<CrankyAssertingStoredFieldsFormat as StoredFieldsFormat>::StoredFieldsWriter<D>),
+}
+
+#[cfg(test)]
+impl<D: Directory> Closeable for CodecStoredFieldsWriter<D> {
+  fn close(&mut self) -> Result<()> {
+    match self {
+      Self::Lucene90(writer) => writer.close(),
+      Self::Asserting(writer) => writer.close(),
+      Self::CrankyLucene101(writer) => writer.close(),
+      Self::CrankyAsserting(writer) => writer.close(),
+    }
+  }
+}
+
+#[cfg(test)]
+impl<D: Directory> Accountable for CodecStoredFieldsWriter<D> {
+  fn ram_bytes_used(&self) -> Result<i64> {
+    match self {
+      Self::Lucene90(writer) => writer.ram_bytes_used(),
+      Self::Asserting(writer) => writer.ram_bytes_used(),
+      Self::CrankyLucene101(writer) => writer.ram_bytes_used(),
+      Self::CrankyAsserting(writer) => writer.ram_bytes_used(),
+    }
+  }
+}
+
+#[cfg(test)]
+impl<D: Directory> StoredFieldsWriter for CodecStoredFieldsWriter<D> {
+  fn start_document(&mut self) -> Result<()> {
+    match self {
+      Self::Lucene90(writer) => writer.start_document(),
+      Self::Asserting(writer) => writer.start_document(),
+      Self::CrankyLucene101(writer) => writer.start_document(),
+      Self::CrankyAsserting(writer) => writer.start_document(),
+    }
+  }
+
+  fn finish_document(&mut self) -> Result<()> {
+    match self {
+      Self::Lucene90(writer) => writer.finish_document(),
+      Self::Asserting(writer) => writer.finish_document(),
+      Self::CrankyLucene101(writer) => writer.finish_document(),
+      Self::CrankyAsserting(writer) => writer.finish_document(),
+    }
+  }
+
+  fn write_field_i32(&mut self, field_info: &FieldInfo, value: i32) -> Result<()> {
+    match self {
+      Self::Lucene90(writer) => writer.write_field_i32(field_info, value),
+      Self::Asserting(writer) => writer.write_field_i32(field_info, value),
+      Self::CrankyLucene101(writer) => writer.write_field_i32(field_info, value),
+      Self::CrankyAsserting(writer) => writer.write_field_i32(field_info, value),
+    }
+  }
+
+  fn write_field_i64(&mut self, field_info: &FieldInfo, value: i64) -> Result<()> {
+    match self {
+      Self::Lucene90(writer) => writer.write_field_i64(field_info, value),
+      Self::Asserting(writer) => writer.write_field_i64(field_info, value),
+      Self::CrankyLucene101(writer) => writer.write_field_i64(field_info, value),
+      Self::CrankyAsserting(writer) => writer.write_field_i64(field_info, value),
+    }
+  }
+
+  fn write_field_f32(&mut self, field_info: &FieldInfo, value: f32) -> Result<()> {
+    match self {
+      Self::Lucene90(writer) => writer.write_field_f32(field_info, value),
+      Self::Asserting(writer) => writer.write_field_f32(field_info, value),
+      Self::CrankyLucene101(writer) => writer.write_field_f32(field_info, value),
+      Self::CrankyAsserting(writer) => writer.write_field_f32(field_info, value),
+    }
+  }
+
+  fn write_field_f64(&mut self, field_info: &FieldInfo, value: f64) -> Result<()> {
+    match self {
+      Self::Lucene90(writer) => writer.write_field_f64(field_info, value),
+      Self::Asserting(writer) => writer.write_field_f64(field_info, value),
+      Self::CrankyLucene101(writer) => writer.write_field_f64(field_info, value),
+      Self::CrankyAsserting(writer) => writer.write_field_f64(field_info, value),
+    }
+  }
+
+  fn write_field_with_input(
+    &mut self,
+    field_info: &FieldInfo,
+    input: &mut impl DataInput,
+    length: i32,
+  ) -> Result<()> {
+    match self {
+      Self::Lucene90(writer) => writer.write_field_with_input(field_info, input, length),
+      Self::Asserting(writer) => writer.write_field_with_input(field_info, input, length),
+      Self::CrankyLucene101(writer) => writer.write_field_with_input(field_info, input, length),
+      Self::CrankyAsserting(writer) => writer.write_field_with_input(field_info, input, length),
+    }
+  }
+
+  fn write_field_bytes(&mut self, field_info: &FieldInfo, value: &BytesRef<Vec<u8>>) -> Result<()> {
+    match self {
+      Self::Lucene90(writer) => writer.write_field_bytes(field_info, value),
+      Self::Asserting(writer) => writer.write_field_bytes(field_info, value),
+      Self::CrankyLucene101(writer) => writer.write_field_bytes(field_info, value),
+      Self::CrankyAsserting(writer) => writer.write_field_bytes(field_info, value),
+    }
+  }
+
+  fn write_field_str(&mut self, field_info: &FieldInfo, value: &str) -> Result<()> {
+    match self {
+      Self::Lucene90(writer) => writer.write_field_str(field_info, value),
+      Self::Asserting(writer) => writer.write_field_str(field_info, value),
+      Self::CrankyLucene101(writer) => writer.write_field_str(field_info, value),
+      Self::CrankyAsserting(writer) => writer.write_field_str(field_info, value),
+    }
+  }
+
+  fn finish<D1>(&mut self, num_docs: i32, dir: &D1) -> Result<()>
+  where
+    D1: Directory,
+  {
+    match self {
+      Self::Lucene90(writer) => writer.finish(num_docs, dir),
+      Self::Asserting(writer) => writer.finish(num_docs, dir),
+      Self::CrankyLucene101(writer) => writer.finish(num_docs, dir),
+      Self::CrankyAsserting(writer) => writer.finish(num_docs, dir),
+    }
+  }
+
+  fn merge<D1, D2, CR>(&mut self, merge_state: &mut MergeState<D1, CR>, dir: &D2) -> Result<i32>
+  where
+    D2: Directory,
+    CR: CodecReader,
+  {
+    match self {
+      Self::Lucene90(writer) => writer.merge(merge_state, dir),
+      Self::Asserting(writer) => writer.merge(merge_state, dir),
+      Self::CrankyLucene101(writer) => writer.merge(merge_state, dir),
+      Self::CrankyAsserting(writer) => writer.merge(merge_state, dir),
+    }
+  }
+}
 
 impl StoredFieldsFormat for CodecStoredFieldsFormat {
   type StoredFieldsReader<I: IndexInput> = CodecStoredFieldsReader<I>;
@@ -1203,25 +1342,25 @@ impl StoredFieldsFormat for CodecStoredFieldsFormat {
         {
           format
             .fields_writer(directory, segment_info, context)
-            .map(|writer| StoredFieldsWriterEnum2::A(StoredFieldsWriterEnum2::A(writer)))
+            .map(CodecStoredFieldsWriter::Lucene90)
         }
       },
       #[cfg(test)]
       Self::Compressing(format) => format
         .fields_writer(directory, segment_info, context)
-        .map(|writer| StoredFieldsWriterEnum2::A(StoredFieldsWriterEnum2::A(writer))),
+        .map(CodecStoredFieldsWriter::Lucene90),
       #[cfg(test)]
       Self::Asserting(format) => format
         .fields_writer(directory, segment_info, context)
-        .map(|writer| StoredFieldsWriterEnum2::A(StoredFieldsWriterEnum2::B(writer))),
+        .map(CodecStoredFieldsWriter::Asserting),
       #[cfg(test)]
       Self::CrankyLucene101(format) => format
         .fields_writer(directory, segment_info, context)
-        .map(|writer| StoredFieldsWriterEnum2::B(StoredFieldsWriterEnum2::A(writer))),
+        .map(CodecStoredFieldsWriter::CrankyLucene101),
       #[cfg(test)]
       Self::CrankyAsserting(format) => format
         .fields_writer(directory, segment_info, context)
-        .map(|writer| StoredFieldsWriterEnum2::B(StoredFieldsWriterEnum2::B(writer))),
+        .map(CodecStoredFieldsWriter::CrankyAsserting),
     }
   }
 }
