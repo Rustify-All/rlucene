@@ -40,7 +40,6 @@ use crate::test_framework::core::codecs::asserting_codec::{
 use crate::test_framework::core::util::test_util::{DefaultCodec, TestUtil};
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
-use std::marker::PhantomData;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -319,19 +318,15 @@ where
   }
 }
 
-pub(crate) struct SetDiagnosticsOneMerge<D, CR> {
-  _marker: PhantomData<fn(D, CR)>,
-}
+pub(crate) struct SetDiagnosticsOneMerge;
 
-impl<D, CR> SetDiagnosticsOneMerge<D, CR> {
+impl SetDiagnosticsOneMerge {
   pub(crate) fn new() -> Self {
-    Self {
-      _marker: PhantomData,
-    }
+    Self
   }
 }
 
-impl<D, CR> OneMergeBase<D, CR> for SetDiagnosticsOneMerge<D, CR>
+impl<D, CR> OneMergeBase<D, CR> for SetDiagnosticsOneMerge
 where
   D: Directory,
   CR: CodecReader,
