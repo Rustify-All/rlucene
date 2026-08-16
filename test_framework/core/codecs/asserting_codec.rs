@@ -17,7 +17,7 @@
 use crate::codec::bitvectors::hnsw_bit_vectors_format::HnswBitVectorsFormat;
 use crate::codec::memory::direct_postings_format::DirectPostingsFormat;
 use crate::core::codecs::Codec;
-use crate::core::codecs::doc_values_consumer::DocValuesConsumerEnum2;
+use crate::core::codecs::doc_values_consumer::DocValuesConsumer;
 use crate::core::codecs::doc_values_format::DocValuesFormat;
 use crate::core::codecs::fields_consumer::FieldsConsumer;
 use crate::core::codecs::fields_producer::{FieldsProducer, FieldsProducerEnum2};
@@ -456,13 +456,171 @@ impl HasIdentity for AssertingCodecDocValuesFormat {
   }
 }
 
-pub type AssertingCodecDocValuesConsumer<O> = DocValuesConsumerEnum2<
-  DocValuesConsumerEnum2<
-    <DefaultDocValuesFormat as DocValuesFormat>::DocValuesConsumer<O>,
-    <AssertingDocValuesFormat as DocValuesFormat>::DocValuesConsumer<O>,
-  >,
-  <MergeRecordingDocValueFormatWrapper as DocValuesFormat>::DocValuesConsumer<O>,
->;
+pub enum AssertingCodecDocValuesConsumer<O>
+where
+  O: IndexOutput,
+{
+  Default(<DefaultDocValuesFormat as DocValuesFormat>::DocValuesConsumer<O>),
+  Asserting(<AssertingDocValuesFormat as DocValuesFormat>::DocValuesConsumer<O>),
+  MergeRecording(<MergeRecordingDocValueFormatWrapper as DocValuesFormat>::DocValuesConsumer<O>),
+}
+
+impl<O> Closeable for AssertingCodecDocValuesConsumer<O>
+where
+  O: IndexOutput,
+{
+  fn close(&mut self) -> Result<()> {
+    match self {
+      Self::Default(consumer) => consumer.close(),
+      Self::Asserting(consumer) => consumer.close(),
+      Self::MergeRecording(consumer) => consumer.close(),
+    }
+  }
+}
+
+impl<O> DocValuesConsumer for AssertingCodecDocValuesConsumer<O>
+where
+  O: IndexOutput,
+{
+  type IndexOutput = O;
+
+  fn add_numeric_field<D1, D2, D>(
+    &mut self,
+    write_state: &SegmentWriteState<D1>,
+    segment_info: &SegmentInfo<D2>,
+    field: &Arc<FieldInfo>,
+    values_producer: &D,
+  ) -> Result<()>
+  where
+    D1: Directory<IndexOutput = Self::IndexOutput>,
+    D: crate::core::codecs::doc_values_producer::DocValuesProducer,
+  {
+    match self {
+      Self::Default(consumer) => {
+        consumer.add_numeric_field(write_state, segment_info, field, values_producer)
+      },
+      Self::Asserting(consumer) => {
+        consumer.add_numeric_field(write_state, segment_info, field, values_producer)
+      },
+      Self::MergeRecording(consumer) => {
+        consumer.add_numeric_field(write_state, segment_info, field, values_producer)
+      },
+    }
+  }
+
+  fn add_binary_field<D1, D2, D>(
+    &mut self,
+    write_state: &SegmentWriteState<D1>,
+    segment_info: &SegmentInfo<D2>,
+    field: &Arc<FieldInfo>,
+    values_producer: &D,
+  ) -> Result<()>
+  where
+    D1: Directory<IndexOutput = Self::IndexOutput>,
+    D: crate::core::codecs::doc_values_producer::DocValuesProducer,
+  {
+    match self {
+      Self::Default(consumer) => {
+        consumer.add_binary_field(write_state, segment_info, field, values_producer)
+      },
+      Self::Asserting(consumer) => {
+        consumer.add_binary_field(write_state, segment_info, field, values_producer)
+      },
+      Self::MergeRecording(consumer) => {
+        consumer.add_binary_field(write_state, segment_info, field, values_producer)
+      },
+    }
+  }
+
+  fn add_sorted_field<D1, D2, D>(
+    &mut self,
+    write_state: &SegmentWriteState<D1>,
+    segment_info: &SegmentInfo<D2>,
+    field: &Arc<FieldInfo>,
+    values_producer: &D,
+  ) -> Result<()>
+  where
+    D1: Directory<IndexOutput = Self::IndexOutput>,
+    D: crate::core::codecs::doc_values_producer::DocValuesProducer,
+  {
+    match self {
+      Self::Default(consumer) => {
+        consumer.add_sorted_field(write_state, segment_info, field, values_producer)
+      },
+      Self::Asserting(consumer) => {
+        consumer.add_sorted_field(write_state, segment_info, field, values_producer)
+      },
+      Self::MergeRecording(consumer) => {
+        consumer.add_sorted_field(write_state, segment_info, field, values_producer)
+      },
+    }
+  }
+
+  fn add_sorted_numeric_field<D1, D2, D>(
+    &mut self,
+    write_state: &SegmentWriteState<D1>,
+    segment_info: &SegmentInfo<D2>,
+    field: &Arc<FieldInfo>,
+    values_producer: &D,
+  ) -> Result<()>
+  where
+    D1: Directory<IndexOutput = Self::IndexOutput>,
+    D: crate::core::codecs::doc_values_producer::DocValuesProducer,
+  {
+    match self {
+      Self::Default(consumer) => {
+        consumer.add_sorted_numeric_field(write_state, segment_info, field, values_producer)
+      },
+      Self::Asserting(consumer) => {
+        consumer.add_sorted_numeric_field(write_state, segment_info, field, values_producer)
+      },
+      Self::MergeRecording(consumer) => {
+        consumer.add_sorted_numeric_field(write_state, segment_info, field, values_producer)
+      },
+    }
+  }
+
+  fn add_sorted_set_field<D1, D2, D>(
+    &mut self,
+    write_state: &SegmentWriteState<D1>,
+    segment_info: &SegmentInfo<D2>,
+    field: &Arc<FieldInfo>,
+    values_producer: &D,
+  ) -> Result<()>
+  where
+    D1: Directory<IndexOutput = Self::IndexOutput>,
+    D: crate::core::codecs::doc_values_producer::DocValuesProducer,
+  {
+    match self {
+      Self::Default(consumer) => {
+        consumer.add_sorted_set_field(write_state, segment_info, field, values_producer)
+      },
+      Self::Asserting(consumer) => {
+        consumer.add_sorted_set_field(write_state, segment_info, field, values_producer)
+      },
+      Self::MergeRecording(consumer) => {
+        consumer.add_sorted_set_field(write_state, segment_info, field, values_producer)
+      },
+    }
+  }
+
+  fn merge<D1, D2, MS>(
+    &mut self,
+    write_state: &SegmentWriteState<D1>,
+    segment_info: &SegmentInfo<D2>,
+    merge_state: &MS,
+  ) -> Result<()>
+  where
+    D1: Directory<IndexOutput = Self::IndexOutput>,
+    MS: MergeStateAccess,
+  {
+    match self {
+      Self::Default(consumer) => consumer.merge(write_state, segment_info, merge_state),
+      Self::Asserting(consumer) => consumer.merge(write_state, segment_info, merge_state),
+      Self::MergeRecording(consumer) => consumer.merge(write_state, segment_info, merge_state),
+    }
+  }
+}
 
 pub type AssertingCodecDocValuesProducer<I> =
   AssertingDocValuesProducer<<DefaultDocValuesFormat as DocValuesFormat>::DocValuesProducer<I>>;
@@ -489,13 +647,13 @@ impl DocValuesFormat for AssertingCodecDocValuesFormat {
     match self {
       Self::Default(format) => format
         .fields_consumer(state, segment_info)
-        .map(|consumer| DocValuesConsumerEnum2::A(DocValuesConsumerEnum2::A(consumer))),
+        .map(AssertingCodecDocValuesConsumer::Default),
       Self::Asserting(format) => format
         .fields_consumer(state, segment_info)
-        .map(|consumer| DocValuesConsumerEnum2::A(DocValuesConsumerEnum2::B(consumer))),
+        .map(AssertingCodecDocValuesConsumer::Asserting),
       Self::MergeRecording(format) => format
         .fields_consumer(state, segment_info)
-        .map(DocValuesConsumerEnum2::B),
+        .map(AssertingCodecDocValuesConsumer::MergeRecording),
     }
   }
 
