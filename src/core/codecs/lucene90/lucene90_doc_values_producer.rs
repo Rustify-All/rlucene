@@ -39,7 +39,7 @@ use crate::core::index::dummy::dummy_postings_enum::DummyPostingsEnum;
 use crate::core::index::dummy::dummy_terms_enum::DummyTermsEnum;
 use crate::core::index::field_info::FieldInfo;
 use crate::core::index::field_infos::FieldInfos;
-use crate::core::index::numeric_doc_values::{NumericDocValues, NumericDocValuesEnum3};
+use crate::core::index::numeric_doc_values::NumericDocValues;
 use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::segment_read_state::SegmentReadState;
 use crate::core::index::singleton_sorted_numeric_doc_values::SingletonSortedNumericDocValues;
@@ -3536,24 +3536,13 @@ where
     }
   }
 
-  type NumericDocValues = NumericDocValuesEnum3<
-    <DenseSortedNumericDocValues<R> as SortedNumericDocValues>::NumericDocValues,
-    <SpareSortedNumericDocValuesImpl<I, R> as SortedNumericDocValues>::NumericDocValues,
-    <SingletonSortedNumericDocValues<Lucene90NumericDocValuesEnumImpl<I, R>> as SortedNumericDocValues>::NumericDocValues,
-  >;
+  type NumericDocValues = Lucene90NumericDocValuesEnumImpl<I, R>;
 
   #[inline]
   fn get_numeric_doc_values(&mut self) -> Result<Self::NumericDocValues> {
     match self {
-      Self::A(values) => {
-        Ok(NumericDocValuesEnum3::A(values.get_numeric_doc_values()?))
-      },
-      Self::B(values) => {
-        Ok(NumericDocValuesEnum3::B(values.get_numeric_doc_values()?))
-      },
-      Self::C(values) => {
-        Ok(NumericDocValuesEnum3::C(values.get_numeric_doc_values()?))
-      },
+      Self::A(_) | Self::B(_) => Err(LuceneError::unsupported_operation("")),
+      Self::C(values) => values.get_numeric_doc_values(),
     }
   }
 }
