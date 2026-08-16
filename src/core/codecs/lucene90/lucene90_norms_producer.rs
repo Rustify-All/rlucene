@@ -18,7 +18,7 @@ use crate::core::codecs::CodecUtil;
 use crate::core::codecs::doc_values_enum::norms::Lucene90NormNumericDocValuesEnum;
 
 use crate::core::codecs::indexed_disi::{
-  IndexedDISIEnumImpl, create_block_slice, create_jump_table,
+  IndexedDISIEnum, create_block_slice, create_jump_table,
 };
 use crate::core::codecs::lucene90::indexed_disi::{IndexInputImpl, IndexedDISIImpl};
 use crate::core::codecs::lucene90_norms_format::Lucene90NormsFormat;
@@ -449,7 +449,7 @@ where
       self.get_disi_input(field, &entry)?,
     ) {
       (Some(RandomAccessSliceEnum::Shared(jt)), SliceEnum::Shared(input)) => {
-        IndexedDISIEnumImpl::Shared(IndexedDISIImpl::from_components(
+        IndexedDISIEnum::<I>::Shared(IndexedDISIImpl::from_components(
           input,
           Some(jt),
           entry.jump_table_entry_count as i32,
@@ -459,7 +459,7 @@ where
       },
 
       (Some(RandomAccessSliceEnum::Owned(jt)), SliceEnum::Owned(input)) => {
-        IndexedDISIEnumImpl::Owned(IndexedDISIImpl::from_components(
+        IndexedDISIEnum::<I>::Owned(IndexedDISIImpl::from_components(
           input,
           Some(jt),
           entry.jump_table_entry_count as i32,
@@ -468,7 +468,7 @@ where
         )?)
       },
       (None, SliceEnum::Shared(input)) => {
-        IndexedDISIEnumImpl::Shared(IndexedDISIImpl::from_components(
+        IndexedDISIEnum::<I>::Shared(IndexedDISIImpl::from_components(
           input,
           None,
           entry.jump_table_entry_count as i32,
@@ -477,7 +477,7 @@ where
         )?)
       },
 
-      (None, SliceEnum::Owned(input)) => IndexedDISIEnumImpl::Owned(IndexedDISIImpl::from_components(
+      (None, SliceEnum::Owned(input)) => IndexedDISIEnum::<I>::Owned(IndexedDISIImpl::from_components(
         input,
         None,
         entry.jump_table_entry_count as i32,
@@ -738,7 +738,7 @@ where
   I: IndexInput,
 {
   sub_sparse_norms: SparseNormsIteratorBaseEnum<I::RandomAccessSlice>,
-  disi: IndexedDISIEnumImpl<I::IndexInput, I::RandomAccessSlice>,
+  disi: IndexedDISIEnum<I>,
 }
 
 impl<I> SparseNormsIterator<I>
@@ -747,7 +747,7 @@ where
 {
   fn new(
     sub_sparse_norms: SparseNormsIteratorBaseEnum<I::RandomAccessSlice>,
-    disi: IndexedDISIEnumImpl<I::IndexInput, I::RandomAccessSlice>,
+    disi: IndexedDISIEnum<I>,
   ) -> Self {
     Self {
       sub_sparse_norms,

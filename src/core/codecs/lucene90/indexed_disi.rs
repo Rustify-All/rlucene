@@ -1268,24 +1268,19 @@ where
   DocIndexIteratorImpl::new(disi)
 }
 
-pub enum IndexedDISIEnumImpl<I, R>
+pub enum IndexedDISIEnum<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
-  Owned(IndexedDISIImpl<I, R>),
-  Shared(IndexedDISIImpl<IndexInputImpl<I>, Arc<Mutex<R>>>),
+  Owned(IndexedDISIImpl<I::IndexInput, I::RandomAccessSlice>),
+  Shared(
+    IndexedDISIImpl<IndexInputImpl<I::IndexInput>, Arc<Mutex<I::RandomAccessSlice>>>,
+  ),
 }
 
-pub type IndexedDISIEnum<I> = IndexedDISIEnumImpl<
-  <I as IndexInput>::IndexInput,
-  <I as IndexInput>::RandomAccessSlice,
->;
-
-impl<I, R> IndexedDISIEnumImpl<I, R>
+impl<I> IndexedDISIEnum<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   pub fn advance_exact(&mut self, target: i32) -> Result<bool> {
     match self {
@@ -1300,10 +1295,9 @@ where
     }
   }
 }
-impl<I, R> DocIdSetIterator for IndexedDISIEnumImpl<I, R>
+impl<I> DocIdSetIterator for IndexedDISIEnum<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn doc_id(&self) -> i32 {
     match self {
