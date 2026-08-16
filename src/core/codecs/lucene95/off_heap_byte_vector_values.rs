@@ -793,7 +793,7 @@ where
 
   fn iterator(&self) -> Result<Self::DocIndexIterator> {
     match self {
-      Self::Empty(e) => e.iterator().map(IterEnum::Empty),
+      Self::Empty(e) => e.iterator().map(IterEnum::Dense),
       Self::Dense(e) => e.iterator().map(IterEnum::Dense),
       Self::Sparse(e) => e.iterator().map(IterEnum::Sparse),
     }
@@ -921,7 +921,6 @@ pub enum IterEnum<I>
 where
   I: IndexInput,
 {
-  Empty(DenseDocIndexIterator),
   Dense(DenseDocIndexIterator),
   Sparse(DocIndexIteratorImpl<I>),
 }
@@ -932,7 +931,6 @@ where
 {
   fn doc_id(&self) -> i32 {
     match self {
-      Self::Empty(e) => e.doc_id(),
       Self::Dense(e) => e.doc_id(),
       Self::Sparse(e) => e.doc_id(),
     }
@@ -940,7 +938,6 @@ where
 
   fn next_doc(&mut self) -> Result<i32> {
     match self {
-      Self::Empty(e) => e.next_doc(),
       Self::Dense(e) => e.next_doc(),
       Self::Sparse(e) => e.next_doc(),
     }
@@ -948,7 +945,6 @@ where
 
   fn advance(&mut self, target: i32) -> Result<i32> {
     match self {
-      Self::Empty(e) => e.advance(target),
       Self::Dense(e) => e.advance(target),
       Self::Sparse(e) => e.advance(target),
     }
@@ -956,7 +952,6 @@ where
 
   fn slow_advance(&mut self, target: i32) -> Result<i32> {
     match self {
-      Self::Empty(e) => e.slow_advance(target),
       Self::Dense(e) => e.slow_advance(target),
       Self::Sparse(e) => e.slow_advance(target),
     }
@@ -964,7 +959,6 @@ where
 
   fn cost(&self) -> Result<i64> {
     match self {
-      Self::Empty(e) => e.cost(),
       Self::Dense(e) => e.cost(),
       Self::Sparse(e) => e.cost(),
     }
@@ -977,7 +971,6 @@ where
 {
   fn index(&self) -> Result<i32> {
     match self {
-      Self::Empty(e) => e.index(),
       Self::Dense(e) => e.index(),
       Self::Sparse(e) => e.index(),
     }
