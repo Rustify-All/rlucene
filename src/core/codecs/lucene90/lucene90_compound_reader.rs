@@ -26,6 +26,8 @@ use crate::core::index::IndexFileNames;
 use crate::core::index::index_reader::Identity;
 use crate::core::index::segment_info::SegmentInfo;
 use crate::core::store::directory::Directory;
+use crate::core::store::dummy::dummy_index_output::DummyIndexOutput;
+use crate::core::store::dummy::dummy_lock::DummyLock;
 use crate::core::store::{IO_CONTEXT_DEFAULT, IOContext, IndexInput, ReadAdvice};
 use crate::core::util::close::CloseableRef;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
@@ -42,23 +44,26 @@ pub struct FileEntry {
 ///
 /// # Note
 /// This API is experimental and may change in future versions.
-pub struct Lucene90CompoundReader<D>
+pub struct Lucene90CompoundReader<I>
 where
-  D: Directory,
+  I: IndexInput,
 {
   segment_name: String,
   entries: HashMap<String, FileEntry>,
-  handle: Mutex<D::IndexInput>,
+  handle: Mutex<I>,
 
   version: i32,
   dir_fmt: String,
   id: Identity,
 }
-impl<D> Lucene90CompoundReader<D>
+impl<I> Lucene90CompoundReader<I>
 where
-  D: Directory,
+  I: IndexInput,
 {
-  pub fn new(directory: &D, si: &SegmentInfo<D>) -> Result<Self> {
+  pub fn new<D>(directory: &D, si: &SegmentInfo<D>) -> Result<Self>
+  where
+    D: Directory<IndexInput = I>,
+  {
     let segment_name = si.name.clone();
     let data_file_name =
       IndexFileNames::segment_file_name(&segment_name, "", Lucene90CompoundFormat::DATA_EXTENSION);
@@ -124,11 +129,14 @@ where
     })
   }
   /// Helper method that reads CFS entries from an input stream.
-  fn read_entries(
+  fn read_entries<D>(
     segment_id: &[u8; StringHelper::ID_LENGTH],
     directory: &D,
     entries_file_name: &str,
-  ) -> Result<(i32, HashMap<String, FileEntry>)> {
+  ) -> Result<(i32, HashMap<String, FileEntry>)>
+  where
+    D: Directory,
+  {
     let mut entries_stream = directory.open_checksum_input(entries_file_name)?;
     let mut version = -1;
     let mut mapping = None;
@@ -178,18 +186,19 @@ where
   }
 }
 
-impl<D> HasIdentity for Lucene90CompoundReader<D>
+impl<I> HasIdentity for Lucene90CompoundReader<I>
 where
-  D: Directory,
+  I: IndexInput,
 {
   fn identity(&self) -> &Identity {
     &self.id
   }
 }
 
-impl<D> Directory for Lucene90CompoundReader<D>
+impl<I> Directory for Lucene90CompoundReader<I>
 where
-  D: Directory,
+  I: IndexInput<IndexInput = I> + Send + Sync,
+  I::RandomAccessSlice: Send + Sync,
 {
   /// Returns an array of strings, one for each file in the directory.
   fn list_all(&self) -> Result<Vec<String>> {
@@ -218,7 +227,7 @@ where
     Err(LuceneError::unsupported_operation("create_output"))
   }
 
-  type IndexOutput = D::IndexOutput;
+  type IndexOutput = DummyIndexOutput;
   fn create_temp_output(
     &self,
     _prefix: &str,
@@ -240,7 +249,7 @@ where
     Err(LuceneError::unsupported_operation("rename"))
   }
 
-  type IndexInput = D::IndexInput;
+  type IndexInput = I;
 
   fn open_input(&self, name: &str, context: &IOContext) -> Result<Self::IndexInput> {
     let id = IndexFileNames::strip_segment_name(name);
@@ -270,7 +279,7 @@ where
     Ok(input)
   }
 
-  type Lock = D::Lock;
+  type Lock = DummyLock;
 
   fn obtain_lock(&self, _name: &str) -> Result<Self::Lock> {
     Err(LuceneError::unsupported_operation("obtain_lock"))
@@ -280,9 +289,9 @@ where
     Ok(HashSet::new())
   }
 }
-impl<D> Display for Lucene90CompoundReader<D>
+impl<I> Display for Lucene90CompoundReader<I>
 where
-  D: Directory,
+  I: IndexInput,
 {
   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
     write!(
@@ -293,18 +302,19 @@ where
   }
 }
 
-impl<D> CloseableRef for Lucene90CompoundReader<D>
+impl<I> CloseableRef for Lucene90CompoundReader<I>
 where
-  D: Directory,
+  I: IndexInput,
 {
   fn close(&self) -> Result<()> {
     self.handle.lock().close()
   }
 }
 
-impl<D> CompoundDirectory for Lucene90CompoundReader<D>
+impl<I> CompoundDirectory for Lucene90CompoundReader<I>
 where
-  D: Directory,
+  I: IndexInput<IndexInput = I> + Send + Sync,
+  I::RandomAccessSlice: Send + Sync,
 {
   fn check_integrity(&self) -> Result<()> {
     CodecUtil::checksum_entire_file(&*self.handle.lock())?;

@@ -1238,7 +1238,10 @@ fn assert_equal_arrays(msg: &str, expected: &[u8], test: &[u8], start: usize, le
 }
 /// Creates a large compound file with 20 sequential files, each of which is
 /// 1000 bytes.
-fn create_large_cfs<D, R>(random: &mut R, dir: Arc<D>) -> Result<Lucene90CompoundReader<D>>
+fn create_large_cfs<D, R>(
+  random: &mut R,
+  dir: Arc<D>,
+) -> Result<Lucene90CompoundReader<D::IndexInput>>
 where
   R: Rng + ?Sized,
   D: Directory,

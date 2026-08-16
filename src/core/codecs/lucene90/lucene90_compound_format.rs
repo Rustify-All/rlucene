@@ -145,7 +145,7 @@ impl Lucene90CompoundFormat {
 
 impl CompoundFormat for Lucene90CompoundFormat {
   type Directory<D>
-    = Lucene90CompoundReader<D>
+    = Lucene90CompoundReader<D::IndexInput>
   where
     D: Directory;
 

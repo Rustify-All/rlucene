@@ -53,7 +53,7 @@ where
     seg_doc_values: &SegmentDocValues<D>,
   ) -> Result<Self>
   where
-    D1: Directory<IndexInput = D::IndexInput, IndexOutput = D::IndexOutput, Lock = D::Lock>,
+    D1: Directory<IndexInput = D::IndexInput>,
   {
     let mut dv_producers_by_field = HashMap::new();
     // Hashing and equality use the Arc allocation identity, not mutable producer state.

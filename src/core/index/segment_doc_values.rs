@@ -65,7 +65,7 @@ where
     infos: Arc<FieldInfos>,
   ) -> Result<RefCount<Arc<CodecDocValuesProducer<D1::IndexInput>>>>
   where
-    D1: Directory<IndexInput = D::IndexInput, IndexOutput = D::IndexOutput, Lock = D::Lock>,
+    D1: Directory<IndexInput = D::IndexInput>,
   {
     let mut dv_dir = match dir {
       Some(d) => CompoundDirectoryEnum::A(d),
@@ -99,7 +99,7 @@ where
     infos: Arc<FieldInfos>,
   ) -> Result<Arc<CodecDocValuesProducer<D1::IndexInput>>>
   where
-    D1: Directory<IndexInput = D::IndexInput, IndexOutput = D::IndexOutput, Lock = D::Lock>,
+    D1: Directory<IndexInput = D::IndexInput>,
   {
     let mut inner = self.inner.lock();
 

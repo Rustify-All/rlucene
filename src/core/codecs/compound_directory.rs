@@ -20,7 +20,7 @@ use crate::core::store::buffered_checksum_index_input::BufferedChecksumIndexInpu
 use crate::core::store::directory::Directory;
 use crate::core::util::HasIdentity;
 use crate::core::util::close::CloseableRef;
-use crate::core::util::error::lucene_error::Result;
+use crate::core::util::error::lucene_error::{LuceneError, Result};
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 
@@ -86,8 +86,8 @@ where
 
 impl<A, B> Directory for CompoundDirectoryEnum<'_, A, B>
 where
-  A: Directory,
-  B: Directory<IndexInput = A::IndexInput, IndexOutput = A::IndexOutput, Lock = A::Lock>,
+  A: Directory<IndexInput = B::IndexInput>,
+  B: Directory,
 {
   fn list_all(&self) -> Result<Vec<String>> {
     match self {
@@ -112,12 +112,12 @@ where
 
   fn create_output(&self, name: &str, context: &IOContext) -> Result<Self::IndexOutput> {
     match self {
-      CompoundDirectoryEnum::A(dir) => dir.create_output(name, context),
+      CompoundDirectoryEnum::A(_) => Err(LuceneError::unsupported_operation("create_output")),
       CompoundDirectoryEnum::B(dir) => dir.create_output(name, context),
     }
   }
 
-  type IndexOutput = A::IndexOutput;
+  type IndexOutput = B::IndexOutput;
 
   fn create_temp_output(
     &self,
@@ -126,7 +126,9 @@ where
     context: &IOContext,
   ) -> Result<Self::IndexOutput> {
     match self {
-      CompoundDirectoryEnum::A(dir) => dir.create_temp_output(prefix, suffix, context),
+      CompoundDirectoryEnum::A(_) => {
+        Err(LuceneError::unsupported_operation("create_temp_output"))
+      },
       CompoundDirectoryEnum::B(dir) => dir.create_temp_output(prefix, suffix, context),
     }
   }
@@ -152,7 +154,7 @@ where
     }
   }
 
-  type IndexInput = A::IndexInput;
+  type IndexInput = B::IndexInput;
 
   fn open_input(&self, name: &str, context: &IOContext) -> Result<Self::IndexInput> {
     match self {
@@ -171,11 +173,11 @@ where
     }
   }
 
-  type Lock = A::Lock;
+  type Lock = B::Lock;
 
   fn obtain_lock(&self, name: &str) -> Result<Self::Lock> {
     match self {
-      CompoundDirectoryEnum::A(dir) => dir.obtain_lock(name),
+      CompoundDirectoryEnum::A(_) => Err(LuceneError::unsupported_operation("obtain_lock")),
       CompoundDirectoryEnum::B(dir) => dir.obtain_lock(name),
     }
   }
