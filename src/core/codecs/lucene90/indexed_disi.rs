@@ -655,32 +655,24 @@ impl MethodBehavior for All {
   }
 }
 
-pub struct IndexedDocIterator<I, R>
+pub struct DocIndexIteratorImpl<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
-  pub(crate) disi: IndexedDISIImpl<I, R>,
+  pub(crate) disi: IndexedDISIImpl<I::IndexInput, I::RandomAccessSlice>,
 }
 
-pub type DocIndexIteratorImpl<I> = IndexedDocIterator<
-  <I as IndexInput>::IndexInput,
-  <I as IndexInput>::RandomAccessSlice,
->;
-
-impl<I, R> IndexedDocIterator<I, R>
+impl<I> DocIndexIteratorImpl<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
-  pub fn new(disi: IndexedDISIImpl<I, R>) -> Self {
+  pub fn new(disi: IndexedDISIImpl<I::IndexInput, I::RandomAccessSlice>) -> Self {
     Self { disi }
   }
 }
-impl<I, R> DocIdSetIterator for IndexedDocIterator<I, R>
+impl<I> DocIdSetIterator for DocIndexIteratorImpl<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn doc_id(&self) -> i32 {
     self.disi.doc_id()
@@ -698,10 +690,9 @@ where
     self.disi.cost()
   }
 }
-impl<I, R> DocIndexIterator for IndexedDocIterator<I, R>
+impl<I> DocIndexIterator for DocIndexIteratorImpl<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn index(&self) -> Result<i32> {
     Ok(self.disi.index())
@@ -1268,12 +1259,13 @@ where
 }
 ///  Returns an iterator that delegates to the IndexedDISI. Advancing this
 /// iterator will advance the underlying IndexedDISI, and vice-versa.
-pub fn get_doc_index_iterator<I, R>(disi: IndexedDISIImpl<I, R>) -> IndexedDocIterator<I, R>
+pub fn get_doc_index_iterator<I>(
+  disi: IndexedDISIImpl<I::IndexInput, I::RandomAccessSlice>,
+) -> DocIndexIteratorImpl<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
-  IndexedDocIterator::new(disi)
+  DocIndexIteratorImpl::new(disi)
 }
 
 pub enum IndexedDISIEnumImpl<I, R>
