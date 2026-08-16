@@ -33,6 +33,7 @@ use crate::core::search::doc_id_set_iterator::NO_MORE_DOCS;
 use crate::core::search::knn_collector::KnnCollector;
 use crate::core::store::check_sum_index_input::ChecksumIndexInput;
 use crate::core::store::directory::Directory;
+use crate::core::store::random_access_input::RandomAccessInput;
 use crate::core::store::{DataInput, IOContext, IndexInput, ReadAdvice};
 use crate::core::util::IOUtils;
 use crate::core::util::TryIntoInt;
@@ -262,7 +263,10 @@ where
 
     Ok(())
   }
-  fn get_graph_from_entry(&self, entry: &FieldEntry) -> Result<OffHeapHnswGraph<I>> {
+  fn get_graph_from_entry(
+    &self,
+    entry: &FieldEntry,
+  ) -> Result<OffHeapHnswGraph<I::IndexInput, I::RandomAccessSlice>> {
     OffHeapHnswGraph::new(entry, &self.vector_index)
   }
   fn get_field_entry(&self, field: &str, expected_encoding: VectorEncoding) -> Result<&FieldEntry> {
@@ -367,7 +371,8 @@ where
   F: FlatVectorsReader,
   I: IndexInput,
 {
-  type HnswGraph = HnswGraphEnum2<Box<OffHeapHnswGraph<I>>, EmptyHnswGraph>;
+  type HnswGraph =
+    HnswGraphEnum2<Box<OffHeapHnswGraph<I::IndexInput, I::RandomAccessSlice>>, EmptyHnswGraph>;
 
   fn is_hnsw_graph_provider(&self, _field: &str) -> bool {
     true
@@ -635,11 +640,12 @@ impl Accountable for FieldEntry {
   }
 }
 
-pub struct OffHeapHnswGraph<I>
+pub struct OffHeapHnswGraph<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
-  data_in: I::IndexInput,
+  data_in: I,
   nodes_by_level: Arc<Vec<Arc<Vec<usize>>>>,
   num_levels: usize,
   entry_node: usize,
@@ -647,16 +653,20 @@ where
   arc_count: usize,
   arc_up_to: usize,
   arc: usize,
-  graph_level_node_offsets: DirectMonotonicReader<I::RandomAccessSlice>,
+  graph_level_node_offsets: DirectMonotonicReader<R>,
   graph_level_node_index_offsets: Vec<usize>,
   // Allocated to be M*2 to track the current neighbors being explored
   current_neighbors_buffer: Vec<usize>,
 }
-impl<I> OffHeapHnswGraph<I>
+impl<I, R> OffHeapHnswGraph<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
-  pub fn new(entry: &FieldEntry, vector_index: &I) -> Result<Self> {
+  pub fn new<II>(entry: &FieldEntry, vector_index: &II) -> Result<Self>
+  where
+    II: IndexInput<IndexInput = I, RandomAccessSlice = R>,
+  {
     let data_in = vector_index.slice(
       "graph-data",
       entry.vector_index_offset,
@@ -713,9 +723,10 @@ where
     })
   }
 }
-impl<I> HnswGraph for OffHeapHnswGraph<I>
+impl<I, R> HnswGraph for OffHeapHnswGraph<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   fn seek(&mut self, level: usize, target_ord: usize) -> Result<()> {
     let target_index = if level == 0 {
