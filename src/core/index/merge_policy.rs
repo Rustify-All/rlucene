@@ -2455,7 +2455,7 @@ where
   #[cfg(test)]
   SetDiagnostics(SetDiagnosticsOneMerge),
   #[cfg(test)]
-  SetMergePolicyDiagnostics(SetMergePolicyDiagnosticsOneMerge<D, CR>),
+  SetMergePolicyDiagnostics(SetMergePolicyDiagnosticsOneMerge),
   #[cfg(test)]
   ForceMergeDvUpdate(ForceMergeDvUpdateOneMerge),
   #[cfg(test)]
@@ -2586,7 +2586,13 @@ where
       ),
       #[cfg(test)]
       Self::SetMergePolicyDiagnostics(hook) => {
-        hook.merge_finished(inner, stat, success, segment_dropped)
+        <SetMergePolicyDiagnosticsOneMerge as OneMergeBase<D, CR>>::merge_finished(
+          hook,
+          inner,
+          stat,
+          success,
+          segment_dropped,
+        )
       },
       #[cfg(test)]
       Self::ForceMergeDvUpdate(hook) => {
@@ -2627,7 +2633,9 @@ where
         <SetDiagnosticsOneMerge as OneMergeBase<D, CR>>::wrap_for_merge(hook, reader)
       },
       #[cfg(test)]
-      Self::SetMergePolicyDiagnostics(hook) => hook.wrap_for_merge(reader),
+      Self::SetMergePolicyDiagnostics(hook) => {
+        <SetMergePolicyDiagnosticsOneMerge as OneMergeBase<D, CR>>::wrap_for_merge(hook, reader)
+      },
       #[cfg(test)]
       Self::ForceMergeDvUpdate(hook) => {
         <ForceMergeDvUpdateOneMerge as OneMergeBase<D, CR>>::wrap_for_merge(hook, reader)
@@ -2661,7 +2669,9 @@ where
         <SetDiagnosticsOneMerge as OneMergeBase<D, CR>>::reorder(hook, reader, dir)
       },
       #[cfg(test)]
-      Self::SetMergePolicyDiagnostics(hook) => hook.reorder(reader, dir),
+      Self::SetMergePolicyDiagnostics(hook) => {
+        <SetMergePolicyDiagnosticsOneMerge as OneMergeBase<D, CR>>::reorder(hook, reader, dir)
+      },
       #[cfg(test)]
       Self::ForceMergeDvUpdate(hook) => {
         <ForceMergeDvUpdateOneMerge as OneMergeBase<D, CR>>::reorder(hook, reader, dir)
@@ -2702,7 +2712,11 @@ where
         )
       },
       #[cfg(test)]
-      Self::SetMergePolicyDiagnostics(hook) => hook.set_merge_info(stat, merge_info, info),
+      Self::SetMergePolicyDiagnostics(hook) => {
+        <SetMergePolicyDiagnosticsOneMerge as OneMergeBase<D, CR>>::set_merge_info(
+          hook, stat, merge_info, info,
+        )
+      },
       #[cfg(test)]
       Self::ForceMergeDvUpdate(hook) => {
         <ForceMergeDvUpdateOneMerge as OneMergeBase<D, CR>>::set_merge_info(
@@ -2761,7 +2775,13 @@ where
       },
       #[cfg(test)]
       Self::SetMergePolicyDiagnostics(hook) => {
-        hook.on_merge_complete(inner, stat, merge_info, is_aborted)
+        <SetMergePolicyDiagnosticsOneMerge as OneMergeBase<D, CR>>::on_merge_complete(
+          hook,
+          inner,
+          stat,
+          merge_info,
+          is_aborted,
+        )
       },
       #[cfg(test)]
       Self::ForceMergeDvUpdate(hook) => {
@@ -2828,7 +2848,12 @@ where
       },
       #[cfg(test)]
       Self::SetMergePolicyDiagnostics(hook) => {
-        hook.init_merge_readers(merge_readers, stat, reader_factory)
+        <SetMergePolicyDiagnosticsOneMerge as OneMergeBase<D, CR>>::init_merge_readers(
+          hook,
+          merge_readers,
+          stat,
+          reader_factory,
+        )
       },
       #[cfg(test)]
       Self::ForceMergeDvUpdate(hook) => {
