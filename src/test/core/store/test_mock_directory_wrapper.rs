@@ -17,10 +17,11 @@
 use crate::core::document::document::Document;
 use crate::core::index::index_reader::Identity;
 use crate::core::store::directory::{
-  Directory, DirectoryEnum2, DirectoryEnum3, MockDirWrapper, RawDirEnum, SharedLockFactory,
+  DirEnum, Directory, DirectoryEnum2, DirectoryEnum3, MockDirWrapper, RawDirEnum, SharedLockFactory,
 };
 use crate::core::store::fs_lock_factory;
 use crate::core::store::mmap_directory::MMapDirectory;
+use crate::core::store::single_instance_lock_factory::SingleInstanceLockFactory;
 use crate::core::store::{
   ByteArrayDataInput, ByteBuffersDirectory, DataInput, DataOutput, IOContext, IndexInputEnum2,
 };
@@ -285,19 +286,21 @@ where
 fn test_corrupt_on_close_is_working_fs_dir() -> Result<()> {
   let mut random = random();
   let dir = new_fs_directory(&mut random, create_temp_dir()?)?;
-  test_corrupt_on_close_is_working(&mut random, dir)
+  test_corrupt_on_close_is_working(&mut random, DirectoryEnum2::A(dir))
 }
 
 #[test]
 fn test_corrupt_on_close_is_working_on_byte_buffers_directory() -> Result<()> {
   let mut random = random();
-  test_corrupt_on_close_is_working(&mut random, ByteBuffersDirectory::new())
+  test_corrupt_on_close_is_working(&mut random, DirectoryEnum2::B(ByteBuffersDirectory::new()))
 }
 
-fn test_corrupt_on_close_is_working<R, D>(random: &mut R, dir: D) -> Result<()>
+fn test_corrupt_on_close_is_working<R>(
+  random: &mut R,
+  dir: DirectoryEnum2<Arc<DirEnum>, ByteBuffersDirectory<SingleInstanceLockFactory>>,
+) -> Result<()>
 where
   R: rand::Rng + ?Sized,
-  D: Directory + 'static,
 {
   let raw_dir = Arc::new(dir);
   let dir = Arc::new(PreventCloseDirectoryWrapper::new(raw_dir.clone()));
