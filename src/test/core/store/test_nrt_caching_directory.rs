@@ -16,7 +16,7 @@
  */
 
 use crate::core::index::directory_reader;
-use crate::core::index::index_reader::IndexReader;
+use crate::core::index::index_reader::{Identity, IndexReader};
 use crate::core::index::index_writer::IndexWriter;
 use crate::core::index::index_writer::MAX_TERM_LENGTH;
 use crate::core::index::standard_directory_reader::StandardDirectoryReader;
@@ -24,14 +24,16 @@ use crate::core::index::term::Term;
 use crate::core::search::index_searcher::IndexSearcher;
 use crate::core::search::term_query::TermQuery;
 use crate::core::store::directory::{DirEnum, Directory};
+use crate::core::store::byte_buffers_directory::DirectoryByteBuffersIndexOutput;
 use crate::core::store::flush_info::FlushInfo;
 use crate::core::store::index_input::NRTCachingIndexInput;
 use crate::core::store::nrt_caching_directory::{NRTCachingDirectory, NRTCachingDirectoryHook};
 use crate::core::store::single_instance_lock_factory::SingleInstanceLockFactory;
 use crate::core::store::{
   ByteBuffersDirectory, ByteBuffersIndexInputOwned, DataOutput, IO_CONTEXT_DEFAULT, IOContext,
-  IndexOutput,
+  IndexOutput, IndexOutputEnum2,
 };
+use crate::core::util::HasIdentity;
 use crate::core::util::accountable::Accountable;
 use crate::core::util::close::{Closeable, CloseableRef};
 use crate::core::util::error::lucene_error::Result;
@@ -45,19 +47,119 @@ use crate::test_framework::core::util::lucene_test_case::{
 };
 use crate::test_framework::core::util::test_util::TestUtil;
 use rand::{Rng, RngExt};
+use std::collections::HashSet;
+use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-type ByteBuffersNRTCachingDirectory =
+type InnerByteBuffersNRTCachingDirectory =
   NRTCachingDirectory<ByteBuffersDirectory<SingleInstanceLockFactory>>;
-type ByteBuffersNRTCachingIndexInput = NRTCachingIndexInput<ByteBuffersIndexInputOwned>;
+
+pub struct ByteBuffersNRTCachingDirectory(InnerByteBuffersNRTCachingDirectory);
+
+impl Display for ByteBuffersNRTCachingDirectory {
+  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    self.0.fmt(f)
+  }
+}
+
+impl HasIdentity for ByteBuffersNRTCachingDirectory {
+  fn identity(&self) -> &Identity {
+    self.0.identity()
+  }
+}
+
+impl CloseableRef for ByteBuffersNRTCachingDirectory {
+  fn close(&self) -> Result<()> {
+    self.0.close()
+  }
+}
+
+impl Directory for ByteBuffersNRTCachingDirectory {
+  fn list_all(&self) -> Result<Vec<String>> {
+    self.0.list_all()
+  }
+
+  fn delete_file(&self, name: &str) -> Result<()> {
+    self.0.delete_file(name)
+  }
+
+  fn file_length(&self, name: &str) -> Result<usize> {
+    self.0.file_length(name)
+  }
+
+  type IndexOutput = DirectoryByteBuffersIndexOutput;
+
+  fn create_output(&self, name: &str, context: &IOContext) -> Result<Self::IndexOutput> {
+    match self.0.create_output(name, context)? {
+      IndexOutputEnum2::A(output) | IndexOutputEnum2::B(output) => Ok(output),
+    }
+  }
+
+  fn create_temp_output(
+    &self,
+    prefix: &str,
+    suffix: &str,
+    context: &IOContext,
+  ) -> Result<Self::IndexOutput> {
+    match self.0.create_temp_output(prefix, suffix, context)? {
+      IndexOutputEnum2::A(output) | IndexOutputEnum2::B(output) => Ok(output),
+    }
+  }
+
+  fn sync(&self, names: &[String]) -> Result<()> {
+    self.0.sync(names)
+  }
+
+  fn sync_metadata(&self) -> Result<()> {
+    self.0.sync_metadata()
+  }
+
+  fn rename(&self, source: &str, dest: &str) -> Result<()> {
+    self.0.rename(source, dest)
+  }
+
+  type IndexInput = ByteBuffersIndexInputOwned;
+
+  fn open_input(&self, name: &str, context: &IOContext) -> Result<Self::IndexInput> {
+    match self.0.open_input(name, context)? {
+      NRTCachingIndexInput::A(input) | NRTCachingIndexInput::B(input) => Ok(input),
+    }
+  }
+
+  type Lock = <InnerByteBuffersNRTCachingDirectory as Directory>::Lock;
+
+  fn obtain_lock(&self, name: &str) -> Result<Self::Lock> {
+    self.0.obtain_lock(name)
+  }
+
+  fn copy_from<D>(&self, from: &D, src: &str, dest: &str, context: &IOContext) -> Result<()>
+  where
+    D: Directory + ?Sized,
+  {
+    self.0.copy_from(from, src, dest, context)
+  }
+
+  fn get_pending_deletions(&self) -> Result<HashSet<String>> {
+    self.0.get_pending_deletions()
+  }
+
+  #[cfg(debug_assertions)]
+  fn is_fs_directory(&self) -> bool {
+    self.0.is_fs_directory()
+  }
+
+  fn ensure_open(&self) -> Result<()> {
+    self.0.ensure_open()
+  }
+}
 
 #[allow(dead_code)] // for quick search
 pub struct TestNRTCachingDirectory;
 
 impl BaseDirectoryTestCase for TestNRTCachingDirectory {
   type Directory = ByteBuffersNRTCachingDirectory;
-  type Output = ByteBuffersNRTCachingIndexInput;
+  type Output = ByteBuffersIndexInputOwned;
 
   // A RAM directory is used here because filesystem directories are still too
   // slow for the threaded tests, possibly because `list_all` is synchronized.
@@ -65,11 +167,11 @@ impl BaseDirectoryTestCase for TestNRTCachingDirectory {
   where
     R: Rng + ?Sized,
   {
-    Ok(NRTCachingDirectory::new(
+    Ok(ByteBuffersNRTCachingDirectory(NRTCachingDirectory::new(
       ByteBuffersDirectory::new(),
       0.1 + 2.0 * random.random::<f64>(),
       0.1 + 5.0 * random.random::<f64>(),
-    ))
+    )))
   }
 }
 
