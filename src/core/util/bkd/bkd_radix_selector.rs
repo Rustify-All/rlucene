@@ -53,31 +53,31 @@ pub struct BKDRadixSelector {
   // BKD tree configuration
   config: BKDConfig,
 }
-pub struct SelectorSlice<D>
+pub struct SelectorSlice<O>
 where
-  D: Directory,
+  O: IndexOutput,
 {
   pub(crate) partition: Vec<u8>,
 
-  pub(crate) left_writer: Option<PointWriterEnum<D::IndexOutput>>,
+  pub(crate) left_writer: Option<PointWriterEnum<O>>,
   pub(crate) left_from: usize,
   pub(crate) left_to: usize,
 
-  pub(crate) right_writer: Option<PointWriterEnum<D::IndexOutput>>,
+  pub(crate) right_writer: Option<PointWriterEnum<O>>,
   pub(crate) right_from: usize,
   pub(crate) right_to: usize,
 }
-impl<D> SelectorSlice<D>
+impl<O> SelectorSlice<O>
 where
-  D: Directory,
+  O: IndexOutput,
 {
   fn new(
     partition: Vec<u8>,
-    left_writer: Option<PointWriterEnum<D::IndexOutput>>,
+    left_writer: Option<PointWriterEnum<O>>,
     left_from: usize,
     left_to: usize,
 
-    right_writer: Option<PointWriterEnum<D::IndexOutput>>,
+    right_writer: Option<PointWriterEnum<O>>,
     right_from: usize,
     right_to: usize,
   ) -> Self {
@@ -152,7 +152,7 @@ impl BKDRadixSelector {
     dim: usize,
     dim_common_prefix: usize,
     temp_dir: &D,
-  ) -> Result<SelectorSlice<D>>
+  ) -> Result<SelectorSlice<D::IndexOutput>>
   where
     D: Directory,
   {
