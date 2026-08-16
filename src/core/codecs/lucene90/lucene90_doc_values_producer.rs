@@ -802,7 +802,7 @@ where
       )));
     };
     if entry.docs_with_field_offset == -2 {
-      return Ok(Lucene90BinaryDocValuesEnumImpl::Empty(
+      return Ok(Lucene90BinaryDocValuesEnum::Empty(
         DocValues::empty_binary(),
       ));
     }
@@ -846,7 +846,7 @@ where
         };
         DenseBinaryDocValuesBaseEnum::Dense1(base)
       };
-      Ok(Lucene90BinaryDocValuesEnumImpl::Dense(
+      Ok(Lucene90BinaryDocValuesEnum::Dense(
         DenseBinaryDocValues::new(dense, self.max_doc),
       ))
     } else {
@@ -890,7 +890,7 @@ where
           addresses,
         })
       };
-      Ok(Lucene90BinaryDocValuesEnumImpl::Sparse(
+      Ok(Lucene90BinaryDocValuesEnum::Sparse(
         SparseBinaryDocValuesImpl::new(sub, disi),
       ))
     }
@@ -3541,25 +3541,18 @@ where
 }
 
 // 3. BinaryDocValues
-pub enum Lucene90BinaryDocValuesEnumImpl<I, R>
+pub enum Lucene90BinaryDocValuesEnum<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
-  Dense(DenseBinaryDocValues<R>),
-  Sparse(SparseBinaryDocValuesImpl<I, R>),
+  Dense(DenseBinaryDocValues<I::RandomAccessSlice>),
+  Sparse(SparseBinaryDocValuesImpl<I::IndexInput, I::RandomAccessSlice>),
   Empty(EmptyBinary),
 }
 
-pub type Lucene90BinaryDocValuesEnum<I> = Lucene90BinaryDocValuesEnumImpl<
-  <I as IndexInput>::IndexInput,
-  <I as IndexInput>::RandomAccessSlice,
->;
-
-impl<I, R> DocValuesIterator for Lucene90BinaryDocValuesEnumImpl<I, R>
+impl<I> DocValuesIterator for Lucene90BinaryDocValuesEnum<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn advance_exact(&mut self, target: i32) -> Result<bool> {
     match self {
@@ -3570,10 +3563,9 @@ where
   }
 }
 
-impl<I, R> DocIdSetIterator for Lucene90BinaryDocValuesEnumImpl<I, R>
+impl<I> DocIdSetIterator for Lucene90BinaryDocValuesEnum<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn doc_id(&self) -> i32 {
     match self {
@@ -3616,10 +3608,9 @@ where
   }
 }
 
-impl<I, R> BinaryDocValues for Lucene90BinaryDocValuesEnumImpl<I, R>
+impl<I> BinaryDocValues for Lucene90BinaryDocValuesEnum<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn binary_value(&mut self) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
     match self {
