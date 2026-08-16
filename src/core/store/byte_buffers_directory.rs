@@ -110,7 +110,8 @@ impl BBOutputSupplier {
 
 pub const BYTE_BUFFERS_DATA_OUTPUT: BBOutputSupplier = BBOutputSupplier::ByteBuffersDataOutput;
 
-type DirectoryByteBuffersIndexOutput = ByteBuffersIndexOutput<ByteBuffersDirectoryOutputOnClose>;
+pub(crate) type DirectoryByteBuffersIndexOutput =
+  ByteBuffersIndexOutput<ByteBuffersDirectoryOutputOnClose>;
 
 struct ByteBuffersDirectoryTempFileName {
   counter: AtomicU64,

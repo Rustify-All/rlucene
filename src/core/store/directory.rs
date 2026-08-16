@@ -19,6 +19,10 @@ use crate::core::index::index_reader::Identity;
 #[cfg(test)]
 use crate::core::store::ByteBuffersDirectory;
 #[cfg(test)]
+use crate::core::store::byte_buffers_directory::DirectoryByteBuffersIndexOutput;
+#[cfg(test)]
+use crate::core::store::byte_buffers_index_input::ByteBuffersIndexInputOwned;
+#[cfg(test)]
 use crate::core::store::ReadAdvice;
 use crate::core::store::buffered_checksum_index_input::BufferedChecksumIndexInput;
 #[cfg(test)]
@@ -823,7 +827,175 @@ pub(crate) type CoreDirEnum = DirectoryEnum3<NioDir, MMapDir, ByteBuffersDir>;
 #[cfg(test)]
 pub(crate) type FileSwitchDir = FileSwitchDirectory<CoreDirEnum>;
 #[cfg(test)]
-pub(crate) type MaybeNrtDirEnum = DirectoryEnum2<RawDirEnum, NRTCachingDirectory<RawDirEnum>>;
+type MaybeNrtIndexInput =
+  IndexInputEnum2<<RawDirEnum as Directory>::IndexInput, ByteBuffersIndexInputOwned>;
+#[cfg(test)]
+type MaybeNrtIndexOutput = IndexOutputEnum2<
+  <RawDirEnum as Directory>::IndexOutput,
+  DirectoryByteBuffersIndexOutput,
+>;
+#[cfg(test)]
+pub(crate) enum MaybeNrtDirEnum {
+  Raw(RawDirEnum),
+  Nrt(NRTCachingDirectory<RawDirEnum>),
+}
+
+#[cfg(test)]
+impl Display for MaybeNrtDirEnum {
+  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::Raw(directory) => directory.fmt(f),
+      Self::Nrt(directory) => directory.fmt(f),
+    }
+  }
+}
+
+#[cfg(test)]
+impl HasIdentity for MaybeNrtDirEnum {
+  fn identity(&self) -> &Identity {
+    match self {
+      Self::Raw(directory) => directory.identity(),
+      Self::Nrt(directory) => directory.identity(),
+    }
+  }
+}
+
+#[cfg(test)]
+impl CloseableRef for MaybeNrtDirEnum {
+  fn close(&self) -> Result<()> {
+    match self {
+      Self::Raw(directory) => directory.close(),
+      Self::Nrt(directory) => directory.close(),
+    }
+  }
+}
+
+#[cfg(test)]
+impl Directory for MaybeNrtDirEnum {
+  fn list_all(&self) -> Result<Vec<String>> {
+    match self {
+      Self::Raw(directory) => directory.list_all(),
+      Self::Nrt(directory) => directory.list_all(),
+    }
+  }
+
+  fn delete_file(&self, name: &str) -> Result<()> {
+    match self {
+      Self::Raw(directory) => directory.delete_file(name),
+      Self::Nrt(directory) => directory.delete_file(name),
+    }
+  }
+
+  fn file_length(&self, name: &str) -> Result<usize> {
+    match self {
+      Self::Raw(directory) => directory.file_length(name),
+      Self::Nrt(directory) => directory.file_length(name),
+    }
+  }
+
+  type IndexOutput = MaybeNrtIndexOutput;
+
+  fn create_output(&self, name: &str, context: &IOContext) -> Result<Self::IndexOutput> {
+    match self {
+      Self::Raw(directory) => Ok(IndexOutputEnum2::A(directory.create_output(name, context)?)),
+      Self::Nrt(directory) => match directory.create_output(name, context)? {
+        IndexOutputEnum2::A(output) => Ok(IndexOutputEnum2::B(output)),
+        IndexOutputEnum2::B(output) => Ok(IndexOutputEnum2::A(output)),
+      },
+    }
+  }
+
+  fn create_temp_output(
+    &self,
+    prefix: &str,
+    suffix: &str,
+    context: &IOContext,
+  ) -> Result<Self::IndexOutput> {
+    match self {
+      Self::Raw(directory) => Ok(IndexOutputEnum2::A(directory.create_temp_output(
+        prefix, suffix, context,
+      )?)),
+      Self::Nrt(directory) => match directory.create_temp_output(prefix, suffix, context)? {
+        IndexOutputEnum2::A(output) => Ok(IndexOutputEnum2::B(output)),
+        IndexOutputEnum2::B(output) => Ok(IndexOutputEnum2::A(output)),
+      },
+    }
+  }
+
+  fn sync(&self, names: &[String]) -> Result<()> {
+    match self {
+      Self::Raw(directory) => directory.sync(names),
+      Self::Nrt(directory) => directory.sync(names),
+    }
+  }
+
+  fn sync_metadata(&self) -> Result<()> {
+    match self {
+      Self::Raw(directory) => directory.sync_metadata(),
+      Self::Nrt(directory) => directory.sync_metadata(),
+    }
+  }
+
+  fn rename(&self, source: &str, dest: &str) -> Result<()> {
+    match self {
+      Self::Raw(directory) => directory.rename(source, dest),
+      Self::Nrt(directory) => directory.rename(source, dest),
+    }
+  }
+
+  type IndexInput = MaybeNrtIndexInput;
+
+  fn open_input(&self, name: &str, context: &IOContext) -> Result<Self::IndexInput> {
+    match self {
+      Self::Raw(directory) => Ok(IndexInputEnum2::A(directory.open_input(name, context)?)),
+      Self::Nrt(directory) => match directory.open_input(name, context)? {
+        crate::core::store::NRTCachingIndexInput::A(input) => Ok(IndexInputEnum2::B(input)),
+        crate::core::store::NRTCachingIndexInput::B(input) => Ok(IndexInputEnum2::A(input)),
+      },
+    }
+  }
+
+  type Lock = <RawDirEnum as Directory>::Lock;
+
+  fn obtain_lock(&self, name: &str) -> Result<Self::Lock> {
+    match self {
+      Self::Raw(directory) => directory.obtain_lock(name),
+      Self::Nrt(directory) => directory.obtain_lock(name),
+    }
+  }
+
+  fn copy_from<D>(&self, from: &D, src: &str, dest: &str, context: &IOContext) -> Result<()>
+  where
+    D: Directory + ?Sized,
+  {
+    match self {
+      Self::Raw(directory) => directory.copy_from(from, src, dest, context),
+      Self::Nrt(directory) => directory.copy_from(from, src, dest, context),
+    }
+  }
+
+  fn get_pending_deletions(&self) -> Result<HashSet<String>> {
+    match self {
+      Self::Raw(directory) => directory.get_pending_deletions(),
+      Self::Nrt(directory) => directory.get_pending_deletions(),
+    }
+  }
+
+  #[cfg(debug_assertions)]
+  fn is_fs_directory(&self) -> bool {
+    match self {
+      Self::Raw(directory) => directory.is_fs_directory(),
+      Self::Nrt(directory) => directory.is_fs_directory(),
+    }
+  }
+
+  fn ensure_open(&self) -> Result<()> {
+    match self {
+      Self::Raw(directory) => directory.ensure_open(),
+      Self::Nrt(directory) => directory.ensure_open(),
+    }
+  }
+}
 #[cfg(test)]
 pub(crate) type RawDirWrapper = RawDirectoryWrapper<MaybeNrtDirEnum>;
 #[cfg(test)]

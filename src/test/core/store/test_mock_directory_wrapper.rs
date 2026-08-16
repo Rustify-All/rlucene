@@ -17,7 +17,8 @@
 use crate::core::document::document::Document;
 use crate::core::index::index_reader::Identity;
 use crate::core::store::directory::{
-  DirEnum, Directory, DirectoryEnum2, DirectoryEnum3, MockDirWrapper, RawDirEnum, SharedLockFactory,
+  DirEnum, Directory, DirectoryEnum2, DirectoryEnum3, MaybeNrtDirEnum, MockDirWrapper, RawDirEnum,
+  SharedLockFactory,
 };
 use crate::core::store::fs_lock_factory;
 use crate::core::store::mmap_directory::MMapDirectory;
@@ -84,8 +85,8 @@ impl BaseDirectoryTestCase for TestMockDirectoryWrapper {
       DirectoryEnum2::A(dir) => {
         let mut base = dir.state.base.lock();
         let raw_dir = match &mut base.in_ {
-          DirectoryEnum2::A(raw_dir) => raw_dir,
-          DirectoryEnum2::B(dir) => dir.get_delegate_mut(),
+          MaybeNrtDirEnum::Raw(raw_dir) => raw_dir,
+          MaybeNrtDirEnum::Nrt(dir) => dir.get_delegate_mut(),
         };
         match raw_dir {
           RawDirEnum::MMap(dir) => {

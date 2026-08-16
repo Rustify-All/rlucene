@@ -39,7 +39,7 @@ impl BaseLockFactoryTestCase for TestNativeFSLockFactory {
 mod native_fs_lock_factory_tests {
   use super::TestNativeFSLockFactory;
   use crate::core::store::directory::{DirEnum, Directory, RawDirEnum};
-  use crate::core::store::lock::{Lock, LockEnum, LockEnum2, LockEnum3};
+  use crate::core::store::lock::{Lock, LockEnum, LockEnum3};
   use crate::core::util::close::{Closeable, CloseableRef};
   use crate::core::util::error::lucene_error::Result;
   use crate::test_framework::core::store::base_lock_factory_test_case::BaseLockFactoryTestCase;
@@ -56,9 +56,7 @@ mod native_fs_lock_factory_tests {
   }
 
   fn release_native_lock(lock: &<DirEnum as Directory>::Lock) -> Result<()> {
-    match lock {
-      LockEnum2::A(lock) | LockEnum2::B(lock) => release_raw_native_lock(lock),
-    }
+    release_raw_native_lock(lock)
   }
 
   /** Verify NativeFSLockFactory works correctly if the lock file exists */

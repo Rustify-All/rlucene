@@ -53,8 +53,8 @@ use crate::core::search::index_searcher::{DefaultIndexSearcher, IndexSearcher};
 use crate::core::search::query::Query;
 use crate::core::search::query_caching_policy::QueryCachingPolicy;
 use crate::core::store::directory::{
-  CoreDirEnum, DirEnum, Directory, DirectoryEnum2, DirectoryEnum3, MaybeNrtDirEnum, MockDirWrapper,
-  RawDirEnum, SharedLockFactory,
+  CoreDirEnum, DirEnum, Directory, DirectoryEnum3, MaybeNrtDirEnum, MockDirWrapper, RawDirEnum,
+  SharedLockFactory,
 };
 use crate::core::store::file_switch_directory::FileSwitchDirectory;
 use crate::core::store::flush_info::FlushInfo;
@@ -869,13 +869,13 @@ where
   // IOContext randomization might make NRTCachingDirectory make bad decisions, so avoid
   // using it if the user requested a filesystem directory.
   let directory: MaybeNrtDirEnum = if rarely(random) && !bare && !filesystem {
-    DirectoryEnum2::B(NRTCachingDirectory::new(
+    MaybeNrtDirEnum::Nrt(NRTCachingDirectory::new(
       directory,
       random.random::<f64>(),
       random.random::<f64>(),
     ))
   } else {
-    DirectoryEnum2::A(directory)
+    MaybeNrtDirEnum::Raw(directory)
   };
 
   // The Rust test framework does not yet have a suite-level close registry equivalent to

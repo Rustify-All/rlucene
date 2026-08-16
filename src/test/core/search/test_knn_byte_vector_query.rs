@@ -25,7 +25,7 @@ use crate::core::search::match_all_docs_query::MatchAllDocsQuery;
 use crate::core::search::query::Query;
 use crate::core::search::query::QueryBase;
 use crate::core::search::term_query::TermQuery;
-use crate::core::store::directory::{DirEnum, DirectoryEnum2, MockDirWrapper};
+use crate::core::store::directory::{DirEnum, MaybeNrtDirEnum, MockDirWrapper};
 use crate::core::util::error::lucene_error::LuceneError;
 use crate::core::util::error::lucene_error::Result;
 use crate::test_framework::core::search::base_knn_vector_query_test_case::BaseKnnVectorQueryTestCase;
@@ -318,7 +318,7 @@ impl BaseKnnVectorQueryTestCase for TestKnnByteVectorQuery {
       TestKnnByteVectorQueryHook::Default => self.default_new_directory_for_test(random),
       TestKnnByteVectorQueryHook::MMap => {
         let directory = new_directory_impl(random, DirectoryImpl::MMapDirectory)?;
-        let mock = MockDirectoryWrapper::new(random, DirectoryEnum2::A(directory));
+        let mock = MockDirectoryWrapper::new(random, MaybeNrtDirEnum::Raw(directory));
         Ok(Arc::new(DirEnum::B(MockDirWrapper::from_inner(mock))))
       },
     }
