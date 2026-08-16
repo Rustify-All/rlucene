@@ -76,7 +76,7 @@ use crate::core::codecs::term_vectors_format::TermVectorsFormat;
 #[cfg(test)]
 use crate::core::codecs::term_vectors_reader::TermVectorsReaderEnum2;
 #[cfg(test)]
-use crate::core::codecs::term_vectors_writer::TermVectorsWriterEnum2;
+use crate::core::codecs::term_vectors_writer::TermVectorsWriter;
 #[cfg(test)]
 use crate::core::document::document::Document;
 #[cfg(test)]
@@ -1377,16 +1377,162 @@ pub type CodecTermVectorsReader<I> = TermVectorsReaderEnum2<
 pub type CodecTermVectorsWriter<D> =
   <Lucene90TermVectorsFormat as TermVectorsFormat>::TermVectorsWriter<D>;
 #[cfg(test)]
-pub type CodecTermVectorsWriter<D> = TermVectorsWriterEnum2<
-  TermVectorsWriterEnum2<
-    <Lucene90TermVectorsFormat as TermVectorsFormat>::TermVectorsWriter<D>,
-    <AssertingTermVectorsFormat as TermVectorsFormat>::TermVectorsWriter<D>,
-  >,
-  TermVectorsWriterEnum2<
-    <CrankyLucene101TermVectorsFormat as TermVectorsFormat>::TermVectorsWriter<D>,
-    <CrankyAssertingTermVectorsFormat as TermVectorsFormat>::TermVectorsWriter<D>,
-  >,
->;
+pub enum CodecTermVectorsWriter<D: Directory> {
+  Lucene90(<Lucene90TermVectorsFormat as TermVectorsFormat>::TermVectorsWriter<D>),
+  Asserting(<AssertingTermVectorsFormat as TermVectorsFormat>::TermVectorsWriter<D>),
+  CrankyLucene101(<CrankyLucene101TermVectorsFormat as TermVectorsFormat>::TermVectorsWriter<D>),
+  CrankyAsserting(<CrankyAssertingTermVectorsFormat as TermVectorsFormat>::TermVectorsWriter<D>),
+}
+
+#[cfg(test)]
+impl<D: Directory> Closeable for CodecTermVectorsWriter<D> {
+  fn close(&mut self) -> Result<()> {
+    match self {
+      Self::Lucene90(writer) => writer.close(),
+      Self::Asserting(writer) => writer.close(),
+      Self::CrankyLucene101(writer) => writer.close(),
+      Self::CrankyAsserting(writer) => writer.close(),
+    }
+  }
+}
+
+#[cfg(test)]
+impl<D: Directory> Accountable for CodecTermVectorsWriter<D> {
+  fn ram_bytes_used(&self) -> Result<i64> {
+    match self {
+      Self::Lucene90(writer) => writer.ram_bytes_used(),
+      Self::Asserting(writer) => writer.ram_bytes_used(),
+      Self::CrankyLucene101(writer) => writer.ram_bytes_used(),
+      Self::CrankyAsserting(writer) => writer.ram_bytes_used(),
+    }
+  }
+}
+
+#[cfg(test)]
+impl<D: Directory> TermVectorsWriter for CodecTermVectorsWriter<D> {
+  fn start_document(&mut self, num_vector_fields: i32) -> Result<()> {
+    match self {
+      Self::Lucene90(writer) => writer.start_document(num_vector_fields),
+      Self::Asserting(writer) => writer.start_document(num_vector_fields),
+      Self::CrankyLucene101(writer) => writer.start_document(num_vector_fields),
+      Self::CrankyAsserting(writer) => writer.start_document(num_vector_fields),
+    }
+  }
+
+  fn finish_document(&mut self) -> Result<()> {
+    match self {
+      Self::Lucene90(writer) => writer.finish_document(),
+      Self::Asserting(writer) => writer.finish_document(),
+      Self::CrankyLucene101(writer) => writer.finish_document(),
+      Self::CrankyAsserting(writer) => writer.finish_document(),
+    }
+  }
+
+  fn start_field(
+    &mut self,
+    field_info: &FieldInfo,
+    num_terms: usize,
+    positions: bool,
+    offsets: bool,
+    payloads: bool,
+  ) -> Result<()> {
+    match self {
+      Self::Lucene90(writer) => {
+        writer.start_field(field_info, num_terms, positions, offsets, payloads)
+      },
+      Self::Asserting(writer) => {
+        writer.start_field(field_info, num_terms, positions, offsets, payloads)
+      },
+      Self::CrankyLucene101(writer) => {
+        writer.start_field(field_info, num_terms, positions, offsets, payloads)
+      },
+      Self::CrankyAsserting(writer) => {
+        writer.start_field(field_info, num_terms, positions, offsets, payloads)
+      },
+    }
+  }
+
+  fn finish_field(&mut self) -> Result<()> {
+    match self {
+      Self::Lucene90(writer) => writer.finish_field(),
+      Self::Asserting(writer) => writer.finish_field(),
+      Self::CrankyLucene101(writer) => writer.finish_field(),
+      Self::CrankyAsserting(writer) => writer.finish_field(),
+    }
+  }
+
+  fn start_term(&mut self, term: &BytesRef<Vec<u8>>, freq: i32) -> Result<()> {
+    match self {
+      Self::Lucene90(writer) => writer.start_term(term, freq),
+      Self::Asserting(writer) => writer.start_term(term, freq),
+      Self::CrankyLucene101(writer) => writer.start_term(term, freq),
+      Self::CrankyAsserting(writer) => writer.start_term(term, freq),
+    }
+  }
+
+  fn finish_term(&mut self) -> Result<()> {
+    match self {
+      Self::Lucene90(writer) => writer.finish_term(),
+      Self::Asserting(writer) => writer.finish_term(),
+      Self::CrankyLucene101(writer) => writer.finish_term(),
+      Self::CrankyAsserting(writer) => writer.finish_term(),
+    }
+  }
+
+  fn add_position(
+    &mut self,
+    position: i32,
+    start_offset: i32,
+    end_offset: i32,
+    payload: Option<&BytesRef<Vec<u8>>>,
+  ) -> Result<()> {
+    match self {
+      Self::Lucene90(writer) => writer.add_position(position, start_offset, end_offset, payload),
+      Self::Asserting(writer) => writer.add_position(position, start_offset, end_offset, payload),
+      Self::CrankyLucene101(writer) => {
+        writer.add_position(position, start_offset, end_offset, payload)
+      },
+      Self::CrankyAsserting(writer) => {
+        writer.add_position(position, start_offset, end_offset, payload)
+      },
+    }
+  }
+
+  fn finish(&mut self, num_docs: i32) -> Result<()> {
+    match self {
+      Self::Lucene90(writer) => writer.finish(num_docs),
+      Self::Asserting(writer) => writer.finish(num_docs),
+      Self::CrankyLucene101(writer) => writer.finish(num_docs),
+      Self::CrankyAsserting(writer) => writer.finish(num_docs),
+    }
+  }
+
+  fn add_prox(
+    &mut self,
+    num_prox: usize,
+    positions: Option<&mut impl DataInput>,
+    offsets: Option<&mut impl DataInput>,
+  ) -> Result<()> {
+    match self {
+      Self::Lucene90(writer) => writer.add_prox(num_prox, positions, offsets),
+      Self::Asserting(writer) => writer.add_prox(num_prox, positions, offsets),
+      Self::CrankyLucene101(writer) => writer.add_prox(num_prox, positions, offsets),
+      Self::CrankyAsserting(writer) => writer.add_prox(num_prox, positions, offsets),
+    }
+  }
+
+  fn merge<D1, CR>(&mut self, merge_state: &mut MergeState<D1, CR>) -> Result<i32>
+  where
+    CR: CodecReader,
+  {
+    match self {
+      Self::Lucene90(writer) => writer.merge(merge_state),
+      Self::Asserting(writer) => writer.merge(merge_state),
+      Self::CrankyLucene101(writer) => writer.merge(merge_state),
+      Self::CrankyAsserting(writer) => writer.merge(merge_state),
+    }
+  }
+}
 
 impl TermVectorsFormat for CodecTermVectorsFormat {
   type TermVectorsReader<I: IndexInput> = CodecTermVectorsReader<I>;
@@ -1454,25 +1600,25 @@ impl TermVectorsFormat for CodecTermVectorsFormat {
         {
           format
             .vectors_writer(directory, segment_info, context)
-            .map(|writer| TermVectorsWriterEnum2::A(TermVectorsWriterEnum2::A(writer)))
+            .map(CodecTermVectorsWriter::Lucene90)
         }
       },
       #[cfg(test)]
       Self::Compressing(format) => format
         .vectors_writer(directory, segment_info, context)
-        .map(|writer| TermVectorsWriterEnum2::A(TermVectorsWriterEnum2::A(writer))),
+        .map(CodecTermVectorsWriter::Lucene90),
       #[cfg(test)]
       Self::Asserting(format) => format
         .vectors_writer(directory, segment_info, context)
-        .map(|writer| TermVectorsWriterEnum2::A(TermVectorsWriterEnum2::B(writer))),
+        .map(CodecTermVectorsWriter::Asserting),
       #[cfg(test)]
       Self::CrankyLucene101(format) => format
         .vectors_writer(directory, segment_info, context)
-        .map(|writer| TermVectorsWriterEnum2::B(TermVectorsWriterEnum2::A(writer))),
+        .map(CodecTermVectorsWriter::CrankyLucene101),
       #[cfg(test)]
       Self::CrankyAsserting(format) => format
         .vectors_writer(directory, segment_info, context)
-        .map(|writer| TermVectorsWriterEnum2::B(TermVectorsWriterEnum2::B(writer))),
+        .map(CodecTermVectorsWriter::CrankyAsserting),
     }
   }
 }
