@@ -15,89 +15,101 @@
  * limitations under the License.
  */
 pub mod norms {
-  use crate::core::codecs::lucene90_norms_producer::{DenseNormsIterator, SparseNormsIterator};
+  use crate::core::codecs::lucene90_norms_producer::{
+    DenseNormsIterator, SparseNormsIteratorImpl,
+  };
   use crate::core::index::doc_values::EmptyNumeric;
   use crate::core::index::doc_values_iterator::DocValuesIterator;
   use crate::core::index::numeric_doc_values::NumericDocValues;
   use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
+  use crate::core::store::random_access_input::RandomAccessInput;
   use crate::core::store::IndexInput;
   use crate::core::util::error::lucene_error::Result;
-  pub enum Lucene90NormNumericDocValuesEnum<I>
+  pub enum Lucene90NormNumericDocValuesEnumImpl<I, R>
   where
     I: IndexInput,
+    R: RandomAccessInput,
   {
-    Dense(DenseNormsIterator<I::RandomAccessSlice>),
-    Sparse(SparseNormsIterator<I>),
+    Dense(DenseNormsIterator<R>),
+    Sparse(SparseNormsIteratorImpl<I, R>),
     Empty(EmptyNumeric),
   }
 
-  impl<I> DocValuesIterator for Lucene90NormNumericDocValuesEnum<I>
+  pub type Lucene90NormNumericDocValuesEnum<I> = Lucene90NormNumericDocValuesEnumImpl<
+    <I as IndexInput>::IndexInput,
+    <I as IndexInput>::RandomAccessSlice,
+  >;
+
+  impl<I, R> DocValuesIterator for Lucene90NormNumericDocValuesEnumImpl<I, R>
   where
     I: IndexInput,
+    R: RandomAccessInput,
   {
     fn advance_exact(&mut self, target: i32) -> Result<bool> {
       match self {
-        Lucene90NormNumericDocValuesEnum::Dense(dense) => dense.advance_exact(target),
-        Lucene90NormNumericDocValuesEnum::Sparse(sparse) => sparse.advance_exact(target),
-        Lucene90NormNumericDocValuesEnum::Empty(empty) => empty.advance_exact(target),
+        Self::Dense(dense) => dense.advance_exact(target),
+        Self::Sparse(sparse) => sparse.advance_exact(target),
+        Self::Empty(empty) => empty.advance_exact(target),
       }
     }
   }
 
-  impl<I> DocIdSetIterator for Lucene90NormNumericDocValuesEnum<I>
+  impl<I, R> DocIdSetIterator for Lucene90NormNumericDocValuesEnumImpl<I, R>
   where
     I: IndexInput,
+    R: RandomAccessInput,
   {
     fn doc_id(&self) -> i32 {
       match self {
-        Lucene90NormNumericDocValuesEnum::Dense(dense) => dense.doc_id(),
-        Lucene90NormNumericDocValuesEnum::Sparse(sparse) => sparse.doc_id(),
-        Lucene90NormNumericDocValuesEnum::Empty(empty) => empty.doc_id(),
+        Self::Dense(dense) => dense.doc_id(),
+        Self::Sparse(sparse) => sparse.doc_id(),
+        Self::Empty(empty) => empty.doc_id(),
       }
     }
 
     fn next_doc(&mut self) -> Result<i32> {
       match self {
-        Lucene90NormNumericDocValuesEnum::Dense(dense) => dense.next_doc(),
-        Lucene90NormNumericDocValuesEnum::Sparse(sparse) => sparse.next_doc(),
-        Lucene90NormNumericDocValuesEnum::Empty(empty) => empty.next_doc(),
+        Self::Dense(dense) => dense.next_doc(),
+        Self::Sparse(sparse) => sparse.next_doc(),
+        Self::Empty(empty) => empty.next_doc(),
       }
     }
 
     fn advance(&mut self, target: i32) -> Result<i32> {
       match self {
-        Lucene90NormNumericDocValuesEnum::Dense(dense) => dense.advance(target),
-        Lucene90NormNumericDocValuesEnum::Sparse(sparse) => sparse.advance(target),
-        Lucene90NormNumericDocValuesEnum::Empty(empty) => empty.advance(target),
+        Self::Dense(dense) => dense.advance(target),
+        Self::Sparse(sparse) => sparse.advance(target),
+        Self::Empty(empty) => empty.advance(target),
       }
     }
 
     fn slow_advance(&mut self, target: i32) -> Result<i32> {
       match self {
-        Lucene90NormNumericDocValuesEnum::Dense(dense) => dense.slow_advance(target),
-        Lucene90NormNumericDocValuesEnum::Sparse(sparse) => sparse.slow_advance(target),
-        Lucene90NormNumericDocValuesEnum::Empty(empty) => empty.slow_advance(target),
+        Self::Dense(dense) => dense.slow_advance(target),
+        Self::Sparse(sparse) => sparse.slow_advance(target),
+        Self::Empty(empty) => empty.slow_advance(target),
       }
     }
 
     fn cost(&self) -> Result<i64> {
       match self {
-        Lucene90NormNumericDocValuesEnum::Dense(dense) => dense.cost(),
-        Lucene90NormNumericDocValuesEnum::Sparse(sparse) => sparse.cost(),
-        Lucene90NormNumericDocValuesEnum::Empty(empty) => empty.cost(),
+        Self::Dense(dense) => dense.cost(),
+        Self::Sparse(sparse) => sparse.cost(),
+        Self::Empty(empty) => empty.cost(),
       }
     }
   }
 
-  impl<I> NumericDocValues for Lucene90NormNumericDocValuesEnum<I>
+  impl<I, R> NumericDocValues for Lucene90NormNumericDocValuesEnumImpl<I, R>
   where
     I: IndexInput,
+    R: RandomAccessInput,
   {
     fn long_value(&mut self) -> Result<i64> {
       match self {
-        Lucene90NormNumericDocValuesEnum::Dense(dense) => dense.long_value(),
-        Lucene90NormNumericDocValuesEnum::Sparse(sparse) => sparse.long_value(),
-        Lucene90NormNumericDocValuesEnum::Empty(empty) => empty.long_value(),
+        Self::Dense(dense) => dense.long_value(),
+        Self::Sparse(sparse) => sparse.long_value(),
+        Self::Empty(empty) => empty.long_value(),
       }
     }
   }
