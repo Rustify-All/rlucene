@@ -28,21 +28,26 @@ use crate::core::util::fst_impl::reverse_bytes_reader::ReverseBytesReader;
 use crate::core::util::ram_usage_estimator::size_of_vec;
 
 pub enum OnHeapFSTBytesReader {
-  BytesArray(ReverseBytesReader),
+  Reverse {
+    reader: ReverseBytesReader,
+    bytes_array: bool,
+  },
   Blocks(BytesReaderImpl),
-  SingleBlock(ReverseBytesReader),
 }
 
 impl Display for OnHeapFSTBytesReader {
   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
     match self {
-      Self::BytesArray(reader) => {
-        write!(f, "BytesReaderEnum(F: {})", reader.get_position())
-      },
+      Self::Reverse {
+        reader,
+        bytes_array,
+      } => write!(
+        f,
+        "BytesReaderEnum({}: {})",
+        if *bytes_array { "F" } else { "S" },
+        reader.get_position()
+      ),
       Self::Blocks(reader) => {
-        write!(f, "BytesReaderEnum(S: {})", reader.get_position())
-      },
-      Self::SingleBlock(reader) => {
         write!(f, "BytesReaderEnum(S: {})", reader.get_position())
       },
     }
@@ -52,33 +57,29 @@ impl Display for OnHeapFSTBytesReader {
 impl DataInput for OnHeapFSTBytesReader {
   fn read_byte(&mut self) -> Result<u8> {
     match self {
-      Self::BytesArray(reader) => reader.read_byte(),
+      Self::Reverse { reader, .. } => reader.read_byte(),
       Self::Blocks(reader) => reader.read_byte(),
-      Self::SingleBlock(reader) => reader.read_byte(),
     }
   }
 
   fn read_bytes(&mut self, b: &mut [u8], offset: usize, len: usize) -> Result<()> {
     match self {
-      Self::BytesArray(reader) => reader.read_bytes(b, offset, len),
+      Self::Reverse { reader, .. } => reader.read_bytes(b, offset, len),
       Self::Blocks(reader) => reader.read_bytes(b, offset, len),
-      Self::SingleBlock(reader) => reader.read_bytes(b, offset, len),
     }
   }
 
   fn read_group_vint(&mut self, dst: &mut [i32], offset: usize) -> Result<()> {
     match self {
-      Self::BytesArray(reader) => reader.read_group_vint(dst, offset),
+      Self::Reverse { reader, .. } => reader.read_group_vint(dst, offset),
       Self::Blocks(reader) => reader.read_group_vint(dst, offset),
-      Self::SingleBlock(reader) => reader.read_group_vint(dst, offset),
     }
   }
 
   fn skip_bytes(&mut self, num_bytes: i64) -> Result<()> {
     match self {
-      Self::BytesArray(reader) => reader.skip_bytes(num_bytes),
+      Self::Reverse { reader, .. } => reader.skip_bytes(num_bytes),
       Self::Blocks(reader) => reader.skip_bytes(num_bytes),
-      Self::SingleBlock(reader) => reader.skip_bytes(num_bytes),
     }
   }
 }
@@ -86,17 +87,15 @@ impl DataInput for OnHeapFSTBytesReader {
 impl BytesReader for OnHeapFSTBytesReader {
   fn get_position(&self) -> i64 {
     match self {
-      Self::BytesArray(reader) => reader.get_position(),
+      Self::Reverse { reader, .. } => reader.get_position(),
       Self::Blocks(reader) => reader.get_position(),
-      Self::SingleBlock(reader) => reader.get_position(),
     }
   }
 
   fn set_position(&mut self, pos: i64) {
     match self {
-      Self::BytesArray(reader) => reader.set_position(pos),
+      Self::Reverse { reader, .. } => reader.set_position(pos),
       Self::Blocks(reader) => reader.set_position(pos),
-      Self::SingleBlock(reader) => reader.set_position(pos),
     }
   }
 }
@@ -159,15 +158,19 @@ impl FstReader for OnHeapFSTStore {
 
   fn get_reverse_bytes_reader(&self) -> Result<Self::FstBytesReader> {
     if let Some(bytes_array) = &self.bytes_array {
-      return Ok(OnHeapFSTBytesReader::BytesArray(ReverseBytesReader::new(
-        bytes_array.clone(),
-      )));
+      return Ok(OnHeapFSTBytesReader::Reverse {
+        reader: ReverseBytesReader::new(bytes_array.clone()),
+        bytes_array: true,
+      });
     }
 
     if let Some(data_output) = &self.data_output {
       match data_output.get_reverse_bytes_reader()? {
         BytesReaderEnum2::A(reader) => Ok(OnHeapFSTBytesReader::Blocks(reader)),
-        BytesReaderEnum2::B(reader) => Ok(OnHeapFSTBytesReader::SingleBlock(reader)),
+        BytesReaderEnum2::B(reader) => Ok(OnHeapFSTBytesReader::Reverse {
+          reader,
+          bytes_array: false,
+        }),
       }
     } else {
       Err(LuceneError::illegal_state(
