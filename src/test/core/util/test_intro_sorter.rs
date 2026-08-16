@@ -18,23 +18,19 @@
 use crate::test_framework::core::util::lucene_test_case::random;
 use rand::Rng;
 
-use crate::core::util::{ArrayIntroSorter, Comparator, NaturalOrder, Sorter};
+use crate::core::util::{ArrayIntroSorter, NaturalOrder, Sorter};
 use crate::test::core::util::base_sort_test_case::{BaseSortTestCase, Entry};
 
 const STABLE: bool = false;
 
-struct TestIntroSorter<T, C: Comparator<T>> {
-  _marker: std::marker::PhantomData<(T, C)>,
-}
-impl Default for TestIntroSorter<i32, NaturalOrder> {
+struct TestIntroSorter;
+impl Default for TestIntroSorter {
   fn default() -> Self {
-    TestIntroSorter {
-      _marker: std::marker::PhantomData,
-    }
+    TestIntroSorter
   }
 }
 
-impl<T, C: Comparator<T>> BaseSortTestCase for TestIntroSorter<T, C> {
+impl BaseSortTestCase for TestIntroSorter {
   fn new_sorter<R>(&self, _random: &mut R, arr: &mut Vec<Entry>) -> impl Sorter
   where
     R: Rng + ?Sized,
