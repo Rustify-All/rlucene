@@ -241,10 +241,7 @@ where
   }
 }
 
-struct WriterThread<D>
-where
-  D: Directory + Send + Sync + 'static,
-{
+struct WriterThread<D> {
   num_iteration: i32,
   dir: Arc<D>,
   field_to_type: Arc<Mutex<HashMap<String, FieldType>>>,
@@ -325,12 +322,7 @@ where
   }
 }
 
-struct SearcherThread<D>
-where
-  D: Directory + 'static + std::marker::Send + Sync,
-  <<D as Directory>::IndexInput as IndexInput>::RandomAccessSlice: Send + Sync,
-  <D as Directory>::IndexInput: Send + Sync,
-{
+struct SearcherThread<D> {
   num_iteration: i32,
   dir: Arc<D>,
 }
