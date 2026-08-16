@@ -52,9 +52,8 @@ use crate::core::index::float_vector_values::{FloatVectorValues, FloatVectorValu
 use crate::core::index::knn_vector_values::{
   BitsImpl1, DenseDocIndexIterator, DocIndexIterator, KnnVectorValues,
 };
-use crate::core::index::merge_state::{
-  DocMap as MergeDocMap, MergeState, MergeStateDocMap, MergeStateDocMapImpl,
-};
+use crate::core::index::leaf_reader::LeafReader;
+use crate::core::index::merge_state::{DocMap as MergeDocMap, MergeState, MergeStateDocMapImpl};
 use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::segment_write_state::SegmentWriteState;
 use crate::core::index::sorter::DocMap;
@@ -1516,15 +1515,15 @@ where
 }
 
 /// Returns a merged view over all the segment's [`QuantizedByteVectorValues`].
-struct MergedQuantizedVectorValues<V, CR>
+struct MergedQuantizedVectorValues<V, LiveBits>
 where
   V: QuantizedByteVectorValues,
-  CR: CodecReader,
+  LiveBits: Bits,
 {
-  state: RefCell<Option<MergedQuantizedVectorValuesState<V, Rc<MergeStateDocMap<CR>>>>>,
+  state: RefCell<Option<MergedQuantizedVectorValuesState<V, Rc<MergeStateDocMapImpl<LiveBits>>>>>,
   #[allow(clippy::type_complexity)]
   iterator_state:
-    RefCell<Weak<RefCell<MergedQuantizedVectorValuesState<V, Rc<MergeStateDocMap<CR>>>>>>,
+    RefCell<Weak<RefCell<MergedQuantizedVectorValuesState<V, Rc<MergeStateDocMapImpl<LiveBits>>>>>>,
   size: usize,
   dimension: usize,
 }
@@ -1540,24 +1539,24 @@ where
   doc_id_merger: DocIDMergerEnum<QuantizedByteVectorValueSub<V, DM>>,
 }
 
-impl<CR>
+impl<F, LiveBits>
   MergedQuantizedVectorValues<
-    QuantizedFloatVectorValues<
-      FloatVectorValuesEnum2<
-        <CRKnnVectorReader<CR> as KnnVectorsReader>::FloatVectorValues,
-        NormalizedFloatVectorValues<<CRKnnVectorReader<CR> as KnnVectorsReader>::FloatVectorValues>,
-      >,
-    >,
-    CR,
+    QuantizedFloatVectorValues<FloatVectorValuesEnum2<F, NormalizedFloatVectorValues<F>>>,
+    LiveBits,
   >
 where
-  CR: CodecReader,
+  F: FloatVectorValues,
+  LiveBits: Bits,
 {
-  fn merge_quantized_byte_vector_values<D>(
+  fn merge_quantized_byte_vector_values<D, CR>(
     field_info: &FieldInfo,
     merge_state: &MergeState<'_, D, CR>,
     scalar_quantizer: ScalarQuantizer,
-  ) -> Result<Self> {
+  ) -> Result<Self>
+  where
+    CR: CodecReader + LeafReader<Bits = LiveBits>,
+    CRKnnVectorReader<CR>: KnnVectorsReader<FloatVectorValues = F>,
+  {
     debug_assert!(field_info.has_vector_values());
 
     let mut subs = Vec::new();
@@ -1588,15 +1587,18 @@ where
   }
 }
 
-impl<V, CR> MergedQuantizedVectorValues<V, CR>
+impl<V, LiveBits> MergedQuantizedVectorValues<V, LiveBits>
 where
   V: QuantizedByteVectorValues,
-  CR: CodecReader,
+  LiveBits: Bits,
 {
-  fn new<D>(
-    subs: Vec<Sub<QuantizedByteVectorValueSub<V, Rc<MergeStateDocMap<CR>>>>>,
+  fn new<D, CR>(
+    subs: Vec<Sub<QuantizedByteVectorValueSub<V, Rc<MergeStateDocMapImpl<LiveBits>>>>>,
     merge_state: &MergeState<'_, D, CR>,
-  ) -> Result<Self> {
+  ) -> Result<Self>
+  where
+    CR: CodecReader,
+  {
     let dimension = match subs.first() {
       Some(sub) => sub.sub.values.dimension(),
       None => return Err(LuceneError::illegal_state("no sub-vectors to merge")),
@@ -1617,17 +1619,17 @@ where
   }
 }
 
-impl<V, CR> HasIndexSlice for MergedQuantizedVectorValues<V, CR>
+impl<V, LiveBits> HasIndexSlice for MergedQuantizedVectorValues<V, LiveBits>
 where
   V: QuantizedByteVectorValues,
-  CR: CodecReader,
+  LiveBits: Bits,
 {
 }
 
-impl<V, CR> KnnVectorValues for MergedQuantizedVectorValues<V, CR>
+impl<V, LiveBits> KnnVectorValues for MergedQuantizedVectorValues<V, LiveBits>
 where
   V: QuantizedByteVectorValues,
-  CR: CodecReader,
+  LiveBits: Bits,
 {
   fn dimension(&self) -> usize {
     self.dimension
@@ -1656,7 +1658,7 @@ where
     self.default_get_accept_ords(accept_docs)
   }
 
-  type DocIndexIterator = MergedQuantizedVectorValuesIterator<V, CR::Bits>;
+  type DocIndexIterator = MergedQuantizedVectorValuesIterator<V, LiveBits>;
 
   fn iterator(&self) -> Result<Self::DocIndexIterator> {
     let state = self.state.borrow_mut().take().ok_or_else(|| {
@@ -1673,10 +1675,10 @@ where
   }
 }
 
-impl<V, CR> ByteVectorValues for MergedQuantizedVectorValues<V, CR>
+impl<V, LiveBits> ByteVectorValues for MergedQuantizedVectorValues<V, LiveBits>
 where
   V: QuantizedByteVectorValues,
-  CR: CodecReader,
+  LiveBits: Bits,
 {
   fn vector_value(&self, _ord: usize) -> Result<Cow<'_, VectorValueEnum>> {
     let state = self
@@ -1704,10 +1706,10 @@ where
   type VectorScorer = DummyVectorScorer;
 }
 
-impl<V, CR> QuantizedByteVectorValues for MergedQuantizedVectorValues<V, CR>
+impl<V, LiveBits> QuantizedByteVectorValues for MergedQuantizedVectorValues<V, LiveBits>
 where
   V: QuantizedByteVectorValues,
-  CR: CodecReader,
+  LiveBits: Bits,
 {
   fn get_score_correction_constant(&self, _ord: usize) -> Result<f32> {
     let state = self
