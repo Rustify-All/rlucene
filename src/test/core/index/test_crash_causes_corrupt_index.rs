@@ -156,10 +156,7 @@ const TEXT_FIELD: &str = "text";
  * This test type provides direct access to "simulating" a crash right after
  * `real_directory.create_output(..)` has been called on a certain specified name.
  */
-struct CrashAfterCreateOutput<D>
-where
-  D: Directory,
-{
+struct CrashAfterCreateOutput<D> {
   id: Identity,
   in_: Arc<D>,
   crash_after_create_output: Mutex<Option<String>>,
