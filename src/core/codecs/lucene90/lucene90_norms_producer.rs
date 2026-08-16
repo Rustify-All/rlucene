@@ -15,9 +15,7 @@
  * limitations under the License.
  */
 use crate::core::codecs::CodecUtil;
-use crate::core::codecs::doc_values_enum::norms::{
-  Lucene90NormNumericDocValuesEnum, Lucene90NormNumericDocValuesEnumImpl,
-};
+use crate::core::codecs::doc_values_enum::norms::Lucene90NormNumericDocValuesEnum;
 
 use crate::core::codecs::indexed_disi::{
   IndexedDISIEnumImpl, create_block_slice, create_jump_table,
@@ -391,7 +389,7 @@ where
     let entry = self.norms.get(&field.number).unwrap().clone();
     if entry.docs_with_field_offset == -2 {
       // empty
-      return Ok(Lucene90NormNumericDocValuesEnumImpl::Empty(
+      return Ok(Lucene90NormNumericDocValuesEnum::Empty(
         DocValues::empty_numeric(),
       ));
     }
@@ -403,7 +401,7 @@ where
           norms_offset: entry.norms_offset,
         });
         let dense_norms_iterator = DenseNormsIterator::new(self.max_doc, sub_dense_norms);
-        return Ok(Lucene90NormNumericDocValuesEnumImpl::Dense(
+        return Ok(Lucene90NormNumericDocValuesEnum::Dense(
           dense_norms_iterator,
         ));
       }
@@ -414,7 +412,7 @@ where
           let sub_dense_norms =
             DenseNormsIteratorBaseEnum::Dense1(DenseNormsIteratorBaseImpl1 { slice });
           let dense_norms_iterator = DenseNormsIterator::new(self.max_doc, sub_dense_norms);
-          Ok(Lucene90NormNumericDocValuesEnumImpl::Dense(
+          Ok(Lucene90NormNumericDocValuesEnum::Dense(
             dense_norms_iterator,
           ))
         },
@@ -422,7 +420,7 @@ where
           let sub_dense_norms =
             DenseNormsIteratorBaseEnum::Dense2(DenseNormsIteratorBaseImpl2 { slice });
           let dense_norms_iterator = DenseNormsIterator::new(self.max_doc, sub_dense_norms);
-          Ok(Lucene90NormNumericDocValuesEnumImpl::Dense(
+          Ok(Lucene90NormNumericDocValuesEnum::Dense(
             dense_norms_iterator,
           ))
         },
@@ -430,7 +428,7 @@ where
           let sub_dense_norms =
             DenseNormsIteratorBaseEnum::Dense3(DenseNormsIteratorBaseImpl4 { slice });
           let dense_norms_iterator = DenseNormsIterator::new(self.max_doc, sub_dense_norms);
-          Ok(Lucene90NormNumericDocValuesEnumImpl::Dense(
+          Ok(Lucene90NormNumericDocValuesEnum::Dense(
             dense_norms_iterator,
           ))
         },
@@ -438,7 +436,7 @@ where
           let sub_dense_norms =
             DenseNormsIteratorBaseEnum::Dense4(DenseNormsIteratorBaseImpl8 { slice });
           let dense_norms_iterator = DenseNormsIterator::new(self.max_doc, sub_dense_norms);
-          Ok(Lucene90NormNumericDocValuesEnumImpl::Dense(
+          Ok(Lucene90NormNumericDocValuesEnum::Dense(
             dense_norms_iterator,
           ))
         },
@@ -498,7 +496,7 @@ where
         norms_offset: entry.norms_offset,
       });
       let sparse_norms_iterator = SparseNormsIteratorImpl::new(sub_sparse_norms, disi);
-      return Ok(Lucene90NormNumericDocValuesEnumImpl::Sparse(
+      return Ok(Lucene90NormNumericDocValuesEnum::Sparse(
         sparse_norms_iterator,
       ));
     }
@@ -510,7 +508,7 @@ where
         let sub_sparse_norms =
           SparseNormsIteratorBaseEnum::Sparse1(SparseNormsIteratorBaseImpl1 { slice });
         let sparse_norms_iterator = SparseNormsIteratorImpl::new(sub_sparse_norms, disi);
-        Ok(Lucene90NormNumericDocValuesEnumImpl::Sparse(
+        Ok(Lucene90NormNumericDocValuesEnum::Sparse(
           sparse_norms_iterator,
         ))
       },
@@ -518,7 +516,7 @@ where
         let sub_sparse_norms =
           SparseNormsIteratorBaseEnum::Sparse2(SparseNormsIteratorBaseImpl2 { slice });
         let sparse_norms_iterator = SparseNormsIteratorImpl::new(sub_sparse_norms, disi);
-        Ok(Lucene90NormNumericDocValuesEnumImpl::Sparse(
+        Ok(Lucene90NormNumericDocValuesEnum::Sparse(
           sparse_norms_iterator,
         ))
       },
@@ -526,7 +524,7 @@ where
         let sub_sparse_norms =
           SparseNormsIteratorBaseEnum::Sparse3(SparseNormsIteratorBaseImpl4 { slice });
         let sparse_norms_iterator = SparseNormsIteratorImpl::new(sub_sparse_norms, disi);
-        Ok(Lucene90NormNumericDocValuesEnumImpl::Sparse(
+        Ok(Lucene90NormNumericDocValuesEnum::Sparse(
           sparse_norms_iterator,
         ))
       },
@@ -534,7 +532,7 @@ where
         let sub_sparse_norms =
           SparseNormsIteratorBaseEnum::Sparse4(SparseNormsIteratorBaseImpl8 { slice });
         let sparse_norms_iterator = SparseNormsIteratorImpl::new(sub_sparse_norms, disi);
-        Ok(Lucene90NormNumericDocValuesEnumImpl::Sparse(
+        Ok(Lucene90NormNumericDocValuesEnum::Sparse(
           sparse_norms_iterator,
         ))
       },

@@ -22,28 +22,20 @@ pub mod norms {
   use crate::core::index::doc_values_iterator::DocValuesIterator;
   use crate::core::index::numeric_doc_values::NumericDocValues;
   use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
-  use crate::core::store::random_access_input::RandomAccessInput;
   use crate::core::store::IndexInput;
   use crate::core::util::error::lucene_error::Result;
-  pub enum Lucene90NormNumericDocValuesEnumImpl<I, R>
+  pub enum Lucene90NormNumericDocValuesEnum<I>
   where
     I: IndexInput,
-    R: RandomAccessInput,
   {
-    Dense(DenseNormsIterator<R>),
-    Sparse(SparseNormsIteratorImpl<I, R>),
+    Dense(DenseNormsIterator<I::RandomAccessSlice>),
+    Sparse(SparseNormsIteratorImpl<I::IndexInput, I::RandomAccessSlice>),
     Empty(EmptyNumeric),
   }
 
-  pub type Lucene90NormNumericDocValuesEnum<I> = Lucene90NormNumericDocValuesEnumImpl<
-    <I as IndexInput>::IndexInput,
-    <I as IndexInput>::RandomAccessSlice,
-  >;
-
-  impl<I, R> DocValuesIterator for Lucene90NormNumericDocValuesEnumImpl<I, R>
+  impl<I> DocValuesIterator for Lucene90NormNumericDocValuesEnum<I>
   where
     I: IndexInput,
-    R: RandomAccessInput,
   {
     fn advance_exact(&mut self, target: i32) -> Result<bool> {
       match self {
@@ -54,10 +46,9 @@ pub mod norms {
     }
   }
 
-  impl<I, R> DocIdSetIterator for Lucene90NormNumericDocValuesEnumImpl<I, R>
+  impl<I> DocIdSetIterator for Lucene90NormNumericDocValuesEnum<I>
   where
     I: IndexInput,
-    R: RandomAccessInput,
   {
     fn doc_id(&self) -> i32 {
       match self {
@@ -100,10 +91,9 @@ pub mod norms {
     }
   }
 
-  impl<I, R> NumericDocValues for Lucene90NormNumericDocValuesEnumImpl<I, R>
+  impl<I> NumericDocValues for Lucene90NormNumericDocValuesEnum<I>
   where
     I: IndexInput,
-    R: RandomAccessInput,
   {
     fn long_value(&mut self) -> Result<i64> {
       match self {
