@@ -333,10 +333,7 @@ impl NumericDocValues for NumericDocValuesImpl {
   }
 }
 
-struct TwoPhaseIteratorImpl<NDV>
-where
-  NDV: NumericDocValues,
-{
+struct TwoPhaseIteratorImpl<NDV> {
   two_phase_called: Arc<AtomicBool>,
   query_min: i64,
   query_max: i64,
