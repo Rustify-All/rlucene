@@ -21,6 +21,8 @@ use crate::core::codecs::Codec;
 use crate::core::codecs::compound_format::CompoundFormat;
 #[cfg(test)]
 use crate::core::codecs::doc_values_consumer::DocValuesConsumerEnum2;
+#[cfg(test)]
+use crate::core::codecs::dummy::dummy_mutable_point_tree::DummyMutablePointTree;
 use crate::core::codecs::doc_values_format::DocValuesFormat;
 use crate::core::codecs::doc_values_producer::DocValuesProducer;
 #[cfg(test)]
@@ -51,8 +53,6 @@ use crate::core::codecs::lucene101_codec::Lucene101Codec;
 use crate::core::codecs::lucene101_codec::{
   Lucene101CodecDocValuesFormat, Lucene101CodecKnnVectorsFormat, Lucene101CodecPostingsFormat,
 };
-#[cfg(test)]
-use crate::core::codecs::mutable_point_tree::MutablePointTreeEnum2;
 #[cfg(test)]
 use crate::core::codecs::norms_consumer::NormsConsumerEnum2;
 use crate::core::codecs::norms_format::NormsFormat;
@@ -1730,47 +1730,30 @@ impl<I: IndexInput> PointValues for CodecPointValues<I> {
       <CrankyAssertingCodecPointValues<I> as PointValues>::PointTree,
     >,
   >;
-  type MutablePointTree = MutablePointTreeEnum2<
-    MutablePointTreeEnum2<
-      <Lucene90CodecPointValues<I> as PointValues>::MutablePointTree,
-      <AssertingCodecPointValues<I> as PointValues>::MutablePointTree,
-    >,
-    MutablePointTreeEnum2<
-      <CrankyLucene101CodecPointValues<I> as PointValues>::MutablePointTree,
-      <CrankyAssertingCodecPointValues<I> as PointValues>::MutablePointTree,
-    >,
-  >;
+  type MutablePointTree = DummyMutablePointTree;
 
   fn get_point_tree(&self) -> Result<PointTreeEnum<Self>> {
     match self {
       Self::Lucene90(values) => match values.get_point_tree()? {
-        PointTreeEnum::Mutable(tree) => Ok(PointTreeEnum::Mutable(MutablePointTreeEnum2::A(
-          MutablePointTreeEnum2::A(tree),
-        ))),
+        PointTreeEnum::Mutable(_) => dummy_unreachable!(),
         PointTreeEnum::Other(tree) => Ok(PointTreeEnum::Other(PointTreeEnum2::A(
           PointTreeEnum2::A(tree),
         ))),
       },
       Self::Asserting(values) => match values.get_point_tree()? {
-        PointTreeEnum::Mutable(tree) => Ok(PointTreeEnum::Mutable(MutablePointTreeEnum2::A(
-          MutablePointTreeEnum2::B(tree),
-        ))),
+        PointTreeEnum::Mutable(_) => dummy_unreachable!(),
         PointTreeEnum::Other(tree) => Ok(PointTreeEnum::Other(PointTreeEnum2::A(
           PointTreeEnum2::B(tree),
         ))),
       },
       Self::CrankyLucene101(values) => match values.get_point_tree()? {
-        PointTreeEnum::Mutable(tree) => Ok(PointTreeEnum::Mutable(MutablePointTreeEnum2::B(
-          MutablePointTreeEnum2::A(tree),
-        ))),
+        PointTreeEnum::Mutable(_) => dummy_unreachable!(),
         PointTreeEnum::Other(tree) => Ok(PointTreeEnum::Other(PointTreeEnum2::B(
           PointTreeEnum2::A(tree),
         ))),
       },
       Self::CrankyAsserting(values) => match values.get_point_tree()? {
-        PointTreeEnum::Mutable(tree) => Ok(PointTreeEnum::Mutable(MutablePointTreeEnum2::B(
-          MutablePointTreeEnum2::B(tree),
-        ))),
+        PointTreeEnum::Mutable(_) => dummy_unreachable!(),
         PointTreeEnum::Other(tree) => Ok(PointTreeEnum::Other(PointTreeEnum2::B(
           PointTreeEnum2::B(tree),
         ))),
