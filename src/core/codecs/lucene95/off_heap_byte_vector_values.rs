@@ -16,7 +16,7 @@
  */
 use crate::core::codecs::hnsw::flat_vectors_scorer::FlatVectorsScorer;
 use crate::core::codecs::indexed_disi::{
-  DocIndexIteratorImpl, IndexedDISIImpl, IndexedDocIterator, get_doc_index_iterator,
+  DocIndexIteratorImpl, IndexedDISIImpl, get_doc_index_iterator,
 };
 use crate::core::codecs::knn_field_vectors_writer::VectorValueEnum;
 use crate::core::codecs::lucene95::has_index_slice::HasIndexSlice;
@@ -793,9 +793,9 @@ where
 
   fn iterator(&self) -> Result<Self::DocIndexIterator> {
     match self {
-      Self::Empty(e) => e.iterator().map(IterEnumImpl::Dense),
-      Self::Dense(e) => e.iterator().map(IterEnumImpl::Dense),
-      Self::Sparse(e) => e.iterator().map(IterEnumImpl::Sparse),
+      Self::Empty(e) => e.iterator().map(IterEnum::Dense),
+      Self::Dense(e) => e.iterator().map(IterEnum::Dense),
+      Self::Sparse(e) => e.iterator().map(IterEnum::Sparse),
     }
   }
 }
@@ -917,24 +917,17 @@ where
   }
 }
 
-pub enum IterEnumImpl<I, R>
+pub enum IterEnum<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   Dense(DenseDocIndexIterator),
-  Sparse(IndexedDocIterator<I, R>),
+  Sparse(DocIndexIteratorImpl<I>),
 }
 
-pub type IterEnum<I> = IterEnumImpl<
-  <I as IndexInput>::IndexInput,
-  <I as IndexInput>::RandomAccessSlice,
->;
-
-impl<I, R> DocIdSetIterator for IterEnumImpl<I, R>
+impl<I> DocIdSetIterator for IterEnum<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn doc_id(&self) -> i32 {
     match self {
@@ -972,10 +965,9 @@ where
   }
 }
 
-impl<I, R> DocIndexIterator for IterEnumImpl<I, R>
+impl<I> DocIndexIterator for IterEnum<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn index(&self) -> Result<i32> {
     match self {
