@@ -396,36 +396,27 @@ where
   }
 }
 
-pub struct SoftUpdatesConcurrentlyOneMergeUnaryOperator<D> {
+pub struct SoftUpdatesConcurrentlyOneMergeUnaryOperator {
   merge_away_soft_deletes: Arc<AtomicBool>,
-  _marker: PhantomData<fn() -> D>,
 }
 
-impl<D> Clone for SoftUpdatesConcurrentlyOneMergeUnaryOperator<D>
-where
-  D: Directory,
-{
+impl Clone for SoftUpdatesConcurrentlyOneMergeUnaryOperator {
   fn clone(&self) -> Self {
     Self {
       merge_away_soft_deletes: self.merge_away_soft_deletes.clone(),
-      _marker: PhantomData,
     }
   }
 }
 
-impl<D> SoftUpdatesConcurrentlyOneMergeUnaryOperator<D>
-where
-  D: Directory,
-{
+impl SoftUpdatesConcurrentlyOneMergeUnaryOperator {
   pub(crate) fn new(merge_away_soft_deletes: Arc<AtomicBool>) -> Self {
     Self {
       merge_away_soft_deletes,
-      _marker: PhantomData,
     }
   }
 }
 
-impl<D> OneMergeUnaryOperatorBase<D> for SoftUpdatesConcurrentlyOneMergeUnaryOperator<D>
+impl<D> OneMergeUnaryOperatorBase<D> for SoftUpdatesConcurrentlyOneMergeUnaryOperator
 where
   D: Directory,
 {

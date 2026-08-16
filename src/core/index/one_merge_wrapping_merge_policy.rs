@@ -113,7 +113,7 @@ where
   #[cfg(test)]
   ForceMergeDvUpdate(ForceMergeDvUpdateOneMergeUnaryOperator),
   #[cfg(test)]
-  SoftUpdatesConcurrently(SoftUpdatesConcurrentlyOneMergeUnaryOperator<D>),
+  SoftUpdatesConcurrently(SoftUpdatesConcurrentlyOneMergeUnaryOperator),
   #[cfg(test)]
   Wrapped(WrappedOneMergeUnaryOperator),
 }
@@ -250,11 +250,11 @@ where
 }
 
 #[cfg(test)]
-impl<D> From<SoftUpdatesConcurrentlyOneMergeUnaryOperator<D>> for OneMergeUnaryOperator<D>
+impl<D> From<SoftUpdatesConcurrentlyOneMergeUnaryOperator> for OneMergeUnaryOperator<D>
 where
   D: Directory,
 {
-  fn from(value: SoftUpdatesConcurrentlyOneMergeUnaryOperator<D>) -> Self {
+  fn from(value: SoftUpdatesConcurrentlyOneMergeUnaryOperator) -> Self {
     Self::SoftUpdatesConcurrently(value)
   }
 }
