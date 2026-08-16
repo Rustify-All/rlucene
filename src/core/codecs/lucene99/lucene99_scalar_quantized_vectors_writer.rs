@@ -52,7 +52,9 @@ use crate::core::index::float_vector_values::{FloatVectorValues, FloatVectorValu
 use crate::core::index::knn_vector_values::{
   BitsImpl1, DenseDocIndexIterator, DocIndexIterator, KnnVectorValues,
 };
-use crate::core::index::merge_state::{DocMap as MergeDocMap, MergeState, MergeStateDocMap};
+use crate::core::index::merge_state::{
+  DocMap as MergeDocMap, MergeState, MergeStateDocMap, MergeStateDocMapImpl,
+};
 use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::segment_write_state::SegmentWriteState;
 use crate::core::index::sorter::DocMap;
@@ -1654,7 +1656,7 @@ where
     self.default_get_accept_ords(accept_docs)
   }
 
-  type DocIndexIterator = MergedQuantizedVectorValuesIterator<V, CR>;
+  type DocIndexIterator = MergedQuantizedVectorValuesIterator<V, CR::Bits>;
 
   fn iterator(&self) -> Result<Self::DocIndexIterator> {
     let state = self.state.borrow_mut().take().ok_or_else(|| {
@@ -1735,19 +1737,19 @@ where
   }
 }
 
-struct MergedQuantizedVectorValuesIterator<V, CR>
+struct MergedQuantizedVectorValuesIterator<V, B>
 where
   V: QuantizedByteVectorValues,
-  CR: CodecReader,
+  B: Bits,
 {
-  state: Rc<RefCell<MergedQuantizedVectorValuesState<V, Rc<MergeStateDocMap<CR>>>>>,
+  state: Rc<RefCell<MergedQuantizedVectorValuesState<V, Rc<MergeStateDocMapImpl<B>>>>>,
   size: usize,
 }
 
-impl<V, CR> DocIdSetIterator for MergedQuantizedVectorValuesIterator<V, CR>
+impl<V, B> DocIdSetIterator for MergedQuantizedVectorValuesIterator<V, B>
 where
   V: QuantizedByteVectorValues,
-  CR: CodecReader,
+  B: Bits,
 {
   fn doc_id(&self) -> i32 {
     self.state.borrow().doc_id
@@ -1779,10 +1781,10 @@ where
   }
 }
 
-impl<V, CR> DocIndexIterator for MergedQuantizedVectorValuesIterator<V, CR>
+impl<V, B> DocIndexIterator for MergedQuantizedVectorValuesIterator<V, B>
 where
   V: QuantizedByteVectorValues,
-  CR: CodecReader,
+  B: Bits,
 {
   fn index(&self) -> Result<i32> {
     Ok(self.state.borrow().ord)
