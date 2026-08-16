@@ -56,10 +56,7 @@ impl Predicate<TopParentMeta> for RandomSegmentSkippingPredicate {
   }
 }
 
-pub struct CachingSearcherFactory<P>
-where
-  P: Predicate<TopParentMeta>,
-{
+pub struct CachingSearcherFactory<P> {
   query_cache: Arc<LRUQueryCache<P>>,
   query_caching_policy: Arc<QueryCachingPolicyEnum>,
 }
