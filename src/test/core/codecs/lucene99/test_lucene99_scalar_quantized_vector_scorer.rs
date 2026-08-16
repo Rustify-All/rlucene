@@ -15,9 +15,9 @@
  * limitations under the License.
  */
 use crate::core::codecs::KnnVectorsFormatsReader;
+use crate::core::codecs::codec_formats::CodecKnnVectorsReaderInner;
 use crate::core::codecs::hnsw::default_flat_vector_scorer::DefaultFlatVectorScorer;
 use crate::core::codecs::knn_field_vectors_writer::VectorValueEnum;
-use crate::core::codecs::knn_vectors_reader::KnnVectorsReaderEnum2;
 use crate::core::codecs::lucene95::has_index_slice::HasIndexSlice;
 use crate::core::codecs::lucene99::lucene99_hnsw_scalar_quantized_vectors_format::Lucene99HnswScalarQuantizedVectorsFormat;
 use crate::core::codecs::lucene99::lucene99_hnsw_vectors_format::{
@@ -209,7 +209,7 @@ fn vector_scoring_test(bits: i32, compress: bool) -> Result<()> {
         .get_vector_reader()?
         .expect("vector reader should exist");
       let fields_reader = match vector_reader.as_ref().as_inner() {
-        KnnVectorsReaderEnum2::B(fields_reader) => fields_reader,
+        CodecKnnVectorsReaderInner::Asserting(fields_reader) => fields_reader,
         _ => panic!("reader is not the Asserting codec's per-field KNN reader"),
       };
       let field_reader = fields_reader

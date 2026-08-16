@@ -14,8 +14,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use crate::core::codecs::codec_formats::CodecKnnVectorsReaderInner;
 use crate::core::codecs::knn_field_vectors_writer::VectorValueEnum;
-use crate::core::codecs::knn_vectors_reader::KnnVectorsReaderEnum2;
 use crate::core::codecs::lucene99::lucene99_scalar_quantized_vectors_format::Lucene99ScalarQuantizedVectorsFormat;
 use crate::core::codecs::lucene99::lucene99_scalar_quantized_vectors_writer::{
   FloatVectorWrapper, build_scalar_quantizer,
@@ -193,7 +193,7 @@ fn test_quantized_vectors_write_and_read() -> Result<()> {
         .get_vector_reader()?
         .expect("vector reader should exist");
       let fields_reader = match vector_reader.as_ref().as_inner() {
-        KnnVectorsReaderEnum2::B(fields_reader) => fields_reader,
+        CodecKnnVectorsReaderInner::Asserting(fields_reader) => fields_reader,
         _ => panic!("reader is not the Asserting codec's per-field KNN reader"),
       };
       let field_reader = fields_reader
