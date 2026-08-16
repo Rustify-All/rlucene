@@ -530,10 +530,7 @@ fn test_bit_set_conjunction_disi_doc_id_on_exhaust() -> Result<()> {
   Ok(())
 }
 
-struct ScorerImpl<TPI>
-where
-  TPI: TwoPhaseIterator,
-{
+struct ScorerImpl<TPI> {
   tpi_disi: TwoPhaseIteratorAsDocIdSetIterator<TPI>,
 }
 impl<TPI> ScorerImpl<TPI>
