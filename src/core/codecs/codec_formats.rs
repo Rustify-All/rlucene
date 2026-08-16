@@ -20,7 +20,7 @@ use crate::core::codecs::Codec;
 #[cfg(test)]
 use crate::core::codecs::compound_format::CompoundFormat;
 #[cfg(test)]
-use crate::core::codecs::doc_values_consumer::DocValuesConsumerEnum2;
+use crate::core::codecs::doc_values_consumer::DocValuesConsumer;
 use crate::core::codecs::doc_values_format::DocValuesFormat;
 use crate::core::codecs::doc_values_producer::DocValuesProducer;
 #[cfg(test)]
@@ -664,19 +664,200 @@ impl PostingsFormat for CodecPostingsFormat {
 pub type CodecDocValuesConsumer<O> =
   <Lucene101CodecDocValuesFormat as DocValuesFormat>::DocValuesConsumer<O>;
 #[cfg(test)]
-pub type CodecDocValuesConsumer<O> = DocValuesConsumerEnum2<
-  DocValuesConsumerEnum2<
-    DocValuesConsumerEnum2<
-      <Lucene101CodecDocValuesFormat as DocValuesFormat>::DocValuesConsumer<O>,
-      <AssertingDocValuesFormat as DocValuesFormat>::DocValuesConsumer<O>,
-    >,
-    DocValuesConsumerEnum2<
-      <CrankyLucene101DocValuesFormat as DocValuesFormat>::DocValuesConsumer<O>,
-      <CrankyAssertingDocValuesFormat as DocValuesFormat>::DocValuesConsumer<O>,
-    >,
-  >,
-  <MergePerFieldCodecDocValuesFormat as DocValuesFormat>::DocValuesConsumer<O>,
->;
+pub enum CodecDocValuesConsumer<O: IndexOutput> {
+  Lucene101(<Lucene101CodecDocValuesFormat as DocValuesFormat>::DocValuesConsumer<O>),
+  Asserting(<AssertingDocValuesFormat as DocValuesFormat>::DocValuesConsumer<O>),
+  MergePerField(<MergePerFieldCodecDocValuesFormat as DocValuesFormat>::DocValuesConsumer<O>),
+  CrankyLucene101(<CrankyLucene101DocValuesFormat as DocValuesFormat>::DocValuesConsumer<O>),
+  CrankyAsserting(<CrankyAssertingDocValuesFormat as DocValuesFormat>::DocValuesConsumer<O>),
+}
+
+#[cfg(test)]
+impl<O: IndexOutput> Closeable for CodecDocValuesConsumer<O> {
+  fn close(&mut self) -> Result<()> {
+    match self {
+      Self::Lucene101(consumer) => consumer.close(),
+      Self::Asserting(consumer) => consumer.close(),
+      Self::MergePerField(consumer) => consumer.close(),
+      Self::CrankyLucene101(consumer) => consumer.close(),
+      Self::CrankyAsserting(consumer) => consumer.close(),
+    }
+  }
+}
+
+#[cfg(test)]
+impl<O: IndexOutput> DocValuesConsumer for CodecDocValuesConsumer<O> {
+  type IndexOutput = O;
+
+  fn add_numeric_field<D1, D2, D>(
+    &mut self,
+    write_state: &SegmentWriteState<D1>,
+    segment_info: &SegmentInfo<D2>,
+    field: &Arc<FieldInfo>,
+    values_producer: &D,
+  ) -> Result<()>
+  where
+    D1: Directory<IndexOutput = O>,
+    D: DocValuesProducer,
+  {
+    match self {
+      Self::Lucene101(consumer) => {
+        consumer.add_numeric_field(write_state, segment_info, field, values_producer)
+      },
+      Self::Asserting(consumer) => {
+        consumer.add_numeric_field(write_state, segment_info, field, values_producer)
+      },
+      Self::MergePerField(consumer) => {
+        consumer.add_numeric_field(write_state, segment_info, field, values_producer)
+      },
+      Self::CrankyLucene101(consumer) => {
+        consumer.add_numeric_field(write_state, segment_info, field, values_producer)
+      },
+      Self::CrankyAsserting(consumer) => {
+        consumer.add_numeric_field(write_state, segment_info, field, values_producer)
+      },
+    }
+  }
+
+  fn add_binary_field<D1, D2, D>(
+    &mut self,
+    write_state: &SegmentWriteState<D1>,
+    segment_info: &SegmentInfo<D2>,
+    field: &Arc<FieldInfo>,
+    values_producer: &D,
+  ) -> Result<()>
+  where
+    D1: Directory<IndexOutput = O>,
+    D: DocValuesProducer,
+  {
+    match self {
+      Self::Lucene101(consumer) => {
+        consumer.add_binary_field(write_state, segment_info, field, values_producer)
+      },
+      Self::Asserting(consumer) => {
+        consumer.add_binary_field(write_state, segment_info, field, values_producer)
+      },
+      Self::MergePerField(consumer) => {
+        consumer.add_binary_field(write_state, segment_info, field, values_producer)
+      },
+      Self::CrankyLucene101(consumer) => {
+        consumer.add_binary_field(write_state, segment_info, field, values_producer)
+      },
+      Self::CrankyAsserting(consumer) => {
+        consumer.add_binary_field(write_state, segment_info, field, values_producer)
+      },
+    }
+  }
+
+  fn add_sorted_field<D1, D2, D>(
+    &mut self,
+    write_state: &SegmentWriteState<D1>,
+    segment_info: &SegmentInfo<D2>,
+    field: &Arc<FieldInfo>,
+    values_producer: &D,
+  ) -> Result<()>
+  where
+    D1: Directory<IndexOutput = O>,
+    D: DocValuesProducer,
+  {
+    match self {
+      Self::Lucene101(consumer) => {
+        consumer.add_sorted_field(write_state, segment_info, field, values_producer)
+      },
+      Self::Asserting(consumer) => {
+        consumer.add_sorted_field(write_state, segment_info, field, values_producer)
+      },
+      Self::MergePerField(consumer) => {
+        consumer.add_sorted_field(write_state, segment_info, field, values_producer)
+      },
+      Self::CrankyLucene101(consumer) => {
+        consumer.add_sorted_field(write_state, segment_info, field, values_producer)
+      },
+      Self::CrankyAsserting(consumer) => {
+        consumer.add_sorted_field(write_state, segment_info, field, values_producer)
+      },
+    }
+  }
+
+  fn add_sorted_numeric_field<D1, D2, D>(
+    &mut self,
+    write_state: &SegmentWriteState<D1>,
+    segment_info: &SegmentInfo<D2>,
+    field: &Arc<FieldInfo>,
+    values_producer: &D,
+  ) -> Result<()>
+  where
+    D1: Directory<IndexOutput = O>,
+    D: DocValuesProducer,
+  {
+    match self {
+      Self::Lucene101(consumer) => {
+        consumer.add_sorted_numeric_field(write_state, segment_info, field, values_producer)
+      },
+      Self::Asserting(consumer) => {
+        consumer.add_sorted_numeric_field(write_state, segment_info, field, values_producer)
+      },
+      Self::MergePerField(consumer) => {
+        consumer.add_sorted_numeric_field(write_state, segment_info, field, values_producer)
+      },
+      Self::CrankyLucene101(consumer) => {
+        consumer.add_sorted_numeric_field(write_state, segment_info, field, values_producer)
+      },
+      Self::CrankyAsserting(consumer) => {
+        consumer.add_sorted_numeric_field(write_state, segment_info, field, values_producer)
+      },
+    }
+  }
+
+  fn add_sorted_set_field<D1, D2, D>(
+    &mut self,
+    write_state: &SegmentWriteState<D1>,
+    segment_info: &SegmentInfo<D2>,
+    field: &Arc<FieldInfo>,
+    values_producer: &D,
+  ) -> Result<()>
+  where
+    D1: Directory<IndexOutput = O>,
+    D: DocValuesProducer,
+  {
+    match self {
+      Self::Lucene101(consumer) => {
+        consumer.add_sorted_set_field(write_state, segment_info, field, values_producer)
+      },
+      Self::Asserting(consumer) => {
+        consumer.add_sorted_set_field(write_state, segment_info, field, values_producer)
+      },
+      Self::MergePerField(consumer) => {
+        consumer.add_sorted_set_field(write_state, segment_info, field, values_producer)
+      },
+      Self::CrankyLucene101(consumer) => {
+        consumer.add_sorted_set_field(write_state, segment_info, field, values_producer)
+      },
+      Self::CrankyAsserting(consumer) => {
+        consumer.add_sorted_set_field(write_state, segment_info, field, values_producer)
+      },
+    }
+  }
+
+  fn merge<D1, D2, MS>(
+    &mut self,
+    write_state: &SegmentWriteState<D1>,
+    segment_info: &SegmentInfo<D2>,
+    merge_state: &MS,
+  ) -> Result<()>
+  where
+    D1: Directory<IndexOutput = O>,
+    MS: MergeStateAccess,
+  {
+    match self {
+      Self::Lucene101(consumer) => consumer.merge(write_state, segment_info, merge_state),
+      Self::Asserting(consumer) => consumer.merge(write_state, segment_info, merge_state),
+      Self::MergePerField(consumer) => consumer.merge(write_state, segment_info, merge_state),
+      Self::CrankyLucene101(consumer) => consumer.merge(write_state, segment_info, merge_state),
+      Self::CrankyAsserting(consumer) => consumer.merge(write_state, segment_info, merge_state),
+    }
+  }
+}
 
 #[cfg(not(test))]
 pub type CodecDocValuesProducer<I> =
@@ -763,39 +944,27 @@ impl DocValuesFormat for CodecDocValuesFormat {
         }
         #[cfg(test)]
         {
-          format.fields_consumer(state, segment_info).map(|consumer| {
-            DocValuesConsumerEnum2::A(DocValuesConsumerEnum2::A(DocValuesConsumerEnum2::A(
-              consumer,
-            )))
-          })
+          format
+            .fields_consumer(state, segment_info)
+            .map(CodecDocValuesConsumer::Lucene101)
         }
       },
       #[cfg(test)]
-      Self::Asserting(format) => format.fields_consumer(state, segment_info).map(|consumer| {
-        DocValuesConsumerEnum2::A(DocValuesConsumerEnum2::A(DocValuesConsumerEnum2::B(
-          consumer,
-        )))
-      }),
+      Self::Asserting(format) => format
+        .fields_consumer(state, segment_info)
+        .map(CodecDocValuesConsumer::Asserting),
       #[cfg(test)]
       Self::MergePerField(format) => format
         .fields_consumer(state, segment_info)
-        .map(DocValuesConsumerEnum2::B),
+        .map(CodecDocValuesConsumer::MergePerField),
       #[cfg(test)]
-      Self::CrankyLucene101(format) => {
-        format.fields_consumer(state, segment_info).map(|consumer| {
-          DocValuesConsumerEnum2::A(DocValuesConsumerEnum2::B(DocValuesConsumerEnum2::A(
-            consumer,
-          )))
-        })
-      },
+      Self::CrankyLucene101(format) => format
+        .fields_consumer(state, segment_info)
+        .map(CodecDocValuesConsumer::CrankyLucene101),
       #[cfg(test)]
-      Self::CrankyAsserting(format) => {
-        format.fields_consumer(state, segment_info).map(|consumer| {
-          DocValuesConsumerEnum2::A(DocValuesConsumerEnum2::B(DocValuesConsumerEnum2::B(
-            consumer,
-          )))
-        })
-      },
+      Self::CrankyAsserting(format) => format
+        .fields_consumer(state, segment_info)
+        .map(CodecDocValuesConsumer::CrankyAsserting),
     }
   }
 
