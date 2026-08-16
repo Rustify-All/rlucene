@@ -56,7 +56,7 @@ use crate::core::codecs::lucene101_codec::{
   Lucene101CodecDocValuesFormat, Lucene101CodecKnnVectorsFormat, Lucene101CodecPostingsFormat,
 };
 #[cfg(test)]
-use crate::core::codecs::norms_consumer::NormsConsumerEnum2;
+use crate::core::codecs::norms_consumer::NormsConsumer;
 use crate::core::codecs::norms_format::NormsFormat;
 use crate::core::codecs::norms_producer::NormsProducer;
 use crate::core::codecs::points_format::PointsFormat;
@@ -1122,16 +1122,76 @@ impl TermVectorsFormat for CodecTermVectorsFormat {
 #[cfg(not(test))]
 pub type CodecNormsConsumer<O> = <Lucene90NormsFormat as NormsFormat>::NormsConsumer<O>;
 #[cfg(test)]
-pub type CodecNormsConsumer<O> = NormsConsumerEnum2<
-  NormsConsumerEnum2<
-    <Lucene90NormsFormat as NormsFormat>::NormsConsumer<O>,
-    <AssertingNormsFormat as NormsFormat>::NormsConsumer<O>,
-  >,
-  NormsConsumerEnum2<
-    <CrankyLucene101NormsFormat as NormsFormat>::NormsConsumer<O>,
-    <CrankyAssertingNormsFormat as NormsFormat>::NormsConsumer<O>,
-  >,
->;
+pub enum CodecNormsConsumer<O: IndexOutput> {
+  Lucene90(<Lucene90NormsFormat as NormsFormat>::NormsConsumer<O>),
+  Asserting(<AssertingNormsFormat as NormsFormat>::NormsConsumer<O>),
+  CrankyLucene101(<CrankyLucene101NormsFormat as NormsFormat>::NormsConsumer<O>),
+  CrankyAsserting(<CrankyAssertingNormsFormat as NormsFormat>::NormsConsumer<O>),
+}
+
+#[cfg(test)]
+impl<O: IndexOutput> Closeable for CodecNormsConsumer<O> {
+  fn close(&mut self) -> Result<()> {
+    match self {
+      Self::Lucene90(consumer) => consumer.close(),
+      Self::Asserting(consumer) => consumer.close(),
+      Self::CrankyLucene101(consumer) => consumer.close(),
+      Self::CrankyAsserting(consumer) => consumer.close(),
+    }
+  }
+}
+
+#[cfg(test)]
+impl<O: IndexOutput> NormsConsumer for CodecNormsConsumer<O> {
+  fn add_norms_field(
+    &mut self,
+    field: &Arc<FieldInfo>,
+    norms_producer: &mut impl NormsProducer,
+  ) -> Result<()> {
+    match self {
+      Self::Lucene90(consumer) => consumer.add_norms_field(field, norms_producer),
+      Self::Asserting(consumer) => consumer.add_norms_field(field, norms_producer),
+      Self::CrankyLucene101(consumer) => consumer.add_norms_field(field, norms_producer),
+      Self::CrankyAsserting(consumer) => consumer.add_norms_field(field, norms_producer),
+    }
+  }
+
+  fn merge<D, CR>(&mut self, merge_state: &MergeState<D, CR>) -> Result<()>
+  where
+    CR: CodecReader,
+  {
+    match self {
+      Self::Lucene90(consumer) => consumer.merge(merge_state),
+      Self::Asserting(consumer) => consumer.merge(merge_state),
+      Self::CrankyLucene101(consumer) => consumer.merge(merge_state),
+      Self::CrankyAsserting(consumer) => consumer.merge(merge_state),
+    }
+  }
+
+  fn merge_norms_field<D, CR>(
+    &mut self,
+    merge_field_info: &Arc<FieldInfo>,
+    merge_state: &MergeState<D, CR>,
+  ) -> Result<()>
+  where
+    CR: CodecReader,
+  {
+    match self {
+      Self::Lucene90(consumer) => {
+        consumer.merge_norms_field(merge_field_info, merge_state)
+      },
+      Self::Asserting(consumer) => {
+        consumer.merge_norms_field(merge_field_info, merge_state)
+      },
+      Self::CrankyLucene101(consumer) => {
+        consumer.merge_norms_field(merge_field_info, merge_state)
+      },
+      Self::CrankyAsserting(consumer) => {
+        consumer.merge_norms_field(merge_field_info, merge_state)
+      },
+    }
+  }
+}
 
 #[cfg(not(test))]
 pub type CodecNormsProducer<I> = <Lucene90NormsFormat as NormsFormat>::NormsProducer<I>;
@@ -1285,21 +1345,21 @@ impl NormsFormat for CodecNormsFormat {
         {
           format
             .norms_consumer(state, segment_info)
-            .map(|consumer| NormsConsumerEnum2::A(NormsConsumerEnum2::A(consumer)))
+            .map(CodecNormsConsumer::Lucene90)
         }
       },
       #[cfg(test)]
       Self::Asserting(format) => format
         .norms_consumer(state, segment_info)
-        .map(|consumer| NormsConsumerEnum2::A(NormsConsumerEnum2::B(consumer))),
+        .map(CodecNormsConsumer::Asserting),
       #[cfg(test)]
       Self::CrankyLucene101(format) => format
         .norms_consumer(state, segment_info)
-        .map(|consumer| NormsConsumerEnum2::B(NormsConsumerEnum2::A(consumer))),
+        .map(CodecNormsConsumer::CrankyLucene101),
       #[cfg(test)]
       Self::CrankyAsserting(format) => format
         .norms_consumer(state, segment_info)
-        .map(|consumer| NormsConsumerEnum2::B(NormsConsumerEnum2::B(consumer))),
+        .map(CodecNormsConsumer::CrankyAsserting),
     }
   }
 
