@@ -606,10 +606,7 @@ where
   }
 }
 
-struct TwoPhaseIteratorImpl<D>
-where
-  D: DocIdSetIterator,
-{
+struct TwoPhaseIteratorImpl<D> {
   approximation: D,
   confirmed: Arc<FixedBitSet>,
 }
@@ -645,10 +642,7 @@ where
   }
 }
 
-struct DocIdSetIteratorImpl<D>
-where
-  D: DocIdSetIterator,
-{
+struct DocIdSetIteratorImpl<D> {
   it: D,
 }
 impl<D> DocIdSetIterator for DocIdSetIteratorImpl<D>
