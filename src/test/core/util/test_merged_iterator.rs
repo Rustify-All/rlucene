@@ -28,11 +28,11 @@ struct TestMergedIterator;
 
 #[test]
 fn test_merge_empty() -> Result<()> {
-  let merged: MergedIterator<EmptyIter<i32>> =
+  let merged: MergedIterator<EmptyIter> =
     MergedIterator::with_remove_duplicates(true, Vec::new())?;
   assert!(!merged.has_next()?);
 
-  let empty = EmptyIter::<i32>::new();
+  let empty = EmptyIter::new();
   let merged = MergedIterator::with_remove_duplicates(true, vec![empty])?;
   assert!(!merged.has_next()?);
 
@@ -40,7 +40,7 @@ fn test_merge_empty() -> Result<()> {
   let n = random.random_range(0..100);
   let mut iters = Vec::with_capacity(n);
   for _ in 0..n {
-    iters.push(EmptyIter::<i32>::new());
+    iters.push(EmptyIter::new());
   }
 
   let merged = MergedIterator::with_remove_duplicates(true, iters)?;
@@ -231,20 +231,16 @@ where
   Ok(())
 }
 
-struct EmptyIter<T> {
-  _phantom: std::marker::PhantomData<T>,
-}
+struct EmptyIter;
 
-impl<T> EmptyIter<T> {
+impl EmptyIter {
   fn new() -> Self {
-    Self {
-      _phantom: std::marker::PhantomData,
-    }
+    Self
   }
 }
 
-impl<T> IteratorExt for EmptyIter<T> {
-  type Item = T;
+impl IteratorExt for EmptyIter {
+  type Item = i32;
 
   fn next(&mut self) -> Result<Option<Self::Item>> {
     Ok(None)
