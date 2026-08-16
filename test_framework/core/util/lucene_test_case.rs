@@ -15,11 +15,13 @@
  * limitations under the License.
  */
 use std::backtrace::Backtrace;
+use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::io::ErrorKind;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, Once};
 
 use crate::codec::bitvectors::hnsw_bit_vectors_format::HnswBitVectorsFormat;
 use crate::core::analysis::analyzer::AnalyzerEnum;
@@ -96,6 +98,45 @@ use tempfile::TempDir;
 
 #[allow(dead_code)] // for quick search
 pub struct LuceneTestCase;
+
+thread_local! {
+  static EXPECTED_PANIC_DEPTH: Cell<usize> = const { Cell::new(0) };
+}
+
+static INSTALL_EXPECTED_PANIC_HOOK: Once = Once::new();
+
+struct ExpectedPanicGuard;
+
+impl ExpectedPanicGuard {
+  fn new() -> Self {
+    INSTALL_EXPECTED_PANIC_HOOK.call_once(|| {
+      let panic_hook = std::panic::take_hook();
+      std::panic::set_hook(Box::new(move |panic_info| {
+        if !EXPECTED_PANIC_DEPTH.with(|depth| depth.get() > 0) {
+          panic_hook(panic_info);
+        }
+      }));
+    });
+    EXPECTED_PANIC_DEPTH.with(|depth| depth.set(depth.get() + 1));
+    Self
+  }
+}
+
+impl Drop for ExpectedPanicGuard {
+  fn drop(&mut self) {
+    EXPECTED_PANIC_DEPTH.with(|depth| depth.set(depth.get() - 1));
+  }
+}
+
+/// Rust equivalent of `LuceneTestCase.expectThrows` for an expected Java
+/// `Error`. The panic hook is suppressed only on the thread that is currently
+/// checking the expected panic, since Java does not print expected throwables.
+pub(crate) fn expect_panic<T>(f: impl FnOnce() -> T) {
+  let guard = ExpectedPanicGuard::new();
+  let result = catch_unwind(AssertUnwindSafe(f));
+  drop(guard);
+  assert!(result.is_err(), "Expected panic was not thrown");
+}
 
 pub fn random_vector_format<R>(
   random: &mut R,

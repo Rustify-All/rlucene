@@ -58,8 +58,9 @@ use crate::test_framework::core::index::base_index_file_format_test_case::{
 use crate::test_framework::core::index::random_index_writer::RandomIndexWriter;
 pub use crate::test_framework::core::index::term_vectors::RandomTokenStreamAttr;
 use crate::test_framework::core::util::lucene_test_case::{
-  at_least, get_only_leaf_reader, is_night_mode, new_bytes_ref_from_bytes, new_directory_shared,
-  new_index_writer_config, new_index_writer_config_with_analyzer, random_from_seed, rarely,
+  at_least, expect_panic, get_only_leaf_reader, is_night_mode, new_bytes_ref_from_bytes,
+  new_directory_shared, new_index_writer_config, new_index_writer_config_with_analyzer,
+  random_from_seed, rarely,
 };
 use crate::test_framework::core::util::test_util::TestUtil;
 use rand::prelude::StdRng;
@@ -67,7 +68,6 @@ use rand::seq::SliceRandom;
 use rand::{Rng, RngExt};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
-use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 use std::thread;
 
@@ -2306,9 +2306,9 @@ where
           docs_and_positions_enum.next_position(),
           Err(LuceneError::IllegalState(_))
         )),
-        ReadPastLastPositionException::Assertion => assert!(
-          catch_unwind(AssertUnwindSafe(|| docs_and_positions_enum.next_position())).is_err()
-        ),
+        ReadPastLastPositionException::Assertion => {
+          expect_panic(|| docs_and_positions_enum.next_position())
+        },
       }
       assert_eq!(NO_MORE_DOCS, docs_and_positions_enum.next_doc()?);
     }
