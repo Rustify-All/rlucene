@@ -557,21 +557,19 @@ where
   }
 }
 
-pub(crate) struct MergeFinishedOnceOneMerge<D, CR> {
+pub(crate) struct MergeFinishedOnceOneMerge {
   only_finish_once: AtomicBool,
-  _marker: PhantomData<fn(D, CR)>,
 }
 
-impl<D, CR> MergeFinishedOnceOneMerge<D, CR> {
+impl MergeFinishedOnceOneMerge {
   fn new() -> Self {
     Self {
       only_finish_once: AtomicBool::new(false),
-      _marker: PhantomData,
     }
   }
 }
 
-impl<D, CR> OneMergeBase<D, CR> for MergeFinishedOnceOneMerge<D, CR>
+impl<D, CR> OneMergeBase<D, CR> for MergeFinishedOnceOneMerge
 where
   D: Directory,
   CR: CodecReader,
