@@ -63,6 +63,7 @@ use crate::core::index::two_phase_commit::TwoPhaseCommit;
 use crate::core::index::{CODEC_FILE_PATTERN, IndexFileNames};
 use crate::core::search::doc_id_set_iterator::{DocIdSetIterator, NO_MORE_DOCS};
 use crate::core::store::directory::{DirEnum, Directory};
+use crate::core::store::dummy::dummy_index_output::DummyIndexOutput;
 use crate::core::store::flush_info::FlushInfo;
 use crate::core::store::random_access_input::RandomAccessInputWrapper;
 use crate::core::store::{DataInput, IOContext, IndexInput};
@@ -607,7 +608,7 @@ where
     Ok(ReadBytesIndexInputWrapper::new(input, read_bytes, 0))
   }
 
-  type IndexOutput = D::IndexOutput;
+  type IndexOutput = DummyIndexOutput;
 
   fn create_output(&self, _name: &str, _context: &IOContext) -> Result<Self::IndexOutput> {
     Err(LuceneError::unsupported_operation(
