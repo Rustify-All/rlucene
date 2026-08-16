@@ -2129,7 +2129,7 @@ where
   I: IndexInput,
 {
   entry: Arc<SortedEntry>,
-  terms_enum: TermsDict<I>,
+  terms_enum: TermsDict<I::IndexInput, I::RandomAccessSlice>,
   sub: BaseSortedDocValuesEnum<I>,
   data: Arc<I>,
   merging: bool,
@@ -2217,7 +2217,7 @@ where
     }
   }
   type TermsEnum<'a>
-    = TermsDict<I>
+    = TermsDict<I::IndexInput, I::RandomAccessSlice>
   where
     I: 'a;
 
@@ -2495,7 +2495,7 @@ where
   I: IndexInput,
 {
   entry: Arc<SortedSetEntry>,
-  terms_enum: TermsDict<I>,
+  terms_enum: TermsDict<I::IndexInput, I::RandomAccessSlice>,
   sub: BaseSortedSetDocValuesEnum<I>,
   data: Arc<I>,
   merging: bool,
@@ -2594,7 +2594,7 @@ where
   }
 
   type TermsEnum<'a>
-    = TermsDict<I>
+    = TermsDict<I::IndexInput, I::RandomAccessSlice>
   where
     I: 'a;
 
@@ -2611,16 +2611,17 @@ where
   type SortedDocValues = DummySortedDocValues;
 }
 
-pub struct TermsDict<I>
+pub struct TermsDict<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   entry: Arc<TermsDictEntry>,
-  block_addresses: DirectMonotonicReader<I::RandomAccessSlice>,
-  bytes: I::IndexInput,
+  block_addresses: DirectMonotonicReader<R>,
+  bytes: I,
   block_mask: u64,
-  index_addresses: DirectMonotonicReader<I::RandomAccessSlice>,
-  index_bytes: I::RandomAccessSlice,
+  index_addresses: DirectMonotonicReader<R>,
+  index_bytes: R,
   term: BytesRef<Vec<u8>>,
   ord: i64,
   block_input: ByteArrayDataInput<Vec<u8>>,
@@ -2630,13 +2631,17 @@ where
   current_compressed_block_end: Option<usize>,
 }
 
-impl<I> TermsDict<I>
+impl<I, R> TermsDict<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   const LZ4_DECOMPRESSOR_PADDING: i32 = 7;
 
-  pub fn new(entry: Arc<TermsDictEntry>, data: &I, merging: bool) -> Result<Self> {
+  pub fn new<D>(entry: Arc<TermsDictEntry>, data: &D, merging: bool) -> Result<Self>
+  where
+    D: IndexInput<IndexInput = I, RandomAccessSlice = R>,
+  {
     let addresses_slice =
       data.random_access_slice(entry.terms_addresses_offset, entry.terms_addresses_length)?;
 
@@ -2898,9 +2903,10 @@ where
   }
 }
 
-impl<I> BytesRefIterator for TermsDict<I>
+impl<I, R> BytesRefIterator for TermsDict<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   fn next(&mut self) -> Result<Option<Cow<'_, BytesRef<Vec<u8>>>>> {
     self.ord += 1;
@@ -2934,9 +2940,10 @@ where
   }
 }
 
-impl<I> TermsEnum for TermsDict<I>
+impl<I, R> TermsEnum for TermsDict<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   type AttributeSource<'a>
     = &'a DummyAttributeSource
