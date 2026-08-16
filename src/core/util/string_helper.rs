@@ -15,11 +15,12 @@
  * limitations under the License.
  */
 use std::env;
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::sync::LazyLock;
+#[cfg(test)]
+use std::sync::OnceLock;
 use std::time::SystemTime;
 
 use rand::RngExt;
-use std::sync::LazyLock;
 
 use crate::core::index::BytesRef;
 use crate::core::util::CoreHelper;
@@ -332,12 +333,29 @@ impl StringHelper {
 /// This seed is based on a system property `tests.seed` if present, or the
 /// current system time if not. It's used as a seed for the MurmurHash3
 /// algorithm to ensure a different salt/seed for each run.
+#[cfg(test)]
+static TEST_GOOD_FAST_HASH_SEED: OnceLock<i32> = OnceLock::new();
+
+fn string_hash_code(value: &str) -> i32 {
+  value.encode_utf16().fold(0, |hash, code_unit| {
+    hash.wrapping_mul(31).wrapping_add(code_unit as i32)
+  })
+}
+
+#[cfg(test)]
+pub(crate) fn set_good_fast_hash_seed_from_test_seed(seed: &str) {
+  TEST_GOOD_FAST_HASH_SEED.get_or_init(|| string_hash_code(seed));
+}
+
 pub static GOOD_FAST_HASH_SEED: LazyLock<i32> = LazyLock::new(|| {
+  #[cfg(test)]
+  if let Some(seed) = TEST_GOOD_FAST_HASH_SEED.get() {
+    return *seed;
+  }
+
   if let Ok(prop) = env::var("tests.seed") {
     // If the system property `tests.seed` is set, use it as the seed.
-    let mut hasher = DefaultHasher::new();
-    prop.hash(&mut hasher);
-    hasher.finish() as i32
+    string_hash_code(&prop)
   } else {
     // Otherwise, fall back to using the current system time in
     // milliseconds.
