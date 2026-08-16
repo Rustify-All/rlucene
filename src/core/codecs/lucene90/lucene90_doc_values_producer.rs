@@ -802,7 +802,9 @@ where
       )));
     };
     if entry.docs_with_field_offset == -2 {
-      return Ok(Lucene90BinaryDocValuesEnum::Empty(DocValues::empty_binary()));
+      return Ok(Lucene90BinaryDocValuesEnumImpl::Empty(
+        DocValues::empty_binary(),
+      ));
     }
     let mut bytes_slice = self
       .data
@@ -844,7 +846,7 @@ where
         };
         DenseBinaryDocValuesBaseEnum::Dense1(base)
       };
-      Ok(Lucene90BinaryDocValuesEnum::Dense(
+      Ok(Lucene90BinaryDocValuesEnumImpl::Dense(
         DenseBinaryDocValues::new(dense, self.max_doc),
       ))
     } else {
@@ -888,8 +890,8 @@ where
           addresses,
         })
       };
-      Ok(Lucene90BinaryDocValuesEnum::Sparse(
-        SparseBinaryDocValues::new(sub, disi),
+      Ok(Lucene90BinaryDocValuesEnumImpl::Sparse(
+        SparseBinaryDocValuesImpl::new(sub, disi),
       ))
     }
   }
@@ -1304,37 +1306,44 @@ where
   }
 }
 
-pub struct SparseBinaryDocValues<I>
+pub struct SparseBinaryDocValuesImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
-  sub: SparseBinaryDocValuesBaseEnum<I::RandomAccessSlice>,
-  disi: IndexedDISI<I, Owned>,
+  sub: SparseBinaryDocValuesBaseEnum<R>,
+  disi: IndexedDISIImpl<I, R>,
 }
-impl<I> SparseBinaryDocValues<I>
+
+pub type SparseBinaryDocValues<I> = SparseBinaryDocValuesImpl<
+  <I as IndexInput>::IndexInput,
+  <I as IndexInput>::RandomAccessSlice,
+>;
+
+impl<I, R> SparseBinaryDocValuesImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
-  fn new(
-    sub: SparseBinaryDocValuesBaseEnum<I::RandomAccessSlice>,
-    disi: IndexedDISI<I, Owned>,
-  ) -> Self {
+  fn new(sub: SparseBinaryDocValuesBaseEnum<R>, disi: IndexedDISIImpl<I, R>) -> Self {
     Self { sub, disi }
   }
 }
 
-impl<I> DocValuesIterator for SparseBinaryDocValues<I>
+impl<I, R> DocValuesIterator for SparseBinaryDocValuesImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   fn advance_exact(&mut self, target: i32) -> Result<bool> {
     self.disi.advance_exact(target)
   }
 }
 
-impl<I> DocIdSetIterator for SparseBinaryDocValues<I>
+impl<I, R> DocIdSetIterator for SparseBinaryDocValuesImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   fn doc_id(&self) -> i32 {
     self.disi.doc_id()
@@ -1353,9 +1362,10 @@ where
   }
 }
 
-impl<I> BinaryDocValues for SparseBinaryDocValues<I>
+impl<I, R> BinaryDocValues for SparseBinaryDocValuesImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   fn binary_value(&mut self) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
     self.sub.binary_value(&mut self.disi)
@@ -3482,18 +3492,25 @@ where
 }
 
 // 3. BinaryDocValues
-pub enum Lucene90BinaryDocValuesEnum<I>
+pub enum Lucene90BinaryDocValuesEnumImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
-  Dense(DenseBinaryDocValues<I::RandomAccessSlice>),
-  Sparse(SparseBinaryDocValues<I>),
+  Dense(DenseBinaryDocValues<R>),
+  Sparse(SparseBinaryDocValuesImpl<I, R>),
   Empty(EmptyBinary),
 }
 
-impl<I> DocValuesIterator for Lucene90BinaryDocValuesEnum<I>
+pub type Lucene90BinaryDocValuesEnum<I> = Lucene90BinaryDocValuesEnumImpl<
+  <I as IndexInput>::IndexInput,
+  <I as IndexInput>::RandomAccessSlice,
+>;
+
+impl<I, R> DocValuesIterator for Lucene90BinaryDocValuesEnumImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   fn advance_exact(&mut self, target: i32) -> Result<bool> {
     match self {
@@ -3504,9 +3521,10 @@ where
   }
 }
 
-impl<I> DocIdSetIterator for Lucene90BinaryDocValuesEnum<I>
+impl<I, R> DocIdSetIterator for Lucene90BinaryDocValuesEnumImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   fn doc_id(&self) -> i32 {
     match self {
@@ -3549,9 +3567,10 @@ where
   }
 }
 
-impl<I> BinaryDocValues for Lucene90BinaryDocValuesEnum<I>
+impl<I, R> BinaryDocValues for Lucene90BinaryDocValuesEnumImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   fn binary_value(&mut self) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
     match self {
