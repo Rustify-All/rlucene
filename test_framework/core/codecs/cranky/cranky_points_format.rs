@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use crate::core::codecs::dummy::dummy_mutable_point_tree::DummyMutablePointTree;
 use crate::core::codecs::points_format::PointsFormat;
 use crate::core::codecs::points_reader::PointsReader;
 use crate::core::codecs::points_writer::PointsWriter;
@@ -268,7 +269,7 @@ where
   }
 
   type PointTree = CrankyPointTree<PointTreeEnum<PV>>;
-  type MutablePointTree = PV::MutablePointTree;
+  type MutablePointTree = DummyMutablePointTree;
 
   fn get_point_tree(&self) -> Result<PointTreeEnum<Self>> {
     Ok(PointTreeEnum::Other(CrankyPointTree::Cranky {
