@@ -28,7 +28,7 @@ use crate::core::codecs::dummy::dummy_mutable_point_tree::DummyMutablePointTree;
 #[cfg(test)]
 use crate::core::codecs::field_infos_format::FieldInfosFormat;
 #[cfg(test)]
-use crate::core::codecs::fields_consumer::FieldsConsumerEnum2;
+use crate::core::codecs::fields_consumer::{FieldsConsumer, FieldsConsumerEnum2};
 #[cfg(test)]
 use crate::core::codecs::knn_field_vectors_writer::VectorValueEnum;
 use crate::core::codecs::knn_vectors_format::KnnVectorsFormat;
@@ -85,12 +85,14 @@ use crate::core::index::codec_reader::CodecReader;
 use crate::core::index::doc_values_iterator::DocValuesIterator;
 #[cfg(test)]
 use crate::core::index::field_info::FieldInfo;
+#[cfg(test)]
+use crate::core::index::fields::Fields;
 use crate::core::index::field_infos::FieldInfos;
 use crate::core::index::index_reader::Identity;
 #[cfg(test)]
 use crate::core::index::knn_vector_values::{DocIndexIterator, KnnVectorValues};
 #[cfg(test)]
-use crate::core::index::merge_state::MergeState;
+use crate::core::index::merge_state::{MergeState, MergeStateAccess};
 #[cfg(test)]
 use crate::core::index::numeric_doc_values::NumericDocValues;
 #[cfg(test)]
@@ -423,19 +425,71 @@ impl CompoundFormat for CodecCompoundFormat {
 pub type CodecFieldsConsumer<O> =
   <Lucene101CodecPostingsFormat as PostingsFormat>::FieldsConsumer<O>;
 #[cfg(test)]
-pub type BaseCodecFieldsConsumer<O> = FieldsConsumerEnum2<
-  FieldsConsumerEnum2<
-    FieldsConsumerEnum2<
-      <Lucene101CodecPostingsFormat as PostingsFormat>::FieldsConsumer<O>,
-      <AssertingPostingsFormat as PostingsFormat>::FieldsConsumer<O>,
-    >,
-    FieldsConsumerEnum2<
-      <CrankyLucene101PostingsFormat as PostingsFormat>::FieldsConsumer<O>,
-      <CrankyAssertingPostingsFormat as PostingsFormat>::FieldsConsumer<O>,
-    >,
-  >,
-  <MergePerFieldCodecPostingsFormat as PostingsFormat>::FieldsConsumer<O>,
->;
+pub enum BaseCodecFieldsConsumer<O: IndexOutput> {
+  Lucene101(<Lucene101CodecPostingsFormat as PostingsFormat>::FieldsConsumer<O>),
+  Asserting(<AssertingPostingsFormat as PostingsFormat>::FieldsConsumer<O>),
+  MergePerField(<MergePerFieldCodecPostingsFormat as PostingsFormat>::FieldsConsumer<O>),
+  CrankyLucene101(<CrankyLucene101PostingsFormat as PostingsFormat>::FieldsConsumer<O>),
+  CrankyAsserting(<CrankyAssertingPostingsFormat as PostingsFormat>::FieldsConsumer<O>),
+}
+
+#[cfg(test)]
+impl<O: IndexOutput> Closeable for BaseCodecFieldsConsumer<O> {
+  fn close(&mut self) -> Result<()> {
+    match self {
+      Self::Lucene101(consumer) => consumer.close(),
+      Self::Asserting(consumer) => consumer.close(),
+      Self::MergePerField(consumer) => consumer.close(),
+      Self::CrankyLucene101(consumer) => consumer.close(),
+      Self::CrankyAsserting(consumer) => consumer.close(),
+    }
+  }
+}
+
+#[cfg(test)]
+impl<O: IndexOutput> FieldsConsumer for BaseCodecFieldsConsumer<O> {
+  fn write<D1, D2, F, N>(
+    &mut self,
+    state: &SegmentWriteState<D1>,
+    segment_info: &SegmentInfo<D2>,
+    fields: &mut F,
+    norms: Option<&N>,
+  ) -> Result<()>
+  where
+    D1: Directory,
+    F: Fields,
+    N: NormsProducer,
+  {
+    match self {
+      Self::Lucene101(consumer) => consumer.write(state, segment_info, fields, norms),
+      Self::Asserting(consumer) => consumer.write(state, segment_info, fields, norms),
+      Self::MergePerField(consumer) => consumer.write(state, segment_info, fields, norms),
+      Self::CrankyLucene101(consumer) => consumer.write(state, segment_info, fields, norms),
+      Self::CrankyAsserting(consumer) => consumer.write(state, segment_info, fields, norms),
+    }
+  }
+
+  fn merge<D1, D2, N, MS>(
+    &mut self,
+    state: &SegmentWriteState<D1>,
+    segment_info: &SegmentInfo<D2>,
+    merge_state: &MS,
+    norms: Option<&N>,
+  ) -> Result<()>
+  where
+    D1: Directory,
+    N: NormsProducer,
+    MS: MergeStateAccess,
+  {
+    match self {
+      Self::Lucene101(consumer) => consumer.merge(state, segment_info, merge_state, norms),
+      Self::Asserting(consumer) => consumer.merge(state, segment_info, merge_state, norms),
+      Self::MergePerField(consumer) => consumer.merge(state, segment_info, merge_state, norms),
+      Self::CrankyLucene101(consumer) => consumer.merge(state, segment_info, merge_state, norms),
+      Self::CrankyAsserting(consumer) => consumer.merge(state, segment_info, merge_state, norms),
+    }
+  }
+}
 #[cfg(test)]
 pub type CodecFieldsConsumer<O> = FieldsConsumerEnum2<
   BaseCodecFieldsConsumer<O>,
@@ -462,25 +516,21 @@ impl CodecPostingsFormat {
     D1: Directory,
   {
     match self {
-      Self::Lucene101(format) => format.fields_consumer(state, segment_info).map(|consumer| {
-        FieldsConsumerEnum2::A(FieldsConsumerEnum2::A(FieldsConsumerEnum2::A(consumer)))
-      }),
-      Self::Asserting(format) => format.fields_consumer(state, segment_info).map(|consumer| {
-        FieldsConsumerEnum2::A(FieldsConsumerEnum2::A(FieldsConsumerEnum2::B(consumer)))
-      }),
+      Self::Lucene101(format) => format
+        .fields_consumer(state, segment_info)
+        .map(BaseCodecFieldsConsumer::Lucene101),
+      Self::Asserting(format) => format
+        .fields_consumer(state, segment_info)
+        .map(BaseCodecFieldsConsumer::Asserting),
       Self::MergePerField(format) => format
         .fields_consumer(state, segment_info)
-        .map(FieldsConsumerEnum2::B),
-      Self::CrankyLucene101(format) => {
-        format.fields_consumer(state, segment_info).map(|consumer| {
-          FieldsConsumerEnum2::A(FieldsConsumerEnum2::B(FieldsConsumerEnum2::A(consumer)))
-        })
-      },
-      Self::CrankyAsserting(format) => {
-        format.fields_consumer(state, segment_info).map(|consumer| {
-          FieldsConsumerEnum2::A(FieldsConsumerEnum2::B(FieldsConsumerEnum2::B(consumer)))
-        })
-      },
+        .map(BaseCodecFieldsConsumer::MergePerField),
+      Self::CrankyLucene101(format) => format
+        .fields_consumer(state, segment_info)
+        .map(BaseCodecFieldsConsumer::CrankyLucene101),
+      Self::CrankyAsserting(format) => format
+        .fields_consumer(state, segment_info)
+        .map(BaseCodecFieldsConsumer::CrankyAsserting),
       Self::InvertedWrite(_) => Err(LuceneError::illegal_state(
         "InvertedWritePostingsFormat cannot wrap itself",
       )),
