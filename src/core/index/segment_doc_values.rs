@@ -23,6 +23,7 @@ use crate::core::index::segment_commit_info::SegmentCommitInfo;
 use crate::core::index::segment_read_state::SegmentReadState;
 use crate::core::store::IOContext;
 use crate::core::store::directory::Directory;
+use crate::core::store::index_input::IndexInput;
 use crate::core::util::IOUtils;
 use crate::core::util::close::CloseableRef;
 use crate::core::util::error::lucene_error::Result;
@@ -33,22 +34,22 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Manages the [`DocValuesProducer`](crate::core::codecs::doc_values_producer::DocValuesProducer) held by [`SegmentReader`](crate::core::index::segment_reader::SegmentReader) and keeps track of their reference counting.
-pub(crate) struct SegmentDocValues<D>
+pub(crate) struct SegmentDocValues<I>
 where
-  D: Directory,
+  I: IndexInput,
 {
-  inner: Mutex<Inner<D>>,
+  inner: Mutex<Inner<I>>,
 }
-pub(crate) struct Inner<D>
+pub(crate) struct Inner<I>
 where
-  D: Directory,
+  I: IndexInput,
 {
-  gen_dv_producers: HashMap<i64, RefCount<Arc<CodecDocValuesProducer<D::IndexInput>>>>,
+  gen_dv_producers: HashMap<i64, RefCount<Arc<CodecDocValuesProducer<I>>>>,
 }
 
-impl<D> SegmentDocValues<D>
+impl<I> SegmentDocValues<I>
 where
-  D: Directory,
+  I: IndexInput,
 {
   pub(crate) fn new() -> Self {
     SegmentDocValues {
@@ -57,15 +58,16 @@ where
       }),
     }
   }
-  pub(crate) fn new_doc_values_producer<D1>(
+  pub(crate) fn new_doc_values_producer<D, D1>(
     &self,
     si: &SegmentCommitInfo<D>,
     dir: Option<&D1>,
     gen_: i64,
     infos: Arc<FieldInfos>,
-  ) -> Result<RefCount<Arc<CodecDocValuesProducer<D1::IndexInput>>>>
+  ) -> Result<RefCount<Arc<CodecDocValuesProducer<I>>>>
   where
-    D1: Directory<IndexInput = D::IndexInput>,
+    D: Directory<IndexInput = I>,
+    D1: Directory<IndexInput = I>,
   {
     let mut dv_dir = match dir {
       Some(d) => CompoundDirectoryEnum::A(d),
@@ -91,15 +93,16 @@ where
     )))
   }
   /// Returns the [`DocValuesProducer`](crate::core::codecs::doc_values_producer::DocValuesProducer) for the given generation.
-  pub(crate) fn get_doc_values_producer<D1>(
+  pub(crate) fn get_doc_values_producer<D, D1>(
     &self,
     gen_: i64,
     si: &SegmentCommitInfo<D>,
     dir: Option<&D1>,
     infos: Arc<FieldInfos>,
-  ) -> Result<Arc<CodecDocValuesProducer<D1::IndexInput>>>
+  ) -> Result<Arc<CodecDocValuesProducer<I>>>
   where
-    D1: Directory<IndexInput = D::IndexInput>,
+    D: Directory<IndexInput = I>,
+    D1: Directory<IndexInput = I>,
   {
     let mut inner = self.inner.lock();
 

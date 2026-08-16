@@ -49,6 +49,7 @@ use crate::core::index::term::Term;
 use crate::core::search::knn_collector::KnnCollector;
 use crate::core::store::IOContext;
 use crate::core::store::directory::Directory;
+use crate::core::store::index_input::IndexInput;
 use crate::core::util::bits::Bits;
 use crate::core::util::clone::TryClone;
 use crate::core::util::close::CloseableRef;
@@ -76,11 +77,11 @@ where
   // tells us the number of live docs:
   num_docs: i32,
   core: Arc<SegmentCoreReaders<D>>,
-  seg_doc_values: Arc<SegmentDocValues<D>>,
+  seg_doc_values: Arc<SegmentDocValues<D::IndexInput>>,
   /// True if we are holding RAM only liveDocs or DV updates,
   /// i.e. the SegmentCommitInfo delGen doesn't match our liveDocs.
   pub(crate) is_nrt: bool,
-  doc_values_producer: Option<Arc<DocValuesProducers<D>>>,
+  doc_values_producer: Option<Arc<DocValuesProducers<D::IndexInput>>>,
   field_infos: Arc<FieldInfos>,
   index_base: IndexReaderBase,
   reader_cache_helper: CacheHelperImpl,
@@ -267,9 +268,9 @@ where
   fn init_doc_values_producer(
     si: &SegmentCommitInfo<D>,
     field_infos: Arc<FieldInfos>,
-    seg_doc_values: &SegmentDocValues<D>,
+    seg_doc_values: &SegmentDocValues<D::IndexInput>,
     core: &SegmentCoreReaders<D>,
-  ) -> Result<Option<Arc<DocValuesProducers<D>>>> {
+  ) -> Result<Option<Arc<DocValuesProducers<D::IndexInput>>>> {
     if !field_infos.has_doc_values() {
       return Ok(None);
     }
@@ -342,17 +343,17 @@ where
     Ok(self.hard_live_docs.clone())
   }
 }
-pub enum DocValuesProducers<D>
+pub enum DocValuesProducers<I>
 where
-  D: Directory,
+  I: IndexInput,
 {
-  A(SegmentDocValuesProducer<D>),
-  B(Arc<CodecDocValuesProducer<D::IndexInput>>),
+  A(SegmentDocValuesProducer<I>),
+  B(Arc<CodecDocValuesProducer<I>>),
 }
 
-impl<D> CloseableRef for DocValuesProducers<D>
+impl<I> CloseableRef for DocValuesProducers<I>
 where
-  D: Directory,
+  I: IndexInput,
 {
   fn close(&self) -> Result<()> {
     match self {
@@ -362,11 +363,11 @@ where
   }
 }
 
-impl<D> DocValuesProducer for DocValuesProducers<D>
+impl<I> DocValuesProducer for DocValuesProducers<I>
 where
-  D: Directory,
+  I: IndexInput,
 {
-  type NumericDocValues = CodecNumericDocValues<D::IndexInput>;
+  type NumericDocValues = CodecNumericDocValues<I>;
 
   fn get_numeric(&self, field: &Arc<FieldInfo>) -> Result<Self::NumericDocValues> {
     match self {
@@ -375,7 +376,7 @@ where
     }
   }
 
-  type BinaryDocValues = CodecBinaryDocValues<D::IndexInput>;
+  type BinaryDocValues = CodecBinaryDocValues<I>;
 
   fn get_binary(&self, field: &Arc<FieldInfo>) -> Result<Self::BinaryDocValues> {
     match self {
@@ -384,7 +385,7 @@ where
     }
   }
 
-  type SortedDocValues = CodecSortedDocValues<D::IndexInput>;
+  type SortedDocValues = CodecSortedDocValues<I>;
 
   fn get_sorted(&self, field: &Arc<FieldInfo>) -> Result<Self::SortedDocValues> {
     match self {
@@ -393,7 +394,7 @@ where
     }
   }
 
-  type SortedNumericDocValues = CodecSortedNumericDocValues<D::IndexInput>;
+  type SortedNumericDocValues = CodecSortedNumericDocValues<I>;
 
   fn get_sorted_numeric(&self, field: &Arc<FieldInfo>) -> Result<Self::SortedNumericDocValues> {
     match self {
@@ -402,7 +403,7 @@ where
     }
   }
 
-  type SortedSetDocValues = CodecSortedSetDocValues<D::IndexInput>;
+  type SortedSetDocValues = CodecSortedSetDocValues<I>;
 
   fn get_sorted_set(&self, field: &Arc<FieldInfo>) -> Result<Self::SortedSetDocValues> {
     match self {
@@ -411,7 +412,7 @@ where
     }
   }
 
-  type DocValuesSkipper = CodecDocValuesSkipper<D::IndexInput>;
+  type DocValuesSkipper = CodecDocValuesSkipper<I>;
 
   fn get_skipper(&self, field: &Arc<FieldInfo>) -> Result<Option<Self::DocValuesSkipper>> {
     match self {
@@ -674,7 +675,7 @@ where
   type StoredFieldsReader = CodecStoredFieldsReader<D::IndexInput>;
   type TermVectorsReader = CodecTermVectorsReader<D::IndexInput>;
   type NormsProducer = Arc<CodecNormsProducer<D::IndexInput>>;
-  type DocValuesProducer = Arc<DocValuesProducers<D>>;
+  type DocValuesProducer = Arc<DocValuesProducers<D::IndexInput>>;
   type FieldsProducer = Arc<CodecFieldsProducer<D::IndexInput>>;
   type PointsReader = Arc<CodecPointsReader<D::IndexInput>>;
   type KnnVectorsReader = Arc<CodecKnnVectorsReader<D::IndexInput>>;
