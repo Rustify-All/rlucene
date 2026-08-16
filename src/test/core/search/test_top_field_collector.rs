@@ -933,10 +933,7 @@ impl Scorable for Score {
 
 impl FixedScore for Score {}
 
-struct LeafCollectorImpl<LC>
-where
-  LC: LeafCollector,
-{
+struct LeafCollectorImpl<LC> {
   in_: LC,
   current_doc: i32,
 }
