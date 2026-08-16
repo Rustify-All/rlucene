@@ -599,7 +599,7 @@ where
         }
       };
       Ok(Lucene90NumericDocValuesEnum::B(
-        SparseNumericDocValuesImpl::new(sparse_numeric_doc_values_base_enum, disi),
+        SparseNumericDocValues::new(sparse_numeric_doc_values_base_enum, disi),
       ))
     }
   }
@@ -1180,44 +1180,38 @@ where
   }
 }
 
-pub struct SparseNumericDocValuesImpl<I, R>
+pub struct SparseNumericDocValues<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
-  sub: SparseNumericDocValuesSubEnum<R>,
-  disi: IndexedDISIImpl<I, R>,
+  sub: SparseNumericDocValuesSubEnum<I::RandomAccessSlice>,
+  disi: IndexedDISIImpl<I::IndexInput, I::RandomAccessSlice>,
 }
 
-pub type SparseNumericDocValues<I> = SparseNumericDocValuesImpl<
-  <I as IndexInput>::IndexInput,
-  <I as IndexInput>::RandomAccessSlice,
->;
-
-impl<I, R> SparseNumericDocValuesImpl<I, R>
+impl<I> SparseNumericDocValues<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
-  fn new(sub: SparseNumericDocValuesSubEnum<R>, disi: IndexedDISIImpl<I, R>) -> Self {
+  fn new(
+    sub: SparseNumericDocValuesSubEnum<I::RandomAccessSlice>,
+    disi: IndexedDISIImpl<I::IndexInput, I::RandomAccessSlice>,
+  ) -> Self {
     Self { sub, disi }
   }
 }
 
-impl<I, R> DocValuesIterator for SparseNumericDocValuesImpl<I, R>
+impl<I> DocValuesIterator for SparseNumericDocValues<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn advance_exact(&mut self, target: i32) -> Result<bool> {
     self.disi.advance_exact(target)
   }
 }
 
-impl<I, R> DocIdSetIterator for SparseNumericDocValuesImpl<I, R>
+impl<I> DocIdSetIterator for SparseNumericDocValues<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn doc_id(&self) -> i32 {
     self.disi.doc_id()
@@ -1236,13 +1230,15 @@ where
   }
 }
 
-impl<I, R> NumericDocValues for SparseNumericDocValuesImpl<I, R>
+impl<I> NumericDocValues for SparseNumericDocValues<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn long_value(&mut self) -> Result<i64> {
-    self.sub.long_value(&mut self.disi)
+    <SparseNumericDocValuesSubEnum<I::RandomAccessSlice> as SparseNumericDocValuesBase<I>>::long_value(
+      &mut self.sub,
+      &mut self.disi,
+    )
   }
 }
 
@@ -1697,34 +1693,41 @@ where
   }
 }
 
-pub trait SparseNumericDocValuesBase<I, R>
+pub trait SparseNumericDocValuesBase<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
-  fn long_value(&mut self, disi: &mut IndexedDISIImpl<I, R>) -> Result<i64>;
+  fn long_value(
+    &mut self,
+    disi: &mut IndexedDISIImpl<I::IndexInput, I::RandomAccessSlice>,
+  ) -> Result<i64>;
 }
 pub struct SparseNumericDocValuesBaseImpl {
   min_values: i64,
 }
-impl<I, R> SparseNumericDocValuesBase<I, R> for SparseNumericDocValuesBaseImpl
+impl<I> SparseNumericDocValuesBase<I> for SparseNumericDocValuesBaseImpl
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
-  fn long_value(&mut self, _disi: &mut IndexedDISIImpl<I, R>) -> Result<i64> {
+  fn long_value(
+    &mut self,
+    _disi: &mut IndexedDISIImpl<I::IndexInput, I::RandomAccessSlice>,
+  ) -> Result<i64> {
     Ok(self.min_values)
   }
 }
 pub struct SparseNumericDocValuesBaseImpl1<R> {
   vbpv_reader: VaryingBPVReader<R>,
 }
-impl<I, R> SparseNumericDocValuesBase<I, R> for SparseNumericDocValuesBaseImpl1<R>
+impl<I> SparseNumericDocValuesBase<I>
+  for SparseNumericDocValuesBaseImpl1<I::RandomAccessSlice>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
-  fn long_value(&mut self, disi: &mut IndexedDISIImpl<I, R>) -> Result<i64> {
+  fn long_value(
+    &mut self,
+    disi: &mut IndexedDISIImpl<I::IndexInput, I::RandomAccessSlice>,
+  ) -> Result<i64> {
     let index = disi.index_u();
     self.vbpv_reader.get_long_value(index)
   }
@@ -1733,24 +1736,30 @@ pub struct SparseNumericDocValuesBaseImpl2<R> {
   table: Arc<Vec<i64>>,
   values: DirectPackedEnum<R>,
 }
-impl<I, R> SparseNumericDocValuesBase<I, R> for SparseNumericDocValuesBaseImpl2<R>
+impl<I> SparseNumericDocValuesBase<I>
+  for SparseNumericDocValuesBaseImpl2<I::RandomAccessSlice>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
-  fn long_value(&mut self, disi: &mut IndexedDISIImpl<I, R>) -> Result<i64> {
+  fn long_value(
+    &mut self,
+    disi: &mut IndexedDISIImpl<I::IndexInput, I::RandomAccessSlice>,
+  ) -> Result<i64> {
     Ok(self.table[self.values.get_mut(disi.index_u())? as usize])
   }
 }
 pub struct SparseNumericDocValuesBaseImpl3<R> {
   values: DirectPackedEnum<R>,
 }
-impl<I, R> SparseNumericDocValuesBase<I, R> for SparseNumericDocValuesBaseImpl3<R>
+impl<I> SparseNumericDocValuesBase<I>
+  for SparseNumericDocValuesBaseImpl3<I::RandomAccessSlice>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
-  fn long_value(&mut self, disi: &mut IndexedDISIImpl<I, R>) -> Result<i64> {
+  fn long_value(
+    &mut self,
+    disi: &mut IndexedDISIImpl<I::IndexInput, I::RandomAccessSlice>,
+  ) -> Result<i64> {
     self.values.get_mut(disi.index_u())
   }
 }
@@ -1759,12 +1768,15 @@ pub struct SparseNumericDocValuesBaseImpl4<R> {
   mul: i64,
   delta: i64,
 }
-impl<I, R> SparseNumericDocValuesBase<I, R> for SparseNumericDocValuesBaseImpl4<R>
+impl<I> SparseNumericDocValuesBase<I>
+  for SparseNumericDocValuesBaseImpl4<I::RandomAccessSlice>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
-  fn long_value(&mut self, disi: &mut IndexedDISIImpl<I, R>) -> Result<i64> {
+  fn long_value(
+    &mut self,
+    disi: &mut IndexedDISIImpl<I::IndexInput, I::RandomAccessSlice>,
+  ) -> Result<i64> {
     Ok(
       self
         .mul
@@ -3302,7 +3314,7 @@ where
   I: IndexInput,
 {
   A(DenseNumericDocValues<I::RandomAccessSlice>),
-  B(SparseNumericDocValuesImpl<I::IndexInput, I::RandomAccessSlice>),
+  B(SparseNumericDocValues<I>),
   C(EmptyNumeric),
 }
 

@@ -303,18 +303,31 @@ pub enum SparseNumericDocValuesSubEnum<R> {
   Sparse4(SparseNumericDocValuesBaseImpl4<R>),
 }
 
-impl<I, R> SparseNumericDocValuesBase<I, R> for SparseNumericDocValuesSubEnum<R>
+impl<I> SparseNumericDocValuesBase<I>
+  for SparseNumericDocValuesSubEnum<I::RandomAccessSlice>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
-  fn long_value(&mut self, disi: &mut IndexedDISIImpl<I, R>) -> Result<i64> {
+  fn long_value(
+    &mut self,
+    disi: &mut IndexedDISIImpl<I::IndexInput, I::RandomAccessSlice>,
+  ) -> Result<i64> {
     match self {
-      SparseNumericDocValuesSubEnum::Sparse(sub) => sub.long_value(disi),
-      SparseNumericDocValuesSubEnum::Sparse1(sub) => sub.long_value(disi),
-      SparseNumericDocValuesSubEnum::Sparse2(sub) => sub.long_value(disi),
-      SparseNumericDocValuesSubEnum::Sparse3(sub) => sub.long_value(disi),
-      SparseNumericDocValuesSubEnum::Sparse4(sub) => sub.long_value(disi),
+      SparseNumericDocValuesSubEnum::Sparse(sub) => {
+        <SparseNumericDocValuesBaseImpl as SparseNumericDocValuesBase<I>>::long_value(sub, disi)
+      },
+      SparseNumericDocValuesSubEnum::Sparse1(sub) => <SparseNumericDocValuesBaseImpl1<
+        I::RandomAccessSlice,
+      > as SparseNumericDocValuesBase<I>>::long_value(sub, disi),
+      SparseNumericDocValuesSubEnum::Sparse2(sub) => <SparseNumericDocValuesBaseImpl2<
+        I::RandomAccessSlice,
+      > as SparseNumericDocValuesBase<I>>::long_value(sub, disi),
+      SparseNumericDocValuesSubEnum::Sparse3(sub) => <SparseNumericDocValuesBaseImpl3<
+        I::RandomAccessSlice,
+      > as SparseNumericDocValuesBase<I>>::long_value(sub, disi),
+      SparseNumericDocValuesSubEnum::Sparse4(sub) => <SparseNumericDocValuesBaseImpl4<
+        I::RandomAccessSlice,
+      > as SparseNumericDocValuesBase<I>>::long_value(sub, disi),
     }
   }
 }
