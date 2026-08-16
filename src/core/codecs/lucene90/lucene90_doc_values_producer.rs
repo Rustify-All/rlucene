@@ -21,9 +21,9 @@ use crate::core::codecs::dummy::dummy_numeric_doc_values::DummyNumericDocValues;
 use crate::core::codecs::dummy::dummy_sorted_doc_values::DummySortedDocValues;
 use crate::core::codecs::indexed_disi::{IndexedDISI, IndexedDISIImpl, Owned};
 use crate::core::codecs::lucene90::dov_values_inner_enum::{
-  BaseSortedDocValuesEnum, BaseSortedSetDocValuesEnum, DenseBinaryDocValuesBaseEnum,
-  DenseNumericDocValuesSubEnum, LongValuesEnums, SparseBinaryDocValuesBaseEnum,
-  SparseNumericDocValuesSubEnum,
+  BaseSortedDocValuesEnum, BaseSortedDocValuesEnumImpl, BaseSortedSetDocValuesEnum,
+  DenseBinaryDocValuesBaseEnum, DenseNumericDocValuesSubEnum, LongValuesEnums,
+  SparseBinaryDocValuesBaseEnum, SparseNumericDocValuesSubEnum,
 };
 use crate::core::codecs::lucene90_doc_values_format::{
   Lucene90DocValuesFormat, SKIP_INDEX_JUMP_LENGTH_PER_LEVEL,
@@ -692,7 +692,7 @@ where
 
       let sub = if ords_entry.docs_with_field_offset == -1 {
         //dense
-        BaseSortedDocValuesEnum::Dense(DenseBaseSortedDocValues::new(self.max_doc, values))
+        BaseSortedDocValuesEnumImpl::Dense(DenseBaseSortedDocValues::new(self.max_doc, values))
       } else if ords_entry.docs_with_field_offset >= 0 {
         let disi = IndexedDISIImpl::new(
           self.data.as_ref(),
@@ -702,16 +702,16 @@ where
           ords_entry.dense_rank_power,
           ords_entry.num_values as i64,
         )?;
-        BaseSortedDocValuesEnum::Sparse(SparseBaseSortedDocValues::new(disi, values))
+        BaseSortedDocValuesEnumImpl::Sparse(SparseBaseSortedDocValuesImpl::new(disi, values))
       } else {
         let ords = self.get_numeric(ords_entry.clone())?;
-        BaseSortedDocValuesEnum::Impl(BaseSortedDocValuesImpl::new(ords))
+        BaseSortedDocValuesEnumImpl::Impl(BaseSortedDocValuesOrdinals::new(ords))
       };
       return BaseSortedDocValues::new(entry.clone(), self.data.clone(), sub, self.merging);
     }
 
     let ords = self.get_numeric(ords_entry.clone())?;
-    let sub = BaseSortedDocValuesEnum::Impl(BaseSortedDocValuesImpl::new(ords));
+    let sub = BaseSortedDocValuesEnumImpl::Impl(BaseSortedDocValuesOrdinals::new(ords));
     BaseSortedDocValues::new(entry.clone(), self.data.clone(), sub, self.merging)
   }
 
@@ -2013,34 +2013,44 @@ where
   }
 }
 
-pub struct SparseBaseSortedDocValues<I>
+pub struct SparseBaseSortedDocValuesImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
-  disi: IndexedDISI<I, Owned>,
-  value: DirectPackedEnum<I::RandomAccessSlice>,
+  disi: IndexedDISIImpl<I, R>,
+  value: DirectPackedEnum<R>,
 }
-impl<I> SparseBaseSortedDocValues<I>
+
+pub type SparseBaseSortedDocValues<I> = SparseBaseSortedDocValuesImpl<
+  <I as IndexInput>::IndexInput,
+  <I as IndexInput>::RandomAccessSlice,
+>;
+
+impl<I, R> SparseBaseSortedDocValuesImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
-  fn new(disi: IndexedDISI<I, Owned>, value: DirectPackedEnum<I::RandomAccessSlice>) -> Self {
+  fn new(disi: IndexedDISIImpl<I, R>, value: DirectPackedEnum<R>) -> Self {
     Self { disi, value }
   }
 }
 
-impl<I> DocValuesIterator for SparseBaseSortedDocValues<I>
+impl<I, R> DocValuesIterator for SparseBaseSortedDocValuesImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   fn advance_exact(&mut self, target: i32) -> Result<bool> {
     self.disi.advance_exact(target)
   }
 }
 
-impl<I> DocIdSetIterator for SparseBaseSortedDocValues<I>
+impl<I, R> DocIdSetIterator for SparseBaseSortedDocValuesImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   fn doc_id(&self) -> i32 {
     self.disi.doc_id()
@@ -2059,9 +2069,10 @@ where
   }
 }
 
-impl<I> SortedDocValues for SparseBaseSortedDocValues<I>
+impl<I, R> SortedDocValues for SparseBaseSortedDocValuesImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   fn ord_value(&mut self) -> Result<i32> {
     Ok(self.value.get_mut(self.disi.index_u())? as i32)
@@ -2070,39 +2081,50 @@ where
   type TermsEnum<'a>
     = DummyTermsEnum
   where
-    I: 'a;
+    I: 'a,
+    R: 'a;
 
   fn terms_enum(&mut self) -> Result<Self::TermsEnum<'_>> {
     Err(LuceneError::unsupported_operation(""))
   }
 }
-pub struct BaseSortedDocValuesImpl<I>
+pub struct BaseSortedDocValuesOrdinals<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
-  ords: Lucene90NumericDocValuesEnum<I>,
+  ords: Lucene90NumericDocValuesEnumImpl<I, R>,
 }
-impl<I> BaseSortedDocValuesImpl<I>
+
+pub type BaseSortedDocValuesImpl<I> = BaseSortedDocValuesOrdinals<
+  <I as IndexInput>::IndexInput,
+  <I as IndexInput>::RandomAccessSlice,
+>;
+
+impl<I, R> BaseSortedDocValuesOrdinals<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
-  fn new(ords: Lucene90NumericDocValuesEnum<I>) -> Self {
+  fn new(ords: Lucene90NumericDocValuesEnumImpl<I, R>) -> Self {
     Self { ords }
   }
 }
 
-impl<I> DocValuesIterator for BaseSortedDocValuesImpl<I>
+impl<I, R> DocValuesIterator for BaseSortedDocValuesOrdinals<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   fn advance_exact(&mut self, target: i32) -> Result<bool> {
     self.ords.advance_exact(target)
   }
 }
 
-impl<I> DocIdSetIterator for BaseSortedDocValuesImpl<I>
+impl<I, R> DocIdSetIterator for BaseSortedDocValuesOrdinals<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   fn doc_id(&self) -> i32 {
     self.ords.doc_id()
@@ -2121,9 +2143,10 @@ where
   }
 }
 
-impl<I> SortedDocValues for BaseSortedDocValuesImpl<I>
+impl<I, R> SortedDocValues for BaseSortedDocValuesOrdinals<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   fn ord_value(&mut self) -> Result<i32> {
     Ok(self.ords.long_value()? as i32)
@@ -2132,7 +2155,8 @@ where
   type TermsEnum<'a>
     = DummyTermsEnum
   where
-    I: 'a;
+    I: 'a,
+    R: 'a;
 
   fn terms_enum(&mut self) -> Result<Self::TermsEnum<'_>> {
     Err(LuceneError::unsupported_operation(""))

@@ -17,11 +17,11 @@
 use crate::core::codecs::dummy::dummy_sorted_doc_values::DummySortedDocValues;
 use crate::core::codecs::indexed_disi::IndexedDISIImpl;
 use crate::core::codecs::lucene90::lucene90_doc_values_producer::{
-  BaseSortedDocValuesImpl, DenseBaseSortedDocValues, DenseBinaryDocValuesBase,
+  BaseSortedDocValuesOrdinals, DenseBaseSortedDocValues, DenseBinaryDocValuesBase,
   DenseBinaryDocValuesBaseImpl, DenseBinaryDocValuesBaseImpl1, DenseNumericDocValuesBase,
   DenseNumericDocValuesBaseImpl, DenseNumericDocValuesBaseImpl1, DenseNumericDocValuesBaseImpl2,
   DenseNumericDocValuesBaseImpl3, DenseNumericDocValuesBaseImpl4, LongValuesImpl, LongValuesImpl1,
-  LongValuesImpl2, LongValuesImpl3, LongValuesImpl4, SparseBaseSortedDocValues,
+  LongValuesImpl2, LongValuesImpl3, LongValuesImpl4, SparseBaseSortedDocValuesImpl,
   SparseBinaryDocValuesBaseImpl, SparseBinaryDocValuesBaseImpl1, SparseNumericDocValuesBase,
   SparseNumericDocValuesBaseImpl, SparseNumericDocValuesBaseImpl1, SparseNumericDocValuesBaseImpl2,
   SparseNumericDocValuesBaseImpl3, SparseNumericDocValuesBaseImpl4,
@@ -43,89 +43,99 @@ use crate::core::util::long_values::LongValues;
 use crate::core::util::packed::direct_reader::DirectPackedEnum;
 use std::borrow::Cow;
 
-pub enum BaseSortedDocValuesEnum<I>
+pub enum BaseSortedDocValuesEnumImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
-  Dense(DenseBaseSortedDocValues<I::RandomAccessSlice>),
-  Sparse(SparseBaseSortedDocValues<I>),
-  Impl(BaseSortedDocValuesImpl<I>),
+  Dense(DenseBaseSortedDocValues<R>),
+  Sparse(SparseBaseSortedDocValuesImpl<I, R>),
+  Impl(BaseSortedDocValuesOrdinals<I, R>),
 }
 
-impl<I> DocValuesIterator for BaseSortedDocValuesEnum<I>
+pub type BaseSortedDocValuesEnum<I> = BaseSortedDocValuesEnumImpl<
+  <I as IndexInput>::IndexInput,
+  <I as IndexInput>::RandomAccessSlice,
+>;
+
+impl<I, R> DocValuesIterator for BaseSortedDocValuesEnumImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   fn advance_exact(&mut self, target: i32) -> Result<bool> {
     match self {
-      BaseSortedDocValuesEnum::Dense(sub) => sub.advance_exact(target),
-      BaseSortedDocValuesEnum::Sparse(sub) => sub.advance_exact(target),
-      BaseSortedDocValuesEnum::Impl(sub) => sub.advance_exact(target),
+      Self::Dense(sub) => sub.advance_exact(target),
+      Self::Sparse(sub) => sub.advance_exact(target),
+      Self::Impl(sub) => sub.advance_exact(target),
     }
   }
 }
 
-impl<I> DocIdSetIterator for BaseSortedDocValuesEnum<I>
+impl<I, R> DocIdSetIterator for BaseSortedDocValuesEnumImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   fn doc_id(&self) -> i32 {
     match self {
-      BaseSortedDocValuesEnum::Dense(sub) => sub.doc_id(),
-      BaseSortedDocValuesEnum::Sparse(sub) => sub.doc_id(),
-      BaseSortedDocValuesEnum::Impl(sub) => sub.doc_id(),
+      Self::Dense(sub) => sub.doc_id(),
+      Self::Sparse(sub) => sub.doc_id(),
+      Self::Impl(sub) => sub.doc_id(),
     }
   }
 
   fn next_doc(&mut self) -> Result<i32> {
     match self {
-      BaseSortedDocValuesEnum::Dense(sub) => sub.next_doc(),
-      BaseSortedDocValuesEnum::Sparse(sub) => sub.next_doc(),
-      BaseSortedDocValuesEnum::Impl(sub) => sub.next_doc(),
+      Self::Dense(sub) => sub.next_doc(),
+      Self::Sparse(sub) => sub.next_doc(),
+      Self::Impl(sub) => sub.next_doc(),
     }
   }
 
   fn advance(&mut self, target: i32) -> Result<i32> {
     match self {
-      BaseSortedDocValuesEnum::Dense(sub) => sub.advance(target),
-      BaseSortedDocValuesEnum::Sparse(sub) => sub.advance(target),
-      BaseSortedDocValuesEnum::Impl(sub) => sub.advance(target),
+      Self::Dense(sub) => sub.advance(target),
+      Self::Sparse(sub) => sub.advance(target),
+      Self::Impl(sub) => sub.advance(target),
     }
   }
 
   fn slow_advance(&mut self, target: i32) -> Result<i32> {
     match self {
-      BaseSortedDocValuesEnum::Dense(sub) => sub.advance(target),
-      BaseSortedDocValuesEnum::Sparse(sub) => sub.advance(target),
-      BaseSortedDocValuesEnum::Impl(sub) => sub.advance(target),
+      Self::Dense(sub) => sub.advance(target),
+      Self::Sparse(sub) => sub.advance(target),
+      Self::Impl(sub) => sub.advance(target),
     }
   }
 
   fn cost(&self) -> Result<i64> {
     match self {
-      BaseSortedDocValuesEnum::Dense(sub) => sub.cost(),
-      BaseSortedDocValuesEnum::Sparse(sub) => sub.cost(),
-      BaseSortedDocValuesEnum::Impl(sub) => sub.cost(),
+      Self::Dense(sub) => sub.cost(),
+      Self::Sparse(sub) => sub.cost(),
+      Self::Impl(sub) => sub.cost(),
     }
   }
 }
 
-impl<I> SortedDocValues for BaseSortedDocValuesEnum<I>
+impl<I, R> SortedDocValues for BaseSortedDocValuesEnumImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   fn ord_value(&mut self) -> Result<i32> {
     match self {
-      BaseSortedDocValuesEnum::Dense(sub) => sub.ord_value(),
-      BaseSortedDocValuesEnum::Sparse(sub) => sub.ord_value(),
-      BaseSortedDocValuesEnum::Impl(sub) => sub.ord_value(),
+      Self::Dense(sub) => sub.ord_value(),
+      Self::Sparse(sub) => sub.ord_value(),
+      Self::Impl(sub) => sub.ord_value(),
     }
   }
 
   type TermsEnum<'a>
     = DummyTermsEnum
   where
-    I: 'a;
+    I: 'a,
+    R: 'a;
 
   fn terms_enum(&mut self) -> Result<Self::TermsEnum<'_>> {
     Err(LuceneError::unsupported_operation(""))
