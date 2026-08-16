@@ -790,7 +790,7 @@ where
 
   fn iterator(&self) -> Result<Self::DocIndexIterator> {
     match self {
-      OffHeapFloatVectorValuesEnum::Empty(e) => e.iterator().map(IterEnum::Empty),
+      OffHeapFloatVectorValuesEnum::Empty(e) => e.iterator().map(IterEnum::Dense),
       OffHeapFloatVectorValuesEnum::Dense(e) => e.iterator().map(IterEnum::Dense),
       OffHeapFloatVectorValuesEnum::Sparse(e) => e.iterator().map(IterEnum::Sparse),
     }
@@ -924,7 +924,6 @@ pub enum IterEnum<I>
 where
   I: IndexInput,
 {
-  Empty(DenseDocIndexIterator),
   Dense(DenseDocIndexIterator),
   Sparse(DocIndexIteratorImpl<I>),
 }
@@ -935,7 +934,6 @@ where
 {
   fn doc_id(&self) -> i32 {
     match self {
-      IterEnum::Empty(e) => e.doc_id(),
       IterEnum::Dense(e) => e.doc_id(),
       IterEnum::Sparse(e) => e.doc_id(),
     }
@@ -943,7 +941,6 @@ where
 
   fn next_doc(&mut self) -> Result<i32> {
     match self {
-      IterEnum::Empty(e) => e.next_doc(),
       IterEnum::Dense(e) => e.next_doc(),
       IterEnum::Sparse(e) => e.next_doc(),
     }
@@ -951,7 +948,6 @@ where
 
   fn advance(&mut self, _target: i32) -> Result<i32> {
     match self {
-      IterEnum::Empty(e) => e.advance(_target),
       IterEnum::Dense(e) => e.advance(_target),
       IterEnum::Sparse(e) => e.advance(_target),
     }
@@ -959,7 +955,6 @@ where
 
   fn slow_advance(&mut self, target: i32) -> Result<i32> {
     match self {
-      IterEnum::Empty(e) => e.slow_advance(target),
       IterEnum::Dense(e) => e.slow_advance(target),
       IterEnum::Sparse(e) => e.slow_advance(target),
     }
@@ -967,7 +962,6 @@ where
 
   fn cost(&self) -> Result<i64> {
     match self {
-      IterEnum::Empty(e) => e.cost(),
       IterEnum::Dense(e) => e.cost(),
       IterEnum::Sparse(e) => e.cost(),
     }
@@ -980,7 +974,6 @@ where
 {
   fn index(&self) -> Result<i32> {
     match self {
-      IterEnum::Empty(e) => e.index(),
       IterEnum::Dense(e) => e.index(),
       IterEnum::Sparse(e) => e.index(),
     }
