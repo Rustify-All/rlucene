@@ -23,10 +23,7 @@ use crate::core::util::attribute_source::{AttributeSource, Attributes};
 use crate::core::util::close::Closeable;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 
-pub struct CharTokenizer<S>
-where
-  S: CharTokenizerBase,
-{
+pub struct CharTokenizer<S> {
   offset: i32,
   buffer_index: i32,
   data_len: i32,
@@ -66,12 +63,9 @@ where
   }
 }
 
-impl<S> Drop for CharTokenizer<S>
-where
-  S: CharTokenizerBase,
-{
+impl<S> Drop for CharTokenizer<S> {
   fn drop(&mut self) {
-    let _ = self.close();
+    let _ = self.tokenizer_base.close();
   }
 }
 
