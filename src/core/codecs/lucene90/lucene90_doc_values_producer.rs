@@ -44,7 +44,7 @@ use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::segment_read_state::SegmentReadState;
 use crate::core::index::singleton_sorted_numeric_doc_values::SingletonSortedNumericDocValues;
 use crate::core::index::singleton_sorted_set_doc_values::SingletonSortedSetDocValues;
-use crate::core::index::sorted_doc_values::{SortedDocValues, SortedDocValuesEnum2};
+use crate::core::index::sorted_doc_values::SortedDocValues;
 use crate::core::index::sorted_numeric_doc_values::SortedNumericDocValues;
 use crate::core::index::sorted_set_doc_values::SortedSetDocValues;
 use crate::core::index::terms_enum::{SeekStatus, TermsEnum, TermsEnumEnum2};
@@ -3759,15 +3759,12 @@ where
     }
   }
 
-  type SortedDocValues = SortedDocValuesEnum2<
-    <SingletonSortedSetDocValues<BaseSortedDocValues<I>> as SortedSetDocValues>::SortedDocValues,
-    <BaseSortedSetDocValues<I> as SortedSetDocValues>::SortedDocValues,
-  >;
+  type SortedDocValues = BaseSortedDocValues<I>;
 
   fn get_sorted_doc_values(&mut self) -> Result<Self::SortedDocValues> {
     match self {
-      Self::Single(values) => values.get_sorted_doc_values().map(SortedDocValuesEnum2::A),
-      Self::Multi(values) => values.get_sorted_doc_values().map(SortedDocValuesEnum2::B),
+      Self::Single(values) => values.get_sorted_doc_values(),
+      Self::Multi(_) => Err(LuceneError::unsupported_operation("")),
     }
   }
 }
