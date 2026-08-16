@@ -763,7 +763,7 @@ where
       )?;
 
       Ok(Lucene90SortedNumericDocValuesEnum::B(
-        SpareSortedNumericDocValuesImpl::new(disi, values, addresses),
+        SpareSortedNumericDocValues::new(disi, values, addresses),
       ))
     }
   }
@@ -3204,33 +3204,26 @@ where
   }
   type NumericDocValues = DummyNumericDocValues;
 }
-pub struct SpareSortedNumericDocValuesImpl<I, R>
+pub struct SpareSortedNumericDocValues<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
-  disi: IndexedDISIImpl<I, R>,
-  values: LongValuesEnums<R>,
-  addresses: DirectMonotonicReader<R>,
+  disi: IndexedDISIImpl<I::IndexInput, I::RandomAccessSlice>,
+  values: LongValuesEnums<I::RandomAccessSlice>,
+  addresses: DirectMonotonicReader<I::RandomAccessSlice>,
   set: bool,
   start: i64,
   end: i64,
   count: i32,
 }
-pub type SpareSortedNumericDocValues<I> = SpareSortedNumericDocValuesImpl<
-  <I as IndexInput>::IndexInput,
-  <I as IndexInput>::RandomAccessSlice,
->;
-
-impl<I, R> SpareSortedNumericDocValuesImpl<I, R>
+impl<I> SpareSortedNumericDocValues<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   pub fn new(
-    disi: IndexedDISIImpl<I, R>,
-    values: LongValuesEnums<R>,
-    addresses: DirectMonotonicReader<R>,
+    disi: IndexedDISIImpl<I::IndexInput, I::RandomAccessSlice>,
+    values: LongValuesEnums<I::RandomAccessSlice>,
+    addresses: DirectMonotonicReader<I::RandomAccessSlice>,
   ) -> Self {
     Self {
       disi,
@@ -3254,10 +3247,9 @@ where
     Ok(())
   }
 }
-impl<I, R> DocIdSetIterator for SpareSortedNumericDocValuesImpl<I, R>
+impl<I> DocIdSetIterator for SpareSortedNumericDocValues<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn doc_id(&self) -> i32 {
     self.disi.doc_id()
@@ -3278,20 +3270,18 @@ where
   }
 }
 
-impl<I, R> DocValuesIterator for SpareSortedNumericDocValuesImpl<I, R>
+impl<I> DocValuesIterator for SpareSortedNumericDocValues<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn advance_exact(&mut self, target: i32) -> Result<bool> {
     self.set = false;
     self.disi.advance_exact(target)
   }
 }
-impl<I, R> SortedNumericDocValues for SpareSortedNumericDocValuesImpl<I, R>
+impl<I> SortedNumericDocValues for SpareSortedNumericDocValues<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn next_value(&mut self) -> Result<i64> {
     self.set()?;
@@ -3402,7 +3392,7 @@ where
   I: IndexInput,
 {
   A(DenseSortedNumericDocValues<I::RandomAccessSlice>),
-  B(SpareSortedNumericDocValuesImpl<I::IndexInput, I::RandomAccessSlice>),
+  B(SpareSortedNumericDocValues<I>),
   C(SingletonSortedNumericDocValues<Lucene90NumericDocValuesEnum<I>>),
 }
 
