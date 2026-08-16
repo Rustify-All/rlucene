@@ -125,10 +125,7 @@ fn do_test_random(two_phase: bool) -> Result<()> {
   Ok(())
 }
 
-struct ScorerImpl<DISI>
-where
-  DISI: DocIdSetIterator,
-{
+struct ScorerImpl<DISI> {
   disi: RandomTwoPhaseView<DISI>,
   has_tpi: bool,
 }
@@ -236,10 +233,7 @@ impl<'a> LeafCollector for LeafCollectorImpl<'a> {
     Ok(())
   }
 }
-struct BulkScorerImpl<DISI>
-where
-  DISI: DocIdSetIterator,
-{
+struct BulkScorerImpl<DISI> {
   iterator: DISI,
 }
 impl<DISI> BulkScorerImpl<DISI>
