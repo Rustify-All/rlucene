@@ -19,7 +19,7 @@ use crate::codec::memory::direct_postings_format::DirectPostingsFormat;
 use crate::core::codecs::Codec;
 use crate::core::codecs::doc_values_consumer::DocValuesConsumerEnum2;
 use crate::core::codecs::doc_values_format::DocValuesFormat;
-use crate::core::codecs::fields_consumer::FieldsConsumerEnum2;
+use crate::core::codecs::fields_consumer::FieldsConsumer;
 use crate::core::codecs::fields_producer::{FieldsProducer, FieldsProducerEnum2};
 use crate::core::codecs::hnsw::hnsw_graph_provider::HnswGraphProvider;
 use crate::core::codecs::knn_field_vectors_writer::VectorValueEnum;
@@ -44,7 +44,7 @@ use crate::core::index::codec_reader::CodecReader;
 use crate::core::index::field_info::FieldInfo;
 use crate::core::index::fields::Fields;
 use crate::core::index::index_reader::Identity;
-use crate::core::index::merge_state::MergeState;
+use crate::core::index::merge_state::{MergeState, MergeStateAccess};
 use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::segment_read_state::SegmentReadState;
 use crate::core::index::segment_write_state::SegmentWriteState;
@@ -149,16 +149,76 @@ impl HasIdentity for AssertingCodecPostingsFormat {
   }
 }
 
-pub type AssertingCodecFieldsConsumer<O> = FieldsConsumerEnum2<
-  FieldsConsumerEnum2<
-    <DefaultPostingsFormat as PostingsFormat>::FieldsConsumer<O>,
-    <AssertingPostingsFormat as PostingsFormat>::FieldsConsumer<O>,
-  >,
-  FieldsConsumerEnum2<
-    <DirectPostingsFormat as PostingsFormat>::FieldsConsumer<O>,
-    <MergeRecordingPostingsFormatWrapper as PostingsFormat>::FieldsConsumer<O>,
-  >,
->;
+pub enum AssertingCodecFieldsConsumer<O>
+where
+  O: IndexOutput,
+{
+  Default(<DefaultPostingsFormat as PostingsFormat>::FieldsConsumer<O>),
+  Asserting(<AssertingPostingsFormat as PostingsFormat>::FieldsConsumer<O>),
+  Direct(<DirectPostingsFormat as PostingsFormat>::FieldsConsumer<O>),
+  MergeRecording(<MergeRecordingPostingsFormatWrapper as PostingsFormat>::FieldsConsumer<O>),
+}
+
+impl<O> Closeable for AssertingCodecFieldsConsumer<O>
+where
+  O: IndexOutput,
+{
+  fn close(&mut self) -> Result<()> {
+    match self {
+      Self::Default(consumer) => consumer.close(),
+      Self::Asserting(consumer) => consumer.close(),
+      Self::Direct(consumer) => consumer.close(),
+      Self::MergeRecording(consumer) => consumer.close(),
+    }
+  }
+}
+
+impl<O> FieldsConsumer for AssertingCodecFieldsConsumer<O>
+where
+  O: IndexOutput,
+{
+  fn write<D1, D2, F, N>(
+    &mut self,
+    state: &SegmentWriteState<D1>,
+    segment_info: &SegmentInfo<D2>,
+    fields: &mut F,
+    norms: Option<&N>,
+  ) -> Result<()>
+  where
+    D1: Directory,
+    F: Fields,
+    N: crate::core::codecs::norms_producer::NormsProducer,
+  {
+    match self {
+      Self::Default(consumer) => consumer.write(state, segment_info, fields, norms),
+      Self::Asserting(consumer) => consumer.write(state, segment_info, fields, norms),
+      Self::Direct(consumer) => consumer.write(state, segment_info, fields, norms),
+      Self::MergeRecording(consumer) => consumer.write(state, segment_info, fields, norms),
+    }
+  }
+
+  fn merge<D1, D2, N, MS>(
+    &mut self,
+    state: &SegmentWriteState<D1>,
+    segment_info: &SegmentInfo<D2>,
+    merge_state: &MS,
+    norms: Option<&N>,
+  ) -> Result<()>
+  where
+    D1: Directory,
+    N: crate::core::codecs::norms_producer::NormsProducer,
+    MS: MergeStateAccess,
+  {
+    match self {
+      Self::Default(consumer) => consumer.merge(state, segment_info, merge_state, norms),
+      Self::Asserting(consumer) => consumer.merge(state, segment_info, merge_state, norms),
+      Self::Direct(consumer) => consumer.merge(state, segment_info, merge_state, norms),
+      Self::MergeRecording(consumer) => {
+        consumer.merge(state, segment_info, merge_state, norms)
+      },
+    }
+  }
+}
 
 type DefaultAssertingCodecFieldsProducer<I> =
   <DefaultPostingsFormat as PostingsFormat>::FieldsProducer<I>;
@@ -297,16 +357,16 @@ impl PostingsFormat for AssertingCodecPostingsFormat {
     match self {
       Self::Default(format) => format
         .fields_consumer(state, segment_info)
-        .map(|consumer| FieldsConsumerEnum2::A(FieldsConsumerEnum2::A(consumer))),
+        .map(AssertingCodecFieldsConsumer::Default),
       Self::Asserting(format) => format
         .fields_consumer(state, segment_info)
-        .map(|consumer| FieldsConsumerEnum2::A(FieldsConsumerEnum2::B(consumer))),
+        .map(AssertingCodecFieldsConsumer::Asserting),
       Self::Direct(format) => format
         .fields_consumer(state, segment_info)
-        .map(|consumer| FieldsConsumerEnum2::B(FieldsConsumerEnum2::A(consumer))),
+        .map(AssertingCodecFieldsConsumer::Direct),
       Self::MergeRecording(format) => format
         .fields_consumer(state, segment_info)
-        .map(|consumer| FieldsConsumerEnum2::B(FieldsConsumerEnum2::B(consumer))),
+        .map(AssertingCodecFieldsConsumer::MergeRecording),
     }
   }
 
