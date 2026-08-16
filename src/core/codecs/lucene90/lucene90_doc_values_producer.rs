@@ -483,7 +483,9 @@ where
   fn get_numeric(&self, entry: Arc<NumericEntry>) -> Result<Lucene90NumericDocValuesEnum<I>> {
     if entry.docs_with_field_offset == -2 {
       // empty
-      Ok(Lucene90NumericDocValuesEnum::C(DocValues::empty_numeric()))
+      Ok(Lucene90NumericDocValuesEnumImpl::C(
+        DocValues::empty_numeric(),
+      ))
     } else if entry.docs_with_field_offset == -1 {
       // dense
       let dense_numeric_doc_values_base_enum = if entry.bits_per_value == 0 {
@@ -532,7 +534,7 @@ where
           }
         }
       };
-      Ok(Lucene90NumericDocValuesEnum::A(DenseNumericDocValues::new(
+      Ok(Lucene90NumericDocValuesEnumImpl::A(DenseNumericDocValues::new(
         dense_numeric_doc_values_base_enum,
         self.max_doc,
       )))
@@ -596,8 +598,8 @@ where
           }
         }
       };
-      Ok(Lucene90NumericDocValuesEnum::B(
-        SparseNumericDocValues::new(sparse_numeric_doc_values_base_enum, disi),
+      Ok(Lucene90NumericDocValuesEnumImpl::B(
+        SparseNumericDocValuesImpl::new(sparse_numeric_doc_values_base_enum, disi),
       ))
     }
   }
@@ -1176,37 +1178,44 @@ where
   }
 }
 
-pub struct SparseNumericDocValues<I>
+pub struct SparseNumericDocValuesImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
-  sub: SparseNumericDocValuesSubEnum<I::RandomAccessSlice>,
-  disi: IndexedDISI<I, Owned>,
+  sub: SparseNumericDocValuesSubEnum<R>,
+  disi: IndexedDISIImpl<I, R>,
 }
-impl<I> SparseNumericDocValues<I>
+
+pub type SparseNumericDocValues<I> = SparseNumericDocValuesImpl<
+  <I as IndexInput>::IndexInput,
+  <I as IndexInput>::RandomAccessSlice,
+>;
+
+impl<I, R> SparseNumericDocValuesImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
-  fn new(
-    sub: SparseNumericDocValuesSubEnum<I::RandomAccessSlice>,
-    disi: IndexedDISI<I, Owned>,
-  ) -> Self {
+  fn new(sub: SparseNumericDocValuesSubEnum<R>, disi: IndexedDISIImpl<I, R>) -> Self {
     Self { sub, disi }
   }
 }
 
-impl<I> DocValuesIterator for SparseNumericDocValues<I>
+impl<I, R> DocValuesIterator for SparseNumericDocValuesImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   fn advance_exact(&mut self, target: i32) -> Result<bool> {
     self.disi.advance_exact(target)
   }
 }
 
-impl<I> DocIdSetIterator for SparseNumericDocValues<I>
+impl<I, R> DocIdSetIterator for SparseNumericDocValuesImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   fn doc_id(&self) -> i32 {
     self.disi.doc_id()
@@ -1225,9 +1234,10 @@ where
   }
 }
 
-impl<I> NumericDocValues for SparseNumericDocValues<I>
+impl<I, R> NumericDocValues for SparseNumericDocValuesImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   fn long_value(&mut self) -> Result<i64> {
     self.sub.long_value(&mut self.disi)
@@ -3248,89 +3258,98 @@ where
 }
 
 // 1. NumericDocValues
-pub enum Lucene90NumericDocValuesEnum<I>
+pub enum Lucene90NumericDocValuesEnumImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
-  A(DenseNumericDocValues<I::RandomAccessSlice>),
-  B(SparseNumericDocValues<I>),
+  A(DenseNumericDocValues<R>),
+  B(SparseNumericDocValuesImpl<I, R>),
   C(EmptyNumeric),
 }
 
-impl<I> DocValuesIterator for Lucene90NumericDocValuesEnum<I>
+pub type Lucene90NumericDocValuesEnum<I> = Lucene90NumericDocValuesEnumImpl<
+  <I as IndexInput>::IndexInput,
+  <I as IndexInput>::RandomAccessSlice,
+>;
+
+impl<I, R> DocValuesIterator for Lucene90NumericDocValuesEnumImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   #[inline]
   fn advance_exact(&mut self, target: i32) -> Result<bool> {
     match self {
-      Lucene90NumericDocValuesEnum::A(values) => values.advance_exact(target),
-      Lucene90NumericDocValuesEnum::B(values) => values.advance_exact(target),
-      Lucene90NumericDocValuesEnum::C(values) => values.advance_exact(target),
+      Self::A(values) => values.advance_exact(target),
+      Self::B(values) => values.advance_exact(target),
+      Self::C(values) => values.advance_exact(target),
     }
   }
 }
 
-impl<I> DocIdSetIterator for Lucene90NumericDocValuesEnum<I>
+impl<I, R> DocIdSetIterator for Lucene90NumericDocValuesEnumImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   #[inline]
   fn doc_id(&self) -> i32 {
     match self {
-      Lucene90NumericDocValuesEnum::A(values) => values.doc_id(),
-      Lucene90NumericDocValuesEnum::B(values) => values.doc_id(),
-      Lucene90NumericDocValuesEnum::C(values) => values.doc_id(),
+      Self::A(values) => values.doc_id(),
+      Self::B(values) => values.doc_id(),
+      Self::C(values) => values.doc_id(),
     }
   }
 
   #[inline]
   fn next_doc(&mut self) -> Result<i32> {
     match self {
-      Lucene90NumericDocValuesEnum::A(values) => values.next_doc(),
-      Lucene90NumericDocValuesEnum::B(values) => values.next_doc(),
-      Lucene90NumericDocValuesEnum::C(values) => values.next_doc(),
+      Self::A(values) => values.next_doc(),
+      Self::B(values) => values.next_doc(),
+      Self::C(values) => values.next_doc(),
     }
   }
 
   #[inline]
   fn advance(&mut self, target: i32) -> Result<i32> {
     match self {
-      Lucene90NumericDocValuesEnum::A(values) => values.advance(target),
-      Lucene90NumericDocValuesEnum::B(values) => values.advance(target),
-      Lucene90NumericDocValuesEnum::C(values) => values.advance(target),
+      Self::A(values) => values.advance(target),
+      Self::B(values) => values.advance(target),
+      Self::C(values) => values.advance(target),
     }
   }
 
   #[inline]
   fn slow_advance(&mut self, target: i32) -> Result<i32> {
     match self {
-      Lucene90NumericDocValuesEnum::A(values) => values.slow_advance(target),
-      Lucene90NumericDocValuesEnum::B(values) => values.slow_advance(target),
-      Lucene90NumericDocValuesEnum::C(values) => values.slow_advance(target),
+      Self::A(values) => values.slow_advance(target),
+      Self::B(values) => values.slow_advance(target),
+      Self::C(values) => values.slow_advance(target),
     }
   }
 
   #[inline]
   fn cost(&self) -> Result<i64> {
     match self {
-      Lucene90NumericDocValuesEnum::A(values) => values.cost(),
-      Lucene90NumericDocValuesEnum::B(values) => values.cost(),
-      Lucene90NumericDocValuesEnum::C(values) => values.cost(),
+      Self::A(values) => values.cost(),
+      Self::B(values) => values.cost(),
+      Self::C(values) => values.cost(),
     }
   }
 }
 
-impl<I> NumericDocValues for Lucene90NumericDocValuesEnum<I>
+impl<I, R> NumericDocValues for Lucene90NumericDocValuesEnumImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   #[inline]
   fn long_value(&mut self) -> Result<i64> {
     match self {
-      Lucene90NumericDocValuesEnum::A(values) => values.long_value(),
-      Lucene90NumericDocValuesEnum::B(values) => values.long_value(),
-      Lucene90NumericDocValuesEnum::C(values) => values.long_value(),
+      Self::A(values) => values.long_value(),
+      Self::B(values) => values.long_value(),
+      Self::C(values) => values.long_value(),
     }
   }
 }
