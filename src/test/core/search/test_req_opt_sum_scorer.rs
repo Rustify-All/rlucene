@@ -547,11 +547,7 @@ where
   Ok(v)
 }
 
-struct ReqOptSumScorerWrapper<S1, S2>
-where
-  S1: Scorer,
-  S2: Scorer,
-{
+struct ReqOptSumScorerWrapper<S1, S2> {
   base: ReqOptSumScorer<S1, S2>,
 }
 impl<S1, S2> ReqOptSumScorerWrapper<S1, S2>
