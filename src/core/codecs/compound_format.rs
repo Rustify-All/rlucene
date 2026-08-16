@@ -14,8 +14,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::core::codecs::DefaultCompoundFormat;
 use crate::core::codecs::compound_directory::CompoundDirectory;
+use crate::core::codecs::lucene90::lucene90_compound_reader::Lucene90CompoundReader;
 use crate::core::index::segment_info::SegmentInfo;
 use crate::core::store::IOContext;
 use crate::core::store::directory::Directory;
@@ -40,4 +40,6 @@ pub trait CompoundFormat {
   /// and [`CodecUtil::write_footer`](crate::core::codecs::codec_util::CodecUtil::write_footer).
   fn write<D>(&self, dir: &impl Directory, si: &SegmentInfo<D>, context: &IOContext) -> Result<()>;
 }
-pub type DefaultCompoundReader<D> = <DefaultCompoundFormat as CompoundFormat>::Directory<D>;
+pub type DefaultCompoundReaderImpl<I> = Lucene90CompoundReader<I>;
+pub type DefaultCompoundReader<D> =
+  DefaultCompoundReaderImpl<<D as Directory>::IndexInput>;

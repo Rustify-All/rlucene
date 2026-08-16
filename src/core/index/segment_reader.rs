@@ -76,7 +76,7 @@ where
   // were created as an NRT reader from IW, in which case IW
   // tells us the number of live docs:
   num_docs: i32,
-  core: Arc<SegmentCoreReaders<D>>,
+  core: Arc<SegmentCoreReaders<D::IndexInput>>,
   seg_doc_values: Arc<SegmentDocValues<D::IndexInput>>,
   /// True if we are holding RAM only liveDocs or DV updates,
   /// i.e. the SegmentCommitInfo delGen doesn't match our liveDocs.
@@ -269,7 +269,7 @@ where
     si: &SegmentCommitInfo<D>,
     field_infos: Arc<FieldInfos>,
     seg_doc_values: &SegmentDocValues<D::IndexInput>,
-    core: &SegmentCoreReaders<D>,
+    core: &SegmentCoreReaders<D::IndexInput>,
   ) -> Result<Option<Arc<DocValuesProducers<D::IndexInput>>>> {
     if !field_infos.has_doc_values() {
       return Ok(None);

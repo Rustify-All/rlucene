@@ -25,13 +25,14 @@ use crate::core::codecs::term_vectors_format::TermVectorsFormat;
 
 use crate::core::codecs::{
   Codec, CodecFieldsProducer, CodecKnnVectorsReader, CodecNormsProducer, CodecPointsReader,
-  CodecStoredFieldsReader, CodecTermVectorsReader, CompoundFormat, DefaultCompoundReader,
+  CodecStoredFieldsReader, CodecTermVectorsReader, CompoundFormat, DefaultCompoundReaderImpl,
 };
 use crate::core::index::field_infos::FieldInfos;
 use crate::core::index::segment_commit_info::SegmentCommitInfo;
 use crate::core::index::segment_read_state::SegmentReadState;
 use crate::core::store::IOContext;
 use crate::core::store::directory::Directory;
+use crate::core::store::index_input::IndexInput;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::io_utils::IOUtils;
 
@@ -42,18 +43,19 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicI32, Ordering};
 
 /// Holds core readers that are shared (unchanged) when SegmentReader is cloned or reopened
-pub(crate) struct SegmentCoreReaders<D>
+pub(crate) struct SegmentCoreReaders<I>
 where
-  D: Directory,
+  I: IndexInput<IndexInput = I> + Send + Sync,
+  I::RandomAccessSlice: Send + Sync,
 {
   pub(crate) ref_: AtomicI32,
-  pub(crate) fields: Option<Arc<CodecFieldsProducer<D::IndexInput>>>,
-  pub(crate) norms_producer: Option<Arc<CodecNormsProducer<D::IndexInput>>>,
-  pub(crate) fields_reader_orig: CodecStoredFieldsReader<D::IndexInput>,
-  pub(crate) term_vectors_reader_orig: Option<CodecTermVectorsReader<D::IndexInput>>,
-  pub(crate) points_reader: Option<Arc<CodecPointsReader<D::IndexInput>>>,
-  pub(crate) knn_vectors_reader: Option<Arc<CodecKnnVectorsReader<D::IndexInput>>>,
-  pub(crate) cfs_reader: Option<DefaultCompoundReader<D>>,
+  pub(crate) fields: Option<Arc<CodecFieldsProducer<I>>>,
+  pub(crate) norms_producer: Option<Arc<CodecNormsProducer<I>>>,
+  pub(crate) fields_reader_orig: CodecStoredFieldsReader<I>,
+  pub(crate) term_vectors_reader_orig: Option<CodecTermVectorsReader<I>>,
+  pub(crate) points_reader: Option<Arc<CodecPointsReader<I>>>,
+  pub(crate) knn_vectors_reader: Option<Arc<CodecKnnVectorsReader<I>>>,
+  pub(crate) cfs_reader: Option<DefaultCompoundReaderImpl<I>>,
   pub(crate) segment: String,
   /// fieldinfos for this core: means gen=-1. this is the exact fieldinfos these codec components saw at write.
   /// in the case of DV updates, SR may hold a newer version.
@@ -61,12 +63,16 @@ where
   pub(crate) cache_helper: SegmentCoreReadersCacheHelperImpl,
 }
 
-impl<D> SegmentCoreReaders<D>
+impl<I> SegmentCoreReaders<I>
 where
-  D: Directory,
+  I: IndexInput<IndexInput = I> + Send + Sync,
+  I::RandomAccessSlice: Send + Sync,
 {
   #[allow(clippy::too_many_arguments)]
-  pub(crate) fn new(dir: &D, si: &SegmentCommitInfo<D>, context: &IOContext) -> Result<Self> {
+  pub(crate) fn new<D>(dir: &D, si: &SegmentCommitInfo<D>, context: &IOContext) -> Result<Self>
+  where
+    D: Directory<IndexInput = I>,
+  {
     let codec = si.info.get_codec()?;
     let use_compound_file = si.info.get_use_compound_file();
 
