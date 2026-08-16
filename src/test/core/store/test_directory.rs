@@ -18,28 +18,166 @@ use crate::test_framework::core::util::lucene_test_case::{
   create_temp_dir_with_prefix, new_io_context, random, slow_file_exists,
 };
 use std::collections::HashSet;
+use std::fmt::{Display, Formatter};
 use std::fs::File;
 
 use rand::RngExt;
 
 use crate::core::store::data_input::DataInput;
 use crate::core::store::data_output::DataOutput;
-use crate::core::store::directory::{Directory, DirectoryEnum2};
+use crate::core::store::directory::Directory;
 use crate::core::store::fs_directory::FSDirectory;
-use crate::core::store::index_input::IndexInput;
+use crate::core::store::index_input::{IndexInput, IndexInputEnum2};
+use crate::core::store::io_context::IOContext;
 use crate::core::store::mmap_directory::MMapDirectory;
 use crate::core::store::native_fs_lock_factory::NativeFSLockFactory;
 use crate::core::store::nio_fs_directory::NIOFSDirectory;
+use crate::core::util::HasIdentity;
 use crate::core::util::close::{Closeable, CloseableRef};
 use crate::core::util::error::lucene_error::Result;
 
 #[allow(dead_code)] // for quick search
 struct TestDirectory;
 
-type TestFSDirectory = DirectoryEnum2<
-  FSDirectory<NativeFSLockFactory, NIOFSDirectory>,
-  FSDirectory<NativeFSLockFactory, MMapDirectory>,
->;
+type NioDirectory = FSDirectory<NativeFSLockFactory, NIOFSDirectory>;
+type MMapDirectoryType = FSDirectory<NativeFSLockFactory, MMapDirectory>;
+
+enum TestFSDirectory {
+  Nio(NioDirectory),
+  MMap(MMapDirectoryType),
+}
+
+impl Display for TestFSDirectory {
+  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::Nio(directory) => directory.fmt(f),
+      Self::MMap(directory) => directory.fmt(f),
+    }
+  }
+}
+
+impl HasIdentity for TestFSDirectory {
+  fn identity(&self) -> &crate::core::index::index_reader::Identity {
+    match self {
+      Self::Nio(directory) => directory.identity(),
+      Self::MMap(directory) => directory.identity(),
+    }
+  }
+}
+
+impl Directory for TestFSDirectory {
+  fn list_all(&self) -> Result<Vec<String>> {
+    match self {
+      Self::Nio(directory) => directory.list_all(),
+      Self::MMap(directory) => directory.list_all(),
+    }
+  }
+
+  fn delete_file(&self, name: &str) -> Result<()> {
+    match self {
+      Self::Nio(directory) => directory.delete_file(name),
+      Self::MMap(directory) => directory.delete_file(name),
+    }
+  }
+
+  fn file_length(&self, name: &str) -> Result<usize> {
+    match self {
+      Self::Nio(directory) => directory.file_length(name),
+      Self::MMap(directory) => directory.file_length(name),
+    }
+  }
+
+  type IndexOutput = <NioDirectory as Directory>::IndexOutput;
+
+  fn create_output(&self, name: &str, context: &IOContext) -> Result<Self::IndexOutput> {
+    match self {
+      Self::Nio(directory) => directory.create_output(name, context),
+      Self::MMap(directory) => directory.create_output(name, context),
+    }
+  }
+
+  fn create_temp_output(
+    &self,
+    prefix: &str,
+    suffix: &str,
+    context: &IOContext,
+  ) -> Result<Self::IndexOutput> {
+    match self {
+      Self::Nio(directory) => directory.create_temp_output(prefix, suffix, context),
+      Self::MMap(directory) => directory.create_temp_output(prefix, suffix, context),
+    }
+  }
+
+  fn sync(&self, names: &[String]) -> Result<()> {
+    match self {
+      Self::Nio(directory) => directory.sync(names),
+      Self::MMap(directory) => directory.sync(names),
+    }
+  }
+
+  fn sync_metadata(&self) -> Result<()> {
+    match self {
+      Self::Nio(directory) => directory.sync_metadata(),
+      Self::MMap(directory) => directory.sync_metadata(),
+    }
+  }
+
+  fn rename(&self, source: &str, dest: &str) -> Result<()> {
+    match self {
+      Self::Nio(directory) => directory.rename(source, dest),
+      Self::MMap(directory) => directory.rename(source, dest),
+    }
+  }
+
+  type IndexInput = IndexInputEnum2<
+    <NioDirectory as Directory>::IndexInput,
+    <MMapDirectoryType as Directory>::IndexInput,
+  >;
+
+  fn open_input(&self, name: &str, context: &IOContext) -> Result<Self::IndexInput> {
+    match self {
+      Self::Nio(directory) => Ok(IndexInputEnum2::A(directory.open_input(name, context)?)),
+      Self::MMap(directory) => Ok(IndexInputEnum2::B(directory.open_input(name, context)?)),
+    }
+  }
+
+  type Lock = <NioDirectory as Directory>::Lock;
+
+  fn obtain_lock(&self, name: &str) -> Result<Self::Lock> {
+    match self {
+      Self::Nio(directory) => directory.obtain_lock(name),
+      Self::MMap(directory) => directory.obtain_lock(name),
+    }
+  }
+
+  fn get_pending_deletions(&self) -> Result<HashSet<String>> {
+    match self {
+      Self::Nio(directory) => directory.get_pending_deletions(),
+      Self::MMap(directory) => directory.get_pending_deletions(),
+    }
+  }
+
+  #[cfg(debug_assertions)]
+  fn is_fs_directory(&self) -> bool {
+    true
+  }
+
+  fn ensure_open(&self) -> Result<()> {
+    match self {
+      Self::Nio(directory) => directory.ensure_open(),
+      Self::MMap(directory) => directory.ensure_open(),
+    }
+  }
+}
+
+impl CloseableRef for TestFSDirectory {
+  fn close(&self) -> Result<()> {
+    match self {
+      Self::Nio(directory) => directory.close(),
+      Self::MMap(directory) => directory.close(),
+    }
+  }
+}
 
 // Test that different instances of FSDirectory can coexist on the same
 // path, can read, write, and lock files.
@@ -54,8 +192,8 @@ fn test_direct_instantiation() -> Result<()> {
   let mut large_read_buffer = vec![0u8; large_buffer.len()];
 
   let mut dirs = vec![
-    TestFSDirectory::A(NIOFSDirectory::new(path.path().to_path_buf())?),
-    TestFSDirectory::B(MMapDirectory::new(path.path().to_path_buf())?),
+    TestFSDirectory::Nio(NIOFSDirectory::new(path.path().to_path_buf())?),
+    TestFSDirectory::MMap(MMapDirectory::new(path.path().to_path_buf())?),
   ];
 
   for i in 0..dirs.len() {
@@ -110,8 +248,8 @@ fn test_direct_instantiation() -> Result<()> {
   for dir in &mut dirs {
     dir.ensure_open()?;
     match dir {
-      TestFSDirectory::A(dir) => dir.close()?,
-      TestFSDirectory::B(dir) => dir.close()?,
+      TestFSDirectory::Nio(dir) => dir.close()?,
+      TestFSDirectory::MMap(dir) => dir.close()?,
     }
     assert!(dir.ensure_open().is_err());
   }
