@@ -34,23 +34,21 @@ use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 #[allow(dead_code)] // for quick search
 struct TestSearcherManager;
 
-pub struct WarmingSearcherFactory<IR> {
+pub struct WarmingSearcherFactory {
   warm_called: Arc<AtomicBool>,
   search_threads: Option<usize>,
-  marker: PhantomData<fn() -> IR>,
 }
 
-impl<IR> WarmingSearcherFactory<IR> {
+impl WarmingSearcherFactory {
   pub fn new(warm_called: Arc<AtomicBool>, search_threads: Option<usize>) -> Self {
     Self {
       warm_called,
       search_threads,
-      marker: PhantomData,
     }
   }
 }
 
-impl<IR> SearcherFactoryBase<IR> for WarmingSearcherFactory<IR>
+impl<IR> SearcherFactoryBase<IR> for WarmingSearcherFactory
 where
   IR: IndexReader + 'static,
   IR::ContextKind: IndexReaderContextKind<Arc<IR>>,

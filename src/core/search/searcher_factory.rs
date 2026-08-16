@@ -65,7 +65,7 @@ pub struct SearcherFactory<IR> {
 pub(crate) enum SearcherFactoryHook<IR> {
   Default(PhantomData<fn() -> IR>),
   #[cfg(test)]
-  Warming(WarmingSearcherFactory<IR>),
+  Warming(WarmingSearcherFactory),
   #[cfg(test)]
   Blocking(BlockingSearcherFactory<IR>),
   #[cfg(test)]
