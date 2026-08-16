@@ -21,8 +21,8 @@ use crate::core::codecs::dummy::dummy_numeric_doc_values::DummyNumericDocValues;
 use crate::core::codecs::dummy::dummy_sorted_doc_values::DummySortedDocValues;
 use crate::core::codecs::indexed_disi::IndexedDISIImpl;
 use crate::core::codecs::lucene90::dov_values_inner_enum::{
-  BaseSortedDocValuesEnum, BaseSortedDocValuesEnumImpl, BaseSortedSetDocValuesEnum,
-  BaseSortedSetDocValuesEnumImpl, DenseBinaryDocValuesBaseEnum, DenseNumericDocValuesSubEnum,
+  BaseSortedDocValuesEnum, BaseSortedSetDocValuesEnum, DenseBinaryDocValuesBaseEnum,
+  DenseNumericDocValuesSubEnum,
   LongValuesEnums, SparseBinaryDocValuesBaseEnum, SparseNumericDocValuesSubEnum,
 };
 use crate::core::codecs::lucene90_doc_values_format::{
@@ -483,7 +483,7 @@ where
   fn get_numeric(&self, entry: Arc<NumericEntry>) -> Result<Lucene90NumericDocValuesEnum<I>> {
     if entry.docs_with_field_offset == -2 {
       // empty
-      Ok(Lucene90NumericDocValuesEnumImpl::C(
+      Ok(Lucene90NumericDocValuesEnum::C(
         DocValues::empty_numeric(),
       ))
     } else if entry.docs_with_field_offset == -1 {
@@ -534,7 +534,7 @@ where
           }
         }
       };
-      Ok(Lucene90NumericDocValuesEnumImpl::A(DenseNumericDocValues::new(
+      Ok(Lucene90NumericDocValuesEnum::A(DenseNumericDocValues::new(
         dense_numeric_doc_values_base_enum,
         self.max_doc,
       )))
@@ -598,7 +598,7 @@ where
           }
         }
       };
-      Ok(Lucene90NumericDocValuesEnumImpl::B(
+      Ok(Lucene90NumericDocValuesEnum::B(
         SparseNumericDocValuesImpl::new(sparse_numeric_doc_values_base_enum, disi),
       ))
     }
@@ -692,7 +692,7 @@ where
 
       let sub = if ords_entry.docs_with_field_offset == -1 {
         //dense
-        BaseSortedDocValuesEnumImpl::Dense(DenseBaseSortedDocValues::new(self.max_doc, values))
+        BaseSortedDocValuesEnum::Dense(DenseBaseSortedDocValues::new(self.max_doc, values))
       } else if ords_entry.docs_with_field_offset >= 0 {
         let disi = IndexedDISIImpl::new(
           self.data.as_ref(),
@@ -702,16 +702,16 @@ where
           ords_entry.dense_rank_power,
           ords_entry.num_values as i64,
         )?;
-        BaseSortedDocValuesEnumImpl::Sparse(SparseBaseSortedDocValuesImpl::new(disi, values))
+        BaseSortedDocValuesEnum::Sparse(SparseBaseSortedDocValuesImpl::new(disi, values))
       } else {
         let ords = self.get_numeric(ords_entry.clone())?;
-        BaseSortedDocValuesEnumImpl::Impl(BaseSortedDocValuesOrdinals::new(ords))
+        BaseSortedDocValuesEnum::Impl(BaseSortedDocValuesOrdinals::new(ords))
       };
       return BaseSortedDocValues::new(entry.clone(), self.data.clone(), sub, self.merging);
     }
 
     let ords = self.get_numeric(ords_entry.clone())?;
-    let sub = BaseSortedDocValuesEnumImpl::Impl(BaseSortedDocValuesOrdinals::new(ords));
+    let sub = BaseSortedDocValuesEnum::Impl(BaseSortedDocValuesOrdinals::new(ords));
     BaseSortedDocValues::new(entry.clone(), self.data.clone(), sub, self.merging)
   }
 
@@ -723,7 +723,7 @@ where
     I: IndexInput,
   {
     if entry.base.num_values == entry.num_docs_with_field as usize {
-      return Ok(Lucene90SortedNumericDocValuesEnumImpl::C(
+      return Ok(Lucene90SortedNumericDocValuesEnum::C(
         DocValues::singleton_numeric(self.get_numeric(entry.base.clone())?)?,
       ));
     }
@@ -748,7 +748,7 @@ where
 
     if entry.base.docs_with_field_offset == -1 {
       // dense
-      Ok(Lucene90SortedNumericDocValuesEnumImpl::A(
+      Ok(Lucene90SortedNumericDocValuesEnum::A(
         DenseSortedNumericDocValues::new(self.max_doc, values, addresses),
       ))
     } else {
@@ -762,7 +762,7 @@ where
         entry.num_docs_with_field as i64,
       )?;
 
-      Ok(Lucene90SortedNumericDocValuesEnumImpl::B(
+      Ok(Lucene90SortedNumericDocValuesEnum::B(
         SpareSortedNumericDocValuesImpl::new(disi, values, addresses),
       ))
     }
@@ -967,7 +967,7 @@ where
       let values = DirectReader::get_instance(slice, ords_entry.base.bits_per_value as i32)?;
 
       let sub = if ords_entry.base.docs_with_field_offset == -1 {
-        BaseSortedSetDocValuesEnumImpl::Dense(DenseBaseSortedSetDocValues::new(
+        BaseSortedSetDocValuesEnum::Dense(DenseBaseSortedSetDocValues::new(
           self.max_doc,
           values,
           addresses,
@@ -982,12 +982,12 @@ where
           ords_entry.base.dense_rank_power,
           ords_entry.base.num_values as i64,
         )?;
-        BaseSortedSetDocValuesEnumImpl::Sparse(SparseBaseSortedSetDocValuesImpl::new(
+        BaseSortedSetDocValuesEnum::Sparse(SparseBaseSortedSetDocValuesImpl::new(
           disi, values, addresses,
         ))
       } else {
         let ords = self.get_sorted_numeric(ords_entry)?;
-        BaseSortedSetDocValuesEnumImpl::Impl(BaseSortedSetDocValuesOrdinals::new(ords))
+        BaseSortedSetDocValuesEnum::Impl(BaseSortedSetDocValuesOrdinals::new(ords))
       };
       return Ok(Lucene90SortedSetDocValuesEnum::Multi(
         BaseSortedSetDocValues::new(entry.clone(), self.data.clone(), sub, self.merging)?,
@@ -995,7 +995,7 @@ where
     }
 
     let ords = self.get_sorted_numeric(ords_entry)?;
-    let sub = BaseSortedSetDocValuesEnumImpl::Impl(BaseSortedSetDocValuesOrdinals::new(ords));
+    let sub = BaseSortedSetDocValuesEnum::Impl(BaseSortedSetDocValuesOrdinals::new(ords));
     Ok(Lucene90SortedSetDocValuesEnum::Multi(
       BaseSortedSetDocValues::new(entry.clone(), self.data.clone(), sub, self.merging)?,
     ))
@@ -2088,43 +2088,34 @@ where
     Err(LuceneError::unsupported_operation(""))
   }
 }
-pub struct BaseSortedDocValuesOrdinals<I, R>
+pub struct BaseSortedDocValuesOrdinals<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
-  ords: Lucene90NumericDocValuesEnumImpl<I, R>,
+  ords: Lucene90NumericDocValuesEnum<I>,
 }
 
-pub type BaseSortedDocValuesImpl<I> = BaseSortedDocValuesOrdinals<
-  <I as IndexInput>::IndexInput,
-  <I as IndexInput>::RandomAccessSlice,
->;
-
-impl<I, R> BaseSortedDocValuesOrdinals<I, R>
+impl<I> BaseSortedDocValuesOrdinals<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
-  fn new(ords: Lucene90NumericDocValuesEnumImpl<I, R>) -> Self {
+  fn new(ords: Lucene90NumericDocValuesEnum<I>) -> Self {
     Self { ords }
   }
 }
 
-impl<I, R> DocValuesIterator for BaseSortedDocValuesOrdinals<I, R>
+impl<I> DocValuesIterator for BaseSortedDocValuesOrdinals<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn advance_exact(&mut self, target: i32) -> Result<bool> {
     self.ords.advance_exact(target)
   }
 }
 
-impl<I, R> DocIdSetIterator for BaseSortedDocValuesOrdinals<I, R>
+impl<I> DocIdSetIterator for BaseSortedDocValuesOrdinals<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn doc_id(&self) -> i32 {
     self.ords.doc_id()
@@ -2143,10 +2134,9 @@ where
   }
 }
 
-impl<I, R> SortedDocValues for BaseSortedDocValuesOrdinals<I, R>
+impl<I> SortedDocValues for BaseSortedDocValuesOrdinals<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn ord_value(&mut self) -> Result<i32> {
     Ok(self.ords.long_value()? as i32)
@@ -2155,8 +2145,7 @@ where
   type TermsEnum<'a>
     = DummyTermsEnum
   where
-    I: 'a,
-    R: 'a;
+    I: 'a;
 
   fn terms_enum(&mut self) -> Result<Self::TermsEnum<'_>> {
     Err(LuceneError::unsupported_operation(""))
@@ -2473,43 +2462,34 @@ where
   type SortedDocValues = DummySortedDocValues;
 }
 
-pub struct BaseSortedSetDocValuesOrdinals<I, R>
+pub struct BaseSortedSetDocValuesOrdinals<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
-  ords: Lucene90SortedNumericDocValuesEnumImpl<I, R>,
+  ords: Lucene90SortedNumericDocValuesEnum<I>,
 }
 
-pub type BaseSortedSetDocValuesImpl<I> = BaseSortedSetDocValuesOrdinals<
-  <I as IndexInput>::IndexInput,
-  <I as IndexInput>::RandomAccessSlice,
->;
-
-impl<I, R> BaseSortedSetDocValuesOrdinals<I, R>
+impl<I> BaseSortedSetDocValuesOrdinals<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
-  fn new(ords: Lucene90SortedNumericDocValuesEnumImpl<I, R>) -> Self {
+  fn new(ords: Lucene90SortedNumericDocValuesEnum<I>) -> Self {
     Self { ords }
   }
 }
 
-impl<I, R> DocValuesIterator for BaseSortedSetDocValuesOrdinals<I, R>
+impl<I> DocValuesIterator for BaseSortedSetDocValuesOrdinals<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn advance_exact(&mut self, target: i32) -> Result<bool> {
     self.ords.advance_exact(target)
   }
 }
 
-impl<I, R> DocIdSetIterator for BaseSortedSetDocValuesOrdinals<I, R>
+impl<I> DocIdSetIterator for BaseSortedSetDocValuesOrdinals<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn doc_id(&self) -> i32 {
     self.ords.doc_id()
@@ -2528,10 +2508,9 @@ where
   }
 }
 
-impl<I, R> SortedSetDocValues for BaseSortedSetDocValuesOrdinals<I, R>
+impl<I> SortedSetDocValues for BaseSortedSetDocValuesOrdinals<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn next_ord(&mut self) -> Result<i64> {
     self.ords.next_value()
@@ -2543,8 +2522,7 @@ where
   type TermsEnum<'a>
     = DummyTermsEnum
   where
-    I: 'a,
-    R: 'a;
+    I: 'a;
 
   fn terms_enum(&mut self) -> Result<Self::TermsEnum<'_>> {
     Err(LuceneError::unsupported_operation(""))
@@ -3319,25 +3297,18 @@ where
 }
 
 // 1. NumericDocValues
-pub enum Lucene90NumericDocValuesEnumImpl<I, R>
+pub enum Lucene90NumericDocValuesEnum<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
-  A(DenseNumericDocValues<R>),
-  B(SparseNumericDocValuesImpl<I, R>),
+  A(DenseNumericDocValues<I::RandomAccessSlice>),
+  B(SparseNumericDocValuesImpl<I::IndexInput, I::RandomAccessSlice>),
   C(EmptyNumeric),
 }
 
-pub type Lucene90NumericDocValuesEnum<I> = Lucene90NumericDocValuesEnumImpl<
-  <I as IndexInput>::IndexInput,
-  <I as IndexInput>::RandomAccessSlice,
->;
-
-impl<I, R> DocValuesIterator for Lucene90NumericDocValuesEnumImpl<I, R>
+impl<I> DocValuesIterator for Lucene90NumericDocValuesEnum<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   #[inline]
   fn advance_exact(&mut self, target: i32) -> Result<bool> {
@@ -3349,10 +3320,9 @@ where
   }
 }
 
-impl<I, R> DocIdSetIterator for Lucene90NumericDocValuesEnumImpl<I, R>
+impl<I> DocIdSetIterator for Lucene90NumericDocValuesEnum<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   #[inline]
   fn doc_id(&self) -> i32 {
@@ -3400,10 +3370,9 @@ where
   }
 }
 
-impl<I, R> NumericDocValues for Lucene90NumericDocValuesEnumImpl<I, R>
+impl<I> NumericDocValues for Lucene90NumericDocValuesEnum<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   #[inline]
   fn long_value(&mut self) -> Result<i64> {
@@ -3416,25 +3385,18 @@ where
 }
 
 // 2.SortedNumericDocValues
-pub enum Lucene90SortedNumericDocValuesEnumImpl<I, R>
+pub enum Lucene90SortedNumericDocValuesEnum<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
-  A(DenseSortedNumericDocValues<R>),
-  B(SpareSortedNumericDocValuesImpl<I, R>),
-  C(SingletonSortedNumericDocValues<Lucene90NumericDocValuesEnumImpl<I, R>>),
+  A(DenseSortedNumericDocValues<I::RandomAccessSlice>),
+  B(SpareSortedNumericDocValuesImpl<I::IndexInput, I::RandomAccessSlice>),
+  C(SingletonSortedNumericDocValues<Lucene90NumericDocValuesEnum<I>>),
 }
 
-pub type Lucene90SortedNumericDocValuesEnum<I> = Lucene90SortedNumericDocValuesEnumImpl<
-  <I as IndexInput>::IndexInput,
-  <I as IndexInput>::RandomAccessSlice,
->;
-
-impl<I, R> DocValuesIterator for Lucene90SortedNumericDocValuesEnumImpl<I, R>
+impl<I> DocValuesIterator for Lucene90SortedNumericDocValuesEnum<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   #[inline]
   fn advance_exact(&mut self, target: i32) -> Result<bool> {
@@ -3446,10 +3408,9 @@ where
   }
 }
 
-impl<I, R> DocIdSetIterator for Lucene90SortedNumericDocValuesEnumImpl<I, R>
+impl<I> DocIdSetIterator for Lucene90SortedNumericDocValuesEnum<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   #[inline]
   fn doc_id(&self) -> i32 {
@@ -3497,10 +3458,9 @@ where
   }
 }
 
-impl<I, R> SortedNumericDocValues for Lucene90SortedNumericDocValuesEnumImpl<I, R>
+impl<I> SortedNumericDocValues for Lucene90SortedNumericDocValuesEnum<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   #[inline]
   fn next_value(&mut self) -> Result<i64> {
@@ -3529,7 +3489,7 @@ where
     }
   }
 
-  type NumericDocValues = Lucene90NumericDocValuesEnumImpl<I, R>;
+  type NumericDocValues = Lucene90NumericDocValuesEnum<I>;
 
   #[inline]
   fn get_numeric_doc_values(&mut self) -> Result<Self::NumericDocValues> {
