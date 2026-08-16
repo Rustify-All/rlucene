@@ -495,7 +495,7 @@ where
       let sub_sparse_norms = SparseNormsIteratorBaseEnum::Sparse(SparseNormsIteratorBaseImpl {
         norms_offset: entry.norms_offset,
       });
-      let sparse_norms_iterator = SparseNormsIteratorImpl::new(sub_sparse_norms, disi);
+      let sparse_norms_iterator = SparseNormsIterator::new(sub_sparse_norms, disi);
       return Ok(Lucene90NormNumericDocValuesEnum::Sparse(
         sparse_norms_iterator,
       ));
@@ -507,7 +507,7 @@ where
       1 => {
         let sub_sparse_norms =
           SparseNormsIteratorBaseEnum::Sparse1(SparseNormsIteratorBaseImpl1 { slice });
-        let sparse_norms_iterator = SparseNormsIteratorImpl::new(sub_sparse_norms, disi);
+        let sparse_norms_iterator = SparseNormsIterator::new(sub_sparse_norms, disi);
         Ok(Lucene90NormNumericDocValuesEnum::Sparse(
           sparse_norms_iterator,
         ))
@@ -515,7 +515,7 @@ where
       2 => {
         let sub_sparse_norms =
           SparseNormsIteratorBaseEnum::Sparse2(SparseNormsIteratorBaseImpl2 { slice });
-        let sparse_norms_iterator = SparseNormsIteratorImpl::new(sub_sparse_norms, disi);
+        let sparse_norms_iterator = SparseNormsIterator::new(sub_sparse_norms, disi);
         Ok(Lucene90NormNumericDocValuesEnum::Sparse(
           sparse_norms_iterator,
         ))
@@ -523,7 +523,7 @@ where
       4 => {
         let sub_sparse_norms =
           SparseNormsIteratorBaseEnum::Sparse3(SparseNormsIteratorBaseImpl4 { slice });
-        let sparse_norms_iterator = SparseNormsIteratorImpl::new(sub_sparse_norms, disi);
+        let sparse_norms_iterator = SparseNormsIterator::new(sub_sparse_norms, disi);
         Ok(Lucene90NormNumericDocValuesEnum::Sparse(
           sparse_norms_iterator,
         ))
@@ -531,7 +531,7 @@ where
       8 => {
         let sub_sparse_norms =
           SparseNormsIteratorBaseEnum::Sparse4(SparseNormsIteratorBaseImpl8 { slice });
-        let sparse_norms_iterator = SparseNormsIteratorImpl::new(sub_sparse_norms, disi);
+        let sparse_norms_iterator = SparseNormsIterator::new(sub_sparse_norms, disi);
         Ok(Lucene90NormNumericDocValuesEnum::Sparse(
           sparse_norms_iterator,
         ))
@@ -733,28 +733,21 @@ where
   }
 }
 
-pub struct SparseNormsIteratorImpl<I, R>
+pub struct SparseNormsIterator<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
-  sub_sparse_norms: SparseNormsIteratorBaseEnum<R>,
-  disi: IndexedDISIEnumImpl<I, R>,
+  sub_sparse_norms: SparseNormsIteratorBaseEnum<I::RandomAccessSlice>,
+  disi: IndexedDISIEnumImpl<I::IndexInput, I::RandomAccessSlice>,
 }
 
-pub type SparseNormsIterator<I> = SparseNormsIteratorImpl<
-  <I as IndexInput>::IndexInput,
-  <I as IndexInput>::RandomAccessSlice,
->;
-
-impl<I, R> SparseNormsIteratorImpl<I, R>
+impl<I> SparseNormsIterator<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn new(
-    sub_sparse_norms: SparseNormsIteratorBaseEnum<R>,
-    disi: IndexedDISIEnumImpl<I, R>,
+    sub_sparse_norms: SparseNormsIteratorBaseEnum<I::RandomAccessSlice>,
+    disi: IndexedDISIEnumImpl<I::IndexInput, I::RandomAccessSlice>,
   ) -> Self {
     Self {
       sub_sparse_norms,
@@ -763,20 +756,18 @@ where
   }
 }
 
-impl<I, R> DocValuesIterator for SparseNormsIteratorImpl<I, R>
+impl<I> DocValuesIterator for SparseNormsIterator<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn advance_exact(&mut self, target: i32) -> Result<bool> {
     self.disi.advance_exact(target)
   }
 }
 
-impl<I, R> DocIdSetIterator for SparseNormsIteratorImpl<I, R>
+impl<I> DocIdSetIterator for SparseNormsIterator<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn doc_id(&self) -> i32 {
     self.disi.doc_id()
@@ -795,10 +786,9 @@ where
   }
 }
 
-impl<I, R> NumericDocValues for SparseNormsIteratorImpl<I, R>
+impl<I> NumericDocValues for SparseNormsIterator<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn long_value(&mut self) -> Result<i64> {
     self

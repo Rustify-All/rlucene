@@ -15,9 +15,7 @@
  * limitations under the License.
  */
 pub mod norms {
-  use crate::core::codecs::lucene90_norms_producer::{
-    DenseNormsIterator, SparseNormsIteratorImpl,
-  };
+  use crate::core::codecs::lucene90_norms_producer::{DenseNormsIterator, SparseNormsIterator};
   use crate::core::index::doc_values::EmptyNumeric;
   use crate::core::index::doc_values_iterator::DocValuesIterator;
   use crate::core::index::numeric_doc_values::NumericDocValues;
@@ -29,7 +27,7 @@ pub mod norms {
     I: IndexInput,
   {
     Dense(DenseNormsIterator<I::RandomAccessSlice>),
-    Sparse(SparseNormsIteratorImpl<I::IndexInput, I::RandomAccessSlice>),
+    Sparse(SparseNormsIterator<I>),
     Empty(EmptyNumeric),
   }
 
