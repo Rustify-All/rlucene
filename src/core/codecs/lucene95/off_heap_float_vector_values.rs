@@ -541,43 +541,34 @@ where
       .flat_vectors_scorer
       .get_random_vector_scorer_f32(sf, copy, query)?;
 
-    Ok(Some(SparseVectorScorerImpl::new(
+    Ok(Some(SparseVectorScorer::new(
       iterator,
       random_vector_scorer,
     )))
   }
 }
-pub struct SparseVectorScorerImpl<I, RI, R>
+pub struct SparseVectorScorer<I, R>
 where
   I: IndexInput,
-  RI: RandomAccessInput,
 {
-  iterator: IndexedDocIterator<I, RI>,
+  iterator: DocIndexIteratorImpl<I>,
   random_vector_scorer: R,
 }
 
-pub type SparseVectorScorer<I, R> = SparseVectorScorerImpl<
-  <I as IndexInput>::IndexInput,
-  <I as IndexInput>::RandomAccessSlice,
-  R,
->;
-
-impl<I, RI, R> SparseVectorScorerImpl<I, RI, R>
+impl<I, R> SparseVectorScorer<I, R>
 where
   I: IndexInput,
-  RI: RandomAccessInput,
 {
-  fn new(iterator: IndexedDocIterator<I, RI>, random_vector_scorer: R) -> Self {
+  fn new(iterator: DocIndexIteratorImpl<I>, random_vector_scorer: R) -> Self {
     Self {
       iterator,
       random_vector_scorer,
     }
   }
 }
-impl<I, RI, R> VectorScorer for SparseVectorScorerImpl<I, RI, R>
+impl<I, R> VectorScorer for SparseVectorScorer<I, R>
 where
   I: IndexInput,
-  RI: RandomAccessInput,
   R: RandomVectorScorer,
 {
   fn score(&self) -> Result<f32> {
@@ -586,7 +577,7 @@ where
   }
 
   type DocIdSetIteratorRef<'a>
-    = &'a IndexedDocIterator<I, RI>
+    = &'a DocIndexIteratorImpl<I>
   where
     Self: 'a;
 
@@ -595,7 +586,7 @@ where
   }
 
   type DocIdSetIteratorMut<'a>
-    = &'a mut IndexedDocIterator<I, RI>
+    = &'a mut DocIndexIteratorImpl<I>
   where
     Self: 'a;
 
