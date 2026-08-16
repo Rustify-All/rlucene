@@ -21,7 +21,7 @@ use crate::core::codecs::lucene90::lucene90_doc_values_producer::{
   DenseBinaryDocValuesBaseImpl, DenseBinaryDocValuesBaseImpl1, DenseNumericDocValuesBase,
   DenseNumericDocValuesBaseImpl, DenseNumericDocValuesBaseImpl1, DenseNumericDocValuesBaseImpl2,
   DenseNumericDocValuesBaseImpl3, DenseNumericDocValuesBaseImpl4, LongValuesImpl, LongValuesImpl1,
-  LongValuesImpl2, LongValuesImpl3, LongValuesImpl4, SparseBaseSortedDocValuesImpl,
+  LongValuesImpl2, LongValuesImpl3, LongValuesImpl4, SparseBaseSortedDocValues,
   SparseBinaryDocValuesBaseImpl, SparseBinaryDocValuesBaseImpl1, SparseNumericDocValuesBase,
   SparseNumericDocValuesBaseImpl, SparseNumericDocValuesBaseImpl1, SparseNumericDocValuesBaseImpl2,
   SparseNumericDocValuesBaseImpl3, SparseNumericDocValuesBaseImpl4,
@@ -48,7 +48,7 @@ where
   I: IndexInput,
 {
   Dense(DenseBaseSortedDocValues<I::RandomAccessSlice>),
-  Sparse(SparseBaseSortedDocValuesImpl<I::IndexInput, I::RandomAccessSlice>),
+  Sparse(SparseBaseSortedDocValues<I>),
   Impl(BaseSortedDocValuesOrdinals<I>),
 }
 

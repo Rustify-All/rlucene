@@ -702,7 +702,7 @@ where
           ords_entry.dense_rank_power,
           ords_entry.num_values as i64,
         )?;
-        BaseSortedDocValuesEnum::Sparse(SparseBaseSortedDocValuesImpl::new(disi, values))
+        BaseSortedDocValuesEnum::Sparse(SparseBaseSortedDocValues::new(disi, values))
       } else {
         let ords = self.get_numeric(ords_entry.clone())?;
         BaseSortedDocValuesEnum::Impl(BaseSortedDocValuesOrdinals::new(ords))
@@ -2025,44 +2025,38 @@ where
   }
 }
 
-pub struct SparseBaseSortedDocValuesImpl<I, R>
+pub struct SparseBaseSortedDocValues<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
-  disi: IndexedDISIImpl<I, R>,
-  value: DirectPackedEnum<R>,
+  disi: IndexedDISIImpl<I::IndexInput, I::RandomAccessSlice>,
+  value: DirectPackedEnum<I::RandomAccessSlice>,
 }
 
-pub type SparseBaseSortedDocValues<I> = SparseBaseSortedDocValuesImpl<
-  <I as IndexInput>::IndexInput,
-  <I as IndexInput>::RandomAccessSlice,
->;
-
-impl<I, R> SparseBaseSortedDocValuesImpl<I, R>
+impl<I> SparseBaseSortedDocValues<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
-  fn new(disi: IndexedDISIImpl<I, R>, value: DirectPackedEnum<R>) -> Self {
+  fn new(
+    disi: IndexedDISIImpl<I::IndexInput, I::RandomAccessSlice>,
+    value: DirectPackedEnum<I::RandomAccessSlice>,
+  ) -> Self {
     Self { disi, value }
   }
 }
 
-impl<I, R> DocValuesIterator for SparseBaseSortedDocValuesImpl<I, R>
+impl<I> DocValuesIterator for SparseBaseSortedDocValues<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn advance_exact(&mut self, target: i32) -> Result<bool> {
     self.disi.advance_exact(target)
   }
 }
 
-impl<I, R> DocIdSetIterator for SparseBaseSortedDocValuesImpl<I, R>
+impl<I> DocIdSetIterator for SparseBaseSortedDocValues<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn doc_id(&self) -> i32 {
     self.disi.doc_id()
@@ -2081,10 +2075,9 @@ where
   }
 }
 
-impl<I, R> SortedDocValues for SparseBaseSortedDocValuesImpl<I, R>
+impl<I> SortedDocValues for SparseBaseSortedDocValues<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn ord_value(&mut self) -> Result<i32> {
     Ok(self.value.get_mut(self.disi.index_u())? as i32)
@@ -2093,8 +2086,7 @@ where
   type TermsEnum<'a>
     = DummyTermsEnum
   where
-    I: 'a,
-    R: 'a;
+    I: 'a;
 
   fn terms_enum(&mut self) -> Result<Self::TermsEnum<'_>> {
     Err(LuceneError::unsupported_operation(""))
