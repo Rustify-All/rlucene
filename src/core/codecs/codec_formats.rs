@@ -74,7 +74,7 @@ use crate::core::codecs::stored_fields_reader::{DefaultStoredFieldsReader, Store
 use crate::core::codecs::stored_fields_writer::StoredFieldsWriter;
 use crate::core::codecs::term_vectors_format::TermVectorsFormat;
 #[cfg(test)]
-use crate::core::codecs::term_vectors_reader::TermVectorsReaderEnum2;
+use crate::core::codecs::term_vectors_reader::{DefaultTermVectorsReader, TermVectorsReader};
 #[cfg(test)]
 use crate::core::codecs::term_vectors_writer::TermVectorsWriter;
 #[cfg(test)]
@@ -111,6 +111,10 @@ use crate::core::index::stored_field_visitor::StoredFieldVisitor;
 #[cfg(test)]
 use crate::core::index::stored_fields::{RawStoredFieldsReader, StoredFields};
 #[cfg(test)]
+use crate::core::index::term_vectors::{RawTermVectors, TermVectors};
+#[cfg(test)]
+use crate::core::index::terms::TermsEnum2;
+#[cfg(test)]
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
 #[cfg(test)]
 use crate::core::search::vector_scorer::VectorScorer;
@@ -135,6 +139,8 @@ use crate::core::util::fixed_bit_set::FixedBitSet;
 use crate::core::util::hnsw::hnsw_graph::{HnswGraph, NodesIterator};
 #[cfg(test)]
 use crate::core::util::hnsw::neighbor_array::NeighborArray;
+#[cfg(test)]
+use crate::core::util::iterator::VecIter;
 #[cfg(test)]
 use crate::core::{
   index::byte_vector_values::ByteVectorValues, index::float_vector_values::FloatVectorValues,
@@ -1369,10 +1375,159 @@ impl StoredFieldsFormat for CodecStoredFieldsFormat {
 pub type CodecTermVectorsReader<I> =
   <Lucene90TermVectorsFormat as TermVectorsFormat>::TermVectorsReader<I>;
 #[cfg(test)]
-pub type CodecTermVectorsReader<I> = TermVectorsReaderEnum2<
-  <Lucene90TermVectorsFormat as TermVectorsFormat>::TermVectorsReader<I>,
-  <AssertingTermVectorsFormat as TermVectorsFormat>::TermVectorsReader<I>,
->;
+type Lucene90CodecTermVectorsReader<I> =
+  <Lucene90TermVectorsFormat as TermVectorsFormat>::TermVectorsReader<I>;
+#[cfg(test)]
+type AssertingCodecTermVectorsReader<I> =
+  <AssertingTermVectorsFormat as TermVectorsFormat>::TermVectorsReader<I>;
+#[cfg(test)]
+type Lucene90CodecTermVectorsFields<I> =
+  <Lucene90CodecTermVectorsReader<I> as TermVectors>::Fields;
+#[cfg(test)]
+type AssertingCodecTermVectorsFields<I> =
+  <AssertingCodecTermVectorsReader<I> as TermVectors>::Fields;
+
+#[cfg(test)]
+pub enum CodecTermVectorsFields<I: IndexInput> {
+  Lucene90(Lucene90CodecTermVectorsFields<I>),
+  Asserting(AssertingCodecTermVectorsFields<I>),
+}
+
+#[cfg(test)]
+impl<I: IndexInput> Fields for CodecTermVectorsFields<I> {
+  type FieldIter<'a>
+    = VecIter<'a, String>
+  where
+    Self: 'a;
+
+  fn iterator(&self) -> Result<Self::FieldIter<'_>> {
+    match self {
+      Self::Lucene90(fields) => fields.iterator(),
+      Self::Asserting(fields) => fields.iterator(),
+    }
+  }
+
+  type Terms = TermsEnum2<
+    <Lucene90CodecTermVectorsFields<I> as Fields>::Terms,
+    <AssertingCodecTermVectorsFields<I> as Fields>::Terms,
+  >;
+
+  fn terms(&self, field: &str) -> Result<Option<Self::Terms>> {
+    match self {
+      Self::Lucene90(fields) => fields.terms(field).map(|terms| terms.map(TermsEnum2::A)),
+      Self::Asserting(fields) => fields.terms(field).map(|terms| terms.map(TermsEnum2::B)),
+    }
+  }
+
+  fn size(&self) -> Result<i32> {
+    match self {
+      Self::Lucene90(fields) => fields.size(),
+      Self::Asserting(fields) => fields.size(),
+    }
+  }
+}
+
+#[cfg(test)]
+pub enum CodecTermVectorsReader<I: IndexInput> {
+  Lucene90(Lucene90CodecTermVectorsReader<I>),
+  Asserting(AssertingCodecTermVectorsReader<I>),
+}
+
+#[cfg(test)]
+impl<I: IndexInput> CloseableRef for CodecTermVectorsReader<I> {
+  fn close(&self) -> Result<()> {
+    match self {
+      Self::Lucene90(reader) => reader.close(),
+      Self::Asserting(reader) => reader.close(),
+    }
+  }
+}
+
+#[cfg(test)]
+impl<I: IndexInput> RawTermVectors for CodecTermVectorsReader<I> {
+  type IndexInput = I;
+
+  fn raw_term_vectors_mut(&mut self) -> Result<&mut DefaultTermVectorsReader<Self::IndexInput>> {
+    match self {
+      Self::Lucene90(reader) => reader.raw_term_vectors_mut(),
+      Self::Asserting(reader) => reader.raw_term_vectors_mut(),
+    }
+  }
+
+  fn raw_term_vectors(&self) -> Result<&DefaultTermVectorsReader<Self::IndexInput>> {
+    match self {
+      Self::Lucene90(reader) => reader.raw_term_vectors(),
+      Self::Asserting(reader) => reader.raw_term_vectors(),
+    }
+  }
+}
+
+#[cfg(test)]
+impl<I: IndexInput> TermVectors for CodecTermVectorsReader<I> {
+  fn prefetch(&mut self, doc_id: i32) -> Result<()> {
+    match self {
+      Self::Lucene90(reader) => reader.prefetch(doc_id),
+      Self::Asserting(reader) => reader.prefetch(doc_id),
+    }
+  }
+
+  type Fields = CodecTermVectorsFields<I>;
+
+  fn get(&mut self, doc: i32) -> Result<Option<Self::Fields>> {
+    match self {
+      Self::Lucene90(reader) => reader
+        .get(doc)
+        .map(|fields| fields.map(CodecTermVectorsFields::Lucene90)),
+      Self::Asserting(reader) => reader
+        .get(doc)
+        .map(|fields| fields.map(CodecTermVectorsFields::Asserting)),
+    }
+  }
+
+  type Terms = <Self::Fields as Fields>::Terms;
+
+  fn get_field_terms(&mut self, doc: i32, field: &str) -> Result<Option<Self::Terms>> {
+    match self {
+      Self::Lucene90(reader) => reader
+        .get_field_terms(doc, field)
+        .map(|terms| terms.map(TermsEnum2::A)),
+      Self::Asserting(reader) => reader
+        .get_field_terms(doc, field)
+        .map(|terms| terms.map(TermsEnum2::B)),
+    }
+  }
+}
+
+#[cfg(test)]
+impl<I: IndexInput> TryClone for CodecTermVectorsReader<I> {
+  fn try_clone(&self) -> Result<Self> {
+    match self {
+      Self::Lucene90(reader) => reader.try_clone().map(Self::Lucene90),
+      Self::Asserting(reader) => reader.try_clone().map(Self::Asserting),
+    }
+  }
+}
+
+#[cfg(test)]
+impl<I: IndexInput> TermVectorsReader for CodecTermVectorsReader<I> {
+  fn check_integrity(&self) -> Result<()> {
+    match self {
+      Self::Lucene90(reader) => reader.check_integrity(),
+      Self::Asserting(reader) => reader.check_integrity(),
+    }
+  }
+
+  fn get_merge_instance(&self) -> Result<Option<Self>> {
+    match self {
+      Self::Lucene90(reader) => reader
+        .get_merge_instance()
+        .map(|reader| reader.map(Self::Lucene90)),
+      Self::Asserting(reader) => reader
+        .get_merge_instance()
+        .map(|reader| reader.map(Self::Asserting)),
+    }
+  }
+}
 #[cfg(not(test))]
 pub type CodecTermVectorsWriter<D> =
   <Lucene90TermVectorsFormat as TermVectorsFormat>::TermVectorsWriter<D>;
@@ -1557,25 +1712,25 @@ impl TermVectorsFormat for CodecTermVectorsFormat {
         {
           format
             .vectors_reader(directory, segment_info, field_infos, context)
-            .map(TermVectorsReaderEnum2::A)
+            .map(CodecTermVectorsReader::Lucene90)
         }
       },
       #[cfg(test)]
       Self::Compressing(format) => format
         .vectors_reader(directory, segment_info, field_infos, context)
-        .map(TermVectorsReaderEnum2::A),
+        .map(CodecTermVectorsReader::Lucene90),
       #[cfg(test)]
       Self::Asserting(format) => format
         .vectors_reader(directory, segment_info, field_infos, context)
-        .map(TermVectorsReaderEnum2::B),
+        .map(CodecTermVectorsReader::Asserting),
       #[cfg(test)]
       Self::CrankyLucene101(format) => format
         .vectors_reader(directory, segment_info, field_infos, context)
-        .map(TermVectorsReaderEnum2::A),
+        .map(CodecTermVectorsReader::Lucene90),
       #[cfg(test)]
       Self::CrankyAsserting(format) => format
         .vectors_reader(directory, segment_info, field_infos, context)
-        .map(TermVectorsReaderEnum2::B),
+        .map(CodecTermVectorsReader::Asserting),
     }
   }
 

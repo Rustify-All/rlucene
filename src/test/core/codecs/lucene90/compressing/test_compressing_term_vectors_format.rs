@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 use crate::core::codecs::Codecs;
-use crate::core::codecs::term_vectors_reader::TermVectorsReaderEnum2;
+use crate::core::codecs::codec_formats::CodecTermVectorsReader;
 use crate::core::document::document::Document;
 use crate::core::document::field::Field;
 use crate::core::document::field_type::FieldType;
@@ -241,7 +241,7 @@ fn test_chunk_cleanup() -> Result<()> {
         let reader = leaf
           .get_term_vectors_reader()?
           .expect("term vectors reader should exist");
-        let TermVectorsReaderEnum2::A(reader) = reader else {
+        let CodecTermVectorsReader::Lucene90(reader) = reader else {
           panic!("compressing codec should use Lucene90 term vectors");
         };
         assert!(reader.get_num_dirty_docs()? > 0);
@@ -269,7 +269,7 @@ fn test_chunk_cleanup() -> Result<()> {
     let reader = leaf
       .get_term_vectors_reader()?
       .expect("term vectors reader should exist");
-    let TermVectorsReaderEnum2::A(reader) = reader else {
+    let CodecTermVectorsReader::Lucene90(reader) = reader else {
       panic!("compressing codec should use Lucene90 term vectors");
     };
     // At most 2: the 5 chunks from 5 doc segment will be collapsed into a single chunk.
