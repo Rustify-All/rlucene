@@ -17,8 +17,10 @@
 use crate::core::codecs::CodecUtil;
 use crate::core::codecs::doc_values_enum::norms::Lucene90NormNumericDocValuesEnum;
 
-use crate::core::codecs::indexed_disi::{IndexedDISIEnum, create_block_slice, create_jump_table};
-use crate::core::codecs::lucene90::indexed_disi::{IndexInputImpl, IndexedDISI};
+use crate::core::codecs::indexed_disi::{
+  IndexedDISIEnum, IndexedDISIEnumImpl, create_block_slice, create_jump_table,
+};
+use crate::core::codecs::lucene90::indexed_disi::{IndexInputImpl, IndexedDISIImpl};
 use crate::core::codecs::lucene90_norms_format::Lucene90NormsFormat;
 use crate::core::codecs::norms_producer::NormsProducer;
 use crate::core::index::IndexFileNames;
@@ -447,7 +449,7 @@ where
       self.get_disi_input(field, &entry)?,
     ) {
       (Some(RandomAccessSliceEnum::Shared(jt)), SliceEnum::Shared(input)) => {
-        IndexedDISIEnum::Shared(IndexedDISI::from_components(
+        IndexedDISIEnumImpl::Shared(IndexedDISIImpl::from_components(
           input,
           Some(jt),
           entry.jump_table_entry_count as i32,
@@ -457,7 +459,7 @@ where
       },
 
       (Some(RandomAccessSliceEnum::Owned(jt)), SliceEnum::Owned(input)) => {
-        IndexedDISIEnum::Owned(IndexedDISI::from_components(
+        IndexedDISIEnumImpl::Owned(IndexedDISIImpl::from_components(
           input,
           Some(jt),
           entry.jump_table_entry_count as i32,
@@ -465,15 +467,17 @@ where
           entry.num_docs_with_field as i64,
         )?)
       },
-      (None, SliceEnum::Shared(input)) => IndexedDISIEnum::Shared(IndexedDISI::from_components(
-        input,
-        None,
-        entry.jump_table_entry_count as i32,
-        entry.dense_rank_power,
-        entry.num_docs_with_field as i64,
-      )?),
+      (None, SliceEnum::Shared(input)) => {
+        IndexedDISIEnumImpl::Shared(IndexedDISIImpl::from_components(
+          input,
+          None,
+          entry.jump_table_entry_count as i32,
+          entry.dense_rank_power,
+          entry.num_docs_with_field as i64,
+        )?)
+      },
 
-      (None, SliceEnum::Owned(input)) => IndexedDISIEnum::Owned(IndexedDISI::from_components(
+      (None, SliceEnum::Owned(input)) => IndexedDISIEnumImpl::Owned(IndexedDISIImpl::from_components(
         input,
         None,
         entry.jump_table_entry_count as i32,

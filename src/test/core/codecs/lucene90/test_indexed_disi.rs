@@ -18,10 +18,11 @@ use crate::core::codecs::indexed_disi::{
   MAX_ARRAY_LENGTH, Owned, create_block_slice, create_jump_table,
   write_bitset_with_dense_rank_power,
 };
-use crate::core::codecs::lucene90::indexed_disi::{IndexedDISI, Method};
+use crate::core::codecs::lucene90::indexed_disi::{IndexedDISI, IndexedDISIImpl, Method};
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
 use crate::core::search::doc_id_set_iterator::NO_MORE_DOCS;
 use crate::core::store::directory::Directory;
+use crate::core::store::random_access_input::RandomAccessInput;
 use crate::core::store::{IOContext, IndexInput, IndexOutput};
 use crate::test_framework::core::util::lucene_test_case::{
   at_least, new_directory, random, rarely,
@@ -119,7 +120,7 @@ where
   }
 
   let input = dir.open_input("bar", &IOContext::default_io_context()?)?;
-  let mut disi = IndexedDISI::new(
+  let mut disi = IndexedDISIImpl::new(
     &input,
     0,
     length,
@@ -199,7 +200,7 @@ where
   let mut block_data = create_block_slice(full_input, "blocks", 0, length, jump_table_entry_count)?;
   block_data.seek(random.random_range(0..block_data.length()?))?;
   let jump_table = create_jump_table(full_input, 0, length, jump_table_entry_count)?;
-  let mut disi: IndexedDISI<I, Owned> = IndexedDISI::from_components(
+  let mut disi: IndexedDISI<I, Owned> = IndexedDISIImpl::from_components(
     block_data,
     jump_table,
     jump_table_entry_count,
@@ -261,7 +262,7 @@ where
 
   let input = dir.open_input("foo", &IOContext::default_io_context()?)?;
   for i in 0..v.bits.length() {
-    let mut disi = IndexedDISI::new(
+    let mut disi = IndexedDISIImpl::new(
       &input,
       0,
       length,
@@ -271,7 +272,7 @@ where
     )?;
     assert_eq!(v.bits.get(i)?, disi.advance_exact(i as i32)?);
 
-    let mut disi2 = IndexedDISI::new(
+    let mut disi2 = IndexedDISIImpl::new(
       &input,
       0,
       length,
@@ -380,7 +381,7 @@ fn test_sparse_dense_boundary() -> Result<()> {
 
   {
     let input = dir.open_input("sparse", &IOContext::default_io_context()?)?;
-    let mut disi = IndexedDISI::new(
+    let mut disi = IndexedDISIImpl::new(
       &input,
       0,
       length,
@@ -404,7 +405,7 @@ fn test_sparse_dense_boundary() -> Result<()> {
 
   {
     let input = dir.open_input("bar", &IOContext::default_io_context()?)?;
-    let mut disi = IndexedDISI::new(
+    let mut disi = IndexedDISIImpl::new(
       &input,
       0,
       length,
@@ -498,7 +499,7 @@ fn create_and_open_disi(write_power: i8, read_power: i8) -> Result<()> {
   drop(out);
 
   let input = dir.open_input("foo", &IOContext::default_io_context()?)?;
-  let _ = IndexedDISI::new(
+  let _ = IndexedDISIImpl::new(
     &input,
     0,
     length,
@@ -534,7 +535,7 @@ fn test_one_doc_missing_fixed() -> Result<()> {
 
   let mut disi2 = BitSetIterator::new(v.bits, cardinality)?;
   let input = dir.open_input("foo", &IOContext::default_io_context()?)?;
-  let mut disi = IndexedDISI::new(
+  let mut disi = IndexedDISIImpl::new(
     &input,
     0,
     length,
@@ -611,7 +612,7 @@ where
 
   set = {
     let input = dir.open_input("foo", &IOContext::default_io_context()?)?;
-    let mut disi = IndexedDISI::new(
+    let mut disi = IndexedDISIImpl::new(
       &input,
       0,
       length,
@@ -626,7 +627,7 @@ where
 
   for &step in &[1, 10, 100, 1000, 10000, 100000] {
     let input = dir.open_input("foo", &IOContext::default_io_context()?)?;
-    let mut disi = IndexedDISI::new(
+    let mut disi = IndexedDISIImpl::new(
       &input,
       0,
       length,
@@ -641,7 +642,7 @@ where
 
   for &step in &[10, 100, 1000, 10000, 100000] {
     let input = dir.open_input("foo", &IOContext::default_io_context()?)?;
-    let mut disi = IndexedDISI::new(
+    let mut disi = IndexedDISIImpl::new(
       &input,
       0,
       length,
@@ -659,15 +660,16 @@ where
   Ok(set)
 }
 
-fn assert_advance_exact_randomized<I, T, R>(
+fn assert_advance_exact_randomized<I, RI, T, R>(
   random: &mut R,
-  disi: &mut IndexedDISI<I, Owned>,
+  disi: &mut IndexedDISIImpl<I, RI>,
   disi2: &mut BitSetIterator<T>,
   disi2_length: i32,
   step: i32,
 ) -> Result<()>
 where
   I: IndexInput,
+  RI: RandomAccessInput,
   T: BitSet,
   R: Rng + ?Sized,
 {
@@ -698,12 +700,13 @@ where
 
   Ok(())
 }
-fn assert_single_step_equality<I, T>(
-  disi: &mut IndexedDISI<I, Owned>,
+fn assert_single_step_equality<I, RI, T>(
+  disi: &mut IndexedDISIImpl<I, RI>,
   disi2: &mut BitSetIterator<T>,
 ) -> Result<()>
 where
   I: IndexInput,
+  RI: RandomAccessInput,
   T: BitSet,
 {
   let mut i = 0;
@@ -719,13 +722,14 @@ where
   assert_eq!(NO_MORE_DOCS, disi.next_doc()?);
   Ok(())
 }
-fn assert_advance_equality<I, T>(
-  disi: &mut IndexedDISI<I, Owned>,
+fn assert_advance_equality<I, RI, T>(
+  disi: &mut IndexedDISIImpl<I, RI>,
   disi2: &mut BitSetIterator<T>,
   step: i32,
 ) -> Result<()>
 where
   I: IndexInput,
+  RI: RandomAccessInput,
   T: BitSet,
 {
   let mut index = -1;

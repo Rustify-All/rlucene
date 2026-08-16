@@ -87,13 +87,13 @@ use std::sync::Arc;
 /// the block itself, ensuring locality and simplifying block logistics.
 ///
 /// # Lucene Internal
-pub struct IndexedDISI<I, P>
+pub struct IndexedDISIImpl<I, R>
 where
   I: IndexInput,
-  P: IndexedDISIPolicy<I>,
+  R: RandomAccessInput,
 {
-  slice: P::Slice,
-  jump_table: Option<P::JumpTable>,
+  slice: I,
+  jump_table: Option<R>,
   jump_table_entry_count: i32,
   dense_rank_power: i8,
   dense_rank_table: Option<Vec<u8>>,
@@ -120,9 +120,16 @@ where
   // ALL variables
   gap: i32,
 }
-impl<I> IndexedDISI<I, Owned>
+
+pub type IndexedDISI<I, P> = IndexedDISIImpl<
+  <P as IndexedDISIPolicy<I>>::Slice,
+  <P as IndexedDISIPolicy<I>>::JumpTable,
+>;
+
+impl<I, R> IndexedDISIImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   /// Constructs a new `IndexedDISI` instance by reading from the backing
   /// input data.
@@ -130,7 +137,7 @@ where
   /// This method always creates a new `block_slice` and a new
   /// `jump_table` from the input, to ensure that operations are
   /// independent from the caller. For re-using existing slices and
-  /// tables, see [`IndexedDISI::from_components`] (if implemented).
+  /// tables, see [`IndexedDISIImpl::from_components`] (if implemented).
   ///
   /// # Parameters
   /// - `input`: The backing input data.
@@ -143,14 +150,17 @@ where
   ///   in DENSE blocks, expressed as `2^dense_rank_power`. This must match
   ///   the value passed to `write_bit_set` when writing.
   /// - `cost`: Typically the number of logical doc IDs.
-  pub fn new(
-    index_input: &I,
+  pub fn new<D>(
+    index_input: &D,
     offset: usize,
     length: usize,
     jump_table_entry_count: i32,
     dense_rank_power: i8,
     cost: i64,
-  ) -> Result<Self> {
+  ) -> Result<Self>
+  where
+    D: IndexInput<IndexInput = I, RandomAccessSlice = R>,
+  {
     let block_slice =
       create_block_slice(index_input, "docs", offset, length, jump_table_entry_count)?;
     let jump_table = create_jump_table(index_input, offset, length, jump_table_entry_count)?;
@@ -165,10 +175,10 @@ where
   }
 }
 
-impl<I, P> IndexedDISI<I, P>
+impl<I, R> IndexedDISIImpl<I, R>
 where
   I: IndexInput,
-  P: IndexedDISIPolicy<I>,
+  R: RandomAccessInput,
 {
   /// Constructs an `IndexedDISI` using the provided block slice and jump
   /// table, allowing reuse of existing data structures.  
@@ -189,8 +199,8 @@ where
   ///   the value used in `write_bit_set`.
   /// - `cost`: Typically the number of logical doc IDs.
   pub fn from_components(
-    mut block_slice: P::Slice,
-    mut jump_table: Option<P::JumpTable>,
+    mut block_slice: I,
+    mut jump_table: Option<R>,
     jump_table_entry_count: i32,
     dense_rank_power: i8,
     cost: i64,
@@ -204,20 +214,14 @@ where
       )));
     }
 
-    block_slice.with_mut(|index_input| {
-      if index_input.length()? > 0 {
-        index_input.prefetch(0, 1)?;
-      }
-      Ok::<(), LuceneError>(())
-    })?;
+    if block_slice.length()? > 0 {
+      block_slice.prefetch(0, 1)?;
+    }
 
-    if let Some(jump_table_rc) = &mut jump_table {
-      jump_table_rc.with_mut(|jump_table| {
-        if jump_table.length()? > 0 {
-          jump_table.prefetch(0, 1)?;
-        }
-        Ok::<(), LuceneError>(())
-      })?
+    if let Some(jump_table) = &mut jump_table
+      && jump_table.length()? > 0
+    {
+      jump_table.prefetch(0, 1)?;
     }
 
     let dense_rank_table = if dense_rank_power == -1 {
@@ -255,7 +259,7 @@ where
     let block_index = target_block >> 16;
     // If the destination block is 2 blocks or more ahead, we use the
     // jump-table.
-    if let Some(jump_table_rc) = &mut self.jump_table
+    if let Some(jump_table) = &mut self.jump_table
       && block_index >= (self.block >> 16) + 2
     {
       // If the jumpTableEntryCount is exceeded, there are no further
@@ -267,22 +271,17 @@ where
       };
 
       let jump_pos = in_range_block_index.try_convert()? * BitUtil::INT_BYTES * 2;
-      jump_table_rc.with_mut(|jump_table| {
-        let index = jump_table.read_int(jump_pos)?;
-        let offset = jump_table.read_int(jump_pos + BitUtil::INT_BYTES)?;
-        // -1 to compensate for the always-added 1 in readBlockHeader
-        self.next_block_index = index - 1;
-        self.slice.with_mut(|slice| slice.seek(offset as usize))?;
-        Ok::<(), LuceneError>(())
-      })?;
+      let index = jump_table.read_int(jump_pos)?;
+      let offset = jump_table.read_int(jump_pos + BitUtil::INT_BYTES)?;
+      // -1 to compensate for the always-added 1 in readBlockHeader
+      self.next_block_index = index - 1;
+      self.slice.seek(offset as usize)?;
       self.read_block_header()?;
       return Ok(());
     }
     // Fallback to iteration of blocks
     loop {
-      self
-        .slice
-        .with_mut(|slice| slice.seek(self.block_end as usize))?;
+      self.slice.seek(self.block_end as usize)?;
       self.read_block_header()?;
       if self.block < target_block {
         continue;
@@ -294,7 +293,8 @@ where
   }
 
   fn read_block_header(&mut self) -> Result<()> {
-    self.slice.with_mut(|slice| {
+    {
+      let slice = &mut self.slice;
       self.block = (slice.read_short()? as u16 as i32) << 16;
       debug_assert!(self.block >= 0);
       let num_values = 1 + slice.read_short()? as u16 as i32;
@@ -338,8 +338,7 @@ where
         self.number_of_ones = self.index + 1;
         self.dense_origo_index = self.number_of_ones;
       }
-      Ok::<(), LuceneError>(())
-    })?;
+    }
     Ok(())
   }
   pub fn advance_exact(&mut self, target: i32) -> Result<bool> {
@@ -368,10 +367,10 @@ where
   }
 }
 
-impl<I, P> DocIdSetIterator for IndexedDISI<I, P>
+impl<I, R> DocIdSetIterator for IndexedDISIImpl<I, R>
 where
   I: IndexInput,
-  P: IndexedDISIPolicy<I>,
+  R: RandomAccessInput,
 {
   fn doc_id(&self) -> i32 {
     self.doc
@@ -421,10 +420,14 @@ pub enum Method {
   ALL,
 }
 impl MethodBehavior for Method {
-  fn advance_within_block<I, P>(&self, disi: &mut IndexedDISI<I, P>, target: i32) -> Result<bool>
+  fn advance_within_block<I, R>(
+    &self,
+    disi: &mut IndexedDISIImpl<I, R>,
+    target: i32,
+  ) -> Result<bool>
   where
     I: IndexInput,
-    P: IndexedDISIPolicy<I>,
+    R: RandomAccessInput,
   {
     match self {
       Method::Sparse => SparseMethod.advance_within_block(disi, target),
@@ -433,14 +436,14 @@ impl MethodBehavior for Method {
     }
   }
 
-  fn advance_exact_within_block<I, P>(
+  fn advance_exact_within_block<I, R>(
     &self,
-    disi: &mut IndexedDISI<I, P>,
+    disi: &mut IndexedDISIImpl<I, R>,
     target: i32,
   ) -> Result<bool>
   where
     I: IndexInput,
-    P: IndexedDISIPolicy<I>,
+    R: RandomAccessInput,
   {
     match self {
       Method::Sparse => SparseMethod.advance_exact_within_block(disi, target),
@@ -452,55 +455,61 @@ impl MethodBehavior for Method {
 trait MethodBehavior {
   /// Advance to the first doc from the block that is equal to or greater than
   /// `target`. Return true if there is such a doc and false otherwise.
-  fn advance_within_block<I, P>(&self, disi: &mut IndexedDISI<I, P>, target: i32) -> Result<bool>
-  where
-    I: IndexInput,
-    P: IndexedDISIPolicy<I>;
-  /// Advance the iterator exactly to the position corresponding to the given
-  /// `target` and return whether this document exists.
-  fn advance_exact_within_block<I, P>(
+  fn advance_within_block<I, R>(
     &self,
-    disi: &mut IndexedDISI<I, P>,
+    disi: &mut IndexedDISIImpl<I, R>,
     target: i32,
   ) -> Result<bool>
   where
     I: IndexInput,
-    P: IndexedDISIPolicy<I>;
+    R: RandomAccessInput;
+  /// Advance the iterator exactly to the position corresponding to the given
+  /// `target` and return whether this document exists.
+  fn advance_exact_within_block<I, R>(
+    &self,
+    disi: &mut IndexedDISIImpl<I, R>,
+    target: i32,
+  ) -> Result<bool>
+  where
+    I: IndexInput,
+    R: RandomAccessInput;
 }
 
 struct SparseMethod;
 impl MethodBehavior for SparseMethod {
-  fn advance_within_block<I, P>(&self, disi: &mut IndexedDISI<I, P>, target: i32) -> Result<bool>
-  where
-    I: IndexInput,
-    P: IndexedDISIPolicy<I>,
-  {
-    let target_in_block = target & 0xFFFF;
-
-    disi.slice.with_mut(|slice| {
-      while disi.index < disi.next_block_index {
-        let doc = slice.read_short()? as u16 as i32;
-        disi.index += 1;
-
-        if doc >= target_in_block {
-          disi.doc = disi.block | doc;
-          disi.exists = true;
-          disi.next_exist_doc_in_block = doc;
-          return Ok(true);
-        }
-      }
-      Ok(false)
-    })
-  }
-
-  fn advance_exact_within_block<I, P>(
+  fn advance_within_block<I, R>(
     &self,
-    disi: &mut IndexedDISI<I, P>,
+    disi: &mut IndexedDISIImpl<I, R>,
     target: i32,
   ) -> Result<bool>
   where
     I: IndexInput,
-    P: IndexedDISIPolicy<I>,
+    R: RandomAccessInput,
+  {
+    let target_in_block = target & 0xFFFF;
+
+    while disi.index < disi.next_block_index {
+      let doc = disi.slice.read_short()? as u16 as i32;
+      disi.index += 1;
+
+      if doc >= target_in_block {
+        disi.doc = disi.block | doc;
+        disi.exists = true;
+        disi.next_exist_doc_in_block = doc;
+        return Ok(true);
+      }
+    }
+    Ok(false)
+  }
+
+  fn advance_exact_within_block<I, R>(
+    &self,
+    disi: &mut IndexedDISIImpl<I, R>,
+    target: i32,
+  ) -> Result<bool>
+  where
+    I: IndexInput,
+    R: RandomAccessInput,
   {
     let target_in_block = target & 0xFFFF;
     if disi.next_exist_doc_in_block > target_in_block {
@@ -511,36 +520,38 @@ impl MethodBehavior for SparseMethod {
     if disi.doc == target {
       return Ok(disi.exists);
     }
-    disi.slice.with_mut(|slice| {
-      while disi.index < disi.next_block_index {
-        let doc = slice.read_short()? as u16 as i32;
-        disi.index += 1;
+    while disi.index < disi.next_block_index {
+      let doc = disi.slice.read_short()? as u16 as i32;
+      disi.index += 1;
 
-        if doc >= target_in_block {
-          disi.next_exist_doc_in_block = doc;
+      if doc >= target_in_block {
+        disi.next_exist_doc_in_block = doc;
 
-          if doc != target_in_block {
-            disi.index -= 1;
-            let fp = slice.get_file_pointer()?;
-            slice.seek(fp - BitUtil::SHORT_BYTES)?;
-            break;
-          }
-
-          disi.exists = true;
-          return Ok(true);
+        if doc != target_in_block {
+          disi.index -= 1;
+          let fp = disi.slice.get_file_pointer()?;
+          disi.slice.seek(fp - BitUtil::SHORT_BYTES)?;
+          break;
         }
+
+        disi.exists = true;
+        return Ok(true);
       }
-      disi.exists = false;
-      Ok(false)
-    })
+    }
+    disi.exists = false;
+    Ok(false)
   }
 }
 struct DenseMethod;
 impl MethodBehavior for DenseMethod {
-  fn advance_within_block<I, P>(&self, disi: &mut IndexedDISI<I, P>, target: i32) -> Result<bool>
+  fn advance_within_block<I, R>(
+    &self,
+    disi: &mut IndexedDISIImpl<I, R>,
+    target: i32,
+  ) -> Result<bool>
   where
     I: IndexInput,
-    P: IndexedDISIPolicy<I>,
+    R: RandomAccessInput,
   {
     let target_in_block = target & 0xFFFF;
     let target_word_index = (target_in_block as u32 >> 6) as i32;
@@ -553,44 +564,42 @@ impl MethodBehavior for DenseMethod {
       rank_skip(disi, target_in_block)?;
     }
 
-    disi.slice.with_mut(|slice| {
-      for _ in disi.word_index + 1..=target_word_index {
-        disi.word = slice.read_long()?;
-        disi.number_of_ones += disi.word.count_ones() as i32;
-      }
-      disi.word_index = target_word_index;
+    for _ in disi.word_index + 1..=target_word_index {
+      disi.word = disi.slice.read_long()?;
+      disi.number_of_ones += disi.word.count_ones() as i32;
+    }
+    disi.word_index = target_word_index;
 
-      let left_bits = (disi.word as u64) >> (target_in_block & 63);
-      if left_bits != 0 {
-        disi.doc = target + left_bits.trailing_zeros() as i32;
-        disi.index = disi.number_of_ones - left_bits.count_ones() as i32;
+    let left_bits = (disi.word as u64) >> (target_in_block & 63);
+    if left_bits != 0 {
+      disi.doc = target + left_bits.trailing_zeros() as i32;
+      disi.index = disi.number_of_ones - left_bits.count_ones() as i32;
+      return Ok(true);
+    }
+
+    while {
+      disi.word_index += 1;
+      disi.word_index < 1024
+    } {
+      disi.word = disi.slice.read_long()?;
+      if disi.word != 0 {
+        disi.index = disi.number_of_ones;
+        disi.number_of_ones += disi.word.count_ones() as i32;
+        disi.doc = disi.block | ((disi.word_index << 6) | disi.word.trailing_zeros() as i32);
         return Ok(true);
       }
-
-      while {
-        disi.word_index += 1;
-        disi.word_index < 1024
-      } {
-        disi.word = slice.read_long()?;
-        if disi.word != 0 {
-          disi.index = disi.number_of_ones;
-          disi.number_of_ones += disi.word.count_ones() as i32;
-          disi.doc = disi.block | ((disi.word_index << 6) | disi.word.trailing_zeros() as i32);
-          return Ok(true);
-        }
-      }
-      Ok(false)
-    })
+    }
+    Ok(false)
   }
 
-  fn advance_exact_within_block<I, P>(
+  fn advance_exact_within_block<I, R>(
     &self,
-    disi: &mut IndexedDISI<I, P>,
+    disi: &mut IndexedDISIImpl<I, R>,
     target: i32,
   ) -> Result<bool>
   where
     I: IndexInput,
-    P: IndexedDISIPolicy<I>,
+    R: RandomAccessInput,
   {
     let target_in_block = target & 0xFFFF;
     let target_word_index = ((target_in_block as u32) >> 6) as i32;
@@ -603,13 +612,10 @@ impl MethodBehavior for DenseMethod {
       rank_skip(disi, target_in_block)?;
     }
 
-    disi.slice.with_mut(|slice| {
-      for _ in (disi.word_index + 1)..=target_word_index {
-        disi.word = slice.read_long()?;
-        disi.number_of_ones += disi.word.count_ones() as i32;
-      }
-      Ok::<(), LuceneError>(())
-    })?;
+    for _ in (disi.word_index + 1)..=target_word_index {
+      disi.word = disi.slice.read_long()?;
+      disi.number_of_ones += disi.word.count_ones() as i32;
+    }
 
     disi.word_index = target_word_index;
 
@@ -621,47 +627,60 @@ impl MethodBehavior for DenseMethod {
 }
 struct All;
 impl MethodBehavior for All {
-  fn advance_within_block<I, P>(&self, disi: &mut IndexedDISI<I, P>, target: i32) -> Result<bool>
+  fn advance_within_block<I, R>(
+    &self,
+    disi: &mut IndexedDISIImpl<I, R>,
+    target: i32,
+  ) -> Result<bool>
   where
     I: IndexInput,
-    P: IndexedDISIPolicy<I>,
+    R: RandomAccessInput,
   {
     disi.doc = target;
     disi.index = target - disi.gap;
     Ok(true)
   }
 
-  fn advance_exact_within_block<I, P>(
+  fn advance_exact_within_block<I, R>(
     &self,
-    disi: &mut IndexedDISI<I, P>,
+    disi: &mut IndexedDISIImpl<I, R>,
     target: i32,
   ) -> Result<bool>
   where
     I: IndexInput,
-    P: IndexedDISIPolicy<I>,
+    R: RandomAccessInput,
   {
     disi.index = target - disi.gap;
     Ok(true)
   }
 }
 
-pub struct DocIndexIteratorImpl<I>
+pub struct IndexedDocIterator<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
-  pub(crate) disi: IndexedDISI<I, Owned>,
+  pub(crate) disi: IndexedDISIImpl<I, R>,
 }
-impl<I> DocIndexIteratorImpl<I>
+
+pub type DocIndexIteratorImpl<I> = IndexedDocIterator<
+  <I as IndexInput>::IndexInput,
+  <I as IndexInput>::RandomAccessSlice,
+>;
+
+impl<I, R> IndexedDocIterator<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
-  pub fn new(disi: IndexedDISI<I, Owned>) -> Self {
-    DocIndexIteratorImpl { disi }
+  pub fn new(disi: IndexedDISIImpl<I, R>) -> Self {
+    Self { disi }
   }
 }
-impl<I> DocIdSetIterator for DocIndexIteratorImpl<I>
+impl<I, R> DocIdSetIterator for IndexedDocIterator<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   fn doc_id(&self) -> i32 {
     self.disi.doc_id()
@@ -679,9 +698,10 @@ where
     self.disi.cost()
   }
 }
-impl<I> DocIndexIterator for DocIndexIteratorImpl<I>
+impl<I, R> DocIndexIterator for IndexedDocIterator<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   fn index(&self) -> Result<i32> {
     Ok(self.disi.index())
@@ -691,8 +711,8 @@ pub trait IndexedDISIPolicy<I>
 where
   I: IndexInput,
 {
-  type Slice: MutAccess<I::IndexInput>;
-  type JumpTable: MutAccess<I::RandomAccessSlice>;
+  type Slice: IndexInput;
+  type JumpTable: RandomAccessInput;
 }
 
 pub struct Owned;
@@ -842,13 +862,12 @@ impl<I> IndexedDISIPolicy<I> for Shared
 where
   I: IndexInput,
 {
-  type Slice = Arc<Mutex<I::IndexInput>>;
+  type Slice = IndexInputImpl<I::IndexInput, I::RandomAccessSlice>;
   type JumpTable = Arc<Mutex<I::RandomAccessSlice>>;
 }
 
 use crate::core::search::doc_id_set_iterator::NO_MORE_DOCS;
 use crate::core::util::TryIntoInt;
-use crate::core::util::access::MutAccess;
 use crate::core::util::array_util::ArrayUtil;
 use crate::core::util::bit_set::BitSet;
 use crate::core::util::bit_set_iterator::BitSetIterator;
@@ -1017,7 +1036,7 @@ where
 
   flush_block_jumps(&jumps, last_block + 1, out)
 }
-/// Helper method for using [`IndexedDISI::from_components`].
+/// Helper method for using [`IndexedDISIImpl::from_components`].
 /// Creates a `disi_slice` for the `IndexedDISI` data blocks, excluding the
 /// jump table.
 ///
@@ -1053,7 +1072,7 @@ where
   };
   slice.slice(slice_description, offset, length - jump_table_bytes)
 }
-/// Helper method for using [`IndexedDISI::from_components`].
+/// Helper method for using [`IndexedDISIImpl::from_components`].
 /// Creates a `RandomAccessInput` covering only the jump-table data, or
 /// returns `None` if no such table exists.
 ///
@@ -1215,10 +1234,10 @@ where
 ///
 /// # Errors
 /// Returns an error if seeking in the `DISI` failed.
-fn rank_skip<I, P>(disi: &mut IndexedDISI<I, P>, target_in_block: i32) -> Result<()>
+fn rank_skip<I, R>(disi: &mut IndexedDISIImpl<I, R>, target_in_block: i32) -> Result<()>
 where
   I: IndexInput,
-  P: IndexedDISIPolicy<I>,
+  R: RandomAccessInput,
 {
   debug_assert!(
     disi.dense_rank_power >= 0,
@@ -1245,10 +1264,8 @@ where
   let rank_aligned_word_index = (rank_index << disi.dense_rank_power) >> 6;
   let offset =
     disi.dense_bitmap_offset + (rank_aligned_word_index as i64) * BitUtil::LONG_BYTES as i64;
-  let rank_word = disi.slice.with_mut(|slice| {
-    slice.seek(offset as usize)?;
-    slice.read_long()
-  })?;
+  disi.slice.seek(offset as usize)?;
+  let rank_word = disi.slice.read_long()?;
   let dense_noo = rank + rank_word.count_ones() as i32;
 
   disi.word_index = rank_aligned_word_index;
@@ -1259,73 +1276,83 @@ where
 }
 ///  Returns an iterator that delegates to the IndexedDISI. Advancing this
 /// iterator will advance the underlying IndexedDISI, and vice-versa.
-pub fn get_doc_index_iterator<I>(disi: IndexedDISI<I, Owned>) -> DocIndexIteratorImpl<I>
+pub fn get_doc_index_iterator<I, R>(disi: IndexedDISIImpl<I, R>) -> IndexedDocIterator<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
-  DocIndexIteratorImpl::new(disi)
+  IndexedDocIterator::new(disi)
 }
 
-pub enum IndexedDISIEnum<I>
+pub enum IndexedDISIEnumImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
-  Owned(IndexedDISI<I, Owned>),
-  Shared(IndexedDISI<IndexInputImpl<I::IndexInput, I::RandomAccessSlice>, Owned>),
+  Owned(IndexedDISIImpl<I, R>),
+  Shared(IndexedDISIImpl<IndexInputImpl<I, R>, Arc<Mutex<R>>>),
 }
-impl<I> IndexedDISIEnum<I>
+
+pub type IndexedDISIEnum<I> = IndexedDISIEnumImpl<
+  <I as IndexInput>::IndexInput,
+  <I as IndexInput>::RandomAccessSlice,
+>;
+
+impl<I, R> IndexedDISIEnumImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   pub fn advance_exact(&mut self, target: i32) -> Result<bool> {
     match self {
-      IndexedDISIEnum::Owned(disi) => disi.advance_exact(target),
-      IndexedDISIEnum::Shared(disi) => disi.advance_exact(target),
+      Self::Owned(disi) => disi.advance_exact(target),
+      Self::Shared(disi) => disi.advance_exact(target),
     }
   }
   pub fn index(&self) -> i32 {
     match self {
-      IndexedDISIEnum::Owned(disi) => disi.index(),
-      IndexedDISIEnum::Shared(disi) => disi.index(),
+      Self::Owned(disi) => disi.index(),
+      Self::Shared(disi) => disi.index(),
     }
   }
 }
-impl<I> DocIdSetIterator for IndexedDISIEnum<I>
+impl<I, R> DocIdSetIterator for IndexedDISIEnumImpl<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   fn doc_id(&self) -> i32 {
     match self {
-      IndexedDISIEnum::Owned(disi) => disi.doc_id(),
-      IndexedDISIEnum::Shared(disi) => disi.doc_id(),
+      Self::Owned(disi) => disi.doc_id(),
+      Self::Shared(disi) => disi.doc_id(),
     }
   }
 
   fn next_doc(&mut self) -> Result<i32> {
     match self {
-      IndexedDISIEnum::Owned(disi) => disi.next_doc(),
-      IndexedDISIEnum::Shared(disi) => disi.next_doc(),
+      Self::Owned(disi) => disi.next_doc(),
+      Self::Shared(disi) => disi.next_doc(),
     }
   }
 
   fn advance(&mut self, target: i32) -> Result<i32> {
     match self {
-      IndexedDISIEnum::Owned(disi) => disi.advance(target),
-      IndexedDISIEnum::Shared(disi) => disi.advance(target),
+      Self::Owned(disi) => disi.advance(target),
+      Self::Shared(disi) => disi.advance(target),
     }
   }
 
   fn slow_advance(&mut self, target: i32) -> Result<i32> {
     match self {
-      IndexedDISIEnum::Owned(disi) => disi.slow_advance(target),
-      IndexedDISIEnum::Shared(disi) => disi.slow_advance(target),
+      Self::Owned(disi) => disi.slow_advance(target),
+      Self::Shared(disi) => disi.slow_advance(target),
     }
   }
 
   fn cost(&self) -> Result<i64> {
     match self {
-      IndexedDISIEnum::Owned(disi) => disi.cost(),
-      IndexedDISIEnum::Shared(disi) => disi.cost(),
+      Self::Owned(disi) => disi.cost(),
+      Self::Shared(disi) => disi.cost(),
     }
   }
 }

@@ -19,7 +19,7 @@ use crate::core::codecs::block_term_state::TermStateEnum;
 use crate::core::codecs::doc_values_producer::DocValuesProducer;
 use crate::core::codecs::dummy::dummy_numeric_doc_values::DummyNumericDocValues;
 use crate::core::codecs::dummy::dummy_sorted_doc_values::DummySortedDocValues;
-use crate::core::codecs::indexed_disi::{IndexedDISI, Owned};
+use crate::core::codecs::indexed_disi::{IndexedDISI, IndexedDISIImpl, Owned};
 use crate::core::codecs::lucene90::dov_values_inner_enum::{
   BaseSortedDocValuesEnum, BaseSortedSetDocValuesEnum, DenseBinaryDocValuesBaseEnum,
   DenseNumericDocValuesSubEnum, LongValuesEnums, SparseBinaryDocValuesBaseEnum,
@@ -537,7 +537,7 @@ where
         self.max_doc,
       )))
     } else {
-      let disi = IndexedDISI::new(
+      let disi = IndexedDISIImpl::new(
         self.data.as_ref(),
         entry.docs_with_field_offset as usize,
         entry.docs_with_field_length,
@@ -692,7 +692,7 @@ where
         //dense
         BaseSortedDocValuesEnum::Dense(DenseBaseSortedDocValues::new(self.max_doc, values))
       } else if ords_entry.docs_with_field_offset >= 0 {
-        let disi = IndexedDISI::new(
+        let disi = IndexedDISIImpl::new(
           self.data.as_ref(),
           ords_entry.docs_with_field_offset as usize,
           ords_entry.docs_with_field_length,
@@ -751,7 +751,7 @@ where
       ))
     } else {
       // sparse
-      let disi = IndexedDISI::new(
+      let disi = IndexedDISIImpl::new(
         self.data.as_ref(),
         entry.base.docs_with_field_offset as usize,
         entry.base.docs_with_field_length,
@@ -846,7 +846,7 @@ where
         DenseBinaryDocValues::new(dense, self.max_doc),
       ))
     } else {
-      let disi = IndexedDISI::new(
+      let disi = IndexedDISIImpl::new(
         self.data.as_ref(),
         entry.docs_with_field_offset as usize,
         entry.docs_with_field_length,
@@ -970,7 +970,7 @@ where
         ))
       } else if ords_entry.base.docs_with_field_offset >= 0 {
         //sparse
-        let disi = IndexedDISI::new(
+        let disi = IndexedDISIImpl::new(
           self.data.as_ref(),
           ords_entry.base.docs_with_field_offset as usize,
           ords_entry.base.docs_with_field_length,
@@ -1677,36 +1677,34 @@ where
   }
 }
 
-pub trait SparseNumericDocValuesBase<I> {
-  fn long_value(&mut self, disi: &mut IndexedDISI<I, Owned>) -> Result<i64>
-  where
-    I: IndexInput;
+pub trait SparseNumericDocValuesBase<I, R>
+where
+  I: IndexInput,
+  R: RandomAccessInput,
+{
+  fn long_value(&mut self, disi: &mut IndexedDISIImpl<I, R>) -> Result<i64>;
 }
 pub struct SparseNumericDocValuesBaseImpl {
   min_values: i64,
 }
-impl<I> SparseNumericDocValuesBase<I> for SparseNumericDocValuesBaseImpl
+impl<I, R> SparseNumericDocValuesBase<I, R> for SparseNumericDocValuesBaseImpl
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
-  fn long_value(&mut self, _disi: &mut IndexedDISI<I, Owned>) -> Result<i64>
-  where
-    I: IndexInput,
-  {
+  fn long_value(&mut self, _disi: &mut IndexedDISIImpl<I, R>) -> Result<i64> {
     Ok(self.min_values)
   }
 }
 pub struct SparseNumericDocValuesBaseImpl1<R> {
   vbpv_reader: VaryingBPVReader<R>,
 }
-impl<I> SparseNumericDocValuesBase<I> for SparseNumericDocValuesBaseImpl1<I::RandomAccessSlice>
+impl<I, R> SparseNumericDocValuesBase<I, R> for SparseNumericDocValuesBaseImpl1<R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
-  fn long_value(&mut self, disi: &mut IndexedDISI<I, Owned>) -> Result<i64>
-  where
-    I: IndexInput,
-  {
+  fn long_value(&mut self, disi: &mut IndexedDISIImpl<I, R>) -> Result<i64> {
     let index = disi.index_u();
     self.vbpv_reader.get_long_value(index)
   }
@@ -1715,28 +1713,24 @@ pub struct SparseNumericDocValuesBaseImpl2<R> {
   table: Arc<Vec<i64>>,
   values: DirectPackedEnum<R>,
 }
-impl<I> SparseNumericDocValuesBase<I> for SparseNumericDocValuesBaseImpl2<I::RandomAccessSlice>
+impl<I, R> SparseNumericDocValuesBase<I, R> for SparseNumericDocValuesBaseImpl2<R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
-  fn long_value(&mut self, disi: &mut IndexedDISI<I, Owned>) -> Result<i64>
-  where
-    I: IndexInput,
-  {
+  fn long_value(&mut self, disi: &mut IndexedDISIImpl<I, R>) -> Result<i64> {
     Ok(self.table[self.values.get_mut(disi.index_u())? as usize])
   }
 }
 pub struct SparseNumericDocValuesBaseImpl3<R> {
   values: DirectPackedEnum<R>,
 }
-impl<I> SparseNumericDocValuesBase<I> for SparseNumericDocValuesBaseImpl3<I::RandomAccessSlice>
+impl<I, R> SparseNumericDocValuesBase<I, R> for SparseNumericDocValuesBaseImpl3<R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
-  fn long_value(&mut self, disi: &mut IndexedDISI<I, Owned>) -> Result<i64>
-  where
-    I: IndexInput,
-  {
+  fn long_value(&mut self, disi: &mut IndexedDISIImpl<I, R>) -> Result<i64> {
     self.values.get_mut(disi.index_u())
   }
 }
@@ -1745,14 +1739,12 @@ pub struct SparseNumericDocValuesBaseImpl4<R> {
   mul: i64,
   delta: i64,
 }
-impl<I> SparseNumericDocValuesBase<I> for SparseNumericDocValuesBaseImpl4<I::RandomAccessSlice>
+impl<I, R> SparseNumericDocValuesBase<I, R> for SparseNumericDocValuesBaseImpl4<R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
-  fn long_value(&mut self, disi: &mut IndexedDISI<I, Owned>) -> Result<i64>
-  where
-    I: IndexInput,
-  {
+  fn long_value(&mut self, disi: &mut IndexedDISIImpl<I, R>) -> Result<i64> {
     Ok(
       self
         .mul
@@ -1873,13 +1865,14 @@ where
   }
 }
 
-pub trait SparseBinaryDocValuesBase<I>
+pub trait SparseBinaryDocValuesBase<I, R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   fn binary_value(
     &mut self,
-    disi: &mut IndexedDISI<I, Owned>,
+    disi: &mut IndexedDISIImpl<I, R>,
   ) -> Result<Cow<'_, BytesRef<Vec<u8>>>>;
 }
 pub struct SparseBinaryDocValuesBaseImpl<R> {
@@ -1887,13 +1880,14 @@ pub struct SparseBinaryDocValuesBaseImpl<R> {
   bytes: BytesRef<Vec<u8>>,
   length: i32,
 }
-impl<I> SparseBinaryDocValuesBase<I> for SparseBinaryDocValuesBaseImpl<I::RandomAccessSlice>
+impl<I, R> SparseBinaryDocValuesBase<I, R> for SparseBinaryDocValuesBaseImpl<R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   fn binary_value(
     &mut self,
-    disi: &mut IndexedDISI<I, Owned>,
+    disi: &mut IndexedDISIImpl<I, R>,
   ) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
     let length = self.length as usize;
     let pos = disi.index_u() * length;
@@ -1908,13 +1902,14 @@ pub struct SparseBinaryDocValuesBaseImpl1<R> {
   bytes: BytesRef<Vec<u8>>,
   addresses: DirectMonotonicReader<R>,
 }
-impl<I> SparseBinaryDocValuesBase<I> for SparseBinaryDocValuesBaseImpl1<I::RandomAccessSlice>
+impl<I, R> SparseBinaryDocValuesBase<I, R> for SparseBinaryDocValuesBaseImpl1<R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   fn binary_value(
     &mut self,
-    disi: &mut IndexedDISI<I, Owned>,
+    disi: &mut IndexedDISIImpl<I, R>,
   ) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
     let index = disi.index() as usize;
     let start_offset = self.addresses.get_mut(index)?;

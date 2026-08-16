@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 use crate::core::codecs::dummy::dummy_sorted_doc_values::DummySortedDocValues;
-use crate::core::codecs::indexed_disi::{IndexedDISI, Owned};
+use crate::core::codecs::indexed_disi::IndexedDISIImpl;
 use crate::core::codecs::lucene90::lucene90_doc_values_producer::{
   BaseSortedDocValuesImpl, DenseBaseSortedDocValues, DenseBinaryDocValuesBase,
   DenseBinaryDocValuesBaseImpl, DenseBinaryDocValuesBaseImpl1, DenseNumericDocValuesBase,
@@ -227,13 +227,14 @@ pub enum SparseBinaryDocValuesBaseEnum<R> {
   Sparse1(SparseBinaryDocValuesBaseImpl1<R>),
 }
 
-impl<I> SparseBinaryDocValuesBase<I> for SparseBinaryDocValuesBaseEnum<I::RandomAccessSlice>
+impl<I, R> SparseBinaryDocValuesBase<I, R> for SparseBinaryDocValuesBaseEnum<R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
   fn binary_value(
     &mut self,
-    disi: &mut IndexedDISI<I, Owned>,
+    disi: &mut IndexedDISIImpl<I, R>,
   ) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
     match self {
       SparseBinaryDocValuesBaseEnum::Sparse(sub) => sub.binary_value(disi),
@@ -302,14 +303,12 @@ pub enum SparseNumericDocValuesSubEnum<R> {
   Sparse4(SparseNumericDocValuesBaseImpl4<R>),
 }
 
-impl<I> SparseNumericDocValuesBase<I> for SparseNumericDocValuesSubEnum<I::RandomAccessSlice>
+impl<I, R> SparseNumericDocValuesBase<I, R> for SparseNumericDocValuesSubEnum<R>
 where
   I: IndexInput,
+  R: RandomAccessInput,
 {
-  fn long_value(&mut self, disi: &mut IndexedDISI<I, Owned>) -> Result<i64>
-  where
-    I: IndexInput,
-  {
+  fn long_value(&mut self, disi: &mut IndexedDISIImpl<I, R>) -> Result<i64> {
     match self {
       SparseNumericDocValuesSubEnum::Sparse(sub) => sub.long_value(disi),
       SparseNumericDocValuesSubEnum::Sparse1(sub) => sub.long_value(disi),

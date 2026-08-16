@@ -16,7 +16,7 @@
  */
 use crate::core::codecs::hnsw::flat_vectors_scorer::FlatVectorsScorer;
 use crate::core::codecs::indexed_disi::{
-  DocIndexIteratorImpl, IndexedDISI, get_doc_index_iterator,
+  DocIndexIteratorImpl, IndexedDISIImpl, get_doc_index_iterator,
 };
 use crate::core::codecs::knn_field_vectors_writer::VectorValueEnum;
 use crate::core::codecs::lucene95::has_index_slice::HasIndexSlice;
@@ -529,7 +529,7 @@ where
       None => return Err(LuceneError::illegal_state("meta is None")),
     };
 
-    let disi = IndexedDISI::new(
+    let disi = IndexedDISIImpl::new(
       &data_in,
       configuration.docs_with_field_offset.try_convert()?,
       configuration.docs_with_field_length,
