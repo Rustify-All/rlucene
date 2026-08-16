@@ -16,12 +16,12 @@
  */
 use crate::core::index::knn_vector_values::DocIndexIterator;
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
+use crate::core::store::dummy::dummy_random_access_input::DummyRandomAccessInput;
 use crate::core::store::random_access_input::RandomAccessInput;
 use crate::core::store::{DataInput, IndexInput, IndexOutput};
 use crate::core::util::bit_util::BitUtil;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use parking_lot::Mutex;
-use std::marker::PhantomData;
 use std::sync::Arc;
 
 /// Disk-based implementation of a [`DocIdSetIterator`] which can return the
@@ -720,28 +720,22 @@ pub struct Shared;
 
 /// Wraps a shared input with an independent file pointer so reads from multiple iterators can be
 /// interleaved.
-pub struct IndexInputImpl<I, R> {
+pub struct IndexInputImpl<I> {
   input: Arc<Mutex<I>>,
   offset: usize,
-  random_access_slice: PhantomData<R>,
 }
 
-impl<I, R> IndexInputImpl<I, R> {
+impl<I> IndexInputImpl<I> {
   pub fn new(input: Arc<Mutex<I>>) -> Self {
-    Self {
-      input,
-      offset: 0,
-      random_access_slice: PhantomData,
-    }
+    Self { input, offset: 0 }
   }
 }
 
-impl<I, R> crate::core::util::close::CloseableRef for IndexInputImpl<I, R> {}
+impl<I> crate::core::util::close::CloseableRef for IndexInputImpl<I> {}
 
-impl<I, R> DataInput for IndexInputImpl<I, R>
+impl<I> DataInput for IndexInputImpl<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn read_byte(&mut self) -> Result<u8> {
     Err(LuceneError::unsupported_operation("Unused by IndexedDISI"))
@@ -770,26 +764,24 @@ where
   }
 }
 
-impl<I, R> std::fmt::Display for IndexInputImpl<I, R> {
+impl<I> std::fmt::Display for IndexInputImpl<I> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "docs")
   }
 }
 
-impl<I, R> crate::core::util::clone::TryClone for IndexInputImpl<I, R> {
+impl<I> crate::core::util::clone::TryClone for IndexInputImpl<I> {
   fn try_clone(&self) -> Result<Self> {
     Ok(Self {
       input: Arc::clone(&self.input),
       offset: self.offset,
-      random_access_slice: PhantomData,
     })
   }
 }
 
-impl<I, R> IndexInput for IndexInputImpl<I, R>
+impl<I> IndexInput for IndexInputImpl<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   type IndexInput = Self;
 
@@ -806,7 +798,7 @@ where
     self.input.lock().length()
   }
 
-  type RandomAccessSlice = Arc<Mutex<R>>;
+  type RandomAccessSlice = DummyRandomAccessInput;
 
   fn random_access_slice(&self, _offset: usize, _length: usize) -> Result<Self::RandomAccessSlice> {
     Err(LuceneError::unsupported_operation("Unused by IndexedDISI"))
@@ -862,7 +854,7 @@ impl<I> IndexedDISIPolicy<I> for Shared
 where
   I: IndexInput,
 {
-  type Slice = IndexInputImpl<I::IndexInput, I::RandomAccessSlice>;
+  type Slice = IndexInputImpl<I::IndexInput>;
   type JumpTable = Arc<Mutex<I::RandomAccessSlice>>;
 }
 
@@ -1290,7 +1282,7 @@ where
   R: RandomAccessInput,
 {
   Owned(IndexedDISIImpl<I, R>),
-  Shared(IndexedDISIImpl<IndexInputImpl<I, R>, Arc<Mutex<R>>>),
+  Shared(IndexedDISIImpl<IndexInputImpl<I>, Arc<Mutex<R>>>),
 }
 
 pub type IndexedDISIEnum<I> = IndexedDISIEnumImpl<

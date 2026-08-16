@@ -321,7 +321,7 @@ where
     &self,
     field: &FieldInfo,
     entry: &NormsEntry,
-  ) -> Result<SliceEnum<I::IndexInput, I::RandomAccessSlice>> {
+  ) -> Result<SliceEnum<I::IndexInput>> {
     if self.merging {
       if let Some(existing) = {
         let map = self.disi_inputs.lock();
@@ -358,8 +358,8 @@ where
     }
   }
 }
-pub enum SliceEnum<I, R> {
-  Shared(IndexInputImpl<I, R>),
+pub enum SliceEnum<I> {
+  Shared(IndexInputImpl<I>),
   Owned(I),
 }
 impl<I> Display for Lucene90NormsProducer<I>
