@@ -443,10 +443,7 @@ impl LeafCollector for LeafCollectorImpl3 {
     Ok(())
   }
 }
-struct LeafCollectorImpl4<'a, S>
-where
-  S: Scorer,
-{
+struct LeafCollectorImpl4<'a, S> {
   scorer: &'a mut S,
   min: i32,
   max: i32,
