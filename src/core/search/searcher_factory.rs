@@ -67,7 +67,7 @@ pub(crate) enum SearcherFactoryHook<IR> {
   #[cfg(test)]
   Warming(WarmingSearcherFactory),
   #[cfg(test)]
-  Blocking(BlockingSearcherFactory<IR>),
+  Blocking(BlockingSearcherFactory),
   #[cfg(test)]
   Evil(EvilSearcherFactory<Arc<IR>>),
   #[cfg(test)]

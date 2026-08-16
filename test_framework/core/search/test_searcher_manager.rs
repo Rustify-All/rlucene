@@ -27,7 +27,6 @@ use crate::test_framework::core::util::lucene_test_case::{
   new_searcher_with_wrap, random_from_seed,
 };
 use parking_lot::Mutex;
-use std::marker::PhantomData;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
@@ -71,15 +70,14 @@ where
   }
 }
 
-pub struct BlockingSearcherFactory<IR> {
+pub struct BlockingSearcherFactory {
   tried_reopen: Arc<AtomicBool>,
   await_enter_warm: CountDownLatch,
   await_close: CountDownLatch,
   search_threads: Option<usize>,
-  marker: PhantomData<fn() -> IR>,
 }
 
-impl<IR> BlockingSearcherFactory<IR> {
+impl BlockingSearcherFactory {
   pub fn new(
     tried_reopen: Arc<AtomicBool>,
     await_enter_warm: CountDownLatch,
@@ -91,12 +89,11 @@ impl<IR> BlockingSearcherFactory<IR> {
       await_enter_warm,
       await_close,
       search_threads,
-      marker: PhantomData,
     }
   }
 }
 
-impl<IR> SearcherFactoryBase<IR> for BlockingSearcherFactory<IR>
+impl<IR> SearcherFactoryBase<IR> for BlockingSearcherFactory
 where
   IR: IndexReader + 'static,
   IR::ContextKind: IndexReaderContextKind<Arc<IR>>,
