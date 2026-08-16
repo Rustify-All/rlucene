@@ -840,12 +840,12 @@ where
 
       Self::Dense(e) => Ok(
         e.scorer(target)?
-          .map(|scorer| VectorScorerEnum::new_dense(scorer.iterator, scorer.random_vector_scorer)),
+          .map(VectorScorerEnum::Dense),
       ),
 
       Self::Sparse(e) => Ok(
         e.scorer(target)?
-          .map(|scorer| VectorScorerEnum::new_sparse(scorer.iterator, scorer.random_vector_scorer)),
+          .map(VectorScorerEnum::Sparse),
       ),
     }
   }
@@ -999,40 +999,8 @@ where
   I: IndexInput + Clone,
   F: FlatVectorsScorer + Clone,
 {
-  Dense {
-    iterator: DenseDocIndexIterator,
-    random_vector_scorer: F::RandomVectorScorerU8<DenseOffHeapVectorValues<I::IndexInput, F>>,
-  },
-  Sparse {
-    iterator: DocIndexIteratorImpl<I>,
-    random_vector_scorer: F::RandomVectorScorerU8<SparseOffHeapVectorValues<I, F>>,
-  },
-}
-
-impl<I, F> VectorScorerEnum<I, F>
-where
-  I: IndexInput + Clone,
-  F: FlatVectorsScorer + Clone,
-{
-  fn new_dense(
-    iterator: DenseDocIndexIterator,
-    random_vector_scorer: F::RandomVectorScorerU8<DenseOffHeapVectorValues<I::IndexInput, F>>,
-  ) -> Self {
-    Self::Dense {
-      iterator,
-      random_vector_scorer,
-    }
-  }
-
-  fn new_sparse(
-    iterator: DocIndexIteratorImpl<I>,
-    random_vector_scorer: F::RandomVectorScorerU8<SparseOffHeapVectorValues<I, F>>,
-  ) -> Self {
-    Self::Sparse {
-      iterator,
-      random_vector_scorer,
-    }
-  }
+  Dense(DenseVectorScorer<F::RandomVectorScorerU8<DenseOffHeapVectorValues<I::IndexInput, F>>>),
+  Sparse(SparseVectorScorer<I, F::RandomVectorScorerU8<SparseOffHeapVectorValues<I, F>>>),
 }
 
 impl<I, F> VectorScorer for VectorScorerEnum<I, F>
@@ -1042,20 +1010,8 @@ where
 {
   fn score(&self) -> Result<f32> {
     match self {
-      Self::Dense {
-        iterator,
-        random_vector_scorer,
-      } => {
-        let doc_id = iterator.doc_id().try_convert()?;
-        random_vector_scorer.score(doc_id)
-      },
-      Self::Sparse {
-        iterator,
-        random_vector_scorer,
-      } => {
-        let index = iterator.index()?;
-        random_vector_scorer.score(index as usize)
-      },
+      Self::Dense(scorer) => scorer.score(),
+      Self::Sparse(scorer) => scorer.score(),
     }
   }
 
@@ -1066,8 +1022,8 @@ where
 
   fn iterator(&self) -> Self::DocIdSetIteratorRef<'_> {
     match self {
-      Self::Dense { iterator, .. } => DocIdSetIteratorEnum2::A(iterator),
-      Self::Sparse { iterator, .. } => DocIdSetIteratorEnum2::B(iterator),
+      Self::Dense(scorer) => DocIdSetIteratorEnum2::A(scorer.iterator()),
+      Self::Sparse(scorer) => DocIdSetIteratorEnum2::B(scorer.iterator()),
     }
   }
 
@@ -1078,8 +1034,8 @@ where
 
   fn iterator_mut(&mut self) -> Self::DocIdSetIteratorMut<'_> {
     match self {
-      Self::Dense { iterator, .. } => DocIdSetIteratorEnum2::A(iterator),
-      Self::Sparse { iterator, .. } => DocIdSetIteratorEnum2::B(iterator),
+      Self::Dense(scorer) => DocIdSetIteratorEnum2::A(scorer.iterator_mut()),
+      Self::Sparse(scorer) => DocIdSetIteratorEnum2::B(scorer.iterator_mut()),
     }
   }
 }
