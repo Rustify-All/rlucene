@@ -48,7 +48,6 @@ use crate::test_framework::core::util::lucene_test_case::{
 use rand::Rng;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
-use std::marker::PhantomData;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock};
 pub static STORED_TEXT_TYPE: LazyLock<FieldType> = LazyLock::new(|| {
@@ -660,21 +659,19 @@ where
   }
 }
 
-pub(crate) struct AbortOnMergeCompleteOneMerge<D, CR> {
+pub(crate) struct AbortOnMergeCompleteOneMerge {
   abort_merge_before_commit: Arc<AtomicBool>,
-  _marker: PhantomData<fn(D, CR)>,
 }
 
-impl<D, CR> AbortOnMergeCompleteOneMerge<D, CR> {
+impl AbortOnMergeCompleteOneMerge {
   fn new(abort_merge_before_commit: Arc<AtomicBool>) -> Self {
     Self {
       abort_merge_before_commit,
-      _marker: PhantomData,
     }
   }
 }
 
-impl<D, CR> OneMergeBase<D, CR> for AbortOnMergeCompleteOneMerge<D, CR>
+impl<D, CR> OneMergeBase<D, CR> for AbortOnMergeCompleteOneMerge
 where
   D: Directory,
   CR: CodecReader,
