@@ -151,22 +151,14 @@ impl SortedNumericDocValues for SortedNumericDocValuesWriterValues {
     }
   }
 
-  type NumericDocValues = NumericDocValuesEnum2<BufferedNumericDocValues, DummyNumericDocValues>;
+  type NumericDocValues = BufferedNumericDocValues;
 
   fn get_numeric_doc_values(&mut self) -> Result<Self::NumericDocValues> {
     match self {
-      Self::Single(values) => values
-        .get_numeric_doc_values()
-        .map(NumericDocValuesEnum2::A),
-      Self::Multi(values) => values
-        .get_numeric_doc_values()
-        .map(NumericDocValuesEnum2::B),
-      Self::SortedSingle(values) => values
-        .get_numeric_doc_values()
-        .map(NumericDocValuesEnum2::B),
-      Self::SortedMulti(values) => values
-        .get_numeric_doc_values()
-        .map(NumericDocValuesEnum2::B),
+      Self::Single(values) => values.get_numeric_doc_values(),
+      Self::Multi(_) | Self::SortedSingle(_) | Self::SortedMulti(_) => {
+        Err(LuceneError::unsupported_operation(""))
+      },
     }
   }
 }
