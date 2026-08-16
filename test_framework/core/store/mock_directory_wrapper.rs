@@ -1453,44 +1453,42 @@ where
         if cfg!(feature = "test_log_verbose") {
           eprintln!("MockDirectoryWrapper: using SlowClosingMockIndexInputWrapper for file {name}");
         }
-        MockDirectoryIndexInput::SlowClosing(MockIndexInputWrapper::new(
+        MockIndexInputWrapper::new(
           self.clone(),
           name,
           delegate_input,
           None,
           read_advice,
           confined,
-        ))
+          true,
+        )
       } else if self.state.use_slow_open_closers.load(Ordering::SeqCst) && random_int == 1 {
         if cfg!(feature = "test_log_verbose") {
           eprintln!("MockDirectoryWrapper: using SlowOpeningMockIndexInputWrapper for file {name}");
         }
         thread::sleep(Duration::from_millis(50));
-        MockDirectoryIndexInput::SlowOpening(MockIndexInputWrapper::new(
+        MockIndexInputWrapper::new(
           self.clone(),
           name,
           delegate_input,
           None,
           read_advice,
           confined,
-        ))
+          false,
+        )
       } else {
-        MockDirectoryIndexInput::Mock(MockIndexInputWrapper::new(
+        MockIndexInputWrapper::new(
           self.clone(),
           name,
           delegate_input,
           None,
           read_advice,
           confined,
-        ))
+          false,
+        )
       }
     };
-    let handle_id = match &ii {
-      MockDirectoryIndexInput::Mock(inner)
-      | MockDirectoryIndexInput::SlowClosing(inner)
-      | MockDirectoryIndexInput::SlowOpening(inner) => inner.handle_id,
-    };
-    self.add_file_handle(handle_id, name, Handle::Input);
+    self.add_file_handle(ii.handle_id, name, Handle::Input);
     Ok(ii)
   }
 
