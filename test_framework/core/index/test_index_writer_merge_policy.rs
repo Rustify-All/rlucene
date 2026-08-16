@@ -153,23 +153,21 @@ where
   }
 }
 
-pub(crate) struct ForceMergeDvUpdateOneMerge<D, CR> {
+pub(crate) struct ForceMergeDvUpdateOneMerge {
   wait_for_init_merge_reader: CountDownLatch,
   wait_for_dv_update: CountDownLatch,
-  _marker: PhantomData<fn(D, CR)>,
 }
 
-impl<D, CR> ForceMergeDvUpdateOneMerge<D, CR> {
+impl ForceMergeDvUpdateOneMerge {
   fn new(wait_for_init_merge_reader: CountDownLatch, wait_for_dv_update: CountDownLatch) -> Self {
     Self {
       wait_for_init_merge_reader,
       wait_for_dv_update,
-      _marker: PhantomData,
     }
   }
 }
 
-impl<D, CR> OneMergeBase<D, CR> for ForceMergeDvUpdateOneMerge<D, CR>
+impl<D, CR> OneMergeBase<D, CR> for ForceMergeDvUpdateOneMerge
 where
   D: Directory,
   CR: CodecReader,
