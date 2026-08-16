@@ -25,9 +25,7 @@ use crate::core::codecs::norms_producer::NormsProducer;
 use crate::core::codecs::points_reader::{PointsReader, PointsReaderEnum2};
 use crate::core::codecs::stored_fields_reader::{StoredFieldsReader, StoredFieldsReaderEnum2};
 use crate::core::codecs::stored_fields_writer::StoredFieldsWriter;
-use crate::core::codecs::term_vectors_reader::{
-  DefaultTermVectorsReader, TermVectorsReader, TermVectorsReaderEnum2,
-};
+use crate::core::codecs::term_vectors_reader::{DefaultTermVectorsReader, TermVectorsReader};
 use crate::core::index::binary_doc_values_writer::{BinaryDVs, SortingBinaryDocValues};
 use crate::core::index::byte_vector_values::ByteVectorValues;
 use crate::core::index::codec_reader::{
@@ -531,6 +529,113 @@ where
 {
   fn check_integrity(&self) -> Result<()> {
     self.delegate.check_integrity()
+  }
+}
+
+pub enum SortingCodecReaderTermVectorsReader<T, DM> {
+  Filter(T),
+  Sorting(TermVectorsReaderImpl<T, DM>),
+}
+
+impl<T, DM> CloseableRef for SortingCodecReaderTermVectorsReader<T, DM>
+where
+  T: TermVectorsReader,
+  DM: DocMap + Clone,
+{
+  fn close(&self) -> Result<()> {
+    match self {
+      Self::Filter(reader) => reader.close(),
+      Self::Sorting(reader) => reader.close(),
+    }
+  }
+}
+
+impl<T, DM> RawTermVectors for SortingCodecReaderTermVectorsReader<T, DM>
+where
+  T: TermVectorsReader,
+  DM: DocMap + Clone,
+{
+  type IndexInput = T::IndexInput;
+
+  fn raw_term_vectors_mut(&mut self) -> Result<&mut DefaultTermVectorsReader<Self::IndexInput>> {
+    match self {
+      Self::Filter(reader) => reader.raw_term_vectors_mut(),
+      Self::Sorting(reader) => reader.raw_term_vectors_mut(),
+    }
+  }
+
+  fn raw_term_vectors(&self) -> Result<&DefaultTermVectorsReader<Self::IndexInput>> {
+    match self {
+      Self::Filter(reader) => reader.raw_term_vectors(),
+      Self::Sorting(reader) => reader.raw_term_vectors(),
+    }
+  }
+}
+
+impl<T, DM> TermVectors for SortingCodecReaderTermVectorsReader<T, DM>
+where
+  T: TermVectorsReader,
+  DM: DocMap + Clone,
+{
+  type Fields = T::Fields;
+  type Terms = <T::Fields as Fields>::Terms;
+
+  fn prefetch(&mut self, doc_id: i32) -> Result<()> {
+    match self {
+      Self::Filter(reader) => reader.prefetch(doc_id),
+      Self::Sorting(reader) => reader.prefetch(doc_id),
+    }
+  }
+
+  fn get(&mut self, doc: i32) -> Result<Option<Self::Fields>> {
+    match self {
+      Self::Filter(reader) => reader.get(doc),
+      Self::Sorting(reader) => reader.get(doc),
+    }
+  }
+
+  fn get_field_terms(
+    &mut self,
+    doc: i32,
+    field: &str,
+  ) -> Result<Option<<Self::Fields as Fields>::Terms>> {
+    match self {
+      Self::Filter(reader) => reader.get_field_terms(doc, field),
+      Self::Sorting(reader) => reader.get_field_terms(doc, field),
+    }
+  }
+}
+
+impl<T, DM> TryClone for SortingCodecReaderTermVectorsReader<T, DM>
+where
+  T: TermVectorsReader,
+  DM: DocMap + Clone,
+{
+  fn try_clone(&self) -> Result<Self> {
+    match self {
+      Self::Filter(reader) => reader.try_clone().map(Self::Filter),
+      Self::Sorting(reader) => reader.try_clone().map(Self::Sorting),
+    }
+  }
+}
+
+impl<T, DM> TermVectorsReader for SortingCodecReaderTermVectorsReader<T, DM>
+where
+  T: TermVectorsReader,
+  DM: DocMap + Clone,
+{
+  fn check_integrity(&self) -> Result<()> {
+    match self {
+      Self::Filter(reader) => reader.check_integrity(),
+      Self::Sorting(reader) => reader.check_integrity(),
+    }
+  }
+
+  fn get_merge_instance(&self) -> Result<Option<Self>> {
+    match self {
+      Self::Filter(reader) => Ok(reader.get_merge_instance()?.map(Self::Filter)),
+      Self::Sorting(reader) => Ok(reader.get_merge_instance()?.map(Self::Sorting)),
+    }
   }
 }
 
@@ -2239,10 +2344,8 @@ where
     <CR as CodecReader>::StoredFieldsReader,
     <SortingCodecReader<CR, DM> as CodecReader>::StoredFieldsReader,
   >;
-  type TermVectorsReader = TermVectorsReaderEnum2<
-    <CR as CodecReader>::TermVectorsReader,
-    <SortingCodecReader<CR, DM> as CodecReader>::TermVectorsReader,
-  >;
+  type TermVectorsReader =
+    SortingCodecReaderTermVectorsReader<<CR as CodecReader>::TermVectorsReader, DM>;
   type NormsProducer = SortingNormsProducerEnum<CRNormsProducer<CR>, DM>;
   type DocValuesProducer = DocValuesProducerEnum2<
     <CR as CodecReader>::DocValuesProducer,
@@ -2271,10 +2374,12 @@ where
   fn get_term_vectors_reader(&self) -> Result<Option<Self::TermVectorsReader>> {
     Ok(match self {
       SortingCodecReaderEnum::Filter(f) => {
-        f.get_term_vectors_reader()?.map(TermVectorsReaderEnum2::A)
+        f.get_term_vectors_reader()?
+          .map(SortingCodecReaderTermVectorsReader::Filter)
       },
       SortingCodecReaderEnum::Sorting(s) => {
-        s.get_term_vectors_reader()?.map(TermVectorsReaderEnum2::B)
+        s.get_term_vectors_reader()?
+          .map(SortingCodecReaderTermVectorsReader::Sorting)
       },
     })
   }
