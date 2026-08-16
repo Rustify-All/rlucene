@@ -891,7 +891,7 @@ where
         })
       };
       Ok(Lucene90BinaryDocValuesEnum::Sparse(
-        SparseBinaryDocValuesImpl::new(sub, disi),
+        SparseBinaryDocValues::new(sub, disi),
       ))
     }
   }
@@ -1302,44 +1302,38 @@ where
   }
 }
 
-pub struct SparseBinaryDocValuesImpl<I, R>
+pub struct SparseBinaryDocValues<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
-  sub: SparseBinaryDocValuesBaseEnum<R>,
-  disi: IndexedDISIImpl<I, R>,
+  sub: SparseBinaryDocValuesBaseEnum<I::RandomAccessSlice>,
+  disi: IndexedDISIImpl<I::IndexInput, I::RandomAccessSlice>,
 }
 
-pub type SparseBinaryDocValues<I> = SparseBinaryDocValuesImpl<
-  <I as IndexInput>::IndexInput,
-  <I as IndexInput>::RandomAccessSlice,
->;
-
-impl<I, R> SparseBinaryDocValuesImpl<I, R>
+impl<I> SparseBinaryDocValues<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
-  fn new(sub: SparseBinaryDocValuesBaseEnum<R>, disi: IndexedDISIImpl<I, R>) -> Self {
+  fn new(
+    sub: SparseBinaryDocValuesBaseEnum<I::RandomAccessSlice>,
+    disi: IndexedDISIImpl<I::IndexInput, I::RandomAccessSlice>,
+  ) -> Self {
     Self { sub, disi }
   }
 }
 
-impl<I, R> DocValuesIterator for SparseBinaryDocValuesImpl<I, R>
+impl<I> DocValuesIterator for SparseBinaryDocValues<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn advance_exact(&mut self, target: i32) -> Result<bool> {
     self.disi.advance_exact(target)
   }
 }
 
-impl<I, R> DocIdSetIterator for SparseBinaryDocValuesImpl<I, R>
+impl<I> DocIdSetIterator for SparseBinaryDocValues<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn doc_id(&self) -> i32 {
     self.disi.doc_id()
@@ -1358,10 +1352,9 @@ where
   }
 }
 
-impl<I, R> BinaryDocValues for SparseBinaryDocValuesImpl<I, R>
+impl<I> BinaryDocValues for SparseBinaryDocValues<I>
 where
   I: IndexInput,
-  R: RandomAccessInput,
 {
   fn binary_value(&mut self) -> Result<Cow<'_, BytesRef<Vec<u8>>>> {
     self.sub.binary_value(&mut self.disi)
@@ -3489,7 +3482,7 @@ where
   I: IndexInput,
 {
   Dense(DenseBinaryDocValues<I::RandomAccessSlice>),
-  Sparse(SparseBinaryDocValuesImpl<I::IndexInput, I::RandomAccessSlice>),
+  Sparse(SparseBinaryDocValues<I>),
   Empty(EmptyBinary),
 }
 
