@@ -408,10 +408,7 @@ fn test_single_vector_per_segment(similarity_function: VectorSimilarityFunction)
   dir.close()
 }
 
-struct TestQuantizedByteVectorValues<I>
-where
-  I: IndexInput,
-{
+struct TestQuantizedByteVectorValues<I> {
   dimension: usize,
   vector_byte_length: usize,
   scalar_quantizer: ScalarQuantizer,
