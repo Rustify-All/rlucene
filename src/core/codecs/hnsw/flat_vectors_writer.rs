@@ -26,7 +26,6 @@ use crate::core::index::merge_state::MergeState;
 use crate::core::index::segment_write_state::SegmentWriteState;
 use crate::core::index::sorter::DocMap;
 use crate::core::store::directory::Directory;
-use crate::core::store::index_input::IndexInput;
 use crate::core::store::index_output::IndexOutput;
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::hnsw::closeable_random_vector_scorer_supplier::CloseableRandomVectorScorerSupplier;
@@ -66,13 +65,11 @@ pub trait FlatVectorsWriter: KnnVectorsWriter<Self::IndexOutput> {
   type FlatFieldVectorsWriter: FlatFieldVectorsWriter;
   fn get_fields_mut(&mut self) -> &mut [Self::FlatFieldVectorsWriter];
 
-  type CloseableRandomVectorScorerSupplier<'a, I, D>: CloseableRandomVectorScorerSupplier
+  type CloseableRandomVectorScorerSupplier<'a, D>: CloseableRandomVectorScorerSupplier
   where
-    I: IndexInput,
     D: Directory,
     Self: 'a,
-    D: 'a,
-    I: 'a;
+    D: 'a;
   /// Write the field for merging, providing a scorer over the newly merged flat vectors. This way
   /// callers may implement any additional merging logic.
   ///
@@ -94,7 +91,7 @@ pub trait FlatVectorsWriter: KnnVectorsWriter<Self::IndexOutput> {
     _field_info: &FieldInfo,
     _merge_state: &MergeState<'_, D1, CR>,
     _segment_write_state: &SegmentWriteState<'a, &D2>,
-  ) -> Result<Self::CloseableRandomVectorScorerSupplier<'a, D2::IndexInput, D2>>
+  ) -> Result<Self::CloseableRandomVectorScorerSupplier<'a, D2>>
   where
     D2: Directory<IndexOutput = Self::IndexOutput>,
     CR: CodecReader,

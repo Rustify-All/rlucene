@@ -57,7 +57,7 @@ use crate::core::util::TryIntoInt;
 use crate::core::util::accountable::Accountable;
 use crate::core::util::bit_util::BitUtil;
 use crate::core::util::clone::TryClone;
-use crate::core::util::close::Closeable;
+use crate::core::util::close::{Closeable, CloseableRef};
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::hnsw::closeable_random_vector_scorer_supplier::CloseableRandomVectorScorerSupplier;
 use crate::core::util::hnsw::random_vector_scorer_supplier::RandomVectorScorerSupplier;
@@ -501,29 +501,26 @@ where
     self.fields.as_mut()
   }
 
-  type CloseableRandomVectorScorerSupplier<'a, I, D>
+  type CloseableRandomVectorScorerSupplier<'a, D>
     = FlatCloseableRandomVectorScorerSupplier<
     'a,
     <F as FlatVectorsScorer>::RandomVectorScorerSupplier<
-      off_heap_byte_vector_values::DenseOffHeapVectorValues<I, F>,
-      off_heap_float_vector_values::DenseOffHeapVectorValues<I, F>,
+      off_heap_byte_vector_values::DenseOffHeapVectorValues<D::IndexInput, F>,
+      off_heap_float_vector_values::DenseOffHeapVectorValues<D::IndexInput, F>,
     >,
     D,
-    I,
   >
   where
-    I: IndexInput + 'a,
     D: Directory,
     Self: 'a,
-    D: 'a,
-    I: 'a;
+    D: 'a;
 
   fn merge_one_field_to_index<'a, D1, D2, CR>(
     &'a mut self,
     field_info: &FieldInfo,
     merge_state: &MergeState<'_, D1, CR>,
     segment_write_state: &SegmentWriteState<&'a D2>,
-  ) -> Result<Self::CloseableRandomVectorScorerSupplier<'a, D2::IndexInput, D2>>
+  ) -> Result<Self::CloseableRandomVectorScorerSupplier<'a, D2>>
   where
     D2: Directory<IndexOutput = Self::IndexOutput>,
     CR: CodecReader,
@@ -538,7 +535,7 @@ where
     let mut vector_data_input = None;
     let mut success = false;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-      || -> Result<Self::CloseableRandomVectorScorerSupplier<'_, D2::IndexInput, D2>> {
+      || -> Result<Self::CloseableRandomVectorScorerSupplier<'_, D2>> {
         let docs_with_field = match field_info.get_vector_encoding() {
           VectorEncoding::BYTE(_) => {
             let mut merged_bytes = merge_byte_vector_values(field_info, merge_state)?;
@@ -823,32 +820,30 @@ impl FlatFieldVectorsWriter for FlatFieldWriter {
   }
 }
 
-pub struct FlatCloseableRandomVectorScorerSupplier<'a, S, D, I>
+pub struct FlatCloseableRandomVectorScorerSupplier<'a, S, D>
 where
   S: RandomVectorScorerSupplier,
   D: Directory,
-  I: IndexInput,
 {
   supplier: S,
   num_vectors: i32,
   dir: &'a D,
   temp_file: String,
-  vector_data_input: I,
+  vector_data_input: D::IndexInput,
   closed: bool,
 }
 
-impl<'a, S, D, I> FlatCloseableRandomVectorScorerSupplier<'a, S, D, I>
+impl<'a, S, D> FlatCloseableRandomVectorScorerSupplier<'a, S, D>
 where
   S: RandomVectorScorerSupplier,
   D: Directory,
-  I: IndexInput,
 {
   pub(crate) fn new(
     num_vectors: i32,
     supplier: S,
     dir: &'a D,
     temp_file: String,
-    vector_data_input: I,
+    vector_data_input: D::IndexInput,
   ) -> Self {
     Self {
       supplier,
@@ -861,11 +856,10 @@ where
   }
 }
 
-impl<S, D, I> RandomVectorScorerSupplier for FlatCloseableRandomVectorScorerSupplier<'_, S, D, I>
+impl<S, D> RandomVectorScorerSupplier for FlatCloseableRandomVectorScorerSupplier<'_, S, D>
 where
   S: RandomVectorScorerSupplier,
   D: Directory,
-  I: IndexInput,
 {
   type Scorer<'a>
     = S::Scorer<'a>
@@ -898,11 +892,10 @@ where
   }
 }
 
-impl<S, D, I> Closeable for FlatCloseableRandomVectorScorerSupplier<'_, S, D, I>
+impl<S, D> Closeable for FlatCloseableRandomVectorScorerSupplier<'_, S, D>
 where
   S: RandomVectorScorerSupplier,
   D: Directory,
-  I: IndexInput,
 {
   fn close(&mut self) -> Result<()> {
     if !self.closed {
@@ -915,22 +908,20 @@ where
   }
 }
 
-impl<S, D, I> CloseableRandomVectorScorerSupplier
-  for FlatCloseableRandomVectorScorerSupplier<'_, S, D, I>
+impl<S, D> CloseableRandomVectorScorerSupplier
+  for FlatCloseableRandomVectorScorerSupplier<'_, S, D>
 where
   S: RandomVectorScorerSupplier,
   D: Directory,
-  I: IndexInput,
 {
   fn total_vector_count(&self) -> Result<i32> {
     Ok(self.num_vectors)
   }
 }
-impl<S, D, I> Drop for FlatCloseableRandomVectorScorerSupplier<'_, S, D, I>
+impl<S, D> Drop for FlatCloseableRandomVectorScorerSupplier<'_, S, D>
 where
   S: RandomVectorScorerSupplier,
   D: Directory,
-  I: IndexInput,
 {
   fn drop(&mut self) {
     let _ = self.close();

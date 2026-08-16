@@ -351,7 +351,7 @@ where
     merge_state: &MergeState<'_, D1, CR>,
     merged_quantization_state: ScalarQuantizer,
   ) -> Result<
-    <Self as FlatVectorsWriter>::CloseableRandomVectorScorerSupplier<'a, D2::IndexInput, D2>,
+    <Self as FlatVectorsWriter>::CloseableRandomVectorScorerSupplier<'a, D2>,
   >
   where
     D2: Directory<IndexOutput = O>,
@@ -384,7 +384,7 @@ where
     let mut success = false;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
       || -> Result<
-        <Self as FlatVectorsWriter>::CloseableRandomVectorScorerSupplier<'_, D2::IndexInput, D2>,
+        <Self as FlatVectorsWriter>::CloseableRandomVectorScorerSupplier<'_, D2>,
       > {
         let byte_vector_values = MergedQuantizedVectorValues::merge_quantized_byte_vector_values(
           field_info,
@@ -759,34 +759,31 @@ where
     self.raw_vector_delegate.get_fields_mut()
   }
 
-  type CloseableRandomVectorScorerSupplier<'a, I, D>
+  type CloseableRandomVectorScorerSupplier<'a, D>
     = CloseableRandomVectorScorerSupplierEnum2<
-    R::CloseableRandomVectorScorerSupplier<'a, I, D>,
+    R::CloseableRandomVectorScorerSupplier<'a, D>,
     ScalarQuantizedCloseableRandomVectorScorerSupplier<
       'a,
       ScalarQuantizedRandomVectorScorerSupplier<
         off_heap_quantized_byte_vector_values::DenseOffHeapVectorValues<
-          I,
+          D::IndexInput,
           Lucene99ScalarQuantizedVectorScorer<S>,
         >,
       >,
       D,
-      I,
     >,
   >
   where
-    I: IndexInput + 'a,
     D: Directory,
     Self: 'a,
-    D: 'a,
-    I: 'a;
+    D: 'a;
 
   fn merge_one_field_to_index<'a, D1, D2, CR>(
     &'a mut self,
     field_info: &FieldInfo,
     merge_state: &MergeState<'_, D1, CR>,
     segment_write_state: &SegmentWriteState<'a, &'a D2>,
-  ) -> Result<Self::CloseableRandomVectorScorerSupplier<'a, D2::IndexInput, D2>>
+  ) -> Result<Self::CloseableRandomVectorScorerSupplier<'a, D2>>
   where
     D2: Directory<IndexOutput = Self::IndexOutput>,
     CR: CodecReader,
@@ -2153,32 +2150,30 @@ where
   type VectorScorer = DummyVectorScorer;
 }
 
-pub struct ScalarQuantizedCloseableRandomVectorScorerSupplier<'a, Q, D, I>
+pub struct ScalarQuantizedCloseableRandomVectorScorerSupplier<'a, Q, D>
 where
   Q: RandomVectorScorerSupplier,
   D: Directory,
-  I: IndexInput,
 {
   supplier: Q,
   num_vectors: i32,
   dir: &'a D,
   temp_file: String,
-  quantization_data_input: I,
+  quantization_data_input: D::IndexInput,
   closed: bool,
 }
 
-impl<'a, Q, D, I> ScalarQuantizedCloseableRandomVectorScorerSupplier<'a, Q, D, I>
+impl<'a, Q, D> ScalarQuantizedCloseableRandomVectorScorerSupplier<'a, Q, D>
 where
   Q: RandomVectorScorerSupplier,
   D: Directory,
-  I: IndexInput,
 {
   fn new_quantized(
     num_vectors: i32,
     supplier: Q,
     dir: &'a D,
     temp_file: String,
-    quantization_data_input: I,
+    quantization_data_input: D::IndexInput,
   ) -> Self {
     Self {
       supplier,
@@ -2191,12 +2186,11 @@ where
   }
 }
 
-impl<Q, D, I> RandomVectorScorerSupplier
-  for ScalarQuantizedCloseableRandomVectorScorerSupplier<'_, Q, D, I>
+impl<Q, D> RandomVectorScorerSupplier
+  for ScalarQuantizedCloseableRandomVectorScorerSupplier<'_, Q, D>
 where
   Q: RandomVectorScorerSupplier,
   D: Directory,
-  I: IndexInput,
 {
   type Scorer<'a>
     = Q::Scorer<'a>
@@ -2229,11 +2223,10 @@ where
   }
 }
 
-impl<Q, D, I> Closeable for ScalarQuantizedCloseableRandomVectorScorerSupplier<'_, Q, D, I>
+impl<Q, D> Closeable for ScalarQuantizedCloseableRandomVectorScorerSupplier<'_, Q, D>
 where
   Q: RandomVectorScorerSupplier,
   D: Directory,
-  I: IndexInput,
 {
   fn close(&mut self) -> Result<()> {
     if !self.closed {
@@ -2246,23 +2239,21 @@ where
   }
 }
 
-impl<Q, D, I> CloseableRandomVectorScorerSupplier
-  for ScalarQuantizedCloseableRandomVectorScorerSupplier<'_, Q, D, I>
+impl<Q, D> CloseableRandomVectorScorerSupplier
+  for ScalarQuantizedCloseableRandomVectorScorerSupplier<'_, Q, D>
 where
   Q: RandomVectorScorerSupplier,
   D: Directory,
-  I: IndexInput,
 {
   fn total_vector_count(&self) -> Result<i32> {
     Ok(self.num_vectors)
   }
 }
 
-impl<Q, D, I> Drop for ScalarQuantizedCloseableRandomVectorScorerSupplier<'_, Q, D, I>
+impl<Q, D> Drop for ScalarQuantizedCloseableRandomVectorScorerSupplier<'_, Q, D>
 where
   Q: RandomVectorScorerSupplier,
   D: Directory,
-  I: IndexInput,
 {
   fn drop(&mut self) {
     let _ = self.close();
