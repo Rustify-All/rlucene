@@ -18,25 +18,26 @@ use crate::{LogColor, colorize, log};
 use std::path::{Path, PathBuf};
 use std::{env, fs, process};
 
+const RUST_SOURCE_DIRS: [&str; 3] = ["src", "test_framework", "xtask"];
+
 pub(crate) fn run() {
   let project_dir = env::current_dir().unwrap();
   let xtask_dir = project_dir.join("xtask");
 
-  let license_path = find_file(&xtask_dir, "LICENSE_HEADER");
-  let license_header_path: String = license_path.as_ref().unwrap().to_str().unwrap().to_string();
-  if license_path.is_none() {
+  let Some(license_path) = find_file(&xtask_dir, "LICENSE_HEADER") else {
     log("LICENSE_HEADER file not found: LICENSE_HEADER");
     process::exit(1);
+  };
+  let license_header_path = license_path.display().to_string();
+
+  let license_text = load_license_text(&license_path);
+
+  let mut all_valid = true;
+  for relative_dir in RUST_SOURCE_DIRS {
+    all_valid &= check_licenses_in_dir(&project_dir.join(relative_dir), &license_text);
   }
 
-  let license_text = load_license_text(license_path.unwrap().as_path());
-
-  let src_dir = project_dir.join("src");
-
-  let src_valid = check_licenses_in_dir(&src_dir, &license_text);
-  let xtask_valid = check_licenses_in_dir(&xtask_dir, &license_text);
-
-  if src_valid && xtask_valid {
+  if all_valid {
     log(&colorize(
       "✅ ✅ ✅ All files have the correct license header",
       LogColor::Green,
