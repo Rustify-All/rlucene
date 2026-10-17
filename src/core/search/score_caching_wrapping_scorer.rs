@@ -19,7 +19,6 @@ use crate::core::search::scorable::{ChildScorable, Scorable};
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use std::cell::Cell;
 use std::fmt::{Display, Formatter};
-use std::rc::Rc;
 
 /// A [`Scorer`](crate::core::search::scorer::Scorer) that wraps another scorer and caches the score
 /// of the current document.
@@ -102,13 +101,13 @@ where
 impl<S> crate::core::search::scorable::FixedScore for ScoreCachingWrappingScorer<'_, S> {}
 pub struct ScoreCachingWrappingLeafCollector<LC> {
   inner: LC,
-  cache: Rc<ScoreCachingWrappingScorerCache>,
+  cache: ScoreCachingWrappingScorerCache,
 }
 impl<LC> ScoreCachingWrappingLeafCollector<LC> {
   pub(crate) fn new(base: LC) -> Self {
     Self {
       inner: base,
-      cache: Rc::new(ScoreCachingWrappingScorerCache::new()),
+      cache: ScoreCachingWrappingScorerCache::new(),
     }
   }
 }
