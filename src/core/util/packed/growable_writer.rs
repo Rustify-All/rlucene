@@ -141,6 +141,14 @@ impl Mutable for GrowableWriter {
   }
 
   fn set_bulk(&mut self, index: usize, arr: &[i64], off: usize, len: usize) -> Result<usize> {
+    if self.current_mask == -1
+      && arr
+        .get(off..)
+        .and_then(|values| values.get(..len))
+        .is_some()
+    {
+      return self.current.set_bulk(index, arr, off, len);
+    }
     let mut max = 0i64;
     for i in off..off.wrapping_add(len) {
       max |= *arr.get(i).ok_or_else(|| {
