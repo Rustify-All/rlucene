@@ -557,10 +557,10 @@ where
 
     for doc in &self.pending_docs {
       for field in &doc.fields {
-        for i in 0..field.num_terms {
+        for &prefix_length in &field.prefix_lengths {
           self
             .writer
-            .add(field.prefix_lengths[i] as i64, &mut self.vectors_stream)?;
+            .add(prefix_length as i64, &mut self.vectors_stream)?;
         }
       }
     }
@@ -571,10 +571,10 @@ where
 
     for doc in &self.pending_docs {
       for field in &doc.fields {
-        for i in 0..field.num_terms {
+        for &suffix_length in &field.suffix_lengths {
           self
             .writer
-            .add(field.suffix_lengths[i] as i64, &mut self.vectors_stream)?;
+            .add(suffix_length as i64, &mut self.vectors_stream)?;
         }
       }
     }
@@ -586,10 +586,10 @@ where
 
     for doc in &self.pending_docs {
       for field in &doc.fields {
-        for i in 0..field.num_terms {
+        for &freq in &field.freqs {
           self
             .writer
-            .add((field.freqs[i] - 1) as i64, &mut self.vectors_stream)?;
+            .add((freq - 1) as i64, &mut self.vectors_stream)?;
         }
       }
     }
