@@ -30,8 +30,10 @@ impl MonotonicLongValues {
   }
   pub(crate) fn decode_block(&self, block: usize, dest: &mut [i64], count: usize) -> usize {
     let average = self.averages[block];
-    for (i, item) in dest.iter_mut().enumerate().take(count) {
-      *item = item.wrapping_add(expected(0, average, i));
+    if average != 0.0 {
+      for (i, item) in dest.iter_mut().enumerate().take(count) {
+        *item = item.wrapping_add(expected(0, average, i));
+      }
     }
     count
   }
