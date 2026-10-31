@@ -241,8 +241,21 @@ impl FixedBitSet {
     );
     let pos = std::cmp::min(self.num_words - other_offset_words, other_num_words);
     let offset = other_offset_words;
-    for i in (0..pos).rev() {
-      self.bits[i + offset] |= other_arr[i];
+    if pos == 0 {
+      return;
+    }
+    if let Some(words) = offset
+      .checked_add(pos)
+      .and_then(|end| self.bits.get_mut(offset..end))
+      && let Some(other_words) = other_arr.get(..pos)
+    {
+      for (word, &other_word) in words.iter_mut().zip(other_words).rev() {
+        *word |= other_word;
+      }
+    } else {
+      for i in (0..pos).rev() {
+        self.bits[i + offset] |= other_arr[i];
+      }
     }
   }
 
