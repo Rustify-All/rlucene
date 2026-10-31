@@ -123,6 +123,7 @@ where
 
   /** Returns a number for the k-th character between 0 and
    * `HISTOGRAM_SIZE`. */
+  #[inline]
   fn get_bucket(&mut self, i: usize, k: usize) -> Result<usize> {
     let v = self.sub_selector.byte_at(i, k)? + 1;
     v.try_convert()

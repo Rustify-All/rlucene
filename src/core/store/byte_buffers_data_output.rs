@@ -258,6 +258,7 @@ impl ByteBuffersDataOutput {
     Ok(())
   }
   /// The number of bytes written to this output so far.
+  #[inline]
   pub fn size(&self) -> usize {
     if self.blocks.is_empty() {
       return 0;
@@ -280,6 +281,7 @@ impl ByteBuffersDataOutput {
   /// # Warning
   /// Sharing byte buffers for reads and writes is dangerous and may lead to
   /// hard-to-debug issues. Use with great caution.
+  #[inline]
   pub fn reset(&mut self) {
     self.cached_ram_bytes.store(-1, Ordering::Relaxed);
     if self.reuse {
@@ -482,6 +484,7 @@ impl DataOutput for ByteBuffersDataOutput {
     Ok(last_block.write_u8(b)?)
   }
 
+  #[inline]
   fn write_vint(&mut self, i: i32) -> Result<()> {
     let mut bytes = [0u8; 5];
     let mut value = i as u32;
@@ -532,6 +535,7 @@ impl DataOutput for ByteBuffersDataOutput {
     Ok(())
   }
 
+  #[inline]
   fn write_int(&mut self, i: i32) -> Result<()> {
     let value = i.to_le_bytes();
     self.write_bytes_range(&value, 0, 4)
@@ -542,6 +546,7 @@ impl DataOutput for ByteBuffersDataOutput {
     self.write_bytes_range(&value, 0, 2)
   }
 
+  #[inline]
   fn write_long(&mut self, i: i64) -> Result<()> {
     let value = i.to_le_bytes();
     self.write_bytes_range(&value, 0, 8)

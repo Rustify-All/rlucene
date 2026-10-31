@@ -1291,14 +1291,30 @@ fn create_rank(buffer: &FixedBitSet, dense_rank_power: u8) -> ([u8; DENSE_BLOCK_
   let mut rank = [0u8; DENSE_BLOCK_LONGS];
   let bits = buffer.get_bits();
   let mut bit_count = 0;
-  for (word, b) in bits.iter().take(DENSE_BLOCK_LONGS).enumerate() {
-    // Every longsPerRank longs
-    if (word & rank_mark) == 0 {
-      let rank_index = word >> rank_index_shift;
-      rank[rank_index] = (bit_count >> 8) as u8;
-      rank[rank_index + 1] = (bit_count & 0xFF) as u8;
+  if dense_rank_power == 9 && bits.len() >= DENSE_BLOCK_LONGS {
+    for (entry, words) in rank[..rank_len]
+      .as_chunks_mut::<2>()
+      .0
+      .iter_mut()
+      .zip(bits[..DENSE_BLOCK_LONGS].as_chunks::<8>().0)
+    {
+      entry[0] = (bit_count >> 8) as u8;
+      entry[1] = (bit_count & 0xFF) as u8;
+      bit_count += words
+        .iter()
+        .map(|word| word.count_ones() as i32)
+        .sum::<i32>();
     }
-    bit_count += b.count_ones() as i32;
+  } else {
+    for (word, b) in bits.iter().take(DENSE_BLOCK_LONGS).enumerate() {
+      // Every longsPerRank longs
+      if (word & rank_mark) == 0 {
+        let rank_index = word >> rank_index_shift;
+        rank[rank_index] = (bit_count >> 8) as u8;
+        rank[rank_index + 1] = (bit_count & 0xFF) as u8;
+      }
+      bit_count += b.count_ones() as i32;
+    }
   }
 
   (rank, rank_len)

@@ -95,11 +95,9 @@ impl BitUtil {
   // i16 little_endian
   #[cfg(target_endian = "little")]
   pub fn get_i16_le(bytes: &[u8], pos: usize) -> i16 {
-    debug_assert!(
-      pos + Self::SHORT_BYTES <= bytes.len(),
-      "Index out of bounds"
-    );
-    unsafe { ptr::read_unaligned(bytes.as_ptr().add(pos) as *const i16) }
+    let mut value = [0; Self::SHORT_BYTES];
+    value.copy_from_slice(&bytes[pos..][..Self::SHORT_BYTES]);
+    i16::from_le_bytes(value)
   }
   #[cfg(target_endian = "little")]
   pub fn set_i16_le(bytes: &mut [u8], pos: usize, value: i16) {
@@ -171,6 +169,7 @@ impl BitUtil {
   }
   // i32 little_endian
   #[cfg(target_endian = "little")]
+  #[inline]
   pub fn get_i32_le(bytes: &[u8], pos: usize) -> i32 {
     assert!(
       bytes.len() >= Self::INT_BYTES && pos <= bytes.len() - Self::INT_BYTES,
@@ -248,9 +247,9 @@ impl BitUtil {
   // i64 little_endian
   #[cfg(target_endian = "little")]
   pub fn get_i64_le(bytes: &[u8], pos: usize) -> i64 {
-    debug_assert!(pos + Self::LONG_BYTES <= bytes.len(), "Index out of bounds");
-
-    unsafe { ptr::read_unaligned(bytes.as_ptr().add(pos) as *const i64) }
+    let mut value = [0; Self::LONG_BYTES];
+    value.copy_from_slice(&bytes[pos..][..Self::LONG_BYTES]);
+    i64::from_le_bytes(value)
   }
 
   #[cfg(target_endian = "little")]

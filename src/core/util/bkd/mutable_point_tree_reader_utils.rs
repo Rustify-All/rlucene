@@ -395,6 +395,7 @@ impl<M, const N: usize> RadixSelectorBase for RadixSelectorImpl<'_, M, N>
 where
   M: MutablePointTree,
 {
+  #[inline]
   fn byte_at(&mut self, i: usize, k: usize) -> Result<i32> {
     if k < self.dim_cmp_bytes {
       Ok(self.reader.get_byte_at(i, self.dim_offset + k) as i32)

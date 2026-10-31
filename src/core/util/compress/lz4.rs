@@ -129,6 +129,7 @@ impl LZ4 {
   /// Note: This method expects the data to be read in little-endian byte
   /// order. Ensure that the input data is in little-endian format, or it
   /// may result in incorrect parsing.
+  #[inline]
   fn read_int(buf: &[u8], i: i32) -> i32 {
     debug_assert!(i >= 0);
     // According to LZ4's algorithm the endianness does not matter at all:

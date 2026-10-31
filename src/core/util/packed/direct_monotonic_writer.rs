@@ -146,6 +146,7 @@ where
   ///
   /// # Errors
   /// - Returns an error if values are not provided in order.
+  #[inline]
   pub fn add(&mut self, v: i64) -> Result<()> {
     if v < self.previous {
       return Err(LuceneError::illegal_argument(format!(

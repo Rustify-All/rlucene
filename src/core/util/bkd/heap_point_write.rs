@@ -226,6 +226,7 @@ impl<const N: usize> HeapPointWriter<N> {
 
   /// Compares the data dimensions and doc values of the point at position `i`
   /// with the point at position `j`
+  #[inline]
   pub fn compare_data_dims_and_doc(&self, i: usize, j: usize) -> Result<i32> {
     debug_assert!(self.closed);
     let heap_value = match self.point_value {

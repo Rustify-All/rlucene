@@ -241,6 +241,7 @@ impl Builder {
 
     PackedLongValues::new(self.page_shift, self.page_mask, values, self.size, sub)
   }
+  #[inline]
   pub fn add(&mut self, l: i64) -> Result<&mut Self> {
     if self.finished {
       return Err(LuceneError::illegal_state("Cannot be reused after build()"));

@@ -302,7 +302,7 @@ where
     }
   }
 
-  fn compute_packed_value_bounds_with_tree<M>(
+  fn compute_packed_value_bounds_with_tree<M, const B: usize>(
     &mut self,
     values: &M,
     from: usize,
@@ -326,6 +326,7 @@ where
       0,
     );
 
+    let comparator = BKDBytes::<B>::new(self.config.bytes_per_dim);
     for i in from + 1..to {
       let value = values.get_value(i, &mut self.scratch_bytes_ref1)?;
       let offset = value.offset;
@@ -333,19 +334,23 @@ where
         let start_offset = dim * self.config.bytes_per_dim;
         let end_offset = start_offset + self.config.bytes_per_dim;
 
-        if value.bytes[offset + start_offset..offset + end_offset]
-          .cmp(&min_packed_value[start_offset..end_offset])
-          .to_int()
-          < 0
+        if comparator.compare(
+          &value.bytes[offset + start_offset..offset + end_offset],
+          0,
+          &min_packed_value[start_offset..end_offset],
+          0,
+        ) < 0
         {
           min_packed_value.copy_from(
             &value.bytes[offset + start_offset..offset + end_offset],
             start_offset,
           );
-        } else if value.bytes[offset + start_offset..offset + end_offset]
-          .cmp(&max_packed_value[start_offset..end_offset])
-          .to_int()
-          > 0
+        } else if comparator.compare(
+          &value.bytes[offset + start_offset..offset + end_offset],
+          0,
+          &max_packed_value[start_offset..end_offset],
+          0,
+        ) > 0
         {
           max_packed_value.copy_from(
             &value.bytes[offset + start_offset..offset + end_offset],
@@ -401,13 +406,29 @@ where
     // MutablePointTree accesses are limited to signed i32 positions.
     let _: i32 = point_count.try_convert()?;
     // Compute the min/max for this slice
-    self.compute_packed_value_bounds_with_tree(
-      values,
-      0,
-      point_count,
-      &mut min_packed_value,
-      &mut max_packed_value,
-    )?;
+    match self.config.bytes_per_dim {
+      4 => self.compute_packed_value_bounds_with_tree::<_, 4>(
+        values,
+        0,
+        point_count,
+        &mut min_packed_value,
+        &mut max_packed_value,
+      )?,
+      8 => self.compute_packed_value_bounds_with_tree::<_, 8>(
+        values,
+        0,
+        point_count,
+        &mut min_packed_value,
+        &mut max_packed_value,
+      )?,
+      _ => self.compute_packed_value_bounds_with_tree::<_, 0>(
+        values,
+        0,
+        point_count,
+        &mut min_packed_value,
+        &mut max_packed_value,
+      )?,
+    }
     self.min_packed_value = min_packed_value;
     self.max_packed_value = max_packed_value;
 
@@ -1772,13 +1793,29 @@ where
           && self.config.num_index_dims > 2
           && parent_splits.iter().sum::<i32>() % SPLITS_BEFORE_EXACT_BOUNDS == 0
         {
-          self.compute_packed_value_bounds_with_tree(
-            reader,
-            from,
-            to,
-            min_packed_value.as_mut(),
-            max_packed_value.as_mut(),
-          )?;
+          match self.config.bytes_per_dim {
+            4 => self.compute_packed_value_bounds_with_tree::<_, 4>(
+              reader,
+              from,
+              to,
+              min_packed_value.as_mut(),
+              max_packed_value.as_mut(),
+            )?,
+            8 => self.compute_packed_value_bounds_with_tree::<_, 8>(
+              reader,
+              from,
+              to,
+              min_packed_value.as_mut(),
+              max_packed_value.as_mut(),
+            )?,
+            _ => self.compute_packed_value_bounds_with_tree::<_, 0>(
+              reader,
+              from,
+              to,
+              min_packed_value.as_mut(),
+              max_packed_value.as_mut(),
+            )?,
+          }
         }
         self.split(
           min_packed_value.as_ref(),

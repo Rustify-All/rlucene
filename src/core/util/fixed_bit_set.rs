@@ -770,6 +770,7 @@ impl BitSet for FixedBitSet {
     self.default_or(iter)
   }
 
+  #[inline]
   fn ensure_capacity(&mut self, num_bits: usize) -> Result<()> {
     if num_bits < self.num_bits {
     } else {

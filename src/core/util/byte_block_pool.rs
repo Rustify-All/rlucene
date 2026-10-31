@@ -360,6 +360,7 @@ impl ByteBlockPool {
     self.allocator.get_used()
   }
   /// Get valid buffer_upto
+  #[inline]
   pub fn buffer_upto(&self) -> Result<usize> {
     match self.buffer_upto {
       Some(upto) => Ok(upto),

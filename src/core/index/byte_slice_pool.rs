@@ -52,6 +52,7 @@ impl ByteSlicePool {
   ///
   /// # Returns
   /// The position where the slice starts
+  #[inline]
   pub fn new_slice(&mut self, size: i32, pool: &mut ByteBlockPool) -> Result<i32> {
     if size > BYTE_BLOCK_SIZE {
       return Err(LuceneError::illegal_argument(format!(

@@ -112,9 +112,10 @@ where
   B: ByteSource,
 {
   fn read_byte(&mut self) -> Result<u8> {
-    let value = self.bytes.as_slice()[self.pos];
+    let bytes = self.bytes.as_slice();
+    let pos = self.pos;
     self.pos += 1;
-    Ok(value)
+    Ok(bytes[pos])
   }
 
   fn get_bytes<'a>(&'a mut self, len: usize) -> Result<std::borrow::Cow<'a, [u8]>> {
