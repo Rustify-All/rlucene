@@ -146,13 +146,25 @@ where
     );
 
     let mut upto = 0;
-    for i in 0..self.hash_size {
-      if self.ids[i] != -1 {
-        if upto < i {
-          self.ids[upto] = self.ids[i];
-          self.ids[i] = -1;
+    if let Some(ids) = self.ids.get_mut(..self.hash_size) {
+      for i in 0..ids.len() {
+        if ids[i] != -1 {
+          if upto < i {
+            ids[upto] = ids[i];
+            ids[i] = -1;
+          }
+          upto += 1;
         }
-        upto += 1;
+      }
+    } else {
+      for i in 0..self.hash_size {
+        if self.ids[i] != -1 {
+          if upto < i {
+            self.ids[upto] = self.ids[i];
+            self.ids[i] = -1;
+          }
+          upto += 1;
+        }
       }
     }
     debug_assert!(upto == self.count);
