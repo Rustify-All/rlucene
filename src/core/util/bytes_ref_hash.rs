@@ -192,8 +192,8 @@ where
     sorter.sort(0, tmp_offset)?;
 
     length = self.ids.len();
-    for i in tmp_offset..length {
-      self.ids[i] = -1;
+    if let Some(ids) = self.ids.get_mut(tmp_offset..length) {
+      ids.fill(-1);
     }
     Ok(())
   }
