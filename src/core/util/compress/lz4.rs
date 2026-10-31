@@ -230,10 +230,18 @@ impl LZ4 {
         let mut start: usize = (d_off - match_dec).try_convert()?;
         let end = d_off + match_len;
 
-        while d_off < end {
-          dest[d_off as usize] = dest[start];
-          start += 1;
-          d_off += 1;
+        if match_dec == 1
+          && let Some(&value) = dest.get(start)
+          && let Some(output) = dest.get_mut(d_off as usize..end as usize)
+        {
+          output.fill(value);
+          d_off = end;
+        } else {
+          while d_off < end {
+            dest[d_off as usize] = dest[start];
+            start += 1;
+            d_off += 1;
+          }
         }
       } else {
         Self::copy_fast_match(dest, d_off, match_dec, fast_len);
