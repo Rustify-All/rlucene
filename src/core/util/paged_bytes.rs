@@ -686,6 +686,20 @@ impl DataOutput for PagedBytesDataOutput {
       return Ok(());
     }
 
+    if self.paged_bytes.upto < self.paged_bytes.block_size
+      && length <= self.paged_bytes.block_size - self.paged_bytes.upto
+    {
+      let offset_end = offset + length;
+      let current_block = self
+        .paged_bytes
+        .current_block
+        .as_mut()
+        .ok_or_else(|| LuceneError::illegal_state("current_block not initialized"))?;
+      current_block.copy_from(&b[offset..offset_end], self.paged_bytes.upto);
+      self.paged_bytes.upto += length;
+      return Ok(());
+    }
+
     if self.paged_bytes.upto == self.paged_bytes.block_size {
       if let Some(block) = self.paged_bytes.current_block.take() {
         self.paged_bytes.add_block(block)?;
