@@ -610,17 +610,13 @@ impl DataInput for PagedBytesDataInput {
       let left = offset_end - offset;
 
       if block_left < left {
-        b.copy_from(
-          &block[self.current_block_upto..self.current_block_upto + block_left],
-          offset,
-        );
+        let source = &block[self.current_block_upto..self.current_block_upto + block_left];
+        b[offset..offset + block_left].copy_from_slice(source);
         self.next_block();
         offset += block_left;
       } else {
-        b.copy_from(
-          &block[self.current_block_upto..self.current_block_upto + left],
-          offset,
-        );
+        let source = &block[self.current_block_upto..self.current_block_upto + left];
+        b[offset..offset + left].copy_from_slice(source);
         self.current_block_upto += left;
         break;
       }
