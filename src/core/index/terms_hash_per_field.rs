@@ -314,11 +314,23 @@ impl<PA: PostingsArray> TermsHashPerField<PA> {
 
       let term_stream_address_buffer =
         int_pool.get_buffer_mut(self.term_stream_address_buffer_index);
-      for i in 0..self.stream_count as usize {
-        let upto = self
-          .slice_pool
-          .new_slice(ByteSlicePool::FIRST_LEVEL_SIZE, byte_pool)?;
-        term_stream_address_buffer[stream_address_index + i] = upto + byte_offset;
+      if let Some(addresses) = term_stream_address_buffer
+        .get_mut(stream_address_index..)
+        .and_then(|buffer| buffer.get_mut(..self.stream_count as usize))
+      {
+        for address in addresses {
+          let upto = self
+            .slice_pool
+            .new_slice(ByteSlicePool::FIRST_LEVEL_SIZE, byte_pool)?;
+          *address = upto + byte_offset;
+        }
+      } else {
+        for i in 0..self.stream_count as usize {
+          let upto = self
+            .slice_pool
+            .new_slice(ByteSlicePool::FIRST_LEVEL_SIZE, byte_pool)?;
+          term_stream_address_buffer[stream_address_index + i] = upto + byte_offset;
+        }
       }
       postings_array_wrapper
         .postings_array
