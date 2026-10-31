@@ -365,9 +365,23 @@ impl FixedBitSet {
       self.num_words.saturating_sub(other_offset_words),
       other_num_words,
     );
+    if pos == 0 {
+      return;
+    }
     let offset = other_offset_words;
-    for i in (0..pos).rev() {
-      self.bits[i + offset] &= !other_arr[i];
+    if let Some((dest, source)) = self
+      .bits
+      .get_mut(offset..)
+      .and_then(|bits| bits.get_mut(..pos))
+      .zip(other_arr.get(..pos))
+    {
+      for (dest, source) in dest.iter_mut().zip(source).rev() {
+        *dest &= !*source;
+      }
+    } else {
+      for i in (0..pos).rev() {
+        self.bits[i + offset] &= !other_arr[i];
+      }
     }
   }
 
