@@ -29,7 +29,7 @@ use smallvec::SmallVec;
 pub struct ConjunctionBulkScorer<S> {
   // lead1: all_scores[0]
   // lead2: all_scores[1]
-  all_scores: Vec<S>,
+  all_scores: Box<[S]>,
   required_scoring_len: usize,
   all_scores_input_idx: Box<[usize]>,
 }
@@ -73,7 +73,7 @@ where
     }
 
     Ok(Self {
-      all_scores,
+      all_scores: all_scores.into_boxed_slice(),
       required_scoring_len,
       all_scores_input_idx,
     })
@@ -270,7 +270,7 @@ where
   fn score(&mut self) -> Result<f32> {
     let mut score = 0f64;
     // Scoring clauses occupy the original input prefix, before all filter clauses.
-    let all_scores = self.base.all_scores.as_mut_slice();
+    let all_scores = self.base.all_scores.as_mut();
     for scorer in &self.base.all_scores_input_idx[..self.base.required_scoring_len] {
       score += all_scores[*scorer].score()? as f64;
     }

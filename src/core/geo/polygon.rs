@@ -43,9 +43,9 @@ use std::fmt::{Display, Formatter};
 ///    module
 #[derive(Clone, Debug)]
 pub struct Polygon {
-  poly_lats: Vec<f64>,
-  poly_lons: Vec<f64>,
-  holes: Vec<Polygon>,
+  poly_lats: Box<[f64]>,
+  poly_lons: Box<[f64]>,
+  holes: Box<[Polygon]>,
 
   /// minimum latitude of this polygon's bounding box area
   pub min_lat: f64,
@@ -138,9 +138,9 @@ impl Polygon {
     };
 
     Ok(Self {
-      poly_lats,
-      poly_lons,
-      holes,
+      poly_lats: poly_lats.into_boxed_slice(),
+      poly_lons: poly_lons.into_boxed_slice(),
+      holes: holes.into_boxed_slice(),
       min_lat,
       max_lat,
       min_lon,
@@ -155,7 +155,7 @@ impl Polygon {
 
   /// Borrows the internal latitude array
   pub fn get_poly_lats(&self) -> &[f64] {
-    self.poly_lats.as_slice()
+    &self.poly_lats
   }
 
   /// Returns latitude value at given index
@@ -165,7 +165,7 @@ impl Polygon {
 
   /// Borrows the internal longitude array
   pub fn get_poly_lons(&self) -> &[f64] {
-    self.poly_lons.as_slice()
+    &self.poly_lons
   }
 
   /// Returns longitude value at given index
@@ -175,7 +175,7 @@ impl Polygon {
 
   /// Borrows the internal holes array
   pub fn get_holes(&self) -> &[Polygon] {
-    self.holes.as_slice()
+    &self.holes
   }
 
   #[allow(dead_code)]

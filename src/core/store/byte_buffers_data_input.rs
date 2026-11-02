@@ -30,7 +30,7 @@ use crate::core::util::accountable::Accountable;
 use crate::core::util::bit_util::BitUtil;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::group_vint_util::{GroupVIntUtil, IntReader};
-use crate::core::util::ram_usage_estimator::size_of_vec;
+use crate::core::util::ram_usage_estimator::{size_of_slice, size_of_vec};
 use crate::core::util::{SliceCopyOps, TryIntoInt};
 pub type ByteBuffersDataInputRef<'a> = ByteBuffersDataInput<&'a [u8]>;
 pub type ByteBuffersDataInputOwned = ByteBuffersDataInput<Vec<u8>>;
@@ -66,7 +66,7 @@ impl ByteBuffersDataInputBlock for Arc<Vec<u8>> {
 /// A [`DataInput`] implementing [`RandomAccessInput`]
 /// and reading data from a list of [`Cursor<Vec<u8>>`](Cursor).
 pub struct ByteBuffersDataInput<B> {
-  pub(crate) blocks: Vec<Cursor<B>>,
+  pub(crate) blocks: Box<[Cursor<B>]>,
   block_mask: usize,
   block_bits: usize,
   length: usize,
@@ -98,7 +98,7 @@ impl<B: ByteBuffersDataInputBlock> ByteBuffersDataInput<B> {
       .map_or(0, |block| block.position())
       .try_convert()?;
     Ok(Self {
-      blocks,
+      blocks: blocks.into_boxed_slice(),
       block_mask,
       block_bits,
       length,
@@ -749,7 +749,7 @@ where
 
 impl Accountable for ByteBuffersDataInput<Vec<u8>> {
   fn ram_bytes_used(&self) -> Result<i64> {
-    let mut size = size_of_vec(&self.blocks).saturating_add(size_of_vec(&self.scratch));
+    let mut size = size_of_slice(&self.blocks).saturating_add(size_of_vec(&self.scratch));
     for block in &self.blocks {
       size = size.saturating_add(size_of_vec(block.get_ref()));
     }
@@ -759,13 +759,13 @@ impl Accountable for ByteBuffersDataInput<Vec<u8>> {
 
 impl Accountable for ByteBuffersDataInput<&[u8]> {
   fn ram_bytes_used(&self) -> Result<i64> {
-    Ok(size_of_vec(&self.blocks).saturating_add(size_of_vec(&self.scratch)))
+    Ok(size_of_slice(&self.blocks).saturating_add(size_of_vec(&self.scratch)))
   }
 }
 
 impl Accountable for ByteBuffersDataInput<Rc<Vec<u8>>> {
   fn ram_bytes_used(&self) -> Result<i64> {
-    let mut size = size_of_vec(&self.blocks).saturating_add(size_of_vec(&self.scratch));
+    let mut size = size_of_slice(&self.blocks).saturating_add(size_of_vec(&self.scratch));
     for block in &self.blocks {
       size = size
         .saturating_add(std::mem::size_of_val(block.get_ref().as_ref()) as i64)
@@ -777,7 +777,7 @@ impl Accountable for ByteBuffersDataInput<Rc<Vec<u8>>> {
 
 impl Accountable for ByteBuffersDataInput<Arc<Vec<u8>>> {
   fn ram_bytes_used(&self) -> Result<i64> {
-    let mut size = size_of_vec(&self.blocks).saturating_add(size_of_vec(&self.scratch));
+    let mut size = size_of_slice(&self.blocks).saturating_add(size_of_vec(&self.scratch));
     for block in &self.blocks {
       size = size
         .saturating_add(std::mem::size_of_val(block.get_ref().as_ref()) as i64)

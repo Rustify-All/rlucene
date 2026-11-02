@@ -28,7 +28,7 @@ use crate::core::search::similarities_impl::similarities::Similarity;
 use crate::core::util::accountable::Accountable;
 use crate::core::util::array_util::ArrayUtil;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
-use crate::core::util::ram_usage_estimator::size_of_vec;
+use crate::core::util::ram_usage_estimator::size_of_slice;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, LazyLock, OnceLock};
@@ -48,7 +48,7 @@ static EMPTY_TERM_STATE: LazyLock<Arc<TermStateEnum>> =
 pub struct TermStates {
   identity: Identity,
   pub(crate) top_reader_context_identity: Identity,
-  states: Vec<OnceLock<Arc<TermStateEnum>>>,
+  states: Box<[OnceLock<Arc<TermStateEnum>>]>,
   term: Option<Arc<Term>>,
   doc_freq: i32,
   total_term_freq: i64,
@@ -69,7 +69,7 @@ impl TermStates {
       top_reader_context_identity: context.base().identity.clone(),
       doc_freq: 0,
       total_term_freq: 0,
-      states,
+      states: states.into_boxed_slice(),
       term,
     })
   }
@@ -313,7 +313,7 @@ impl Hash for TermStates {
 
 impl Accountable for TermStates {
   fn ram_bytes_used(&self) -> Result<i64> {
-    let mut size = size_of_vec(&self.states);
+    let mut size = size_of_slice(&self.states);
     for state in self.states.iter().filter_map(OnceLock::get) {
       size = size.saturating_add(std::mem::size_of_val(state.as_ref()) as i64);
     }

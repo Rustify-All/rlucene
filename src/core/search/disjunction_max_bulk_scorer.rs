@@ -52,7 +52,7 @@ where
     }
 
     let cmp = BulkScorerAndNextCmp {
-      bulk_scorer_and_nexts,
+      bulk_scorer_and_nexts: bulk_scorer_and_nexts.into_boxed_slice(),
     };
     let mut queue = PriorityQueue::new(len, cmp)?;
     for i in 0..queue.compare.bulk_scorer_and_nexts.len() {
@@ -165,7 +165,7 @@ impl<BS> BulkScorerAndNext<BS> {
   }
 }
 struct BulkScorerAndNextCmp<BS> {
-  bulk_scorer_and_nexts: Vec<BulkScorerAndNext<BS>>,
+  bulk_scorer_and_nexts: Box<[BulkScorerAndNext<BS>]>,
 }
 impl<BS> Compare<usize> for BulkScorerAndNextCmp<BS>
 where

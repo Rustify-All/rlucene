@@ -32,13 +32,13 @@ static IDENTITY_PLUS_ONE: LazyLock<[i32; ForUtil::BLOCK_SIZE]> =
 /// two packed 16-bit lanes for `bits_per_value <= 10`, and full-width
 /// integers otherwise.
 pub struct ForDeltaUtil {
-  tmp: Vec<i32>,
+  tmp: Box<[i32]>,
 }
 
 impl ForDeltaUtil {
   pub(crate) fn new() -> Self {
     Self {
-      tmp: vec![0; ForUtil::BLOCK_SIZE],
+      tmp: vec![0; ForUtil::BLOCK_SIZE].into_boxed_slice(),
     }
   }
 }

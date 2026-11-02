@@ -366,20 +366,24 @@ where
 }
 
 pub struct MultiLeafCollector<LC> {
-  collectors: Vec<Option<LC>>,
-  min_scores: Option<Vec<f32>>,
+  collectors: Box<[Option<LC>]>,
+  min_scores: Option<Box<[f32]>>,
   skip_non_competitive_scores: bool,
 }
 
 impl<LC> MultiLeafCollector<LC> {
   fn new(collectors: Vec<LC>, skip_non_competitive_scores: bool) -> Self {
     let min_scores = if skip_non_competitive_scores {
-      Some(vec![0.0; collectors.len()])
+      Some(vec![0.0; collectors.len()].into_boxed_slice())
     } else {
       None
     };
     Self {
-      collectors: collectors.into_iter().map(Some).collect(),
+      collectors: collectors
+        .into_iter()
+        .map(Some)
+        .collect::<Vec<_>>()
+        .into_boxed_slice(),
       min_scores,
       skip_non_competitive_scores,
     }

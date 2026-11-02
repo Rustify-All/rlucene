@@ -110,7 +110,7 @@ where
 
     field_infos.hook = FieldInfosHook::Filter(FilterFieldInfosHook {
       filtered_names: filtered_names.clone(),
-      filtered,
+      filtered: filtered.into_boxed_slice(),
       filtered_has_vectors: has_vectors,
       filtered_has_postings: has_postings,
       filtered_has_prox: has_prox,

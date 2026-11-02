@@ -21,7 +21,7 @@ use crate::core::search::scorer::Scorer;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 
 pub struct DisjunctionDISIApproximation<S> {
-  all_scores: Vec<DisiWrapper<S>>,
+  all_scores: Box<[DisiWrapper<S>]>,
   sub_iterators: DisiPriorityQueue,
   cost: i64,
   #[cfg(debug_assertions)]
@@ -52,7 +52,7 @@ impl<S> DisjunctionDISIApproximation<S> {
     #[cfg(debug_assertions)]
     let initial_sub_iterator_count = sub_iterators.size();
     Ok(Self {
-      all_scores,
+      all_scores: all_scores.into_boxed_slice(),
       sub_iterators,
       cost,
       #[cfg(debug_assertions)]

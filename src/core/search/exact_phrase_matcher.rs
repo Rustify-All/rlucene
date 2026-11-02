@@ -36,7 +36,7 @@ pub struct ExactPhraseMatcher<IE, SS, const TOP_SCORES: bool = false> {
   pub(crate) impacts_approximation: ImpactsApproximationType<IE, SS>,
   match_cost: f32,
   pub(crate) score_mode: ScoreMode,
-  postings: Vec<PostingsAndPosition>,
+  postings: Box<[PostingsAndPosition]>,
 }
 impl<IE: ImpactsEnum, SS: SimScorer, const TOP_SCORES: bool> ApproximationDISI
   for ExactPhraseMatcher<IE, SS, TOP_SCORES>
@@ -146,7 +146,7 @@ where
       impacts_approximation,
       match_cost,
       score_mode,
-      postings: postings_and_positions,
+      postings: postings_and_positions.into_boxed_slice(),
     })
   }
   /**

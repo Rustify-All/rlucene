@@ -29,9 +29,9 @@ use crate::core::util::error::lucene_error::Result;
 /// `Vec<f32>` x, y arrays coordinates.
 #[derive(Clone, Debug)]
 pub struct XYPolygon {
-  x: Vec<f32>,
-  y: Vec<f32>,
-  holes: Vec<XYPolygon>,
+  x: Box<[f32]>,
+  y: Box<[f32]>,
+  holes: Box<[XYPolygon]>,
 
   /// minimum x of this polygon's bounding box area
   pub min_x: f32,
@@ -123,9 +123,9 @@ impl XYPolygon {
     };
 
     Ok(Self {
-      x,
-      y,
-      holes,
+      x: x.into_boxed_slice(),
+      y: y.into_boxed_slice(),
+      holes: holes.into_boxed_slice(),
       min_x,
       max_x,
       min_y,
@@ -140,7 +140,7 @@ impl XYPolygon {
 
   /// Borrows the internal x array
   pub fn get_poly_x(&self) -> &[f32] {
-    self.x.as_slice()
+    &self.x
   }
 
   /// Returns x value at given index
@@ -150,7 +150,7 @@ impl XYPolygon {
 
   /// Borrows the internal y array
   pub fn get_poly_y(&self) -> &[f32] {
-    self.y.as_slice()
+    &self.y
   }
 
   /// Returns y value at given index
@@ -160,7 +160,7 @@ impl XYPolygon {
 
   /// Borrows the internal holes array
   pub fn get_holes(&self) -> &[XYPolygon] {
-    self.holes.as_slice()
+    &self.holes
   }
 
   #[allow(dead_code)]

@@ -18,15 +18,17 @@ use crate::core::util::accountable::Accountable;
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::packed::monotonic_block_packed_reader::expected;
 use crate::core::util::packed::packed_long_values::INITIAL_PAGE_COUNT;
-use crate::core::util::ram_usage_estimator::size_of_vec;
+use crate::core::util::ram_usage_estimator::{size_of_slice, size_of_vec};
 
 pub(crate) struct MonotonicLongValues {
-  averages: Vec<f32>,
+  averages: Box<[f32]>,
 }
 
 impl MonotonicLongValues {
   pub(crate) fn new(averages: Vec<f32>) -> Self {
-    Self { averages }
+    Self {
+      averages: averages.into_boxed_slice(),
+    }
   }
   pub(crate) fn decode_block(&self, block: usize, dest: &mut [i64], count: usize) -> usize {
     let average = self.averages[block];
@@ -45,7 +47,7 @@ impl MonotonicLongValues {
 
 impl Accountable for MonotonicLongValues {
   fn ram_bytes_used(&self) -> Result<i64> {
-    Ok(size_of_vec(&self.averages))
+    Ok(size_of_slice(&self.averages))
   }
 }
 

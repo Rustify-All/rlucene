@@ -23,7 +23,7 @@ use crate::core::util::long_values::LongValuesEnum2;
 use crate::core::util::long_values::{LongValues, Zeroes};
 use crate::core::util::packed::abstract_block_packed_writer::{MAX_BLOCK_SIZE, MIN_BLOCK_SIZE};
 use crate::core::util::packed::{Format, FormatBehavior, PackedImpl, PackedInts};
-use crate::core::util::ram_usage_estimator::size_of_vec;
+use crate::core::util::ram_usage_estimator::size_of_slice;
 
 const BLOCK_SIZE: i32 = u8::BITS as i32; // #bits in a block
 const BLOCK_BITS: i32 = 3; //The #bits representing BLOCK_SIZE
@@ -38,9 +38,9 @@ pub struct MonotonicBlockPackedReader {
   block_shift: i32,
   block_mask: usize,
   value_count: usize,
-  min_values: Vec<i64>,
-  averages: Vec<f32>,
-  sub_readers: Vec<LongValuesEnum2<Zeroes, MonotonicLongValues>>,
+  min_values: Box<[i64]>,
+  averages: Box<[f32]>,
+  sub_readers: Box<[LongValuesEnum2<Zeroes, MonotonicLongValues>]>,
   sum_bpv: i64,
   total_byte_count: i64,
 }
@@ -100,7 +100,7 @@ impl MonotonicBlockPackedReader {
         sub_readers[i] = LongValuesEnum2::B(MonotonicLongValues {
           bits_per_values: bits_per_value,
           bpv_minus_block_size,
-          blocks,
+          blocks: blocks.into_boxed_slice(),
           mask_right,
         });
       }
@@ -110,9 +110,9 @@ impl MonotonicBlockPackedReader {
       block_shift,
       block_mask,
       value_count,
-      min_values,
-      averages,
-      sub_readers,
+      min_values: min_values.into_boxed_slice(),
+      averages: averages.into_boxed_slice(),
+      sub_readers: sub_readers.into_boxed_slice(),
       sum_bpv,
       total_byte_count,
     })
@@ -129,7 +129,7 @@ pub fn expected(origin: i64, average: f32, index: usize) -> i64 {
 pub struct MonotonicLongValues {
   bits_per_values: i32,
   bpv_minus_block_size: i32,
-  blocks: Vec<u8>,
+  blocks: Box<[u8]>,
   mask_right: u64,
 }
 impl LongValues for MonotonicLongValues {
@@ -195,9 +195,9 @@ impl Display for MonotonicBlockPackedReader {
 impl Accountable for MonotonicBlockPackedReader {
   fn ram_bytes_used(&self) -> Result<i64> {
     let mut size_in_bytes = 0;
-    size_in_bytes += size_of_vec(&self.min_values);
-    size_in_bytes += size_of_vec(&self.averages);
-    size_in_bytes += size_of_vec(&self.sub_readers);
+    size_in_bytes += size_of_slice(&self.min_values);
+    size_in_bytes += size_of_slice(&self.averages);
+    size_in_bytes += size_of_slice(&self.sub_readers);
     size_in_bytes += self.total_byte_count;
     Ok(size_in_bytes)
   }

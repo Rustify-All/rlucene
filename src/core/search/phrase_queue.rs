@@ -19,12 +19,12 @@ use crate::core::util::error::lucene_error::Result;
 use crate::core::util::priority_queue::Compare;
 
 pub(crate) struct PhraseQueueCmp {
-  pub(crate) phrase_positions: Vec<PhrasePositions>,
+  pub(crate) phrase_positions: Box<[PhrasePositions]>,
 }
 impl PhraseQueueCmp {
   pub(crate) fn new(pp: Vec<PhrasePositions>) -> Self {
     Self {
-      phrase_positions: pp,
+      phrase_positions: pp.into_boxed_slice(),
     }
   }
 }

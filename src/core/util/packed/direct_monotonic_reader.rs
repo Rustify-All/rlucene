@@ -32,11 +32,11 @@ use crate::core::util::ram_usage_estimator::size_of_vec;
 pub struct DirectMonotonicReader<R> {
   block_shift: i32,
   block_mask: usize,
-  readers: Vec<DirectPackedEnum<R>>,
+  readers: Box<[DirectPackedEnum<R>]>,
   has_merge_reader: bool,
-  mins: Vec<i64>,
-  avgs: Vec<f32>,
-  bpvs: Vec<u8>,
+  mins: Box<[i64]>,
+  avgs: Box<[f32]>,
+  bpvs: Box<[u8]>,
   slice: R,
 }
 
@@ -62,11 +62,11 @@ impl<R> DirectMonotonicReader<R> {
     Ok(DirectMonotonicReader {
       block_shift,
       block_mask,
-      readers,
+      readers: readers.into_boxed_slice(),
       has_merge_reader,
-      mins,
-      avgs,
-      bpvs,
+      mins: mins.into_boxed_slice(),
+      avgs: avgs.into_boxed_slice(),
+      bpvs: bpvs.into_boxed_slice(),
       slice,
     })
   }

@@ -62,8 +62,8 @@ where
   R: LeafReader,
 {
   field_infos: Arc<FieldInfos>,
-  parallel_reader_indices: Vec<usize>,
-  stored_fields_reader_indices: Vec<usize>,
+  parallel_reader_indices: Box<[usize]>,
+  stored_fields_reader_indices: Box<[usize]>,
   complete_reader_set: Vec<R>,
   close_sub_readers: bool,
   max_doc: i32,
@@ -329,8 +329,8 @@ where
 
     Ok(Self {
       field_infos,
-      parallel_reader_indices,
-      stored_fields_reader_indices,
+      parallel_reader_indices: parallel_reader_indices.into_boxed_slice(),
+      stored_fields_reader_indices: stored_fields_reader_indices.into_boxed_slice(),
       complete_reader_set,
       close_sub_readers,
       max_doc,

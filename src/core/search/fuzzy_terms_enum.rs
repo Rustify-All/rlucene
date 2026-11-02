@@ -461,13 +461,13 @@ pub trait AutomatonAttribute: Attribute {
 }
 
 pub struct AutomatonAttributeImpl {
-  automata: Vec<CompiledAutomaton>,
+  automata: Box<[CompiledAutomaton]>,
   term_length: usize,
 }
 impl AutomatonAttributeImpl {
   pub fn new() -> Self {
     Self {
-      automata: Vec::new(),
+      automata: Box::default(),
       term_length: 0,
     }
   }
@@ -490,7 +490,7 @@ impl AutomatonAttribute for AutomatonAttributeImpl {
   {
     let v = builder()?;
     self.term_length = v.get_term_length();
-    self.automata = v.build_automaton_set()?;
+    self.automata = v.build_automaton_set()?.into_boxed_slice();
     Ok(())
   }
 }

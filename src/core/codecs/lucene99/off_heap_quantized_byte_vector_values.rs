@@ -73,7 +73,7 @@ struct OffHeapQuantizedByteVectorValues<I, F> {
 struct Inner<I> {
   slice: I,
   last_ord: Option<usize>,
-  binary_value: Vec<u8>,
+  binary_value: Box<[u8]>,
   score_correction_constant: [f32; 1],
 }
 
@@ -96,7 +96,7 @@ impl<I, F> OffHeapQuantizedByteVectorValues<I, F> {
     let inner = Mutex::new(Inner {
       slice,
       last_ord: None,
-      binary_value: vec![0; dimension],
+      binary_value: vec![0; dimension].into_boxed_slice(),
       score_correction_constant: [0.0],
     });
     Self {
@@ -224,7 +224,7 @@ where
     if !same_ord {
       self.read_value(target_ord, &mut inner)?;
     }
-    Ok(inner.binary_value.clone())
+    Ok(inner.binary_value.to_vec())
   }
 
   type ByteVectorValues = DummyByteVectorValues;

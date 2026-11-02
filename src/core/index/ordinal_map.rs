@@ -29,7 +29,7 @@ use crate::core::util::packed::packed_long_values::{
 };
 use crate::core::util::packed::{Mutable, PackedInts, Reader};
 use crate::core::util::priority_queue::{Compare, PriorityQueue};
-use crate::core::util::ram_usage_estimator::size_of_vec;
+use crate::core::util::ram_usage_estimator::{size_of_slice, size_of_vec};
 use crate::core::util::{Sorter, ToInt};
 use std::mem;
 use std::rc::Rc;
@@ -180,7 +180,7 @@ pub struct OrdinalMap {
   pub(crate) global_ord_deltas: LongValuesEnum2<PackedLongValues, Zeroes>,
   /// globalOrd -> first segment container
   pub(crate) first_segments: LongValuesEnum2<PackedLongValues, Zeroes>,
-  segment_to_global_ords: Vec<SegmentToGlobalOrds>,
+  segment_to_global_ords: Box<[SegmentToGlobalOrds]>,
   /// the map from/to segment ids
   segment_map: SegmentMap,
   /// ram usage
@@ -428,7 +428,7 @@ impl OrdinalMap {
       first_segments: first_segments_lv,
       segment_map,
       ram_bytes_used,
-      segment_to_global_ords,
+      segment_to_global_ords: segment_to_global_ords.into_boxed_slice(),
     })
   }
   /// Given a segment number, return a [`LongValues`] instance that maps segment ordinals
@@ -514,8 +514,8 @@ where
 }
 
 pub struct SegmentMap {
-  new_to_old: Vec<i32>,
-  old_to_new: Vec<i32>,
+  new_to_old: Box<[i32]>,
+  old_to_new: Box<[i32]>,
 }
 
 impl SegmentMap {
@@ -525,8 +525,8 @@ impl SegmentMap {
     debug_assert_eq!(new_to_old, inverse(&old_to_new));
 
     Ok(Self {
-      new_to_old,
-      old_to_new,
+      new_to_old: new_to_old.into_boxed_slice(),
+      old_to_new: old_to_new.into_boxed_slice(),
     })
   }
 
@@ -540,7 +540,7 @@ impl SegmentMap {
 }
 impl Accountable for SegmentMap {
   fn ram_bytes_used(&self) -> Result<i64> {
-    Ok(size_of_vec(&self.new_to_old).saturating_add(size_of_vec(&self.old_to_new)))
+    Ok(size_of_slice(&self.new_to_old).saturating_add(size_of_slice(&self.old_to_new)))
   }
 }
 

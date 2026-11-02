@@ -31,10 +31,10 @@ use crate::core::util::math_util::MathUtil;
 pub(crate) const INNER_WINDOW_SIZE: i32 = 1 << 12;
 pub struct MaxScoreBulkScorer<S1, S2> {
   max_doc: i32,
-  all_scorers: Vec<DisiWrapper<S1>>,
+  all_scorers: Box<[DisiWrapper<S1>]>,
   // All scorers, sorted by increasing max score.
   pub(crate) all_scorers_idx: Vec<usize>,
-  scratch: Vec<usize>,
+  scratch: Box<[usize]>,
   // These are the last scorers from `allScorers` that are "essential", ie. required for a match to
   // have a competitive score.
   essential_queue: DisiPriorityQueue,
@@ -46,10 +46,10 @@ pub struct MaxScoreBulkScorer<S1, S2> {
   pub(crate) next_min_competitive_score: f32,
   cost: i64,
   pub(crate) scorable: Score,
-  pub(crate) max_score_sums: Vec<f64>,
+  pub(crate) max_score_sums: Box<[f64]>,
   filter: Option<DisiWrapper<S2>>,
   window_matches: [u64; (INNER_WINDOW_SIZE as usize) >> 6],
-  window_scores: Vec<f64>,
+  window_scores: Box<[f64]>,
   // Number of outer windows that have been evaluated
   num_outer_windows: usize,
   // Number of candidate matches so far
@@ -96,19 +96,19 @@ where
 
     Ok(Self {
       max_doc,
-      all_scorers,
+      all_scorers: all_scorers.into_boxed_slice(),
       all_scorers_idx,
-      scratch,
+      scratch: scratch.into_boxed_slice(),
       essential_queue,
       first_essential_scorer: 0,
       first_required_scorer: 0,
       next_min_competitive_score: 0.0,
       cost,
       scorable: Score::new(),
-      max_score_sums,
+      max_score_sums: max_score_sums.into_boxed_slice(),
       filter,
       window_matches,
-      window_scores,
+      window_scores: window_scores.into_boxed_slice(),
 
       num_outer_windows: 0,
       num_candidates: 0,

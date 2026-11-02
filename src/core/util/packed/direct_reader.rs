@@ -108,7 +108,7 @@ pub struct LongValuesImpl<R> {
   bits_per_value: i32,
   num_values: usize,
   base_offset: usize,
-  buffer: Vec<i64>,
+  buffer: Box<[i64]>,
   block_index: Option<usize>,
 }
 impl<R> LongValuesImpl<R> {
@@ -124,7 +124,7 @@ impl<R> LongValuesImpl<R> {
       bits_per_value,
       num_values,
       base_offset,
-      buffer,
+      buffer: buffer.into_boxed_slice(),
       block_index: None,
     }
   }

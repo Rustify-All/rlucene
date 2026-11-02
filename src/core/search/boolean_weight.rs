@@ -42,7 +42,7 @@ pub struct BooleanWeight<
 > where
   SIM: Similarity,
 {
-  pub(crate) weighted_clauses: Vec<WeightedBooleanClause<IRC, SIM>>,
+  pub(crate) weighted_clauses: Box<[WeightedBooleanClause<IRC, SIM>]>,
   pub(crate) query: BooleanQuery,
   pub(crate) score_mode: ScoreMode,
 }

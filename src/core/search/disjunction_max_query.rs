@@ -312,7 +312,7 @@ pub struct DisjunctionMaxWeight<
   parent_query: DisjunctionMaxQuery,
   tie_breaker_multiplier: f32,
   score_mode: ScoreMode,
-  weights: Vec<QueryWeight<IRC, SIM>>,
+  weights: Box<[QueryWeight<IRC, SIM>]>,
 }
 impl<IRC, SIM> DisjunctionMaxWeight<IRC, SIM>
 where
@@ -339,7 +339,7 @@ where
       parent_query: query,
       tie_breaker_multiplier,
       score_mode,
-      weights,
+      weights: weights.into_boxed_slice(),
     })
   }
 }

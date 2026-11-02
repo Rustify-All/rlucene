@@ -22,10 +22,10 @@ use crate::core::util::packed::bulk_operation::of;
 use crate::core::util::packed::format_behavior::PackedSingleBlockImpl;
 use crate::core::util::packed::mutable_packed64_enum::MutablePacked64Enum;
 use crate::core::util::packed::{Decoder, Encoder, Format, Mutable, PackedInts, Reader};
-use crate::core::util::ram_usage_estimator::size_of_vec;
+use crate::core::util::ram_usage_estimator::size_of_slice;
 
 pub(crate) struct Packed64SingleBlock<T> {
-  blocks: Vec<u64>,
+  blocks: Box<[u64]>,
   value_count: usize,
   bits_per_value: i32,
   sub_reader: T,
@@ -56,7 +56,7 @@ where
     let values_per_block = (64 / bits_per_value) as usize;
     let required_capacity = Self::required_capacity(value_count, values_per_block);
     Self {
-      blocks: vec![0; required_capacity],
+      blocks: vec![0; required_capacity].into_boxed_slice(),
       value_count,
       bits_per_value,
       sub_reader,
@@ -234,7 +234,7 @@ where
   T: Packed64SingleBlockBase,
 {
   fn ram_bytes_used(&self) -> Result<i64> {
-    Ok(size_of_vec(&self.blocks))
+    Ok(size_of_slice(&self.blocks))
   }
 }
 

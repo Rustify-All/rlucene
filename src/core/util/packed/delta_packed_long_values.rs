@@ -20,18 +20,18 @@ use crate::core::util::packed::monotonic_long_values::{
   MonotonicLongValues, MonotonicLongValuesBuilder,
 };
 use crate::core::util::packed::packed_long_values::INITIAL_PAGE_COUNT;
-use crate::core::util::ram_usage_estimator::size_of_vec;
+use crate::core::util::ram_usage_estimator::{size_of_slice, size_of_vec};
 
 pub(crate) struct DeltaPackedLongValues {
   pub(crate) sub_long_value: Option<MonotonicLongValues>,
-  pub(crate) mins: Vec<i64>,
+  pub(crate) mins: Box<[i64]>,
 }
 
 impl DeltaPackedLongValues {
   pub(crate) fn new(mins: Vec<i64>, sub_reader: Option<MonotonicLongValues>) -> Self {
     Self {
       sub_long_value: sub_reader,
-      mins,
+      mins: mins.into_boxed_slice(),
     }
   }
   pub(crate) fn decode_block(&self, block: usize, dest: &mut [i64], count: usize) -> usize {
@@ -56,7 +56,7 @@ impl DeltaPackedLongValues {
 
 impl Accountable for DeltaPackedLongValues {
   fn ram_bytes_used(&self) -> Result<i64> {
-    let mut size = size_of_vec(&self.mins);
+    let mut size = size_of_slice(&self.mins);
     if let Some(sub_reader) = &self.sub_long_value {
       size = size.saturating_add(sub_reader.ram_bytes_used()?);
     }

@@ -389,7 +389,7 @@ pub struct TFIDFScorer {
   idf: Explanation,
   boost: f32,
   query_weight: f32,
-  pub(crate) norm_table: Vec<f32>,
+  pub(crate) norm_table: Box<[f32]>,
   base: TFIDFSubEnum,
 }
 impl TFIDFScorer {
@@ -410,7 +410,7 @@ impl TFIDFScorer {
       idf,
       boost,
       query_weight,
-      norm_table,
+      norm_table: norm_table.into_boxed_slice(),
       base,
     })
   }

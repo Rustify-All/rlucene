@@ -409,7 +409,7 @@ where
 pub struct Euclidean<V> {
   values: V,
   const_multiplier: f32,
-  target_bytes: Vec<u8>,
+  target_bytes: Box<[u8]>,
 }
 
 impl<V> Euclidean<V> {
@@ -417,7 +417,7 @@ impl<V> Euclidean<V> {
     Self {
       values,
       const_multiplier,
-      target_bytes,
+      target_bytes: target_bytes.into_boxed_slice(),
     }
   }
 }
@@ -460,7 +460,7 @@ where
 pub struct DotProduct<V> {
   values: V,
   const_multiplier: f32,
-  target_bytes: Vec<u8>,
+  target_bytes: Box<[u8]>,
   offset_correction: f32,
   score_adjustment_function: ScoreAdjustmentFunction,
 }
@@ -476,7 +476,7 @@ impl<V> DotProduct<V> {
     Self {
       values,
       const_multiplier,
-      target_bytes,
+      target_bytes: target_bytes.into_boxed_slice(),
       offset_correction,
       score_adjustment_function,
     }
@@ -522,7 +522,7 @@ where
 pub struct CompressedInt4DotProduct<V> {
   values: V,
   const_multiplier: f32,
-  target_bytes: Vec<u8>,
+  target_bytes: Box<[u8]>,
   offset_correction: f32,
   score_adjustment_function: ScoreAdjustmentFunction,
 }
@@ -538,7 +538,7 @@ impl<V> CompressedInt4DotProduct<V> {
     Self {
       values,
       const_multiplier,
-      target_bytes,
+      target_bytes: target_bytes.into_boxed_slice(),
       offset_correction,
       score_adjustment_function,
     }
@@ -591,7 +591,7 @@ where
 pub struct Int4DotProduct<V> {
   values: V,
   const_multiplier: f32,
-  target_bytes: Vec<u8>,
+  target_bytes: Box<[u8]>,
   offset_correction: f32,
   score_adjustment_function: ScoreAdjustmentFunction,
 }
@@ -607,7 +607,7 @@ impl<V> Int4DotProduct<V> {
     Self {
       values,
       const_multiplier,
-      target_bytes,
+      target_bytes: target_bytes.into_boxed_slice(),
       offset_correction,
       score_adjustment_function,
     }

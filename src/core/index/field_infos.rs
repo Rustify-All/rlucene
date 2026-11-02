@@ -53,9 +53,9 @@ pub struct FieldInfos {
 
   parent_field: Option<Arc<FieldInfo>>,
   // Dense field numbers use the already sorted values; sparse numbers retain indexed slots.
-  by_number: Option<Vec<Option<Arc<FieldInfo>>>>,
+  by_number: Option<Box<[Option<Arc<FieldInfo>>]>>,
   by_name: HashMap<String, Arc<FieldInfo>>,
-  values: Vec<Arc<FieldInfo>>,
+  values: Box<[Arc<FieldInfo>]>,
   pub(crate) hook: FieldInfosHook,
 }
 
@@ -68,7 +68,7 @@ pub(crate) enum FieldInfosHook {
 
 pub(crate) struct FilterFieldInfosHook {
   pub(crate) filtered_names: Arc<HashSet<String>>,
-  pub(crate) filtered: Vec<Arc<FieldInfo>>,
+  pub(crate) filtered: Box<[Arc<FieldInfo>]>,
 
   // Copy of the private fields from FieldInfos
   // Renamed so as to be less confusing about which fields we're referring to
@@ -427,9 +427,9 @@ impl FieldInfos {
       has_vector_values,
       soft_deletes_field,
       parent_field,
-      by_number,
+      by_number: by_number.map(Vec::into_boxed_slice),
       by_name,
-      values,
+      values: values.into_boxed_slice(),
       hook: FieldInfosHook::Default,
     })
   }

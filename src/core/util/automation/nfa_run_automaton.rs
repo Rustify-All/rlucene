@@ -25,7 +25,7 @@ use crate::core::util::automation::state_set::StateSet;
 use crate::core::util::automation::transition::Transition;
 use crate::core::util::automation::transition_accessor::TransitionAccessor;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
-use crate::core::util::ram_usage_estimator::{size_of_hash_map, size_of_vec};
+use crate::core::util::ram_usage_estimator::{size_of_hash_map, size_of_slice, size_of_vec};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::hash::{Hash, Hasher};
@@ -50,8 +50,8 @@ pub struct NFARunAutomaton {
 }
 pub(crate) struct NFARunAutomatonTables {
   pub(crate) automaton: Automaton,
-  points: Vec<i32>,
-  classmap: Vec<u16>, // map from char number to class
+  points: Box<[i32]>,
+  classmap: Box<[u16]>, // map from char number to class
 }
 
 #[derive(Clone)]
@@ -86,8 +86,8 @@ impl NFARunAutomaton {
     let mut automaton_instance = NFARunAutomaton {
       tables: Arc::new(NFARunAutomatonTables {
         automaton,
-        points,
-        classmap,
+        points: points.into_boxed_slice(),
+        classmap: classmap.into_boxed_slice(),
       }),
       alphabet_size,
       dstates: Vec::with_capacity(10),
@@ -507,8 +507,8 @@ impl Accountable for NFARunAutomaton {
   fn ram_bytes_used(&self) -> Result<i64> {
     let mut size = (mem::size_of_val(self.tables.as_ref()) as i64)
       .saturating_add(self.tables.automaton.ram_bytes_used()?)
-      .saturating_add(size_of_vec(&self.tables.points))
-      .saturating_add(size_of_vec(&self.tables.classmap))
+      .saturating_add(size_of_slice(&self.tables.points))
+      .saturating_add(size_of_slice(&self.tables.classmap))
       .saturating_add(size_of_vec(&self.dstates))
       .saturating_add(size_of_hash_map(&self.state.dstate_to_ord));
 

@@ -20,7 +20,7 @@ use crate::core::util::SliceCopyOps;
 /// Wraps another [`Checksum`] with an internal buffer to speed up checksum
 /// calculations.
 pub struct BufferedChecksum<T> {
-  buffer: Vec<u8>,
+  buffer: Box<[u8]>,
   upto: usize,
   checksum: T,
 }
@@ -30,7 +30,7 @@ impl<T: Checksum> BufferedChecksum<T> {
   pub const DEFAULT_BUFFER_SIZE: usize = 1024;
   pub fn new(checksum: T) -> Self {
     Self {
-      buffer: vec![0; Self::DEFAULT_BUFFER_SIZE],
+      buffer: vec![0; Self::DEFAULT_BUFFER_SIZE].into_boxed_slice(),
       upto: 0,
       checksum,
     }
@@ -38,7 +38,7 @@ impl<T: Checksum> BufferedChecksum<T> {
   /// Creates a new [`BufferedChecksum`] with the specified `buffer_size`.
   pub fn with_buffer_size(checksum: T, buffer_size: usize) -> Self {
     Self {
-      buffer: vec![0; buffer_size],
+      buffer: vec![0; buffer_size].into_boxed_slice(),
       upto: 0,
       checksum,
     }

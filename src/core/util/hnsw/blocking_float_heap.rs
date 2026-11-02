@@ -32,12 +32,12 @@ pub struct BlockingFloatHeap {
   lock: Mutex<Inner>,
 }
 pub struct Inner {
-  heap: Vec<f32>,
+  heap: Box<[f32]>,
   size: usize,
 }
 impl BlockingFloatHeap {
   pub fn new(max_size: usize) -> Self {
-    let heap = vec![0f32; max_size + 1];
+    let heap = vec![0f32; max_size + 1].into_boxed_slice();
     let inner = Inner { heap, size: 0 };
     Self {
       max_size,

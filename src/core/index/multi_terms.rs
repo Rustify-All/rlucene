@@ -33,8 +33,8 @@ use std::borrow::Cow;
 
 /// Exposes flex API, merged from flex API of sub-segments.
 pub struct MultiTerms<T> {
-  subs: Vec<T>,
-  sub_slices: Vec<ReaderSlice>,
+  subs: Box<[T]>,
+  sub_slices: Box<[ReaderSlice]>,
   has_freqs: bool,
   has_offsets: bool,
   has_positions: bool,
@@ -71,8 +71,8 @@ where
     let has_payloads = has_positions && has_payloads_any;
 
     Ok(Self {
-      subs,
-      sub_slices,
+      subs: subs.into_boxed_slice(),
+      sub_slices: sub_slices.into_boxed_slice(),
       has_freqs,
       has_offsets,
       has_positions,

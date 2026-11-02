@@ -24,7 +24,7 @@ use crate::core::util::error::lucene_error::{LuceneError, Result};
 /// Implementation is based on [`LongHeap`](crate::core::util::long_heap::LongHeap).
 pub struct FloatHeap {
   max_size: usize,
-  heap: Vec<f32>,
+  heap: Box<[f32]>,
   size: usize,
 }
 
@@ -38,7 +38,7 @@ impl FloatHeap {
     }
     Ok(Self {
       max_size,
-      heap: vec![0.0; max_size + 1],
+      heap: vec![0.0; max_size + 1].into_boxed_slice(),
       size: 0,
     })
   }

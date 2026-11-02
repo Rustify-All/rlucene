@@ -57,14 +57,14 @@ use std::collections::VecDeque;
 /// For very small result sets it may be slower.
 pub struct TermOrdValComparator {
   /// Ords for each slot.
-  pub(crate) ords: Vec<i32>,
+  pub(crate) ords: Box<[i32]>,
   /// Values for each slot.
-  pub(crate) values: Vec<Option<BytesRef<Vec<u8>>>>,
+  pub(crate) values: Box<[Option<BytesRef<Vec<u8>>>]>,
   /// Which reader last copied a value into the slot. When
   ///   we compare two slots, we just compare-by-ord if the
   ///  readerGen is the same; else we must compare the
   ///  values (slower).
-  pub(crate) reader_gen: Vec<i32>,
+  pub(crate) reader_gen: Box<[i32]>,
   /// Gen of current reader we are on.
   pub(crate) current_reader_gen: i32,
   pub(crate) field: String,
@@ -99,9 +99,9 @@ impl TermOrdValComparator {
     let field = field.into();
     let can_skip_documents = pruning != Pruning::None;
     Self {
-      ords: vec![0; num_hits],
-      values: vec![None; num_hits],
-      reader_gen: vec![0; num_hits],
+      ords: vec![0; num_hits].into_boxed_slice(),
+      values: vec![None; num_hits].into_boxed_slice(),
+      reader_gen: vec![0; num_hits].into_boxed_slice(),
       current_reader_gen: -1,
       field,
       reverse,

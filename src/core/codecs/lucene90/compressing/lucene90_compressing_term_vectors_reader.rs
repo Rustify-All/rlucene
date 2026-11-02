@@ -1136,14 +1136,14 @@ impl BlockState {
 /// Immutable data shared by one term-vector field and its independent iterators.
 #[derive(Default)]
 pub struct TVTermData {
-  prefix_lengths: Vec<usize>,
-  suffix_lengths: Vec<usize>,
-  term_freqs: Vec<usize>,
-  position_index: Vec<usize>,
-  positions: Vec<i32>,
-  start_offsets: Vec<i32>,
-  lengths: Vec<i32>,
-  payload_index: Vec<usize>,
+  prefix_lengths: Box<[usize]>,
+  suffix_lengths: Box<[usize]>,
+  term_freqs: Box<[usize]>,
+  position_index: Box<[usize]>,
+  positions: Box<[i32]>,
+  start_offsets: Box<[i32]>,
+  lengths: Box<[i32]>,
+  payload_index: Box<[usize]>,
 }
 
 impl TVTermData {
@@ -1160,24 +1160,24 @@ impl TVTermData {
     payload_index: Vec<usize>,
   ) -> Self {
     Self {
-      prefix_lengths,
-      suffix_lengths,
-      term_freqs,
-      position_index,
-      positions,
-      start_offsets,
-      lengths,
-      payload_index,
+      prefix_lengths: prefix_lengths.into_boxed_slice(),
+      suffix_lengths: suffix_lengths.into_boxed_slice(),
+      term_freqs: term_freqs.into_boxed_slice(),
+      position_index: position_index.into_boxed_slice(),
+      positions: positions.into_boxed_slice(),
+      start_offsets: start_offsets.into_boxed_slice(),
+      lengths: lengths.into_boxed_slice(),
+      payload_index: payload_index.into_boxed_slice(),
     }
   }
 }
 
 pub struct TVFields {
-  field_nums: Vec<usize>,
-  field_flags: Vec<u8>,
-  field_lengths: Vec<usize>,
+  field_nums: Box<[usize]>,
+  field_flags: Box<[u8]>,
+  field_lengths: Box<[usize]>,
 
-  term_data: Vec<Rc<TVTermData>>,
+  term_data: Box<[Rc<TVTermData>]>,
 
   payload_offset: usize,
   payload_length: usize,
@@ -1214,11 +1214,11 @@ impl TVFields {
 
     Ok(Self {
       // Reuse the document's offsets buffer for its validated field numbers.
-      field_nums: field_num_offs,
-      field_flags,
-      field_lengths,
+      field_nums: field_num_offs.into_boxed_slice(),
+      field_flags: field_flags.into_boxed_slice(),
+      field_lengths: field_lengths.into_boxed_slice(),
 
-      term_data,
+      term_data: term_data.into_boxed_slice(),
       payload_offset,
       payload_length,
       suffix_bytes,

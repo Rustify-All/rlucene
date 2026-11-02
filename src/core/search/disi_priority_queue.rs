@@ -21,13 +21,13 @@ use crate::core::util::error::lucene_error::{LuceneError, Result};
 #[derive(Default)] // for std::mem::take
 pub struct DisiPriorityQueue {
   size: usize,
-  pub(crate) heap: Vec<usize>,
+  pub(crate) heap: Box<[usize]>,
 }
 impl DisiPriorityQueue {
   pub fn new(max_size: usize) -> Self {
     Self {
       size: 0,
-      heap: vec![0; max_size],
+      heap: vec![0; max_size].into_boxed_slice(),
     }
   }
 

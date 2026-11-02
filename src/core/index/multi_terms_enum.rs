@@ -36,9 +36,9 @@ use crate::core::util::{Comparator, ToInt};
 pub struct MultiTermsEnum<TE> {
   queue: TermMergeQueue<TE>,
   /// Current subs that have at least one term for this field
-  current_subs: Vec<usize>,
-  top: Vec<usize>,
-  sub_docs: Vec<EnumWithSlice>,
+  current_subs: Box<[usize]>,
+  top: Box<[usize]>,
+  sub_docs: Box<[EnumWithSlice]>,
   last_seek_exact: bool,
   has_last_seek: bool,
   last_seek_scratch: BytesRefBuilder<Vec<u8>>,
@@ -69,9 +69,9 @@ where
     let queue = TermMergeQueue::new(len, all_terms_enum_with_slice)?;
     Ok(Self {
       queue,
-      current_subs,
-      top,
-      sub_docs,
+      current_subs: current_subs.into_boxed_slice(),
+      top: top.into_boxed_slice(),
+      sub_docs: sub_docs.into_boxed_slice(),
       last_seek_exact: false,
       has_last_seek: false,
       last_seek_scratch: BytesRefBuilder::new(),
@@ -827,7 +827,7 @@ where
   }
 }
 struct TermMergeQueueCmp<TE> {
-  all_terms_enum_with_slice: Vec<TermsEnumWithSlice<TE>>,
+  all_terms_enum_with_slice: Box<[TermsEnumWithSlice<TE>]>,
 }
 impl<TE> TermMergeQueueCmp<TE>
 where
@@ -835,7 +835,7 @@ where
 {
   fn new(all_terms_enum_with_slice: Vec<TermsEnumWithSlice<TE>>) -> Self {
     Self {
-      all_terms_enum_with_slice,
+      all_terms_enum_with_slice: all_terms_enum_with_slice.into_boxed_slice(),
     }
   }
 }

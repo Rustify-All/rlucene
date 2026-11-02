@@ -36,8 +36,8 @@ pub struct MultiFields<F>
 where
   F: Fields,
 {
-  pub(crate) subs: Vec<F>,
-  sub_slices: Vec<ReaderSlice>,
+  pub(crate) subs: Box<[F]>,
+  sub_slices: Box<[ReaderSlice]>,
   terms: RefCell<HashMap<String, Rc<TermsType<F>>>>,
 }
 pub type TermsType<F> = MultiTerms<<F as Fields>::Terms>;
@@ -48,8 +48,8 @@ where
   /// Creates a new instance.
   pub fn new(subs: Vec<F>, sub_slices: Vec<ReaderSlice>) -> Self {
     Self {
-      subs,
-      sub_slices,
+      subs: subs.into_boxed_slice(),
+      sub_slices: sub_slices.into_boxed_slice(),
       terms: RefCell::new(HashMap::new()),
     }
   }

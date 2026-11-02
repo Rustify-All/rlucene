@@ -82,8 +82,8 @@ pub struct PointRangeQuery {
 
 struct PointRangeQueryData {
   field: String,
-  lower: Vec<u8>,
-  upper: Vec<u8>,
+  lower: Box<[u8]>,
+  upper: Box<[u8]>,
 }
 impl Debug for PointRangeQuery {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -155,8 +155,8 @@ impl PointRangeQuery {
       bytes_per_dim,
       points: Arc::new(PointRangeQueryData {
         field,
-        lower: lower_point,
-        upper: upper_point,
+        lower: lower_point.into_boxed_slice(),
+        upper: upper_point.into_boxed_slice(),
       }),
       sub: sub.into(),
     })

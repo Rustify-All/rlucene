@@ -36,7 +36,7 @@ pub struct PhrasePositions {
   /// Index within the repetition group.
   pub(crate) rpt_ind: usize,
   /// Terms associated with this position, used for repetition initialization.
-  pub(crate) terms: Vec<Term>,
+  pub(crate) terms: Box<[Term]>,
 }
 impl PhrasePositions {
   pub(crate) fn new(postings: usize, offset: i32, ord: usize, terms: Vec<Term>) -> Result<Self> {
@@ -44,7 +44,7 @@ impl PhrasePositions {
       postings_idx: postings,
       offset,
       ord,
-      terms,
+      terms: terms.into_boxed_slice(),
       position: 0,
       count: 0,
       rpt_group: None,

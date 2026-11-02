@@ -16,7 +16,7 @@
  */
 use crate::core::util::accountable::Accountable;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
-use crate::core::util::ram_usage_estimator::size_of_vec;
+use crate::core::util::ram_usage_estimator::{size_of_slice, size_of_vec};
 use std::cmp;
 #[cfg(test)]
 use std::collections::HashMap;
@@ -26,7 +26,7 @@ use std::collections::HashMap;
 /// This data structure requires about 22 bytes per entry on average (between 16 and 28).
 pub struct FrequencyTrackingRingBuffer {
   max_size: usize,
-  buffer: Vec<i32>,
+  buffer: Box<[i32]>,
   position: usize,
   frequencies: IntBag,
 }
@@ -49,7 +49,7 @@ impl FrequencyTrackingRingBuffer {
 
     Ok(Self {
       max_size,
-      buffer,
+      buffer: buffer.into_boxed_slice(),
       position: 0,
       frequencies,
     })
@@ -84,7 +84,7 @@ impl FrequencyTrackingRingBuffer {
 }
 impl Accountable for FrequencyTrackingRingBuffer {
   fn ram_bytes_used(&self) -> Result<i64> {
-    Ok(size_of_vec(&self.buffer).saturating_add(self.frequencies.ram_bytes_used()?))
+    Ok(size_of_slice(&self.buffer).saturating_add(self.frequencies.ram_bytes_used()?))
   }
 }
 

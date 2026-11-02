@@ -59,7 +59,7 @@ pub struct PhraseQuery {
   id: Identity,
   slop: usize,
   terms: Arc<Vec<Term>>,
-  positions: Arc<Vec<usize>>,
+  positions: Arc<Box<[usize]>>,
 }
 impl PhraseQuery {
   /// Create a phrase query which will match documents that contain the given
@@ -210,7 +210,7 @@ impl PhraseQuery {
       id: Identity::new(),
       slop,
       terms: terms.into(),
-      positions: Arc::new(positions),
+      positions: Arc::new(positions.into_boxed_slice()),
     })
   }
 }

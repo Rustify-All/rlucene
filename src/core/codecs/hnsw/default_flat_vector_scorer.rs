@@ -448,7 +448,7 @@ fn score_byte_vectors<BV: ByteVectorValues, Sim: VectorSimilarity>(
 
 pub struct FloatVectorScorer<FV, Sim: VectorSimilarity = VectorSimilarityFunction> {
   values: FV,
-  query: Vec<f32>,
+  query: Box<[f32]>,
   similarity_function: Sim,
 }
 
@@ -456,7 +456,7 @@ impl<FV, Sim: VectorSimilarity> FloatVectorScorer<FV, Sim> {
   pub(crate) fn new(values: FV, query: Vec<f32>, similarity_function: Sim) -> Self {
     Self {
       values,
-      query,
+      query: query.into_boxed_slice(),
       similarity_function,
     }
   }
@@ -478,7 +478,7 @@ where
   fn score_mapped_float(&self, node: usize, vector: &[f32]) -> Result<f32> {
     match self
       .values
-      .compare_mapped_float(self.query.as_slice(), vector, self.similarity_function)
+      .compare_mapped_float(&self.query, vector, self.similarity_function)
     {
       Some(result) => result,
       None => self.score(node),
@@ -491,7 +491,7 @@ where
 
     self
       .similarity_function
-      .compare_f32(self.query.as_slice(), value.as_ref())
+      .compare_f32(&self.query, value.as_ref())
   }
 
   fn max_ord(&self) -> usize {
@@ -517,14 +517,14 @@ where
 }
 pub struct ByteVectorScorer<BV, Sim: VectorSimilarity = VectorSimilarityFunction> {
   values: BV,
-  query: Vec<u8>,
+  query: Box<[u8]>,
   similarity_function: Sim,
 }
 impl<BV, Sim: VectorSimilarity> ByteVectorScorer<BV, Sim> {
   pub(crate) fn new(values: BV, query: Vec<u8>, similarity_function: Sim) -> Self {
     Self {
       values,
-      query,
+      query: query.into_boxed_slice(),
       similarity_function,
     }
   }
@@ -538,7 +538,7 @@ where
     let value = self.values.vector_value(node)?;
     self
       .similarity_function
-      .compare_u8(self.query.as_slice(), value.as_ref())
+      .compare_u8(&self.query, value.as_ref())
   }
 
   fn max_ord(&self) -> usize {

@@ -35,7 +35,7 @@ use smallvec::SmallVec;
 /// block of postings.
 pub struct BlockMaxConjunctionBulkScorer<S> {
   scorable: DocAndScore,
-  sum_of_other_clauses: Vec<f64>,
+  sum_of_other_clauses: Box<[f64]>,
   max_doc: i32,
   scorers: Vec<S>,
 }
@@ -67,7 +67,7 @@ where
     let scorers = scorers_list;
     Ok(Self {
       scorable: DocAndScore::new(0.0),
-      sum_of_other_clauses: vec![f64::INFINITY; scorers.len()],
+      sum_of_other_clauses: vec![f64::INFINITY; scorers.len()].into_boxed_slice(),
       max_doc,
       scorers,
     })

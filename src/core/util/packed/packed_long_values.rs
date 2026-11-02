@@ -381,7 +381,7 @@ impl Accountable for Builder {
 
 pub struct PackedLongValuesIterator<V = PackedLongValues> {
   packed_long_values: V,
-  current_values: Vec<i64>,
+  current_values: Box<[i64]>,
   v_off: usize,
   p_off: usize,
   current_count: usize,
@@ -390,7 +390,8 @@ pub struct PackedLongValuesIterator<V = PackedLongValues> {
 impl<V: Borrow<PackedLongValues>> PackedLongValuesIterator<V> {
   pub fn new(packed_long_values: V) -> Result<Self> {
     let values = packed_long_values.borrow();
-    let current_values = vec![0; values.size.min((values.page_mask + 1) as i64) as usize];
+    let current_values =
+      vec![0; values.size.min((values.page_mask + 1) as i64) as usize].into_boxed_slice();
     let mut iterator = PackedLongValuesIterator {
       packed_long_values,
       current_values,

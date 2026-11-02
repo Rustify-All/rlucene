@@ -62,7 +62,7 @@ pub struct LatLonDocValuesQuery {
 }
 
 struct LatLonDocValuesQueryData {
-  geometries: Vec<LatLonGeometryEnum>,
+  geometries: Box<[LatLonGeometryEnum]>,
   component2d: Arc<LatLonGeometryType<<LatLonGeometryEnum as Geometry>::Component2D>>,
 }
 
@@ -94,7 +94,7 @@ impl LatLonDocValuesQuery {
     }
     let component2d = Arc::new(lat_lon_geometry::create(geometries.as_slice())?);
     let data = Arc::new(LatLonDocValuesQueryData {
-      geometries,
+      geometries: geometries.into_boxed_slice(),
       component2d,
     });
     Ok(Self {
@@ -303,7 +303,7 @@ where
           )),
           QueryRelation::Contains => LatLonDocValuesTwoPhaseIterator::Contains(ContainsTPI::new(
             values,
-            self.query.data.geometries.as_slice(),
+            self.query.data.geometries.as_ref(),
           )?),
         };
         let scorer = ConstantScoreScorer::from_tpi(self.boost, self.score_mode, iterator);

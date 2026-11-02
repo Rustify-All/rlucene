@@ -21,7 +21,7 @@ use crate::core::util::accountable::Accountable;
 use crate::core::util::bit_set::{BitSet, check_unpositioned};
 use crate::core::util::bits::Bits;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
-use crate::core::util::ram_usage_estimator::size_of_vec;
+use crate::core::util::ram_usage_estimator::size_of_slice;
 use crate::core::util::{HasIdentity, SliceCopyOps, TryIntoInt};
 use smallvec::SmallVec;
 
@@ -62,8 +62,8 @@ fn block_count(length: usize) -> usize {
 /// This is an internal API.
 #[derive(Default)]
 pub struct SparseFixedBitSet {
-  indices: Vec<u64>,
-  bits: Vec<SmallVec<[u64; 4]>>,
+  indices: Box<[u64]>,
+  bits: Box<[SmallVec<[u64; 4]>]>,
   length: usize,
   non_zero_long_count: usize,
   ram_bytes_used: i64,
@@ -76,9 +76,9 @@ impl SparseFixedBitSet {
       return Err(LuceneError::illegal_argument("length needs to be >= 1"));
     }
     let block_count = block_count(length);
-    let indices = vec![0; block_count];
-    let bits = vec![SmallVec::<[u64; 4]>::new(); block_count];
-    let ram_bytes_used = size_of_vec(&indices).saturating_add(size_of_vec(&bits));
+    let indices = vec![0; block_count].into_boxed_slice();
+    let bits = vec![SmallVec::<[u64; 4]>::new(); block_count].into_boxed_slice();
+    let ram_bytes_used = size_of_slice(&indices).saturating_add(size_of_slice(&bits));
     Ok(SparseFixedBitSet {
       indices,
       bits,
@@ -468,7 +468,7 @@ impl BitSet for SparseFixedBitSet {
     }
     self.indices.fill(0);
     self.non_zero_long_count = 0;
-    self.ram_bytes_used = size_of_vec(&self.indices).saturating_add(size_of_vec(&self.bits));
+    self.ram_bytes_used = size_of_slice(&self.indices).saturating_add(size_of_slice(&self.bits));
     Ok(())
   }
 

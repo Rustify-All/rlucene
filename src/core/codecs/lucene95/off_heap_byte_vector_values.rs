@@ -60,7 +60,7 @@ struct OffHeapByteVectorValues<I, F> {
 pub struct Inner<I> {
   pub(crate) slice: I,
   pub(crate) last_ord: Option<usize>,
-  pub(crate) binary_value: Vec<u8>,
+  pub(crate) binary_value: Box<[u8]>,
 }
 
 impl<I, F> OffHeapByteVectorValues<I, F> {
@@ -75,7 +75,7 @@ impl<I, F> OffHeapByteVectorValues<I, F> {
     let inner = Mutex::new(Inner {
       slice,
       last_ord: None,
-      binary_value: vec![0; byte_size],
+      binary_value: vec![0; byte_size].into_boxed_slice(),
     });
     Self {
       dimension,
@@ -172,7 +172,7 @@ where
       inner.last_ord = Some(target_ord);
     }
     Ok(parking_lot::MutexGuard::map(inner, |inner| {
-      inner.binary_value.as_mut_slice()
+      inner.binary_value.as_mut()
     }))
   }
 

@@ -21,7 +21,7 @@ use crate::core::util::error::lucene_error::Result;
 use crate::core::util::packed::bulk_operation::of;
 use crate::core::util::packed::format_behavior::{FormatBehavior, PackedImpl};
 use crate::core::util::packed::{Decoder, Encoder, Format, Mutable, PackedInts, Reader};
-use crate::core::util::ram_usage_estimator::size_of_vec;
+use crate::core::util::ram_usage_estimator::size_of_slice;
 
 /// Space-optimized random access array of values with a fixed number of bits
 /// per value. Values are packed contiguously.
@@ -42,7 +42,7 @@ use crate::core::util::ram_usage_estimator::size_of_vec;
 /// See [LUCENE-4062](https://issues.apache.org/jira/browse/LUCENE-4062) for details.
 pub struct Packed64 {
   /// Values are stored contiguously in the blocks array.
-  blocks: Vec<u64>,
+  blocks: Box<[u64]>,
   /// A right-aligned mask of width `bits_per_value` used by the `get`
   /// method.
   mask_right: u64,
@@ -83,7 +83,7 @@ impl Packed64 {
     let bpv_minus_block_size = bits_per_value - Self::BLOCK_SIZE;
 
     Self {
-      blocks,
+      blocks: blocks.into_boxed_slice(),
       mask_right,
       bpv_minus_block_size,
       value_count,
@@ -200,7 +200,7 @@ impl Reader for Packed64 {
 
 impl Accountable for Packed64 {
   fn ram_bytes_used(&self) -> Result<i64> {
-    Ok(size_of_vec(&self.blocks))
+    Ok(size_of_slice(&self.blocks))
   }
 }
 

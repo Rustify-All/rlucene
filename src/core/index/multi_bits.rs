@@ -29,8 +29,8 @@ use std::fmt::{Display, Formatter};
 /// **NOTE:** This is very costly, as every lookup must perform a binary search
 /// to locate the correct sub-reader.
 pub struct MultiBits<B> {
-  subs: Vec<Option<B>>,
-  starts: Vec<usize>,
+  subs: Box<[Option<B>]>,
+  starts: Box<[usize]>,
   default_value: bool,
   id: Identity,
 }
@@ -102,8 +102,8 @@ impl<B> MultiBits<B> {
   pub fn new(subs: Vec<Option<B>>, starts: Vec<usize>, default_value: bool) -> Self {
     debug_assert_eq!(starts.len(), subs.len() + 1);
     Self {
-      subs,
-      starts,
+      subs: subs.into_boxed_slice(),
+      starts: starts.into_boxed_slice(),
       default_value,
       id: Identity::new(),
     }

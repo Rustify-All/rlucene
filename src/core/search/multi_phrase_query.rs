@@ -743,11 +743,13 @@ where
 }
 
 struct DocsQueueCmp<P> {
-  subs: Vec<P>,
+  subs: Box<[P]>,
 }
 impl<P> DocsQueueCmp<P> {
   pub fn new(subs: Vec<P>) -> Self {
-    Self { subs }
+    Self {
+      subs: subs.into_boxed_slice(),
+    }
   }
 }
 impl<P> Compare<usize> for DocsQueueCmp<P>
@@ -764,7 +766,6 @@ where
 /// Queue of terms for a single document.
 /// It's a sorted array of all the positions from all the postings.
 struct PositionsQueue {
-  array_size: usize,
   index: usize,
   size: usize,
   array: Vec<i32>,
@@ -772,17 +773,15 @@ struct PositionsQueue {
 
 impl PositionsQueue {
   fn new() -> Self {
-    let array_size = 16;
     Self {
-      array_size,
       index: 0,
       size: 0,
-      array: vec![0; array_size],
+      array: vec![0; 16],
     }
   }
 
   fn add(&mut self, i: i32) {
-    if self.size == self.array_size {
+    if self.size == self.array.len() {
       self.grow_array();
     }
 
@@ -810,8 +809,7 @@ impl PositionsQueue {
   }
 
   fn grow_array(&mut self) {
-    self.array.resize(self.array_size * 2, 0);
-    self.array_size *= 2;
+    self.array.resize(self.array.len() * 2, 0);
   }
 }
 struct PostingsAndPosition {

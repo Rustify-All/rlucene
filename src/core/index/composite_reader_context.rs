@@ -27,7 +27,7 @@ pub struct CompositeReaderContext<CR>
 where
   CR: CompositeReader,
 {
-  leaves: Vec<LeafReaderContext<CR::LeafReader>>,
+  leaves: Box<[LeafReaderContext<CR::LeafReader>]>,
   reader: CR,
   base: IndexReaderContextBase,
 }
@@ -41,7 +41,7 @@ where
   let max_doc = builder.max_doc;
   let leaves = builder.leaves;
   let mut ctx = CompositeReaderContext {
-    leaves,
+    leaves: leaves.into_boxed_slice(),
     reader,
     base,
   };

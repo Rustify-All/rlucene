@@ -791,7 +791,7 @@ where
   graph_level_node_offsets: DirectMonotonicReader<I::RandomAccessSlice>,
   graph_level_node_index_offsets: Arc<Vec<usize>>,
   // Allocated to be M*2 to track the current neighbors being explored
-  current_neighbors_buffer: Vec<usize>,
+  current_neighbors_buffer: Box<[usize]>,
 }
 impl<I> OffHeapHnswGraph<I>
 where
@@ -838,7 +838,7 @@ where
       arc: 0,
       graph_level_node_offsets,
       graph_level_node_index_offsets: Arc::clone(&entry.graph_level_node_index_offsets),
-      current_neighbors_buffer,
+      current_neighbors_buffer: current_neighbors_buffer.into_boxed_slice(),
     })
   }
 }

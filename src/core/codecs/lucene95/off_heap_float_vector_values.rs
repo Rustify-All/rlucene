@@ -63,7 +63,7 @@ struct OffHeapFloatVectorValues<I, F> {
 pub struct Inner<I> {
   pub(crate) slice: I,
   pub(crate) last_ord: Option<usize>,
-  pub(crate) value: Vec<f32>,
+  pub(crate) value: Box<[f32]>,
 }
 impl<I, F> OffHeapFloatVectorValues<I, F> {
   fn new(
@@ -77,7 +77,7 @@ impl<I, F> OffHeapFloatVectorValues<I, F> {
     let inner = Inner {
       slice,
       last_ord: None,
-      value: vec![0.0; dimension],
+      value: vec![0.0; dimension].into_boxed_slice(),
     };
     Self {
       dimension,
@@ -202,7 +202,7 @@ where
       inner.last_ord = Some(target_ord);
     }
 
-    Ok(MutexGuard::map(inner, |inner| inner.value.as_mut_slice()))
+    Ok(MutexGuard::map(inner, |inner| inner.value.as_mut()))
   }
 
   type FloatVectorValues = DummyFloatVectorValues;

@@ -25,8 +25,8 @@ use std::fmt::{Display, Formatter};
 /// Exposes [`PostingsEnum`], merged from [`PostingsEnum`] API of sub-segments.
 pub struct MultiPostingsEnum<PE> {
   parent: Identity,
-  pub(crate) sub_postings_enums: Vec<Option<PE>>,
-  subs: Vec<EnumWithSlice>,
+  pub(crate) sub_postings_enums: Box<[Option<PE>]>,
+  subs: Box<[EnumWithSlice]>,
   num_subs: usize,
   upto: Option<usize>,
   current: Option<usize>,
@@ -46,8 +46,8 @@ impl<PE> MultiPostingsEnum<PE> {
     }
     Self {
       parent,
-      sub_postings_enums,
-      subs,
+      sub_postings_enums: sub_postings_enums.into_boxed_slice(),
+      subs: subs.into_boxed_slice(),
       num_subs: 0,
       upto: None,
       current: None,

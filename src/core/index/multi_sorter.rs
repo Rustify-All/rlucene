@@ -77,7 +77,7 @@ impl MultiSorter {
 
   fn sort_with_providers<CR, F, const SINGLE: bool>(
     readers: &[CR],
-    reverse_muls: &[i32],
+    reverse_muls: &[i8],
     mut get_values: F,
   ) -> Result<Option<Vec<MergeStateDocMap<CR>>>>
   where
@@ -217,7 +217,7 @@ type ParentOrDirectComparable<CP> = ComparableProviderEnum2<
 
 struct SingleFieldMergeSortVisitor<'a, CR> {
   readers: &'a [CR],
-  reverse_mul: i32,
+  reverse_mul: i8,
 }
 
 impl<CR> ComparableProvidersVisitor for SingleFieldMergeSortVisitor<'_, CR>
@@ -265,7 +265,7 @@ where
 {
   fn sort_single<CP: ComparableProvider>(
     readers: &[CR],
-    reverse_mul: i32,
+    reverse_mul: i8,
     mut providers: Vec<CP>,
   ) -> Result<Option<Vec<MergeStateDocMap<CR>>>> {
     MultiSorter::sort_with_providers::<CR, _, true>(
@@ -283,7 +283,7 @@ pub(crate) struct LeafAndDocId<B> {
   reader_index: usize,
   live_docs: Option<B>,
   max_doc: i32,
-  values_as_comparable_longs: Vec<i64>,
+  values_as_comparable_longs: Box<[i64]>,
   doc_id: i32,
 }
 impl<B> LeafAndDocId<B> {
@@ -292,7 +292,7 @@ impl<B> LeafAndDocId<B> {
       reader_index,
       live_docs,
       max_doc,
-      values_as_comparable_longs: vec![0i64; num_comparables],
+      values_as_comparable_longs: vec![0i64; num_comparables].into_boxed_slice(),
       doc_id: 0,
     }
   }
@@ -300,10 +300,10 @@ impl<B> LeafAndDocId<B> {
 
 struct LeafAndDocIDCmp<'a, const SINGLE: bool> {
   comparables_len: usize,
-  reverse_muls: &'a [i32],
+  reverse_muls: &'a [i8],
 }
 impl<'a, const SINGLE: bool> LeafAndDocIDCmp<'a, SINGLE> {
-  fn new(comparables_len: usize, reverse_muls: &'a [i32]) -> Self {
+  fn new(comparables_len: usize, reverse_muls: &'a [i8]) -> Self {
     LeafAndDocIDCmp {
       comparables_len,
       reverse_muls,
@@ -320,7 +320,7 @@ where
         .cmp(&b.values_as_comparable_longs[0])
         .to_int();
       if cmp != 0 {
-        return Ok(self.reverse_muls[0] * cmp < 0);
+        return Ok(i32::from(self.reverse_muls[0]) * cmp < 0);
       }
     } else {
       for i in 0..self.comparables_len {
@@ -329,7 +329,7 @@ where
           .to_int();
 
         if cmp != 0 {
-          return Ok(self.reverse_muls[i] * cmp < 0);
+          return Ok(i32::from(self.reverse_muls[i]) * cmp < 0);
         }
       }
     }

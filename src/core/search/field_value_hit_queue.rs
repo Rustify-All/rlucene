@@ -128,16 +128,16 @@ impl fmt::Display for Entry {
 
 /// An implementation of FieldValueHitQueue which is optimized in case there is just one comparator.
 pub struct OneComparatorComparator {
-  one_comparator: Vec<FieldComparatorEnum>,
-  one_reverse_mul: Vec<i32>,
+  one_comparator: Box<[FieldComparatorEnum]>,
+  one_reverse_mul: Box<[i32]>,
 }
 impl OneComparatorComparator {
   pub fn new(one_comparator: Vec<FieldComparatorEnum>, one_reverse_mul: Vec<i32>) -> Self {
     debug_assert_eq!(one_comparator.len(), one_reverse_mul.len());
     debug_assert!(one_comparator.len() == 1);
     Self {
-      one_comparator,
-      one_reverse_mul,
+      one_comparator: one_comparator.into_boxed_slice(),
+      one_reverse_mul: one_reverse_mul.into_boxed_slice(),
     }
   }
 }
@@ -158,8 +158,8 @@ impl Compare<Entry> for OneComparatorComparator {
 }
 /// An implementation of FieldValueHitQueue which is optimized in case there is more than one comparator.
 pub struct MultiComparatorsComparator {
-  comparators: Vec<FieldComparatorEnum>,
-  reverse_mul: Vec<i32>,
+  comparators: Box<[FieldComparatorEnum]>,
+  reverse_mul: Box<[i32]>,
 }
 
 impl MultiComparatorsComparator {
@@ -170,8 +170,8 @@ impl MultiComparatorsComparator {
       "comparators and reverse_mul length must match"
     );
     Self {
-      comparators,
-      reverse_mul,
+      comparators: comparators.into_boxed_slice(),
+      reverse_mul: reverse_mul.into_boxed_slice(),
     }
   }
 }
@@ -226,8 +226,8 @@ impl PriorityQueue<Entry, FieldValueHitQueueComparator> {
   }
   pub fn get_reverse_mul(&self) -> &[i32] {
     match &self.compare {
-      CompareEnum2::A(one_comp) => one_comp.one_reverse_mul.as_slice(),
-      CompareEnum2::B(multi_comp) => multi_comp.reverse_mul.as_slice(),
+      CompareEnum2::A(one_comp) => &one_comp.one_reverse_mul,
+      CompareEnum2::B(multi_comp) => &multi_comp.reverse_mul,
     }
   }
   pub fn get_comparators(&self) -> &[FieldComparatorEnum] {

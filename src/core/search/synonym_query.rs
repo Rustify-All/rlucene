@@ -99,7 +99,7 @@ pub struct SynonymQuery {
 
 #[derive(Clone)]
 struct SynonymQueryData {
-  terms: Vec<TermAndBoost>,
+  terms: Box<[TermAndBoost]>,
   field: String,
 }
 
@@ -107,7 +107,10 @@ impl SynonymQuery {
   fn new(terms: Vec<TermAndBoost>, field: String) -> Self {
     Self {
       id: Identity::new(),
-      data: Arc::new(SynonymQueryData { terms, field }),
+      data: Arc::new(SynonymQueryData {
+        terms: terms.into_boxed_slice(),
+        field,
+      }),
     }
   }
 
@@ -1738,7 +1741,7 @@ pub struct SynonymScorerSupplier<
 {
   cost: i64,
   term_states: Arc<Vec<TermStates>>,
-  prepare_states: Vec<Option<PrepareState<LRTermsEnum<LR>>>>,
+  prepare_states: Box<[Option<PrepareState<LRTermsEnum<LR>>>]>,
   query: Arc<SynonymQueryData>,
   sim_weight: Option<Arc<SynonymSimScorer<SIM::SimScorer>>>,
   score_mode: ScoreMode,
@@ -1764,7 +1767,7 @@ where
     Self {
       cost,
       term_states,
-      prepare_states,
+      prepare_states: prepare_states.into_boxed_slice(),
       query,
       sim_weight,
       score_mode,

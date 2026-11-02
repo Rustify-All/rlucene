@@ -848,7 +848,7 @@ where
 
 pub struct ReaderCommit<D> {
   segments_file_name: String,
-  files: Vec<String>,
+  files: Box<[String]>,
   dir: Arc<D>,
   generation: i64,
   user_data: HashMap<String, String>,
@@ -882,7 +882,7 @@ impl<D> ReaderCommit<D> {
     // NOTE: we intentionally do not incRef this! Else we'd need to make IndexCommit Closeable.
     Ok(Self {
       segments_file_name,
-      files,
+      files: files.into_boxed_slice(),
       dir,
       generation,
       user_data,

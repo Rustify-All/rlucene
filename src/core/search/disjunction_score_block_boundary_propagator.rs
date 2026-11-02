@@ -27,7 +27,7 @@ use crate::core::util::error::lucene_error::Result;
 /// only across clauses whose maximum score is greater than or equal to the minimum competitive
 /// score, or the maximum scoring clause if there is no such clause.
 pub struct DisjunctionScoreBlockBoundaryPropagator {
-  cost: Vec<Cost>,
+  cost: Box<[Cost]>,
   lead_index: usize,
 }
 impl DisjunctionScoreBlockBoundaryPropagator {
@@ -46,7 +46,7 @@ impl DisjunctionScoreBlockBoundaryPropagator {
       CoreHelper::compare_f32(a.max_score, b.max_score).then_with(|| a.iter_cost.cmp(&b.iter_cost))
     });
     Ok(Self {
-      cost,
+      cost: cost.into_boxed_slice(),
       lead_index: 0,
     })
   }

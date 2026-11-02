@@ -17,7 +17,7 @@
 use crate::core::util::accountable::Accountable;
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::packed::PackedInts;
-use crate::core::util::ram_usage_estimator::size_of_vec;
+use crate::core::util::ram_usage_estimator::size_of_slice;
 use crate::core::util::{HashCode, TryIntoInt};
 #[cfg(test)]
 use std::collections::HashSet;
@@ -27,7 +27,7 @@ const MISSING: i64 = i64::MIN;
 /// Set of `i64` values optimized for doc-values usage.
 #[derive(PartialEq, Eq, Hash, Debug)]
 pub(crate) struct DocValuesLongHashSet {
-  pub(crate) table: Vec<i64>,
+  pub(crate) table: Box<[i64]>,
   pub(crate) mask: usize,
   pub(crate) has_missing_value: bool,
   pub(crate) size: usize,
@@ -72,7 +72,7 @@ impl DocValuesLongHashSet {
     };
 
     Ok(Self {
-      table,
+      table: table.into_boxed_slice(),
       mask,
       has_missing_value,
       size,
@@ -137,7 +137,7 @@ impl DocValuesLongHashSet {
 }
 impl Accountable for DocValuesLongHashSet {
   fn ram_bytes_used(&self) -> Result<i64> {
-    Ok(size_of_vec(&self.table))
+    Ok(size_of_slice(&self.table))
   }
 }
 impl fmt::Display for DocValuesLongHashSet {

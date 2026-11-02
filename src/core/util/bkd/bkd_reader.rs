@@ -47,8 +47,8 @@ where
   pub(crate) num_leaves: i32,
   index_in: Option<Arc<I>>,
   data_in: Arc<Mutex<I>>,
-  min_packed_value: Vec<u8>,
-  max_packed_value: Vec<u8>,
+  min_packed_value: Box<[u8]>,
+  max_packed_value: Box<[u8]>,
   point_count: usize,
   doc_count: i32,
   version: i32,
@@ -157,8 +157,8 @@ where
         num_leaves,
         index_in: None,
         data_in,
-        min_packed_value,
-        max_packed_value,
+        min_packed_value: min_packed_value.into_boxed_slice(),
+        max_packed_value: max_packed_value.into_boxed_slice(),
         point_count,
         doc_count,
         version,
@@ -310,22 +310,22 @@ pub struct BKDPointTree<I: IndexInput> {
   /// Used to read the packed leaves off-heap.
   leaf_nodes: Arc<Mutex<I>>,
   /// Leaf file pointer and position after node data, including the leaf sentinel level.
-  leaf_positions: Vec<LeafLevelPositions>,
+  leaf_positions: Box<[LeafLevelPositions]>,
   /// Right-child address and split dimension for internal levels.
-  split_positions: Vec<SplitLevelPositions>,
+  split_positions: Box<[SplitLevelPositions]>,
   /// True if the per-dimension delta we read for the node at this level is a
   /// negative offset versus the last split on this dimension.
   /// This is a packed 2D array, i.e., to access `array[level][dim]`,
   /// you read from `negative_deltas[level * num_dims + dim]`.
   /// This will be true if the last time we split on this dimension,
   /// we next pushed to the left sub-tree.
-  negative_deltas: Vec<bool>,
+  negative_deltas: Box<[bool]>,
   /// Holds the packed per-level split values.
-  split_values_stack: Vec<Vec<u8>>,
+  split_values_stack: Box<[Box<[u8]>]>,
   /// Minimum then maximum value of the current node, each packed_index_bytes_length bytes.
-  packed_bounds: Vec<u8>,
+  packed_bounds: Box<[u8]>,
   /// Holds the previous value of the split dimension.
-  split_dim_value_stack: Vec<Vec<u8>>,
+  split_dim_value_stack: Box<[Box<[u8]>]>,
   /// Tree parameters.
   config: BKDConfig,
   /// Number of leaves.
@@ -339,8 +339,8 @@ pub struct BKDPointTree<I: IndexInput> {
   /// Right-most leaf node ID.
   right_most_leaf_node: i32,
   /// Data value, then indexed minimum and maximum, using the config's fixed widths.
-  scratch_packed_values: Vec<u8>,
-  common_prefix_lengths: Vec<usize>,
+  scratch_packed_values: Box<[u8]>,
+  common_prefix_lengths: Box<[usize]>,
   scratch_iterator: BKDReaderDocIDSetIterator,
   /// If true, the tree is balanced; otherwise, it is unbalanced.
   is_tree_balanced: bool,
@@ -383,7 +383,7 @@ where
       vec![0; num_dims],
       is_tree_balanced,
     )?;
-    tree.split_values_stack[0] = vec![0; packed_index_bytes_len];
+    tree.split_values_stack[0] = vec![0; packed_index_bytes_len].into_boxed_slice();
     tree.read_node_data(false)?;
     Ok(tree)
   }
@@ -406,7 +406,7 @@ where
   ) -> Result<Self> {
     // stack arrays that keep information at different levels
     let tree_depth = Self::get_tree_depth(num_leaves)? as usize;
-    let split_values_stack = vec![vec![]; tree_depth];
+    let split_values_stack = vec![Box::<[u8]>::default(); tree_depth];
     let right_most_leaf_node = (1 << (tree_depth - 1)) - 1;
     let last_leaf_node_point_count = point_count % config.max_points_in_leaf_node;
     let last_leaf_node_point_count = if last_leaf_node_point_count == 0 {
@@ -426,32 +426,36 @@ where
       leaf_node_offset: num_leaves,
       inner_nodes,
       leaf_nodes,
-      packed_bounds: [min_packed_value, max_packed_value].concat(),
-      split_dim_value_stack: vec![vec![]; tree_depth],
-      split_values_stack,
+      packed_bounds: [min_packed_value, max_packed_value]
+        .concat()
+        .into_boxed_slice(),
+      split_dim_value_stack: vec![Box::<[u8]>::default(); tree_depth].into_boxed_slice(),
+      split_values_stack: split_values_stack.into_boxed_slice(),
       leaf_positions: vec![
         LeafLevelPositions {
           leaf_block_fp: 0,
           read_node_data: 0
         };
         tree_depth + 1
-      ],
+      ]
+      .into_boxed_slice(),
       split_positions: vec![
         SplitLevelPositions {
           right_node: 0,
           dimension: 0
         };
         tree_depth
-      ],
-      negative_deltas: vec![false; negative_deltas_len],
+      ]
+      .into_boxed_slice(),
+      negative_deltas: vec![false; negative_deltas_len].into_boxed_slice(),
       point_count,
       right_most_leaf_node,
       last_leaf_node_point_count,
       // scratch objects, reused between clones so NN search are not
       // creating those objects in every clone.
       scratch_iterator,
-      common_prefix_lengths,
-      scratch_packed_values,
+      common_prefix_lengths: common_prefix_lengths.into_boxed_slice(),
+      scratch_packed_values: scratch_packed_values.into_boxed_slice(),
     })
   }
   fn reset_node_data_position(&mut self) -> Result<()> {
@@ -467,7 +471,7 @@ where
     let split_dim_pos = self.split_positions[level].dimension;
 
     if self.split_dim_value_stack[level].is_empty() {
-      self.split_dim_value_stack[level] = vec![0; bytes_per_dim];
+      self.split_dim_value_stack[level] = vec![0; bytes_per_dim].into_boxed_slice();
     }
     // save the dimension we are going to change
     self.split_dim_value_stack[level].copy_from(
@@ -1049,7 +1053,7 @@ where
     let common_prefix_lengths = &self.common_prefix_lengths[..num_dims];
     let scratch_data_packed_value =
       &mut self.scratch_packed_values[..self.config.packed_bytes_length()];
-    let doc_ids = self.scratch_iterator.doc_ids.as_slice();
+    let doc_ids = self.scratch_iterator.doc_ids.as_ref();
     let mut i = 0;
     {
       while i < count {
@@ -1136,8 +1140,8 @@ where
       &self.packed_bounds[..self.config.packed_index_bytes_length()],
       &self.packed_bounds[self.config.packed_index_bytes_length()..],
       self.scratch_iterator.clone(),
-      self.scratch_packed_values.clone(),
-      self.common_prefix_lengths.clone(),
+      self.scratch_packed_values.to_vec(),
+      self.common_prefix_lengths.to_vec(),
       self.is_tree_balanced,
     )?;
 
@@ -1283,7 +1287,7 @@ struct BKDReaderDocIDSetIterator {
   length: usize,
   offset: usize,
   doc_id: i32,
-  doc_ids: Vec<i32>,
+  doc_ids: Box<[i32]>,
   doc_ids_writer: DocIdsWriter,
 }
 
@@ -1294,7 +1298,7 @@ impl BKDReaderDocIDSetIterator {
       length: 0,
       offset: 0,
       doc_id: -1,
-      doc_ids: vec![0; max_points_in_leaf_node],
+      doc_ids: vec![0; max_points_in_leaf_node].into_boxed_slice(),
       doc_ids_writer: DocIdsWriter::new(max_points_in_leaf_node),
     }
   }

@@ -100,7 +100,7 @@ where
   dense_rank_power: i8,
   // Derived from the immutable rank power; the rank checks keep their original order.
   dense_rank_words: i32,
-  dense_rank_table: Option<Vec<u8>>,
+  dense_rank_table: Option<Box<[u8]>>,
   cost: i64,
   block: i32,
   block_end: usize,
@@ -230,7 +230,7 @@ where
       None
     } else {
       let rank_index_shift = dense_rank_power - 7;
-      Some(vec![0u8; DENSE_BLOCK_LONGS >> rank_index_shift])
+      Some(vec![0u8; DENSE_BLOCK_LONGS >> rank_index_shift].into_boxed_slice())
     };
 
     Ok(Self {

@@ -25,7 +25,7 @@ use crate::core::util::bits::Bits;
 use crate::core::util::error::lucene_error::LuceneError;
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::fixed_bit_set::FixedBitSet;
-use crate::core::util::ram_usage_estimator::size_of_vec;
+use crate::core::util::ram_usage_estimator::size_of_slice;
 /// Finite-state automaton with fast run operation. The initial state is always
 /// 0.
 #[derive(Clone)]
@@ -38,9 +38,9 @@ pub struct RunAutomaton {
 pub(crate) struct RunAutomatonTables {
   pub(crate) automaton: Automaton,
   accept: FixedBitSet,
-  transitions: Vec<i32>, // transitions[state * points.len() + get_char_class(c)]
-  points: Vec<i32>,
-  classmap: Vec<u16>,
+  transitions: Box<[i32]>, // transitions[state * points.len() + get_char_class(c)]
+  points: Box<[i32]>,
+  classmap: Box<[u16]>,
 }
 
 impl RunAutomaton {
@@ -99,9 +99,9 @@ impl RunAutomaton {
       tables: Arc::new(RunAutomatonTables {
         automaton,
         accept,
-        transitions,
-        points,
-        classmap,
+        transitions: transitions.into_boxed_slice(),
+        points: points.into_boxed_slice(),
+        classmap: classmap.into_boxed_slice(),
       }),
     })
   }
@@ -124,7 +124,7 @@ impl RunAutomaton {
   /// Returns array of codepoint class interval start points. The array should
   /// not be modified by the caller.
   pub fn char_intervals(&self) -> &[i32] {
-    self.tables.points.as_slice()
+    self.tables.points.as_ref()
   }
   /// Gets character class of given codepoint
   fn get_char_class(&self, c: i32) -> usize {
@@ -200,9 +200,9 @@ impl Accountable for RunAutomaton {
       (std::mem::size_of_val(self.tables.as_ref()) as i64)
         .saturating_add(self.tables.automaton.ram_bytes_used()?)
         .saturating_add(self.tables.accept.ram_bytes_used()?)
-        .saturating_add(size_of_vec(&self.tables.transitions))
-        .saturating_add(size_of_vec(&self.tables.points))
-        .saturating_add(size_of_vec(&self.tables.classmap)),
+        .saturating_add(size_of_slice(&self.tables.transitions))
+        .saturating_add(size_of_slice(&self.tables.points))
+        .saturating_add(size_of_slice(&self.tables.classmap)),
     )
   }
 }

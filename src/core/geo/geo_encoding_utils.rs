@@ -295,7 +295,7 @@ struct Grid {
   lon_base: i32,
   max_lat_delta: i32,
   max_lon_delta: i32,
-  relations: Vec<u8>,
+  relations: Box<[u8]>,
 }
 
 impl Grid {
@@ -308,7 +308,7 @@ impl Grid {
     lon_base: i32,
     max_lat_delta: i32,
     max_lon_delta: i32,
-    relations: Vec<u8>,
+    relations: impl Into<Box<[u8]>>,
   ) -> Result<Self> {
     if !(1..=31).contains(&lat_shift) {
       return Err(LuceneError::illegal_argument(
@@ -328,7 +328,7 @@ impl Grid {
       lon_base,
       max_lat_delta,
       max_lon_delta,
-      relations,
+      relations: relations.into(),
     })
   }
 }
@@ -348,7 +348,7 @@ impl DistancePredicate {
     lon_base: i32,
     max_lat_delta: i32,
     max_lon_delta: i32,
-    relations: Vec<u8>,
+    relations: Box<[u8]>,
     lat: f64,
     lon: f64,
     distance_key: f64,
@@ -509,7 +509,7 @@ impl<C> Component2DPredicate<C> {
     lon_base: i32,
     max_lat_delta: i32,
     max_lon_delta: i32,
-    relations: Vec<u8>,
+    relations: Box<[u8]>,
     tree: C,
   ) -> Result<Self> {
     Ok(Self {

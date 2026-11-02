@@ -35,7 +35,7 @@ pub struct MultiLeafKnnCollector<'a, A> {
   pub(crate) non_competitive_queue: FloatHeap,
   /// the queue of the local similarities to periodically update with the global queue
   pub(crate) updates_queue: FloatHeap,
-  pub(crate) updates_scratch: Vec<f32>,
+  pub(crate) updates_scratch: Box<[f32]>,
   pub(crate) k_results_collected: bool,
   pub(crate) cached_global_min_sim: f32,
   pub(crate) sub_collector: A,
@@ -104,7 +104,7 @@ where
         ((1.0 - greediness) * k as f32).round() as usize,
       ))?,
       updates_queue: FloatHeap::new(k)?,
-      updates_scratch: vec![0.0; k],
+      updates_scratch: vec![0.0; k].into_boxed_slice(),
       k_results_collected: false,
       cached_global_min_sim: f32::NEG_INFINITY,
     })

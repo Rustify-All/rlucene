@@ -207,7 +207,7 @@ impl BooleanQuery {
       weighted_clauses.push(WeightedBooleanClause::new(clause_index, weight));
     }
     Ok(BooleanWeight::<_, SIM> {
-      weighted_clauses,
+      weighted_clauses: weighted_clauses.into_boxed_slice(),
       query: self,
       score_mode: *score_mode,
     })

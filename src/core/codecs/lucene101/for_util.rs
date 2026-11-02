@@ -26,12 +26,12 @@ use crate::core::util::error::lucene_error::Result;
 /// - If `bits_per_value <= 16`, then 4 integers per `i64`.
 /// - Otherwise, 2 integers per `i64`.
 pub struct ForUtil {
-  tmp: Vec<i32>,
+  tmp: Box<[i32]>,
 }
 impl ForUtil {
   pub(crate) fn new() -> Self {
     Self {
-      tmp: vec![0i32; Self::BLOCK_SIZE],
+      tmp: vec![0i32; Self::BLOCK_SIZE].into_boxed_slice(),
     }
   }
   pub const BLOCK_SIZE: usize = 128;

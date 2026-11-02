@@ -276,7 +276,7 @@ where
       .two_phase_iterator
       .approximation
       .all_scorers
-      .as_mut_slice();
+      .as_mut();
 
     let mut max_score_sum = 0f64;
     let len = all_scorers.len();
@@ -296,7 +296,7 @@ where
 }
 
 pub struct DocIdSetIteratorImpl<S, const TOP_SCORES: bool> {
-  all_scorers: Vec<DisiWrapper<S>>,
+  all_scorers: Box<[DisiWrapper<S>]>,
   doc: i32,
   score_mode: ScoreMode,
   upto: i32,
@@ -383,7 +383,7 @@ where
 
     let min_should_match: usize = min_should_match.try_convert()?;
     let mut this = Self {
-      all_scorers,
+      all_scorers: all_scorers.into_boxed_slice(),
       doc: -1,
       score_mode,
       upto: -1,

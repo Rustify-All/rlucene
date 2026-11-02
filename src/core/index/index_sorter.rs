@@ -226,13 +226,13 @@ where
   }
 }
 pub struct DocComparatorImplDouble {
-  values: Vec<f64>,
+  values: Box<[f64]>,
   reverse_mul: i32,
 }
 impl DocComparatorImplDouble {
   pub fn new(values: Vec<f64>, reverse_mul: i32) -> Self {
     Self {
-      values,
+      values: values.into_boxed_slice(),
       reverse_mul,
     }
   }
@@ -371,13 +371,13 @@ where
   }
 }
 pub struct DocComparatorImplInt {
-  values: Vec<i32>,
+  values: Box<[i32]>,
   reverse_mul: i32,
 }
 impl DocComparatorImplInt {
   pub fn new(values: Vec<i32>, reverse_mul: i32) -> Self {
     Self {
-      values,
+      values: values.into_boxed_slice(),
       reverse_mul,
     }
   }
@@ -511,14 +511,14 @@ where
 }
 
 pub struct DocComparatorImplLong {
-  values: Vec<i64>,
+  values: Box<[i64]>,
   reverse_mul: i32,
 }
 
 impl DocComparatorImplLong {
   pub fn new(values: Vec<i64>, reverse_mul: i32) -> Self {
     Self {
-      values,
+      values: values.into_boxed_slice(),
       reverse_mul,
     }
   }
@@ -663,14 +663,14 @@ where
 }
 
 pub struct DocComparatorImplFloat {
-  values: Vec<f32>,
+  values: Box<[f32]>,
   reverse_mul: i32,
 }
 
 impl DocComparatorImplFloat {
   pub fn new(values: Vec<f32>, reverse_mul: i32) -> Self {
     Self {
-      values,
+      values: values.into_boxed_slice(),
       reverse_mul,
     }
   }
@@ -875,13 +875,16 @@ where
 }
 
 pub struct DocComparatorImplString {
-  ords: Vec<i32>,
+  ords: Box<[i32]>,
   reverse_mul: i32,
 }
 
 impl DocComparatorImplString {
   pub fn new(ords: Vec<i32>, reverse_mul: i32) -> Self {
-    Self { ords, reverse_mul }
+    Self {
+      ords: ords.into_boxed_slice(),
+      reverse_mul,
+    }
   }
 }
 
