@@ -571,71 +571,36 @@ impl SortFiledBase for SortField {
 }
 impl Display for SortField {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    let mut buffer = String::new();
-    match self.type_ {
-      SortFieldType::Score => buffer.push_str("<score>"),
-      SortFieldType::Doc => buffer.push_str("<doc>"),
-      SortFieldType::String => {
-        buffer.push_str("<string: \"");
-        if let Some(ref field) = self.field {
-          buffer.push_str(field);
-        }
-        buffer.push_str("\">");
+    let field = self.field.as_deref().unwrap_or_default();
+    let mut buffer = match self.type_ {
+      SortFieldType::Score => {
+        let mut buffer = String::new();
+        buffer.push_str("<score>");
+        buffer
       },
-      SortFieldType::Int => {
-        buffer.push_str("<int: \"");
-        if let Some(ref field) = self.field {
-          buffer.push_str(field);
-        }
-        buffer.push_str("\">");
+      SortFieldType::Doc => {
+        let mut buffer = String::new();
+        buffer.push_str("<doc>");
+        buffer
       },
-      SortFieldType::Long => {
-        buffer.push_str("<long: \"");
-        if let Some(ref field) = self.field {
-          buffer.push_str(field);
-        }
-        buffer.push_str("\">");
-      },
-      SortFieldType::Float => {
-        buffer.push_str("<float: \"");
-        if let Some(ref field) = self.field {
-          buffer.push_str(field);
-        }
-        buffer.push_str("\">");
-      },
-      SortFieldType::Double => {
-        buffer.push_str("<double: \"");
-        if let Some(ref field) = self.field {
-          buffer.push_str(field);
-        }
-        buffer.push_str("\">");
-      },
+      SortFieldType::String => format!("<string: \"{field}\">"),
+      SortFieldType::Int => format!("<int: \"{field}\">"),
+      SortFieldType::Long => format!("<long: \"{field}\">"),
+      SortFieldType::Float => format!("<float: \"{field}\">"),
+      SortFieldType::Double => format!("<double: \"{field}\">"),
       SortFieldType::Custom => {
-        buffer.push_str("<custom: \"");
-        if let Some(ref field) = self.field {
-          buffer.push_str(field);
-        }
+        let mut buffer = String::from("<custom: \"");
+        buffer.push_str(field);
         buffer.push_str("\": ");
         if let Some(ref comparator) = self.comparator_source {
           buffer.push_str(&format!("{comparator}"));
         }
         buffer.push('>');
+        buffer
       },
-      SortFieldType::StringVal => {
-        buffer.push_str("<string_val: \"");
-        if let Some(ref field) = self.field {
-          buffer.push_str(field);
-        }
-        buffer.push_str("\">");
-      },
-      SortFieldType::Rewritable => {
-        buffer.push_str("<rewriteable: \"");
-        if let Some(ref field) = self.field {
-          buffer.push_str(field);
-        }
-        buffer.push_str("\">");
-      },
-    }
+      SortFieldType::StringVal => format!("<string_val: \"{field}\">"),
+      SortFieldType::Rewritable => format!("<rewriteable: \"{field}\">"),
+    };
     if self.reverse {
       buffer.push('!');
     }

@@ -14,7 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use std::fmt::Write as _;
 
 use crate::core::index::doc_values::{DocValues, SortedSet};
 use crate::core::index::index_reader_context::IndexReaderContext;
@@ -118,18 +117,21 @@ impl SortedSetSortField {
 }
 impl Display for SortedSetSortField {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    let mut buffer = String::new();
     let Some(field) = self.base.get_field() else {
       return Err(std::fmt::Error);
     };
-    write!(buffer, "<sortedset: \"{}\">", field)?;
-    if self.base.reverse {
-      buffer.push('!');
-    }
-    if let Some(missing_value) = &self.base.missing_value {
-      write!(buffer, " missingValue={missing_value}")?;
-    }
-    write!(buffer, " selector={:?}", self.selector)?;
+    let reverse = if self.base.reverse { "!" } else { "" };
+    let buffer = if let Some(missing_value) = &self.base.missing_value {
+      format!(
+        "<sortedset: \"{field}\">{reverse} missingValue={missing_value} selector={:?}",
+        self.selector
+      )
+    } else {
+      format!(
+        "<sortedset: \"{field}\">{reverse} selector={:?}",
+        self.selector
+      )
+    };
     write!(f, "{buffer}")
   }
 }

@@ -45,6 +45,7 @@ use crate::core::search::two_phase_iterator::{TwoPhaseIterator, TwoPhaseIterator
 use crate::core::search::weight::{DefaultScorerSupplier, Weight};
 use crate::core::util::core_helper::HasIdentity;
 use crate::core::util::error::lucene_error::Result;
+use std::fmt::Write as _;
 use std::hash::{Hash, Hasher};
 
 #[derive(Debug, Clone)]
@@ -108,9 +109,7 @@ impl QueryBase for SortedNumericDocValuesRangeQuery {
       out.push(':');
     }
     out.push('[');
-    out.push_str(&self.lower_value.to_string());
-    out.push_str(" TO ");
-    out.push_str(&self.upper_value.to_string());
+    write!(out, "{} TO {}", self.lower_value, self.upper_value)?;
     out.push(']');
     Ok(out)
   }

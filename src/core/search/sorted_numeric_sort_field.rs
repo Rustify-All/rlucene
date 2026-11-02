@@ -15,7 +15,6 @@
  * limitations under the License.
  */
 use crate::core::index::index_sorter::ComparableProvidersVisitor;
-use std::fmt::Write as _;
 
 use crate::core::index::doc_values::{DocValues, SortedNumeric};
 use crate::core::index::index_reader_context::IndexReaderContext;
@@ -341,21 +340,23 @@ impl SortFiledBase for SortedNumericSortField {
 }
 impl Display for SortedNumericSortField {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    let mut buffer = String::new();
     let field = match self.base.get_field() {
       Some(f) => f,
       None => return Err(std::fmt::Error),
     };
     debug_assert!(self.base.get_field().is_some());
-    write!(buffer, "<sortednumeric: \"{}\">", field)?;
-    if self.base.reverse {
-      buffer.push('!');
-    }
-    if let Some(missing_value) = &self.base.missing_value {
-      write!(buffer, " missingValue={missing_value}")?;
-    }
-    write!(buffer, " selector={:?}", self.selector)?;
-    write!(buffer, " type={:?}", self.type_)?;
+    let reverse = if self.base.reverse { "!" } else { "" };
+    let buffer = if let Some(missing_value) = &self.base.missing_value {
+      format!(
+        "<sortednumeric: \"{field}\">{reverse} missingValue={missing_value} selector={:?} type={:?}",
+        self.selector, self.type_
+      )
+    } else {
+      format!(
+        "<sortednumeric: \"{field}\">{reverse} selector={:?} type={:?}",
+        self.selector, self.type_
+      )
+    };
     write!(f, "{buffer}")
   }
 }
