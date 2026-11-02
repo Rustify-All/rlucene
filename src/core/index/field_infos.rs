@@ -1150,7 +1150,8 @@ impl Builder {
       let attributes = fi.attributes();
       let unchanged = attributes.is_empty() || {
         let current = cur_fi.attributes();
-        attributes.iter().all(|(k, v)| current.get(k) == Some(v))
+        Arc::ptr_eq(&attributes, &current)
+          || attributes.iter().all(|(k, v)| current.get(k) == Some(v))
       };
       if !unchanged {
         for (k, v) in attributes.iter() {
