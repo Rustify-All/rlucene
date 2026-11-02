@@ -134,10 +134,9 @@ where
 
     let fst_meta = FSTMetadata::new(input_type, outputs, None, -1, version, 0);
     let fst = FST::new(fst_meta, NullFSTReader);
-    let no_output = fst.outputs.get_no_output();
     let mut frontier = Vec::with_capacity(16);
     for i in 0..10 {
-      frontier.push(UnCompiledNode::new(no_output.clone(), i));
+      frontier.push(UnCompiledNode::new(i));
     }
     Ok(Self {
       dedup_hash,
@@ -190,7 +189,7 @@ where
       self.last_frozen_node = node;
     }
 
-    self.frontier[node_in_idx].clear(self.fst.outputs.get_no_output());
+    self.frontier[node_in_idx].clear();
 
     Ok(CompiledNode { node })
   }
@@ -204,7 +203,7 @@ where
         let prev_idx = idx - 1;
 
         let next_final_output = if self.dedup_hash.is_none() {
-          std::mem::replace(&mut node.output, self.fst.outputs.get_no_output().clone())
+          node.output.take()
         } else {
           node.output.clone()
         };
@@ -242,15 +241,9 @@ where
   /// (e.g. [`ByteSequenceOutputs`](crate::core::util::fst_impl::byte_sequence_outputs::ByteSequenceOutputs)
   /// or
   /// [`IntSequenceOutputs`](crate::core::util::fst_impl::int_sequence_outputs::IntSequenceOutputs)), then you cannot reuse them across calls.
-  pub fn add(&mut self, input: &IntsRef<Vec<i32>>, mut output: O::V) -> Result<()> {
+  /// Empty outputs must be supplied as `None`; `Some` contains a nonempty payload.
+  pub fn add(&mut self, input: &IntsRef<Vec<i32>>, mut output: Option<O::V>) -> Result<()> {
     let ints = &input.ints;
-
-    // Canonicalize NO_OUTPUT; reference-backed outputs must use a singleton.
-    if &output == self.fst.outputs.get_no_output()
-      && !output.is_no_output(self.fst.outputs.get_no_output())
-    {
-      output = self.fst.outputs.get_no_output().clone();
-    }
 
     debug_assert!(
       self.last_input.length() == 0 || *input >= *self.last_input.get(),
@@ -258,7 +251,6 @@ where
       self.last_input.get(),
       input
     );
-    debug_assert!(self.valid_output(&output));
 
     if input.length == 0 {
       // empty input: only allowed as first input.  we have
@@ -292,10 +284,7 @@ where
       };
       self.frontier.reserve_exact(new_len - old_len);
       for i in old_len..new_len {
-        self.frontier.push(UnCompiledNode::new(
-          self.fst.outputs.get_no_output().clone(),
-          i,
-        ));
+        self.frontier.push(UnCompiledNode::new(i));
       }
     }
     // minimize/compile states from previous input's
@@ -306,21 +295,18 @@ where
     for idx in prefix_len_plus1..=input.length {
       let label = ints[offset + idx - 1];
       let un_compiled = NodeEnum::UnCompiledNode;
-      self.frontier[idx - 1].add_arc(label, un_compiled, self.fst.outputs.get_no_output())?;
+      self.frontier[idx - 1].add_arc(label, un_compiled)?;
     }
 
     let last_input_len = self.last_input.length();
     let last_node = &mut self.frontier[input.length];
     if last_input_len != input.length || prefix_len_plus1 != input.length + 1 {
       last_node.is_final = true;
-      last_node
-        .output
-        .assign_from(self.fst.outputs.get_no_output());
+      last_node.output = None;
     }
     // push conflicting outputs forward, only as far as
     // needed
     let outputs = &self.fst.outputs;
-    let no_output = self.fst.outputs.get_no_output();
     for idx in 1..prefix_len_plus1 {
       let (parents, nodes) = self.frontier.split_at_mut(idx);
       let parent = &mut parents[idx - 1];
@@ -328,26 +314,17 @@ where
       let label = ints[offset + idx - 1];
       let last_output = parent.get_last_output(label);
 
-      debug_assert!(last_output.is_no_output(no_output) || *last_output != *no_output);
-
-      if !last_output.is_no_output(no_output) {
+      if last_output.is_some() {
         let common_output_prefix = outputs.common(&output, last_output);
-        debug_assert!(
-          common_output_prefix.is_no_output(no_output) || common_output_prefix != *no_output
-        );
 
-        let word_suffix = outputs
-          .subtract(last_output, &common_output_prefix)
-          .into_owned();
-        debug_assert!(word_suffix.is_no_output(no_output) || word_suffix != *no_output);
+        let word_suffix = outputs.subtract(last_output, &common_output_prefix);
 
-        let common_output_prefix = parent.set_last_output(label, common_output_prefix, no_output);
-        node.prepend_output(&word_suffix, outputs, no_output);
+        let common_output_prefix = parent.set_last_output(label, common_output_prefix);
+        node.prepend_output(&word_suffix, outputs);
         outputs.subtract_assign(&mut output, common_output_prefix);
       } else {
-        outputs.subtract_assign(&mut output, no_output);
+        outputs.subtract_assign(&mut output, &None);
       }
-      debug_assert!(output.is_no_output(no_output) || output != *no_output);
     }
     if self.last_input.length() == input.length && prefix_len_plus1 == input.length + 1 {
       // same input more than 1 time in a row,
@@ -359,11 +336,7 @@ where
       // this new arc is private to this new input; set its
       // arc output to the leftover output:
       let label = ints[input.offset + prefix_len_plus1 - 1];
-      let _ = self.frontier[prefix_len_plus1 - 1].set_last_output(
-        label,
-        output,
-        self.fst.outputs.get_no_output(),
-      );
+      let _ = self.frontier[prefix_len_plus1 - 1].set_last_output(label, output);
     }
 
     // Save last input
@@ -438,7 +411,6 @@ where
     self.arc_count += node_in.num_arcs as i64;
 
     let last_arc = node_in.num_arcs - 1;
-    let no_output = self.fst.outputs.get_no_output();
     let mut last_arc_start = 0;
     let mut max_bytes_per_arc = 0;
     let mut max_bytes_per_arc_without_label = 0;
@@ -458,11 +430,11 @@ where
 
           if arc.is_final {
             flags |= BIT_FINAL_ARC;
-            if !arc.next_final_output.is_no_output(no_output) {
+            if !arc.next_final_output.is_none() {
               flags |= BIT_ARC_HAS_FINAL_OUTPUT;
             }
           } else {
-            debug_assert!(arc.next_final_output.is_no_output(no_output));
+            debug_assert!(arc.next_final_output.is_none());
           }
 
           let target_has_arcs = target.node > 0;
@@ -472,7 +444,7 @@ where
 
           // `arc.output` is not mutated while this arc is serialized, so the
           // no-output check only needs to be evaluated once.
-          let arc_has_output = !arc.output.is_no_output(no_output);
+          let arc_has_output = !arc.output.is_none();
           if arc_has_output {
             flags |= BIT_ARC_HAS_OUTPUT;
           }
@@ -508,7 +480,7 @@ where
               .write(&arc.output, &mut self.scratch_bytes)?;
           }
 
-          if !arc.next_final_output.is_no_output(no_output) {
+          if !arc.next_final_output.is_none() {
             self
               .fst
               .outputs
@@ -947,7 +919,7 @@ where
     self.scratch_bytes.write_byte(presence_bits)?;
     Ok(())
   }
-  pub(crate) fn set_empty_output(&mut self, v: O::V) -> Result<()> {
+  pub(crate) fn set_empty_output(&mut self, v: Option<O::V>) -> Result<()> {
     if let Some(existing) = &mut self.fst.metadata.empty_output {
       self.fst.metadata.empty_output = Some(self.fst.outputs.merge(existing, &v)?);
     } else {
@@ -992,10 +964,6 @@ where
 
     Ok(())
   }
-  fn valid_output(&self, output: &O::V) -> bool {
-    let no_output = self.fst.outputs.get_no_output();
-    output.is_no_output(no_output) || output != no_output
-  }
   /// Returns the estimated heap memory used by the in-construction FST.
   pub fn fst_ram_bytes_used(&self) -> Result<i64> {
     let mut ram_bytes_used = self.scratch_bytes.ram_bytes_used()?;
@@ -1006,11 +974,6 @@ where
   /// Returns the current byte size of the FST being built.
   pub fn fst_size_in_bytes(&self) -> i64 {
     self.num_bytes_written
-  }
-
-  #[cfg(test)]
-  pub(crate) fn get_fst(&self) -> &FST<O, NullFSTReader> {
-    &self.fst
   }
 }
 
@@ -1072,7 +1035,7 @@ where
   /// - `outputs`: The output type for each input sequence. Applies only when
   ///   building an FST. For FSA, use
   ///   [`NoOutputs::get_singleton`](crate::core::util::fst_impl::no_outputs::NoOutputs::get_singleton)
-  ///   and `NoOutputs::no_output()`
+  ///   and `None` for its empty outputs
   ///   as the singleton output.
   pub fn new(input_type: InputType, outputs: O) -> Self {
     Self {
@@ -1276,12 +1239,13 @@ where
   }
 }
 /// Expert: holds a pending (seen but not yet serialized) arc.
+/// `T` is the payload type; an empty output is stored as `None`.
 pub(crate) struct Arc<T> {
   pub label: i32, // really an "unsigned" byte
   pub target: NodeEnum,
   pub is_final: bool,
-  pub output: T,
-  pub next_final_output: T,
+  pub output: Option<T>,
+  pub next_final_output: Option<T>,
 }
 /// # NOTE:
 /// Not many instances of Node or CompiledNode are in
@@ -1313,10 +1277,11 @@ impl Node for CompiledNode {
   }
 }
 /// Expert: holds a pending (seen but not yet serialized) Node.
+/// `T` is the payload type; the node and its arcs store optional outputs.
 pub(crate) struct UnCompiledNode<T> {
   pub(crate) num_arcs: usize,
   pub(crate) arcs: SmallVec<[Arc<T>; 1]>,
-  pub(crate) output: T,
+  pub(crate) output: Option<T>,
   pub(crate) is_final: bool,
 
   /// This node's depth, starting from the automaton root.
@@ -1332,31 +1297,31 @@ where
   /// - `depth`: The node's depth starting from the automaton root. Needed for
   ///   LUCENE-2934 (node expansion based on conditions other than the fanout
   ///   size).
-  pub(crate) fn new(no_output: T, depth: usize) -> Self {
+  pub(crate) fn new(depth: usize) -> Self {
     Self {
       num_arcs: 0,
       arcs: SmallVec::new(),
-      output: no_output,
+      output: None,
       is_final: false,
       depth: depth as i32,
     }
   }
 
-  pub(crate) fn clear(&mut self, no_outputs: &T) {
+  pub(crate) fn clear(&mut self) {
     self.num_arcs = 0;
     self.is_final = false;
-    self.output.assign_from(no_outputs);
+    self.output = None;
     // We don't clear the depth here because it never changes
     // for nodes on the frontier (even when reused).
   }
 
-  pub(crate) fn get_last_output(&self, label_to_match: i32) -> &T {
+  pub(crate) fn get_last_output(&self, label_to_match: i32) -> &Option<T> {
     debug_assert!(self.num_arcs > 0);
     debug_assert!(self.arcs[self.num_arcs - 1].label == label_to_match);
     &self.arcs[self.num_arcs - 1].output
   }
 
-  pub(crate) fn add_arc(&mut self, label: i32, target: NodeEnum, no_outputs: &T) -> Result<()> {
+  pub(crate) fn add_arc(&mut self, label: i32, target: NodeEnum) -> Result<()> {
     debug_assert!(label >= 0);
     debug_assert!(
       self.num_arcs == 0 || label > self.arcs[self.num_arcs - 1].label,
@@ -1371,8 +1336,8 @@ where
         label,
         target,
         is_final: false,
-        output: no_outputs.clone(),
-        next_final_output: no_outputs.clone(),
+        output: None,
+        next_final_output: None,
       });
       self.num_arcs += 1;
       return Ok(());
@@ -1382,8 +1347,8 @@ where
     self.num_arcs += 1;
     arc.label = label;
     arc.target = target;
-    arc.output.assign_from(no_outputs);
-    arc.next_final_output.assign_from(no_outputs);
+    arc.output = None;
+    arc.next_final_output = None;
     arc.is_final = false;
     Ok(())
   }
@@ -1391,7 +1356,7 @@ where
     &mut self,
     label_to_match: i32,
     target: NodeEnum,
-    next_final_output: T,
+    next_final_output: Option<T>,
     is_final: bool,
   ) {
     debug_assert!(self.num_arcs > 0);
@@ -1409,10 +1374,8 @@ where
   pub(crate) fn set_last_output(
     &mut self,
     label_to_match: i32,
-    new_output: T,
-    no_output: &T,
-  ) -> &T {
-    debug_assert!(new_output.is_no_output(no_output) || new_output != *no_output);
+    new_output: Option<T>,
+  ) -> &Option<T> {
     debug_assert!(self.num_arcs > 0);
     let arc = &mut self.arcs[self.num_arcs - 1];
     debug_assert_eq!(arc.label, label_to_match);
@@ -1421,30 +1384,34 @@ where
   }
 
   /// Pushes an output prefix forward onto all arcs.
-  pub(crate) fn prepend_output<O>(&mut self, output_prefix: &O::V, outputs: &O, no_output: &O::V)
+  pub(crate) fn prepend_output<O>(&mut self, output_prefix: &Option<O::V>, outputs: &O)
   where
     O: Outputs<V = T>,
   {
-    debug_assert!(output_prefix.is_no_output(no_output) || *output_prefix != *no_output);
     for i in 0..self.num_arcs {
       let current = &mut self.arcs[i].output;
       match outputs.add(output_prefix, current) {
-        std::borrow::Cow::Borrowed(next) if std::ptr::eq(next, current) => {},
-        std::borrow::Cow::Borrowed(next) => *current = next.clone(),
-        std::borrow::Cow::Owned(next) => *current = next,
+        None => *current = None,
+        Some(std::borrow::Cow::Borrowed(next))
+          if current
+            .as_ref()
+            .is_some_and(|value| std::ptr::eq(next, value)) => {},
+        Some(std::borrow::Cow::Borrowed(next)) => *current = Some(next.clone()),
+        Some(std::borrow::Cow::Owned(next)) => *current = Some(next),
       }
-      // TODO:
-      // debug_assert!(compiler.valid_output(&new_output));
     }
 
     if self.is_final {
       match outputs.add(output_prefix, &self.output) {
-        std::borrow::Cow::Borrowed(next) if std::ptr::eq(next, &self.output) => {},
-        std::borrow::Cow::Borrowed(next) => self.output = next.clone(),
-        std::borrow::Cow::Owned(next) => self.output = next,
+        None => self.output = None,
+        Some(std::borrow::Cow::Borrowed(next))
+          if self
+            .output
+            .as_ref()
+            .is_some_and(|value| std::ptr::eq(next, value)) => {},
+        Some(std::borrow::Cow::Borrowed(next)) => self.output = Some(next.clone()),
+        Some(std::borrow::Cow::Owned(next)) => self.output = Some(next),
       }
-      // TODO:
-      // debug_assert!(compiler.valid_output(&new_output));
     }
   }
 }

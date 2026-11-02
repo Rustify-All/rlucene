@@ -42,7 +42,10 @@ pub struct Util;
 impl Util {
   /// Looks up the output for this input, or None if the input is not
   /// accepted.
-  pub fn get_from_ints<O, F, AV>(fst: &FST<O, F>, input: &IntsRef<AV>) -> Result<Option<O::V>>
+  pub fn get_from_ints<O, F, AV>(
+    fst: &FST<O, F>,
+    input: &IntsRef<AV>,
+  ) -> Result<Option<Option<O::V>>>
   where
     O: Outputs,
     F: FstReader,
@@ -50,7 +53,7 @@ impl Util {
   {
     let mut arc = fst.get_first_arc_owned();
     let mut fst_reader = fst.get_bytes_reader()?;
-    let mut output = fst.outputs.get_no_output().clone();
+    let mut output = None;
 
     for i in 0..input.length {
       let label = input.ints.access(|ints| ints[input.offset + i]);
@@ -72,7 +75,10 @@ impl Util {
   }
   /// Looks up the output for this input, or `None` if the input is not
   /// accepted.
-  pub fn get_from_bytes<O, F, AV>(fst: &FST<O, F>, input: &BytesRef<AV>) -> Result<Option<O::V>>
+  pub fn get_from_bytes<O, F, AV>(
+    fst: &FST<O, F>,
+    input: &BytesRef<AV>,
+  ) -> Result<Option<Option<O::V>>>
   where
     O: Outputs,
     F: FstReader,
@@ -82,7 +88,7 @@ impl Util {
 
     let mut fst_reader = fst.get_bytes_reader()?;
     let mut arc = fst.get_first_arc_owned();
-    let mut output = fst.outputs.get_no_output().clone();
+    let mut output = None;
 
     for i in 0..input.length {
       let label = input.bytes.access(|bytes| bytes[input.offset + i] as i32);
@@ -107,7 +113,7 @@ impl Util {
   pub fn shortest_paths<O, F, C>(
     fst: &FST<O, F>,
     from_node: &Arc<O::V>,
-    start_output: O::V,
+    start_output: Option<O::V>,
     comparator: C,
     top_n: usize,
     allow_empty_string: bool,
@@ -115,7 +121,7 @@ impl Util {
   where
     O: Outputs,
     F: FstReader,
-    C: Comparator<O::V> + Clone,
+    C: Comparator<Option<O::V>> + Clone,
   {
     let mut searcher = TopNSearcher::new(fst, top_n, top_n, comparator)?;
     searcher.add_start_paths(
@@ -187,7 +193,6 @@ impl Util {
 
     Self::emit_dot_state(out, "initial", Some("point"), Some("white"), Some(""))?;
 
-    let no_output = fst.outputs.get_no_output();
     let mut r = fst.get_bytes_reader()?;
 
     {
@@ -199,7 +204,7 @@ impl Util {
 
       let (is_final, final_output) = if start_arc.is_final() {
         let next_final_output = &start_arc.next_final_output;
-        if next_final_output == no_output {
+        if next_final_output.is_none() {
           (true, String::new())
         } else {
           (true, fst.outputs.output_to_string(next_final_output))
@@ -244,7 +249,7 @@ impl Util {
               };
 
               let next_final_output = &arc.next_final_output;
-              let final_output = if next_final_output != no_output {
+              let final_output = if next_final_output.is_some() {
                 fst.outputs.output_to_string(next_final_output)
               } else {
                 String::new()
@@ -262,13 +267,13 @@ impl Util {
               same_level_states.push(arc.target());
             }
 
-            let mut outs = if &arc.output != no_output {
+            let mut outs = if arc.output.is_some() {
               format!("/{}", fst.outputs.output_to_string(&arc.output))
             } else {
               String::new()
             };
 
-            if !target_has_arcs(&arc) && arc.is_final() && &arc.next_final_output != no_output {
+            if !target_has_arcs(&arc) && arc.is_final() && arc.next_final_output.is_some() {
               write!(
                 outs,
                 "/[{}]",
@@ -588,12 +593,12 @@ impl Util {
     Ok(-1 - low)
   }
 }
-/// Represents a path in TopNSearcher.
+/// Represents a path in TopNSearcher, parameterized by its output payload type.
 pub struct FSTPath<T> {
   /// Holds the last arc appended to this path
   pub arc: Arc<T>,
   /// Holds cost plus any usage-specific output:
-  pub output: T,
+  pub output: Option<T>,
   pub input: IntsRefBuilder<Vec<i32>>,
   pub boost: f32,
   pub context: String,
@@ -607,7 +612,7 @@ where
   T: Clone,
 {
   pub fn new<V>(
-    output: T,
+    output: Option<T>,
     other: &Arc<T>,
     input: IntsRefBuilder<Vec<i32>>,
     boost: f32,
@@ -632,7 +637,7 @@ impl<T> FSTPath<T>
 where
   T: Clone,
 {
-  pub fn new_path(&self, output: T, input: IntsRefBuilder<Vec<i32>>) -> Self {
+  pub fn new_path(&self, output: Option<T>, input: IntsRefBuilder<Vec<i32>>) -> Self {
     FSTPath {
       arc: self.arc.clone(),
       output,
@@ -648,14 +653,15 @@ where
   T: Display,
 {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "input={} output=", self.input.get())?;
+    match &self.output {
+      Some(output) => write!(f, "{output}")?,
+      None => write!(f, "None")?,
+    }
     write!(
       f,
-      "input={} output={} context={} boost={} payload={}",
-      self.input.get(),
-      self.output,
-      self.context,
-      self.boost,
-      self.payload
+      " context={} boost={} payload={}",
+      self.context, self.boost, self.payload
     )
   }
 }
@@ -674,7 +680,7 @@ impl<C> TieBreakByInputComparator<C> {
 impl<T, C> Comparator<FSTPath<T>> for TieBreakByInputComparator<C>
 where
   T: OutputsBound,
-  C: Comparator<T>,
+  C: Comparator<Option<T>>,
 {
   const TYPE: &'static str = "TieBreakByInputComparator";
 
@@ -693,7 +699,7 @@ pub struct TopNSearcher<'a, O, F, C, PC>
 where
   O: Outputs,
   F: FstReader,
-  C: Comparator<O::V>,
+  C: Comparator<Option<O::V>>,
   PC: Comparator<FSTPath<O::V>>,
 {
   fst: &'a FST<O, F>,
@@ -720,7 +726,7 @@ where
     true
   }
 
-  fn accept_result(&mut self, _input: &IntsRef<Vec<i32>>, _output: &T) -> bool {
+  fn accept_result(&mut self, _input: &IntsRef<Vec<i32>>, _output: &Option<T>) -> bool {
     true
   }
 }
@@ -733,7 +739,7 @@ impl<'a, O, F, C> TopNSearcher<'a, O, F, C, TieBreakByInputComparator<C>>
 where
   O: Outputs,
   F: FstReader,
-  C: Comparator<O::V> + Clone,
+  C: Comparator<Option<O::V>> + Clone,
 {
   /// Creates an unbounded TopNSearcher.
   pub fn new(
@@ -756,7 +762,7 @@ impl<'a, O, F, C, PC> TopNSearcher<'a, O, F, C, PC>
 where
   O: Outputs,
   F: FstReader,
-  C: Comparator<O::V>,
+  C: Comparator<Option<O::V>>,
   PC: Comparator<FSTPath<O::V>>,
 {
   pub fn with_path_comparator(
@@ -814,7 +820,7 @@ where
       .fst
       .outputs
       .add(&path.output, &path.arc.output)
-      .into_owned();
+      .map(std::borrow::Cow::into_owned);
 
     if let Some(queue) = self.queue.as_ref()
       && queue.len() == self.max_queue_depth
@@ -859,7 +865,7 @@ where
   pub fn add_start_paths(
     &mut self,
     node: &Arc<O::V>,
-    start_output: O::V,
+    start_output: Option<O::V>,
     allow_empty_string: bool,
     input: IntsRefBuilder<Vec<i32>>,
   ) -> Result<()> {
@@ -872,7 +878,7 @@ where
   pub fn add_start_paths_with_context<T>(
     &mut self,
     node: &Arc<O::V>,
-    mut start_output: O::V,
+    start_output: Option<O::V>,
     allow_empty_string: bool,
     input: IntsRefBuilder<Vec<i32>>,
     boost: f32,
@@ -882,10 +888,6 @@ where
   where
     T: Into<String>,
   {
-    if &start_output == self.fst.outputs.get_no_output() {
-      start_output = self.fst.outputs.get_no_output().clone();
-    }
-
     let mut path = FSTPath::new(start_output, node, input, boost, context, payload);
     self
       .fst
@@ -909,7 +911,6 @@ where
   pub fn search(&mut self) -> Result<TopResults<O::V>> {
     let mut results = Vec::new();
     let mut fst_reader = self.fst.get_bytes_reader()?;
-    let no_output = self.fst.outputs.get_no_output();
     let mut reject_count = 0;
 
     while results.len() < self.top_n {
@@ -950,7 +951,7 @@ where
         let mut found_zero = false;
         let mut arc_copy_is_pending = false;
         loop {
-          if self.comparator.compare(no_output, &path.arc.output)? == 0 {
+          if self.comparator.compare(&None, &path.arc.output)? == 0 {
             if self.queue.is_none() {
               found_zero = true;
               break;
@@ -984,7 +985,7 @@ where
             .fst
             .outputs
             .add(&path.output, &path.arc.output)
-            .into_owned();
+            .map(std::borrow::Cow::into_owned);
           if self.base.accept_result_path(&path) {
             let mut input = path.input.get_owner();
             input.ints.truncate(input.length);
@@ -999,7 +1000,7 @@ where
             .fst
             .outputs
             .add(&path.output, &path.arc.output)
-            .into_owned();
+            .map(std::borrow::Cow::into_owned);
           if !self.base.accept_partial_path(&path) {
             break;
           }
@@ -1015,13 +1016,14 @@ where
 }
 
 /// Holds a single input (IntsRef) + output, returned by shortest_paths.
+/// `T` is the payload type; an empty output is stored as `None`.
 pub struct TopResult<T> {
   pub input: IntsRef<Vec<i32>>,
-  pub output: T,
+  pub output: Option<T>,
 }
 
 impl<T> TopResult<T> {
-  pub fn new(input: IntsRef<Vec<i32>>, output: T) -> Self {
+  pub fn new(input: IntsRef<Vec<i32>>, output: Option<T>) -> Self {
     Self { input, output }
   }
 }

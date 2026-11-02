@@ -637,7 +637,7 @@ impl PendingBlock {
     Util::to_ints_ref(&blocks[0].prefix, scratch_ints_ref)?;
     fst_compiler.add(
       scratch_ints_ref.get(),
-      BytesRef::from_slice(Arc::from(bytes), 0, len),
+      Some(BytesRef::from_slice(Arc::from(bytes), 0, len)),
     )?;
     scratch_bytes.reset();
 
@@ -1309,6 +1309,7 @@ where
         .as_ref()
         .ok_or_else(|| LuceneError::illegal_state("root terms index is missing"))?
         .get_empty_output()
+        .and_then(Option::as_ref)
         .ok_or_else(|| LuceneError::illegal_state("root terms index has no empty output"))?;
 
       let mut meta_out = ByteBuffersDataOutput::new();

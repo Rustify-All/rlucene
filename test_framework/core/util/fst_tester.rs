@@ -266,7 +266,7 @@ where
     &mut self,
     input_mode: i32,
     mut fst_enum: IntsRefFSTEnum<O, F>,
-    terms_map: &HashMap<IntsRef<Vec<i32>>, O::V>,
+    terms_map: &HashMap<IntsRef<Vec<i32>>, Option<O::V>>,
   ) -> Result<IntsRefFSTEnum<O, F>>
   where
     F: FstReader,
@@ -388,7 +388,7 @@ where
     &mut self,
     input_mode: i32,
     mut fst: Option<FST<O, F>>,
-    terms_map: &HashMap<IntsRef<Vec<i32>>, O::V>,
+    terms_map: &HashMap<IntsRef<Vec<i32>>, Option<O::V>>,
   ) -> Result<IntsRefFSTEnum<O, F>>
   where
     F: FstReader,
@@ -431,7 +431,7 @@ where
           let mut ir_builder = IntsRefBuilder::default();
           let term = to_ints_ref_from_string_with_builder(&term_str, input_mode, &mut ir_builder);
 
-          let target = InputOutput::new(term, self.outputs.get_no_output().clone());
+          let target = InputOutput::<Option<O::V>>::new(term, None);
           let term = &target.input;
           let pos = self.pairs.binary_search_by(|p| p.input.cmp(&target.input));
 
@@ -619,7 +619,7 @@ where
     // Each step returns its enumerator so run_steps can recover the same FST.
     Ok(())
   }
-  fn outputs_equal(&self, a: &O::V, b: &O::V) -> bool {
+  fn outputs_equal(&self, a: &Option<O::V>, b: &Option<O::V>) -> bool {
     if let Some(sub) = self.sub.as_ref() {
       sub.outputs_equal_impl(a, b)
     } else {
@@ -648,14 +648,14 @@ where
   T: OutputsBound,
 {
   pub input: IntsRef<Vec<i32>>,
-  pub output: T,
+  pub output: Option<T>,
 }
 
 impl<T> InputOutput<T>
 where
   T: OutputsBound,
 {
-  pub fn new(input: IntsRef<Vec<i32>>, output: T) -> Self {
+  pub fn new(input: IntsRef<Vec<i32>>, output: Option<T>) -> Self {
     Self { input, output }
   }
 }
@@ -858,7 +858,7 @@ pub fn run<O, F, AV>(
   fst: &FST<O, F>,
   term: &IntsRef<AV>,
   mut prefix_length: Option<&mut [i32]>,
-) -> Result<Option<O::V>>
+) -> Result<Option<Option<O::V>>>
 where
   O: Outputs,
   F: FstReader,
@@ -867,7 +867,7 @@ where
   assert!(prefix_length.is_none() || prefix_length.as_ref().unwrap().len() == 1);
   let mut arc = Arc::default();
   fst.get_first_arc(&mut arc);
-  let mut output = fst.outputs.get_no_output().clone();
+  let mut output = None;
   let mut reader = fst.get_bytes_reader()?;
 
   for i in 0..=term.length {
@@ -886,7 +886,10 @@ where
         return Ok(None);
       }
     }
-    output = fst.outputs.add(&output, &arc.output()).into_owned();
+    output = fst
+      .outputs
+      .add(&output, &arc.output())
+      .map(std::borrow::Cow::into_owned);
   }
   if let Some(prefix) = prefix_length.as_mut() {
     prefix[0] = term.length as i32;
@@ -898,7 +901,7 @@ pub fn random_accepted_word<O, F, AV, R>(
   fst: &FST<O, F>,
   in_builder: &mut IntsRefBuilder<AV>,
   random: &mut R,
-) -> Result<O::V>
+) -> Result<Option<O::V>>
 where
   O: Outputs,
   F: FstReader,
@@ -909,7 +912,7 @@ where
   fst.get_first_arc(&mut arc);
   let mut arcs = Vec::new();
   in_builder.clear();
-  let mut output = fst.outputs.get_no_output().clone();
+  let mut output = None;
   let mut reader = fst.get_bytes_reader()?;
 
   loop {
@@ -926,7 +929,10 @@ where
     let idx = random.random_range(0..arcs.len());
     arc = arcs[idx].clone();
     arcs.clear();
-    output = fst.outputs.add(&output, &arc.output()).into_owned();
+    output = fst
+      .outputs
+      .add(&output, &arc.output())
+      .map(std::borrow::Cow::into_owned);
 
     if arc.label() == END_LABEL {
       break;

@@ -17,7 +17,7 @@
 use crate::core::codecs::block_term_state::TermStateEnum;
 use crate::core::codecs::block_tree::field_reader::FieldReader;
 use crate::core::codecs::block_tree::intersect_terms_enum_frame::IntersectTermsEnumFrame;
-use crate::core::codecs::block_tree::lucene90_block_tree_terms_reader::NO_OUTPUT;
+use crate::core::codecs::block_tree::lucene90_block_tree_terms_reader::IndexArc;
 use crate::core::codecs::block_tree::segment_terms_enum::OutputAccumulator;
 use crate::core::codecs::postings_reader_base::PostingsReaderBase;
 use crate::core::index::BytesRef;
@@ -50,7 +50,7 @@ where
 {
   pub(crate) input: I,
   pub(crate) stack: Vec<IntersectTermsEnumFrame<PR::TermState>>,
-  arcs: Vec<Arc<BytesRef<std::sync::Arc<Vec<u8>>>>>,
+  arcs: Vec<IndexArc>,
   pub(crate) automaton: AutomatonEnum,
   common_suffix: Option<std::sync::Arc<BytesRef<Vec<u8>>>>,
   current_frame: usize,
@@ -131,7 +131,9 @@ where
     // push initial output
     {
       let arc = &ite.arcs[ite.stack[0].arc];
-      ite.output_accumulator.push(&arc.output);
+      if let Some(output) = arc.output.as_ref() {
+        ite.output_accumulator.push(output);
+      }
     }
 
     if let Some(st) = start_term.as_ref() {
@@ -164,11 +166,8 @@ where
   pub(crate) fn get_arc(&mut self, ord: usize) -> Result<usize> {
     if ord >= self.arcs.len() {
       ArrayUtil::grow_capacity(&mut self.arcs, ord + 1)?;
-      let no_output = &*NO_OUTPUT;
       while self.arcs.len() <= ord {
-        self
-          .arcs
-          .push(Arc::with_outputs(no_output.clone(), no_output.clone()));
+        self.arcs.push(Arc::with_outputs(None, None));
       }
     }
     Ok(ord)
@@ -221,7 +220,9 @@ where
       let v = fr_index.find_target_arc(target, &follow_arcs[arc_idx], &mut next_arcs[0], reader)?;
       debug_assert!(v.is_some());
       arc_idx = next_idx;
-      self.output_accumulator.push(&self.arcs[arc_idx].output);
+      if let Some(output) = self.arcs[arc_idx].output.as_ref() {
+        self.output_accumulator.push(output);
+      }
       idx += 1;
     }
 
@@ -232,14 +233,16 @@ where
     {
       let arc = &self.arcs[f.arc];
       debug_assert!(arc.is_final());
-      self.output_accumulator.push(&arc.next_final_output);
+      if let Some(output) = arc.next_final_output.as_ref() {
+        self.output_accumulator.push(output);
+      }
     }
 
     IntersectTermsEnumFrame::load_from_output_accumulator(self, new_ord)?;
     let frame = &self.stack[new_ord];
-    self
-      .output_accumulator
-      .pop(&self.arcs[frame.arc].next_final_output);
+    if let Some(output) = self.arcs[frame.arc].next_final_output.as_ref() {
+      self.output_accumulator.pop(output);
+    }
     Ok(new_ord)
   }
   fn get_state(&mut self) -> Result<i32> {

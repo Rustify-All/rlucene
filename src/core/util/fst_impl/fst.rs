@@ -82,7 +82,7 @@ where
     self.metadata.num_bytes
   }
 
-  pub fn get_empty_output(&self) -> Option<&O::V> {
+  pub fn get_empty_output(&self) -> Option<&Option<O::V>> {
     self.metadata.empty_output.as_ref()
   }
 
@@ -175,23 +175,27 @@ where
   /// Fills the virtual start arc, i.e., an empty incoming arc to the FST's
   /// start node, reusing the caller's arc.
   pub fn get_first_arc(&self, arc: &mut Arc<O::V>) {
-    let (flags, no_output, final_output) = self.first_arc_state();
+    let (flags, final_output) = self.first_arc_state();
     arc.flags = flags;
-    arc.next_final_output.assign_from(final_output);
-    arc.output.assign_from(no_output);
+    match (arc.next_final_output.as_mut(), final_output) {
+      (Some(current), Some(output)) => current.assign_from(output),
+      (_, None) => arc.next_final_output = None,
+      (None, Some(output)) => arc.next_final_output = Some(output.clone()),
+    }
+    arc.output = None;
     // If there are no nodes, ie, the FST only accepts the
     // empty string, then startNode is 0
     arc.target = self.metadata.start_node;
   }
   /// Returns the virtual start arc without constructing default output slots.
   pub fn get_first_arc_owned(&self) -> Arc<O::V> {
-    let (flags, no_output, final_output) = self.first_arc_state();
+    let (flags, final_output) = self.first_arc_state();
     Arc {
       label: 0,
-      output: no_output.clone(),
+      output: None,
       target: self.metadata.start_node,
       flags,
-      next_final_output: final_output.clone(),
+      next_final_output: final_output.cloned(),
       next_arc: 0,
       node_flags: 0,
       bytes_per_arc: 0,
@@ -204,17 +208,16 @@ where
     }
   }
 
-  fn first_arc_state(&self) -> (u8, &O::V, &O::V) {
-    let no_output = self.outputs.get_no_output();
+  fn first_arc_state(&self) -> (u8, Option<&O::V>) {
     match self.metadata.empty_output.as_ref() {
       Some(empty_output) => {
         let mut flags = BIT_FINAL_ARC | BIT_LAST_ARC;
-        if empty_output != no_output {
+        if empty_output.is_some() {
           flags |= BIT_ARC_HAS_FINAL_OUTPUT;
         }
-        (flags, no_output, empty_output)
+        (flags, empty_output.as_ref())
       },
-      None => (BIT_LAST_ARC, no_output, no_output),
+      None => (BIT_LAST_ARC, None),
     }
   }
   /// Follows the `follow` arc and reads the last arc of its target; this
@@ -803,23 +806,15 @@ where
     }
 
     if arc.flag(BIT_ARC_HAS_OUTPUT) {
-      match self.outputs.read(reader)? {
-        std::borrow::Cow::Borrowed(output) => arc.output.assign_from(output),
-        std::borrow::Cow::Owned(output) => arc.output = output,
-      }
+      arc.output = self.outputs.read(reader)?;
     } else {
-      let no_output = self.outputs.get_no_output();
-      arc.output.assign_from(no_output);
+      arc.output = None;
     }
 
     if arc.flag(BIT_ARC_HAS_FINAL_OUTPUT) {
-      match self.outputs.read_final_output(reader)? {
-        std::borrow::Cow::Borrowed(output) => arc.next_final_output.assign_from(output),
-        std::borrow::Cow::Owned(output) => arc.next_final_output = output,
-      }
+      arc.next_final_output = self.outputs.read_final_output(reader)?;
     } else {
-      let no_output = self.outputs.get_no_output();
-      arc.next_final_output.assign_from(no_output);
+      arc.next_final_output = None;
     }
 
     if arc.flag(BIT_STOP_NODE) {
@@ -931,14 +926,16 @@ where
   }
 }
 
+/// An FST arc whose output payload type is `T`.
+/// The output fields use `None` for an empty output.
 #[derive(Default, Clone, Debug)]
 pub struct Arc<T> {
   // *** Arc fields.
   pub(crate) label: i32,
-  pub(crate) output: T,
+  pub(crate) output: Option<T>,
   target: i64,
   flags: u8,
-  pub(crate) next_final_output: T,
+  pub(crate) next_final_output: Option<T>,
   next_arc: i64,
   node_flags: u8,
 
@@ -971,7 +968,7 @@ pub struct Arc<T> {
 impl<T> Arc<T> {
   // A private traversal slot starts without an encoded output. Supply its
   // empty values directly instead of allocating temporary default owners.
-  pub(crate) fn with_outputs(output: T, next_final_output: T) -> Self {
+  pub(crate) fn with_outputs(output: Option<T>, next_final_output: Option<T>) -> Self {
     Self {
       label: 0,
       output,
@@ -1084,10 +1081,10 @@ impl<T: Clone> Arc<T> {
     self.first_label = other.first_label();
     self.presence_index = other.presence_index;
   }
-  pub fn output(&self) -> T {
+  pub fn output(&self) -> Option<T> {
     self.output.clone()
   }
-  pub fn next_final_output(&self) -> T {
+  pub fn next_final_output(&self) -> Option<T> {
     self.next_final_output.clone()
   }
 }
@@ -1108,11 +1105,15 @@ impl<T: Display> Display for Arc<T> {
     if self.flag(BIT_STOP_NODE) {
       write!(f, " stop")?;
     }
-    if self.flag(BIT_ARC_HAS_OUTPUT) {
-      write!(f, " output={}", self.output)?;
+    if self.flag(BIT_ARC_HAS_OUTPUT)
+      && let Some(output) = &self.output
+    {
+      write!(f, " output={output}")?;
     }
-    if self.flag(BIT_ARC_HAS_FINAL_OUTPUT) {
-      write!(f, " nextFinalOutput={}", self.next_final_output)?;
+    if self.flag(BIT_ARC_HAS_FINAL_OUTPUT)
+      && let Some(output) = &self.next_final_output
+    {
+      write!(f, " nextFinalOutput={output}")?;
     }
     if self.bytes_per_arc() != 0 {
       let node_flag_str = match self.node_flags {
@@ -1222,7 +1223,7 @@ where
   pub version: i32,
   /// If `Some`, this FST accepts the empty string and produces this
   /// output.
-  pub empty_output: Option<O::V>,
+  pub empty_output: Option<Option<O::V>>,
   pub start_node: i64,
   pub num_bytes: i64,
 }
@@ -1230,7 +1231,7 @@ impl<O: Outputs> FSTMetadata<O> {
   pub fn new(
     input_type: InputType,
     outputs: O,
-    empty_output: Option<O::V>,
+    empty_output: Option<Option<O::V>>,
     start_node: i64,
     version: i32,
     num_bytes: i64,
@@ -1252,7 +1253,7 @@ impl<O: Outputs> FSTMetadata<O> {
     self.version
   }
 
-  pub fn empty_output(&self) -> Option<&O::V> {
+  pub fn empty_output(&self) -> Option<&Option<O::V>> {
     self.empty_output.as_ref()
   }
 
@@ -1506,7 +1507,7 @@ where
   // experimental), but we are sometimes able to offer it
   let version = CodecUtil::check_header(meta_in, FILE_FORMAT_NAME, VERSION_START, VERSION_CURRENT)?;
 
-  let mut empty_output: Option<O::V> = None;
+  let mut empty_output: Option<Option<O::V>> = None;
 
   if meta_in.read_byte()? == 1 {
     // Accepts empty string
@@ -1535,7 +1536,7 @@ where
     if num_bytes > 0 {
       reader.set_position((num_bytes - 1) as i64);
     }
-    empty_output = Some(outputs.read_final_output(&mut reader)?.into_owned());
+    empty_output = Some(outputs.read_final_output(&mut reader)?);
   }
   let input_type = match meta_in.read_byte()? {
     0 => InputType::Byte1,

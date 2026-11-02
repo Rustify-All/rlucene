@@ -17,38 +17,15 @@
 use crate::core::store::{DataInput, DataOutput};
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::fst_impl::outputs::Outputs;
+use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
-use std::sync::Arc;
 use std::sync::LazyLock;
 
-static NO_OUTPUT: LazyLock<Arc<i64>> = LazyLock::new(|| Arc::new(0));
+pub static SINGLETON: LazyLock<NoOutputs> = LazyLock::new(NoOutputs::default);
 
-pub static SINGLETON: LazyLock<NoOutputs> = LazyLock::new(|| NoOutputs {
-  no_output: &NO_OUTPUT,
-});
-
-/// FST outputs implementation for automata that do not store output values.
-///
-/// lucene.experimental
-pub struct NoOutputs {
-  no_output: &'static Arc<i64>,
-}
-
-impl Clone for NoOutputs {
-  fn clone(&self) -> Self {
-    Self {
-      no_output: self.no_output,
-    }
-  }
-}
-
-impl Default for NoOutputs {
-  fn default() -> Self {
-    Self {
-      no_output: &NO_OUTPUT,
-    }
-  }
-}
+/// Outputs for an automaton without payloads. Every stored output is `None`.
+#[derive(Clone, Default)]
+pub struct NoOutputs;
 
 impl NoOutputs {
   pub fn get_singleton() -> &'static NoOutputs {
@@ -63,55 +40,40 @@ impl Display for NoOutputs {
 }
 
 impl Outputs for NoOutputs {
-  type V = Arc<i64>;
+  type V = ();
 
-  fn common(&self, output1: &Self::V, output2: &Self::V) -> Self::V {
-    debug_assert!(Arc::ptr_eq(output1, self.no_output));
-    debug_assert!(Arc::ptr_eq(output2, self.no_output));
-    self.no_output.clone()
+  fn common(&self, a: &Option<()>, b: &Option<()>) -> Option<()> {
+    debug_assert!(a.is_none() && b.is_none());
+    None
   }
-
-  fn subtract<'a>(&self, output: &'a Self::V, inc: &Self::V) -> std::borrow::Cow<'a, Self::V> {
-    debug_assert!(Arc::ptr_eq(output, self.no_output));
-    debug_assert!(Arc::ptr_eq(inc, self.no_output));
-    std::borrow::Cow::Borrowed(output)
+  fn subtract(&self, output: &Option<()>, inc: &Option<()>) -> Option<()> {
+    debug_assert!(output.is_none() && inc.is_none());
+    None
   }
-
-  fn add<'a>(&self, prefix: &'a Self::V, output: &'a Self::V) -> std::borrow::Cow<'a, Self::V> {
-    debug_assert!(Arc::ptr_eq(prefix, self.no_output), "got {prefix}");
-    debug_assert!(Arc::ptr_eq(output, self.no_output));
-    std::borrow::Cow::Borrowed(prefix)
+  fn add<'a>(&self, prefix: &'a Option<()>, output: &'a Option<()>) -> Option<Cow<'a, ()>> {
+    debug_assert!(prefix.is_none() && output.is_none());
+    None
   }
-
-  fn write<DO>(&self, _output: &Self::V, _out: &mut DO) -> Result<()>
+  fn write<DO>(&self, _output: &Option<()>, _out: &mut DO) -> Result<()>
   where
     DO: DataOutput,
   {
     Ok(())
   }
-
-  fn read<DI>(&self, _input: &mut DI) -> Result<std::borrow::Cow<'_, Self::V>>
+  fn read<DI>(&self, _input: &mut DI) -> Result<Option<()>>
   where
     DI: DataInput,
   {
-    Ok(std::borrow::Cow::Borrowed(self.no_output))
+    Ok(None)
   }
-
-  fn get_no_output(&self) -> &Self::V {
-    self.no_output
-  }
-
-  fn output_to_string(&self, _output: &Self::V) -> String {
+  fn output_to_string(&self, _output: &Option<()>) -> String {
     String::new()
   }
-
-  fn merge(&self, first: &Self::V, second: &Self::V) -> Result<Self::V> {
-    debug_assert!(Arc::ptr_eq(first, self.no_output));
-    debug_assert!(Arc::ptr_eq(second, self.no_output));
-    Ok(self.no_output.clone())
+  fn merge(&self, first: &Option<()>, second: &Option<()>) -> Result<Option<()>> {
+    debug_assert!(first.is_none() && second.is_none());
+    Ok(None)
   }
-
-  fn ram_bytes_used(&self, _output: &Self::V) -> i64 {
+  fn ram_bytes_used(&self, _output: &Option<()>) -> i64 {
     0
   }
 }

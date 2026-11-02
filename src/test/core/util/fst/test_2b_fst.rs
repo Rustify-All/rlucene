@@ -65,7 +65,7 @@ fn test() -> Result<()> {
     {
       println!("\nTEST: ~2.2B nodes; output=NO_OUTPUTS");
       let outputs = NoOutputs::get_singleton().clone();
-      let no_output = outputs.get_no_output();
+
       let builder: Builder<_, DummyIndexOutput> = Builder::new(InputType::Byte1, outputs.clone());
       let mut fst_compiler = builder.build()?;
 
@@ -78,7 +78,7 @@ fn test() -> Result<()> {
         for value in &mut input2.ints[10..] {
           *value = r.random_range(0..256);
         }
-        fst_compiler.add(&input2, no_output.clone())?;
+        fst_compiler.add(&input2, None)?;
         count += 1;
         if count % 100_000 == 0 {
           println!(
@@ -116,10 +116,7 @@ fn test() -> Result<()> {
         for value in &mut input2.ints[10..] {
           *value = r.random_range(0..256);
         }
-        assert_eq!(
-          Some(no_output),
-          Util::get_from_ints(&fst, &input2)?.as_ref()
-        );
+        assert_eq!(Some(None), Util::get_from_ints(&fst, &input2)?);
         next_input(&mut r, &mut input2.ints);
       }
 
@@ -133,7 +130,7 @@ fn test() -> Result<()> {
           *value = r.random_range(0..256);
         }
         assert_eq!(input2, pair.input);
-        assert_eq!(no_output, &pair.output);
+        assert!(pair.output.is_none());
         upto += 1;
         next_input(&mut r, &mut input2.ints);
       }
@@ -168,10 +165,7 @@ fn test() -> Result<()> {
         for value in &mut input2.ints[10..] {
           *value = r.random_range(0..256);
         }
-        assert_eq!(
-          Some(no_output),
-          Util::get_from_ints(&fst, &input2)?.as_ref()
-        );
+        assert_eq!(Some(None), Util::get_from_ints(&fst, &input2)?);
         next_input(&mut r, &mut input2.ints);
       }
 
@@ -185,7 +179,7 @@ fn test() -> Result<()> {
           *value = r.random_range(0..256);
         }
         assert_eq!(input2, pair.input);
-        assert_eq!(no_output, &pair.output);
+        assert!(pair.output.is_none());
         upto += 1;
         next_input(&mut r, &mut input2.ints);
       }
@@ -208,7 +202,7 @@ fn test() -> Result<()> {
         r.fill(&mut output_bytes[..]);
         // println!("add: {input} -> {output}");
         let output = BytesRef::from_bytes(Arc::new(output_bytes.clone()));
-        fst_compiler.add(&input, output)?;
+        fst_compiler.add(&input, Some(output))?;
         count += 1;
         if count % 10_000 == 0 {
           let size = fst_compiler.fst_size_in_bytes();
@@ -245,6 +239,7 @@ fn test() -> Result<()> {
           Some(output_bytes.as_slice()),
           actual_output
             .as_ref()
+            .and_then(Option::as_ref)
             .map(|output| &output.bytes[output.offset..output.offset + output.length]),
           "actual output: {actual_output:?}"
         );
@@ -261,7 +256,7 @@ fn test() -> Result<()> {
         r.fill(&mut output_bytes[..]);
         assert_eq!(
           output_bytes.as_slice(),
-          &pair.output.bytes[pair.output.offset..pair.output.offset + pair.output.length],
+          pair.output.as_ref().unwrap().as_byte_slice(),
           "actual output: {:?}",
           pair.output
         );
@@ -302,6 +297,7 @@ fn test() -> Result<()> {
           Some(output_bytes.as_slice()),
           actual_output
             .as_ref()
+            .and_then(Option::as_ref)
             .map(|output| &output.bytes[output.offset..output.offset + output.length]),
           "actual output: {actual_output:?}"
         );
@@ -318,7 +314,7 @@ fn test() -> Result<()> {
         r.fill(&mut output_bytes[..]);
         assert_eq!(
           output_bytes.as_slice(),
-          &pair.output.bytes[pair.output.offset..pair.output.offset + pair.output.length],
+          pair.output.as_ref().unwrap().as_byte_slice(),
           "actual output: {:?}",
           pair.output
         );
@@ -342,7 +338,7 @@ fn test() -> Result<()> {
       let mut r = StdRng::seed_from_u64(seed);
       loop {
         // println!("add: {input} -> {output}");
-        fst_compiler.add(&input, output)?;
+        fst_compiler.add(&input, Some(output))?;
         output += 1 + r.random_range(0..10);
         count += 1;
         if count % 10_000 == 0 {
@@ -375,7 +371,7 @@ fn test() -> Result<()> {
         if i % 1_000_000 == 0 {
           println!("{}...: took {} seconds", i, start_time.elapsed().as_secs());
         }
-        assert_eq!(Some(output), Util::get_from_ints(&fst, &input)?);
+        assert_eq!(Some(Some(output)), Util::get_from_ints(&fst, &input)?);
         output += 1 + r.random_range(0..10);
         next_input(&mut r, &mut input.ints);
       }
@@ -388,7 +384,7 @@ fn test() -> Result<()> {
       output = 1;
       while let Some(pair) = fst_enum.next_value()? {
         assert_eq!(input, pair.input);
-        assert_eq!(output, pair.output);
+        assert_eq!(Some(output), pair.output);
         output += 1 + r.random_range(0..10);
         upto += 1;
         next_input(&mut r, &mut input.ints);
@@ -422,7 +418,7 @@ fn test() -> Result<()> {
         if i % 1_000_000 == 0 {
           println!("{}...: took {} seconds", i, start_time.elapsed().as_secs());
         }
-        assert_eq!(Some(output), Util::get_from_ints(&fst, &input)?);
+        assert_eq!(Some(Some(output)), Util::get_from_ints(&fst, &input)?);
         output += 1 + r.random_range(0..10);
         next_input(&mut r, &mut input.ints);
       }
@@ -435,7 +431,7 @@ fn test() -> Result<()> {
       output = 1;
       while let Some(pair) = fst_enum.next_value()? {
         assert_eq!(input, pair.input);
-        assert_eq!(output, pair.output);
+        assert_eq!(Some(output), pair.output);
         output += 1 + r.random_range(0..10);
         upto += 1;
         next_input(&mut r, &mut input.ints);

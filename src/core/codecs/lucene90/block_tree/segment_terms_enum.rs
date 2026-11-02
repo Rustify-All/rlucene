@@ -21,8 +21,9 @@ use std::fmt::{Display, Formatter};
 
 use crate::core::codecs::block_term_state::TermStateEnum;
 use crate::core::codecs::block_tree::floor_data::FloorData;
+use crate::core::codecs::block_tree::lucene90_block_tree_terms_reader::IndexArc;
 use crate::core::codecs::block_tree::lucene90_block_tree_terms_reader::{
-  NO_OUTPUT, OUTPUT_FLAG_HAS_TERMS, OUTPUT_FLAG_IS_FLOOR, OUTPUT_FLAGS_NUM_BITS,
+  OUTPUT_FLAG_HAS_TERMS, OUTPUT_FLAG_IS_FLOOR, OUTPUT_FLAGS_NUM_BITS,
 };
 use crate::core::codecs::lucene90::block_tree::field_reader::FieldReader;
 use crate::core::codecs::lucene90::block_tree::segment_terms_enum_frame::SegmentTermsEnumFrame;
@@ -64,7 +65,7 @@ where
   eof: bool,
   pub(crate) term: BytesRefBuilder<Vec<u8>>,
   fst_reader: Option<ReverseRandomAccessReader<I::RandomAccessSlice>>,
-  arcs: Vec<Arc<BytesRef<std::sync::Arc<Vec<u8>>>>>,
+  arcs: Vec<IndexArc>,
   prepare_seek_status: PrepareSeekStatus,
 }
 
@@ -223,11 +224,8 @@ where
   pub(crate) fn get_arc(&mut self, ord: usize) -> Result<usize> {
     if ord >= self.arcs.len() {
       ArrayUtil::grow_capacity(&mut self.arcs, ord + 1)?;
-      let no_output = &*NO_OUTPUT;
       while self.arcs.len() <= ord {
-        self
-          .arcs
-          .push(Arc::with_outputs(no_output.clone(), no_output.clone()));
+        self.arcs.push(Arc::with_outputs(None, None));
       }
     }
     Ok(ord)
@@ -357,7 +355,9 @@ where
       arc_index = 0;
       arc = &mut self.arcs[arc_index];
       debug_assert!(arc.is_final());
-      self.output_accumulator.push(&arc.output);
+      if let Some(output) = arc.output.as_ref() {
+        self.output_accumulator.push(output);
+      }
 
       target_upto = 0;
       let mut last_frame: usize = 0;
@@ -377,7 +377,9 @@ where
         arc_index = 1 + target_upto;
         arc = &mut self.arcs[arc_index];
         debug_assert_eq!(arc.label(), target.as_byte_slice()[target_upto] as i32);
-        self.output_accumulator.push(&arc.output);
+        if let Some(output) = arc.output.as_ref() {
+          self.output_accumulator.push(output);
+        }
 
         if arc.is_final() {
           last_frame = (self.stack[last_frame].ord + 1) as usize;
@@ -427,15 +429,21 @@ where
           .get_first_arc(arc);
         debug_assert!(arc.is_final());
 
-        self.output_accumulator.push(&arc.output);
+        if let Some(output) = arc.output.as_ref() {
+          self.output_accumulator.push(output);
+        }
 
         self.current_frame_idx = STATIC_FRAME_IDX;
 
         target_upto = 0;
-        self.output_accumulator.push(&arc.next_final_output);
+        if let Some(output) = arc.next_final_output.as_ref() {
+          self.output_accumulator.push(output);
+        }
       }
       self.current_frame_idx = self.push_frame_with_length(Some(0), 0)?;
-      self.output_accumulator.pop(&self.arcs[0].next_final_output);
+      if let Some(output) = self.arcs[0].next_final_output.as_ref() {
+        self.output_accumulator.pop(output);
+      }
     }
     // We are done sharing the common prefix with the incoming target and where we
     // are currently seek'd; now continue walking the index:
@@ -491,14 +499,18 @@ where
 
         let arc = &mut self.arcs[next_arc_idx];
         self.term.set_byte_at(target_upto, target_label as u8);
-        self.output_accumulator.push(&arc.output);
+        if let Some(output) = arc.output.as_ref() {
+          self.output_accumulator.push(output);
+        }
         target_upto += 1;
         if arc.is_final() {
-          self.output_accumulator.push(&arc.next_final_output);
+          if let Some(output) = arc.next_final_output.as_ref() {
+            self.output_accumulator.push(output);
+          }
           self.current_frame_idx = self.push_frame_with_length(Some(next_arc_idx), target_upto)?;
-          self
-            .output_accumulator
-            .pop(&self.arcs[next_arc_idx].next_final_output);
+          if let Some(output) = self.arcs[next_arc_idx].next_final_output.as_ref() {
+            self.output_accumulator.pop(output);
+          }
         }
       }
     }
@@ -717,7 +729,9 @@ where
       arc_index = 0;
       arc = &self.arcs[arc_index];
       debug_assert!(arc.is_final());
-      self.output_accumulator.push(&arc.output);
+      if let Some(output) = arc.output.as_ref() {
+        self.output_accumulator.push(output);
+      }
       target_upto = 0;
 
       let mut last_frame_index: usize = 0;
@@ -736,7 +750,9 @@ where
         arc_index = 1 + target_upto;
         arc = &self.arcs[arc_index];
         debug_assert_eq!(arc.label(), target.as_byte_slice()[target_upto] as i32);
-        self.output_accumulator.push(&arc.output);
+        if let Some(output) = arc.output.as_ref() {
+          self.output_accumulator.push(output);
+        }
 
         if arc.is_final() {
           last_frame_index = (self.stack[last_frame_index].ord + 1) as usize;
@@ -776,14 +792,20 @@ where
 
       debug_assert!(arc.is_final());
 
-      self.output_accumulator.push(&arc.output);
+      if let Some(output) = arc.output.as_ref() {
+        self.output_accumulator.push(output);
+      }
 
       self.current_frame_idx = STATIC_FRAME_IDX;
 
       target_upto = 0;
-      self.output_accumulator.push(&arc.next_final_output);
+      if let Some(output) = arc.next_final_output.as_ref() {
+        self.output_accumulator.push(output);
+      }
       self.current_frame_idx = self.push_frame_with_length(Some(0), 0)?;
-      self.output_accumulator.pop(&self.arcs[0].next_final_output);
+      if let Some(output) = self.arcs[0].next_final_output.as_ref() {
+        self.output_accumulator.pop(output);
+      }
     }
     let mut next_arc_idx;
     while target_upto < target.length {
@@ -840,15 +862,19 @@ where
         arc_index = next_arc_idx;
         let arc = &self.arcs[arc_index];
         self.term.set_byte_at(target_upto, target_label as u8);
-        self.output_accumulator.push(&arc.output);
+        if let Some(output) = arc.output.as_ref() {
+          self.output_accumulator.push(output);
+        }
 
         target_upto += 1;
         if arc.is_final() {
-          self.output_accumulator.push(&arc.next_final_output);
+          if let Some(output) = arc.next_final_output.as_ref() {
+            self.output_accumulator.push(output);
+          }
           self.current_frame_idx = self.push_frame_with_length(Some(arc_index), target_upto)?;
-          self
-            .output_accumulator
-            .pop(&self.arcs[arc_index].next_final_output);
+          if let Some(output) = self.arcs[arc_index].next_final_output.as_ref() {
+            self.output_accumulator.pop(output);
+          }
         }
       }
     }
@@ -1060,7 +1086,7 @@ impl OutputAccumulator {
     }
   }
   pub(crate) fn push(&mut self, output: &BytesRef<std::sync::Arc<Vec<u8>>>) {
-    if !BytesRef::equals(output, &NO_OUTPUT) {
+    if output.length != 0 {
       debug_assert!(output.length > 0);
       if self.outputs.len() == self.num {
         if self.outputs.capacity() == 0 {
@@ -1075,7 +1101,7 @@ impl OutputAccumulator {
   }
 
   pub(crate) fn pop(&mut self, output: &BytesRef<std::sync::Arc<Vec<u8>>>) {
-    if !BytesRef::equals(output, &NO_OUTPUT) {
+    if output.length != 0 {
       debug_assert!(self.num > 0);
       debug_assert!(&self.outputs[self.num - 1] == output);
       self.num -= 1;

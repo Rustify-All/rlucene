@@ -35,7 +35,6 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Display;
 use std::sync::Arc;
-use std::sync::LazyLock;
 
 /// A block-based terms index and dictionary that assigns terms to variable
 /// length blocks according to how they share prefixes. The terms index is a
@@ -425,9 +424,10 @@ where
 
 use crate::core::index::BytesRef;
 use crate::core::util::TryIntoInt;
-use crate::core::util::fst_impl::byte_sequence_outputs::ByteSequenceOutputs;
-use crate::core::util::fst_impl::outputs::Outputs;
 use crate::core::util::iterator::{VecIter, VecIteratorExt};
+
+/// Arc outputs in the terms index may be empty; decoded block buffers are ordinary bytes.
+pub(crate) type IndexArc = crate::core::util::fst_impl::fst::Arc<BytesRef<std::sync::Arc<Vec<u8>>>>;
 
 pub(crate) const OUTPUT_FLAGS_NUM_BITS: i32 = 2;
 #[allow(dead_code)]
@@ -453,8 +453,6 @@ pub(crate) const TERMS_INDEX_CODEC_NAME: &str = "BlockTreeTermsIndex";
 /// Extension of terms meta file
 pub(crate) const TERMS_META_EXTENSION: &str = "tmd";
 pub(crate) const TERMS_META_CODEC_NAME: &str = "BlockTreeTermsMeta";
-pub(crate) static NO_OUTPUT: LazyLock<BytesRef<Arc<Vec<u8>>>> =
-  LazyLock::new(|| ByteSequenceOutputs::get_singleton().get_no_output().clone());
 fn read_bytes_ref<I>(input: &mut I) -> Result<BytesRef<Vec<u8>>>
 where
   I: IndexInput,

@@ -19,57 +19,67 @@ use crate::core::store::{DataInput, DataOutput};
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::ints_ref::IntsRef;
 use crate::core::util::{HashCode, OutputIdentity};
+use std::borrow::Cow;
 use std::fmt::Display;
 use std::hash::Hash;
 use std::sync::Arc;
 
-/// Represents the outputs for an FST, providing the basic algebra required for
-/// building and traversing the FST.
-///
-/// Reference-backed outputs must return the same `NO_OUTPUT` singleton from
-/// [`get_no_output`](Outputs::get_no_output). Value outputs use their canonical
-/// no-output value instead; for [`i64`] this is zero.
+/// Output algebra for building and traversing an FST.
+/// `None` is the empty output; `V` describes a payload, without an empty singleton.
+/// Callers represent every empty output as `None`. `Some` must contain a nonempty
+/// payload; the FST does not normalize empty payloads supplied inside `Some`.
+/// An accepted key with an empty output is distinct from a missing key.
 pub trait Outputs: Display + Clone + Default {
   type V: OutputsBound;
 
-  /// Eg. `common("foobar", "food") -> "foo"`
-  fn common(&self, output1: &Self::V, output2: &Self::V) -> Self::V;
+  /// Returns the shared output prefix, or `None` when the prefix is empty.
+  fn common(&self, output1: &Option<Self::V>, output2: &Option<Self::V>) -> Option<Self::V>;
 
-  /// Eg. `subtract("foobar", "foo") -> "bar"`
-  fn subtract<'a>(&self, output: &'a Self::V, inc: &Self::V) -> std::borrow::Cow<'a, Self::V>;
+  /// Removes `inc` from `output`, returning an owned payload or `None`.
+  fn subtract(&self, output: &Option<Self::V>, inc: &Option<Self::V>) -> Option<Self::V>;
 
-  /// Stores `subtract(output, inc)` in `output`.
-  ///
-  /// The old value of `output` is disposable. An implementation may update its
-  /// slice metadata while retaining the backing owner, but must not change data
-  /// visible through other output values.
-  fn subtract_assign(&self, output: &mut Self::V, inc: &Self::V) {
-    match self.subtract(output, inc) {
-      std::borrow::Cow::Borrowed(next) if std::ptr::eq(next, output) => {},
-      std::borrow::Cow::Borrowed(next) => *output = next.clone(),
-      std::borrow::Cow::Owned(next) => *output = next,
+  /// Updates a disposable output without changing bytes shared with other values.
+  fn subtract_assign(&self, output: &mut Option<Self::V>, inc: &Option<Self::V>) {
+    if inc.is_none() {
+      return;
     }
+    *output = self.subtract(output, inc);
   }
 
-  /// Eg. `add("foo", "bar") -> "foobar"`
-  fn add<'a>(&self, prefix: &'a Self::V, output: &'a Self::V) -> std::borrow::Cow<'a, Self::V>;
+  /// Combines two outputs, borrowing an existing nonempty payload when possible.
+  fn add<'a>(
+    &self,
+    prefix: &'a Option<Self::V>,
+    output: &'a Option<Self::V>,
+  ) -> Option<Cow<'a, Self::V>>;
 
-  /// Stores `add(prefix, output)` in `prefix`.
-  ///
-  /// `output` is a disposable scratch slot: an implementation may move its value
-  /// into `prefix` and leave the old prefix in `output`. Callers must not rely on
-  /// the value of `output` after this call. Use [`Self::add`] when both inputs
-  /// must remain unchanged.
-  fn add_assign(&self, prefix: &mut Self::V, output: &mut Self::V) {
+  /// `output` is a disposable slot. Its value may be moved into `prefix`.
+  fn add_assign(&self, prefix: &mut Option<Self::V>, output: &mut Option<Self::V>) {
     let take_output = match self.add(prefix, output) {
-      std::borrow::Cow::Borrowed(existing) if std::ptr::eq(existing, prefix) => false,
-      std::borrow::Cow::Borrowed(existing) if std::ptr::eq(existing, output) => true,
-      std::borrow::Cow::Borrowed(existing) => {
-        *prefix = existing.clone();
+      None => {
+        *prefix = None;
         false
       },
-      std::borrow::Cow::Owned(next) => {
-        *prefix = next;
+      Some(Cow::Borrowed(value))
+        if prefix
+          .as_ref()
+          .is_some_and(|prefix| std::ptr::eq(value, prefix)) =>
+      {
+        false
+      },
+      Some(Cow::Borrowed(value))
+        if output
+          .as_ref()
+          .is_some_and(|output| std::ptr::eq(value, output)) =>
+      {
+        true
+      },
+      Some(Cow::Borrowed(value)) => {
+        *prefix = Some(value.clone());
+        false
+      },
+      Some(Cow::Owned(value)) => {
+        *prefix = Some(value);
         false
       },
     };
@@ -78,27 +88,23 @@ pub trait Outputs: Display + Clone + Default {
     }
   }
 
-  /// Encode an output value into a `Write` stream.
-  fn write<DO>(&self, output: &Self::V, out: &mut DO) -> Result<()>
+  /// Encodes an output, including the existing wire encoding for an empty value.
+  fn write<DO>(&self, output: &Option<Self::V>, out: &mut DO) -> Result<()>
   where
     DO: DataOutput;
 
-  /// Encode a final node output value into a `Write` stream.
-  /// By default this just calls [`Self::write`].
-  fn write_final_output<DO>(&self, output: &Self::V, out: &mut DO) -> Result<()>
+  fn write_final_output<DO>(&self, output: &Option<Self::V>, out: &mut DO) -> Result<()>
   where
     DO: DataOutput,
   {
     self.write(output, out)
   }
 
-  /// Decode an output value previously written with [`Self::write`].
-  fn read<DI>(&self, input: &mut DI) -> Result<std::borrow::Cow<'_, Self::V>>
+  /// Decodes a payload, or `None` for an encoded empty output. Errors remain `Err`.
+  fn read<DI>(&self, input: &mut DI) -> Result<Option<Self::V>>
   where
     DI: DataInput;
 
-  /// Skip the output; defaults to just calling [`Self::read`] and discarding the
-  /// result.
   fn skip_output<DI>(&self, input: &mut DI) -> Result<()>
   where
     DI: DataInput,
@@ -107,72 +113,44 @@ pub trait Outputs: Display + Clone + Default {
     Ok(())
   }
 
-  /// Decode an output value previously written with [`Self::write_final_output`].
-  /// By default this just calls [`Self::read`].
-  fn read_final_output<DI>(&self, input: &mut DI) -> Result<std::borrow::Cow<'_, Self::V>>
+  fn read_final_output<DI>(&self, input: &mut DI) -> Result<Option<Self::V>>
   where
     DI: DataInput,
   {
     self.read(input)
   }
 
-  /// Skip the output previously written with [`Self::write_final_output`];
-  /// defaults to just calling [`Self::read_final_output`] and discarding the
-  /// result.
   fn skip_final_output<DI>(&self, input: &mut DI) -> Result<()>
   where
     DI: DataInput,
   {
-    self.skip_output(input)?;
-    Ok(())
+    self.skip_output(input)
   }
 
-  /// Returns the canonical no-output value. Reference-backed outputs must use
-  /// the same singleton object whenever an operation returns no output.
-  /// Value outputs are recognized by [`OutputsBound::is_no_output`].
-  fn get_no_output(&self) -> &Self::V;
+  fn output_to_string(&self, output: &Option<Self::V>) -> String;
 
-  fn output_to_string(&self, output: &Self::V) -> String;
-
-  fn merge(&self, _first: &Self::V, _second: &Self::V) -> Result<Self::V> {
+  fn merge(&self, _first: &Option<Self::V>, _second: &Option<Self::V>) -> Result<Option<Self::V>> {
     Err(LuceneError::unsupported_operation(""))
   }
 
-  /// Return memory usage for the provided output.
-  ///
-  /// See also: [`Accountable`](crate::core::util::accountable::Accountable)
-  fn ram_bytes_used(&self, output: &Self::V) -> i64;
+  fn ram_bytes_used(&self, output: &Option<Self::V>) -> i64;
 }
 
-/// Output values used by the FST algorithms.
-///
-/// Recognizing no output and updating an existing slot are separate from
-/// physical reference identity, so scalar values need no shared allocation.
-pub trait OutputsBound: Clone + PartialEq + Default + HashCode + Hash + Display {
-  /// Whether this is the canonical no-output representation. Reference-backed
-  /// values compare singleton identity; scalar values compare their value.
-  fn is_no_output(&self, no_output: &Self) -> bool;
-
-  /// Copies `output` into this slot. Reference-backed implementations may
-  /// retain the slot when it already refers to exactly the same output.
+/// Payload operations. Stored empty outputs use `None`.
+pub trait OutputsBound: Clone + PartialEq + Default + HashCode + Hash {
+  /// Hash of the empty value for the existing node-deduplication scheme,
+  /// computed without constructing an empty payload owner.
+  const EMPTY_HASH: fn() -> i32 = || 0;
   fn assign_from(&mut self, output: &Self);
 }
 
 impl OutputsBound for i64 {
-  fn is_no_output(&self, no_output: &Self) -> bool {
-    self == no_output
-  }
-
   fn assign_from(&mut self, output: &Self) {
     *self = *output;
   }
 }
 
 impl OutputsBound for Arc<i64> {
-  fn is_no_output(&self, no_output: &Self) -> bool {
-    self.is_same_reference(no_output)
-  }
-
   #[inline]
   fn assign_from(&mut self, output: &Self) {
     if !self.is_same_reference(output) {
@@ -182,10 +160,12 @@ impl OutputsBound for Arc<i64> {
 }
 
 impl OutputsBound for BytesRef<Arc<Vec<u8>>> {
-  fn is_no_output(&self, no_output: &Self) -> bool {
-    self.is_same_reference(no_output)
-  }
-
+  const EMPTY_HASH: fn() -> i32 = || {
+    crate::core::util::StringHelper::murmurhash3_x86_32(
+      &BytesRef::<Vec<u8>>::new(),
+      *crate::core::util::GOOD_FAST_HASH_SEED,
+    )
+  };
   #[inline]
   fn assign_from(&mut self, output: &Self) {
     if !self.is_same_reference(output) {
@@ -201,10 +181,6 @@ impl OutputsBound for BytesRef<Arc<Vec<u8>>> {
 }
 
 impl OutputsBound for IntsRef<Arc<Vec<i32>>> {
-  fn is_no_output(&self, no_output: &Self) -> bool {
-    self.is_same_reference(no_output)
-  }
-
   fn assign_from(&mut self, output: &Self) {
     if !self.is_same_reference(output) {
       if Arc::ptr_eq(&self.ints, &output.ints) {
@@ -214,5 +190,33 @@ impl OutputsBound for IntsRef<Arc<Vec<i32>>> {
         *self = output.clone();
       }
     }
+  }
+}
+
+impl OutputsBound for () {
+  fn assign_from(&mut self, _output: &Self) {}
+}
+
+impl HashCode for () {
+  fn hash_code(&self) -> i32 {
+    0
+  }
+}
+
+impl<T: OutputsBound> OutputsBound for Option<T> {
+  fn assign_from(&mut self, output: &Self) {
+    match (self.as_mut(), output.as_ref()) {
+      (Some(current), Some(next)) => current.assign_from(next),
+      (_, None) => *self = None,
+      (None, Some(next)) => *self = Some(next.clone()),
+    }
+  }
+}
+
+impl<T: OutputsBound> HashCode for Option<T> {
+  fn hash_code(&self) -> i32 {
+    self
+      .as_ref()
+      .map_or_else(T::EMPTY_HASH, HashCode::hash_code)
   }
 }

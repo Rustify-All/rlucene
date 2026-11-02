@@ -14,39 +14,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use std::fmt::{Display, Formatter};
-use std::mem;
-use std::sync::LazyLock;
-
 use crate::core::store::{DataInput, DataOutput};
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::fst_impl::outputs::Outputs;
+use std::borrow::Cow;
+use std::fmt::{Display, Formatter};
+use std::sync::LazyLock;
 
-static NO_OUTPUT: i64 = 0;
+pub static SINGLETON: LazyLock<PositiveIntOutputs> = LazyLock::new(PositiveIntOutputs::default);
 
-pub static SINGLETON: LazyLock<PositiveIntOutputs> = LazyLock::new(|| PositiveIntOutputs {
-  no_output: &NO_OUTPUT,
-});
-/// An FST [`Outputs`] implementation where each output is a non-negative `i64`.
-pub struct PositiveIntOutputs {
-  no_output: &'static i64,
-}
-
-impl Clone for PositiveIntOutputs {
-  fn clone(&self) -> Self {
-    Self {
-      no_output: self.no_output,
-    }
-  }
-}
-
-impl Default for PositiveIntOutputs {
-  fn default() -> Self {
-    Self {
-      no_output: &NO_OUTPUT,
-    }
-  }
-}
+/// Nonnegative integer outputs. Zero is represented by `None`.
+#[derive(Clone, Default)]
+pub struct PositiveIntOutputs;
 
 impl PositiveIntOutputs {
   pub fn get_singleton() -> &'static PositiveIntOutputs {
@@ -54,8 +33,8 @@ impl PositiveIntOutputs {
   }
 
   #[cfg(debug_assertions)]
-  fn valid(&self, o: &i64) -> bool {
-    debug_assert!(*o == *self.no_output || *o > 0, "o= {o}");
+  fn valid(&self, output: &Option<i64>) -> bool {
+    debug_assert!(output.is_none_or(|value| value > 0), "output={output:?}");
     true
   }
 }
@@ -63,79 +42,68 @@ impl PositiveIntOutputs {
 impl Outputs for PositiveIntOutputs {
   type V = i64;
 
-  fn common(&self, output1: &Self::V, output2: &Self::V) -> Self::V {
+  fn common(&self, output1: &Option<i64>, output2: &Option<i64>) -> Option<i64> {
     #[cfg(debug_assertions)]
     {
       debug_assert!(self.valid(output1));
       debug_assert!(self.valid(output2));
     }
-
-    if *output1 == *self.no_output || *output2 == *self.no_output {
-      *self.no_output
-    } else {
-      debug_assert!(*output1 > 0);
-      debug_assert!(*output2 > 0);
-      if *output1 <= *output2 {
-        *output1
-      } else {
-        *output2
-      }
+    match (output1, output2) {
+      (Some(a), Some(b)) => Some((*a).min(*b)),
+      _ => None,
     }
   }
 
-  fn subtract<'a>(&self, output: &'a Self::V, inc: &Self::V) -> std::borrow::Cow<'a, Self::V> {
+  fn subtract(&self, output: &Option<i64>, inc: &Option<i64>) -> Option<i64> {
     #[cfg(debug_assertions)]
     {
       debug_assert!(self.valid(output));
       debug_assert!(self.valid(inc));
     }
-    debug_assert!(*output >= *inc);
-
-    if *inc == *self.no_output {
-      std::borrow::Cow::Borrowed(output)
-    } else if *output == *inc {
-      std::borrow::Cow::Owned(*self.no_output)
-    } else {
-      std::borrow::Cow::Owned(output.wrapping_sub(*inc))
+    debug_assert!(output.unwrap_or(0) >= inc.unwrap_or(0));
+    match (output, inc) {
+      (output, None) => *output,
+      (Some(a), Some(b)) if a == b => None,
+      (Some(a), Some(b)) => Some(a.wrapping_sub(*b)),
+      (None, Some(value)) => Some(0i64.wrapping_sub(*value)),
     }
   }
 
-  fn add<'a>(&self, prefix: &'a Self::V, output: &'a Self::V) -> std::borrow::Cow<'a, Self::V> {
+  fn add<'a>(&self, prefix: &'a Option<i64>, output: &'a Option<i64>) -> Option<Cow<'a, i64>> {
     #[cfg(debug_assertions)]
     {
       debug_assert!(self.valid(prefix));
       debug_assert!(self.valid(output));
     }
-
-    if *prefix == *self.no_output {
-      std::borrow::Cow::Borrowed(output)
-    } else if *output == *self.no_output {
-      std::borrow::Cow::Borrowed(prefix)
-    } else {
-      // Java long arithmetic wraps even when debug assertions are enabled.
-      std::borrow::Cow::Owned(prefix.wrapping_add(*output))
+    match (prefix, output) {
+      (None, output) => output.as_ref().map(Cow::Borrowed),
+      (prefix, None) => prefix.as_ref().map(Cow::Borrowed),
+      (Some(a), Some(b)) => {
+        let sum = a.wrapping_add(*b);
+        if sum == 0 {
+          None
+        } else {
+          Some(Cow::Owned(sum))
+        }
+      },
     }
   }
 
-  fn write<DO>(&self, output: &Self::V, out: &mut DO) -> Result<()>
+  fn write<DO>(&self, output: &Option<i64>, out: &mut DO) -> Result<()>
   where
     DO: DataOutput,
   {
     #[cfg(debug_assertions)]
     debug_assert!(self.valid(output));
-    out.write_vlong(*output)
+    out.write_vlong(output.unwrap_or(0))
   }
 
-  fn read<DI>(&self, input: &mut DI) -> Result<std::borrow::Cow<'_, Self::V>>
+  fn read<DI>(&self, input: &mut DI) -> Result<Option<i64>>
   where
     DI: DataInput,
   {
-    let v = input.read_vlong()?;
-    if v == 0 {
-      Ok(std::borrow::Cow::Borrowed(self.no_output))
-    } else {
-      Ok(std::borrow::Cow::Owned(v))
-    }
+    let value = input.read_vlong()?;
+    Ok(if value == 0 { None } else { Some(value) })
   }
 
   fn skip_output<DI>(&self, input: &mut DI) -> Result<()>
@@ -146,16 +114,11 @@ impl Outputs for PositiveIntOutputs {
     Ok(())
   }
 
-  fn get_no_output(&self) -> &Self::V {
-    self.no_output
+  fn output_to_string(&self, output: &Option<i64>) -> String {
+    output.unwrap_or(0).to_string()
   }
-
-  fn output_to_string(&self, output: &Self::V) -> String {
-    output.to_string()
-  }
-
-  fn ram_bytes_used(&self, output: &Self::V) -> i64 {
-    mem::size_of_val(output) as i64
+  fn ram_bytes_used(&self, _output: &Option<i64>) -> i64 {
+    std::mem::size_of::<Option<i64>>() as i64
   }
 }
 

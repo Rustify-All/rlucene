@@ -31,7 +31,7 @@ where
 {
   pub fst: FST<O, F>,
   pub(crate) arcs: Vec<Arc<O::V>>,
-  pub(crate) output: Vec<O::V>,
+  pub(crate) output: Vec<Option<O::V>>,
 
   pub(crate) fst_reader: F::FstBytesReader,
   pub(crate) upto: usize,
@@ -44,12 +44,11 @@ where
 {
   pub(crate) fn new(fst: FST<O, F>) -> Result<Self> {
     let fst_reader = fst.get_bytes_reader()?;
-    let no_output = fst.outputs.get_no_output();
     let mut arcs = Vec::with_capacity(10);
     let mut output = Vec::with_capacity(10);
     let root = fst.get_first_arc_owned();
     arcs.push(root);
-    output.push(no_output.clone());
+    output.push(None);
 
     Ok(Self {
       fst,
@@ -60,15 +59,29 @@ where
       target_length: 0,
     })
   }
-  fn set_output(outputs: &O, slots: &mut Vec<O::V>, upto: usize, arc_output: &O::V) {
+  fn set_output(
+    outputs: &O,
+    slots: &mut Vec<Option<O::V>>,
+    upto: usize,
+    arc_output: &Option<O::V>,
+  ) {
     if upto < slots.len() {
       let (prefix, current) = slots.split_at_mut(upto);
       match outputs.add(&prefix[upto - 1], arc_output) {
-        std::borrow::Cow::Borrowed(output) => current[0].assign_from(output),
-        std::borrow::Cow::Owned(output) => current[0] = output,
+        None => current[0] = None,
+        Some(std::borrow::Cow::Borrowed(output)) => {
+          if let Some(current) = &mut current[0] {
+            current.assign_from(output);
+          } else {
+            current[0] = Some(output.clone());
+          }
+        },
+        Some(std::borrow::Cow::Owned(output)) => current[0] = Some(output),
       }
     } else {
-      let output = outputs.add(&slots[upto - 1], arc_output).into_owned();
+      let output = outputs
+        .add(&slots[upto - 1], arc_output)
+        .map(std::borrow::Cow::into_owned);
       slots.push(output);
     }
   }
@@ -1002,10 +1015,7 @@ where
   fn grow_slots(&mut self) {
     // A new depth needs one slot; leave spare Vec capacity uninitialized.
     if self.arcs.len() <= self.upto {
-      let no_output = self.fst.outputs.get_no_output();
-      self
-        .arcs
-        .push(Arc::with_outputs(no_output.clone(), no_output.clone()));
+      self.arcs.push(Arc::with_outputs(None, None));
     }
   }
   // Appends current arc, and then recurses from its target,
@@ -1022,7 +1032,7 @@ where
           .fst
           .outputs
           .add(&self.output[self.upto - 1], &self.arcs[self.upto].output)
-          .into_owned();
+          .map(std::borrow::Cow::into_owned);
         self.output.push(output);
       } else {
         let (prefix, current) = self.output.split_at_mut(self.upto);
@@ -1031,8 +1041,15 @@ where
           .outputs
           .add(&prefix[self.upto - 1], &self.arcs[self.upto].output)
         {
-          std::borrow::Cow::Borrowed(output) => current[0].assign_from(output),
-          std::borrow::Cow::Owned(output) => current[0] = output,
+          None => current[0] = None,
+          Some(std::borrow::Cow::Borrowed(output)) => {
+            if let Some(value) = current[0].as_mut() {
+              value.assign_from(output);
+            } else {
+              current[0] = Some(output.clone());
+            }
+          },
+          Some(std::borrow::Cow::Owned(output)) => current[0] = Some(output),
         }
       }
 
@@ -1067,7 +1084,7 @@ where
           .fst
           .outputs
           .add(&self.output[self.upto - 1], &self.arcs[self.upto].output)
-          .into_owned();
+          .map(std::borrow::Cow::into_owned);
         self.output.push(output);
       } else {
         let (prefix, current) = self.output.split_at_mut(self.upto);
@@ -1076,8 +1093,15 @@ where
           .outputs
           .add(&prefix[self.upto - 1], &self.arcs[self.upto].output)
         {
-          std::borrow::Cow::Borrowed(output) => current[0].assign_from(output),
-          std::borrow::Cow::Owned(output) => current[0] = output,
+          None => current[0] = None,
+          Some(std::borrow::Cow::Borrowed(output)) => {
+            if let Some(value) = current[0].as_mut() {
+              value.assign_from(output);
+            } else {
+              current[0] = Some(output.clone());
+            }
+          },
+          Some(std::borrow::Cow::Owned(output)) => current[0] = Some(output),
         }
       }
 
@@ -1110,9 +1134,9 @@ where
   fn set_current_label(&mut self, label: i32, base: &FSTEnum<O, F>) -> Result<()>;
   fn grow(&mut self, base: &FSTEnum<O, F>) -> Result<()>;
 }
-/// Holds a single input + output pair
+/// Holds a single input + output pair, parameterized by its output payload type.
 #[derive(Clone)]
 pub struct InputOutput<T, I> {
   pub input: I,
-  pub output: T,
+  pub output: Option<T>,
 }

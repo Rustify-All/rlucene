@@ -46,7 +46,7 @@ where
     Ok(Self {
       result: InputOutput {
         input: result_input,
-        output: O::V::default(),
+        output: None,
       },
       base,
     })

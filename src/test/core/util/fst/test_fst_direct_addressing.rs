@@ -132,11 +132,10 @@ fn build_fst_with_compiler(
     DummyIndexOutput,
   >,
 ) -> Result<FST<NoOutputs, DataOutputEnum<DummyIndexOutput>>> {
-  let nothing = fst_compiler.get_fst().outputs.get_no_output().clone();
   let mut scratch = IntsRefBuilder::new();
   for entry in entries {
     Util::to_ints_ref(entry, &mut scratch)?;
-    fst_compiler.add(scratch.get(), nothing.clone())?;
+    fst_compiler.add(scratch.get(), None)?;
   }
   let metadata = fst_compiler.compile()?.unwrap();
   let fst_reader = fst_compiler.get_fst_reader()?;

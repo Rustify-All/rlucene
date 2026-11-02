@@ -148,7 +148,8 @@ where
     let empty_output = reader
       .index
       .as_ref()
-      .and_then(|index| index.metadata().empty_output());
+      .and_then(|index| index.metadata().empty_output())
+      .and_then(Option::as_ref);
     let root_code_final = match empty_output {
       Some(empty_output)
         if root_code.bytes[root_code.offset..root_code.offset + root_code.length]

@@ -14,44 +14,21 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use std::fmt::{Display, Formatter};
-use std::sync::Arc;
-use std::sync::LazyLock;
-
 use crate::core::store::{DataInput, DataOutput};
 use crate::core::util::CoreHelper;
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::fst_impl::outputs::Outputs;
 use crate::core::util::ints_ref::IntsRef;
 use crate::core::util::ram_usage_estimator::size_of_vec;
+use std::borrow::Cow;
+use std::fmt::{Display, Formatter};
+use std::sync::{Arc, LazyLock};
 
-/// Global NO_OUTPUT singleton shared by all threads.
-static NO_OUTPUT: LazyLock<IntsRef<Arc<Vec<i32>>>> = LazyLock::new(IntsRef::new);
+pub static SINGLETON: LazyLock<IntSequenceOutputs> = LazyLock::new(IntSequenceOutputs::default);
 
-pub static SINGLETON: LazyLock<IntSequenceOutputs> = LazyLock::new(|| IntSequenceOutputs {
-  no_output: &NO_OUTPUT,
-});
-
-/// An FST [`Outputs`] implementation where each output is a sequence of ints.
-pub struct IntSequenceOutputs {
-  no_output: &'static IntsRef<Arc<Vec<i32>>>,
-}
-
-impl Clone for IntSequenceOutputs {
-  fn clone(&self) -> Self {
-    Self {
-      no_output: self.no_output,
-    }
-  }
-}
-
-impl Default for IntSequenceOutputs {
-  fn default() -> Self {
-    Self {
-      no_output: &NO_OUTPUT,
-    }
-  }
-}
+/// FST outputs consisting of i32 sequences. `None` represents an empty output.
+#[derive(Clone, Default)]
+pub struct IntSequenceOutputs;
 
 impl IntSequenceOutputs {
   pub fn get_singleton() -> &'static IntSequenceOutputs {
@@ -62,106 +39,120 @@ impl IntSequenceOutputs {
 impl Outputs for IntSequenceOutputs {
   type V = IntsRef<Arc<Vec<i32>>>;
 
-  fn common(&self, output1: &Self::V, output2: &Self::V) -> Self::V {
-    let a = &output1.ints[output1.offset..output1.offset + output1.length];
-    let b = &output2.ints[output2.offset..output2.offset + output2.length];
-
-    let mismatch = match CoreHelper::miss_match_i32(a, b) {
-      -1 => return output1.clone(),       // exactly equals
-      0 => return self.no_output.clone(), // no common prefix
+  fn common(&self, output1: &Option<Self::V>, output2: &Option<Self::V>) -> Option<Self::V> {
+    let (Some(a), Some(b)) = (output1, output2) else {
+      return None;
+    };
+    let left = &a.ints[a.offset..a.offset + a.length];
+    let right = &b.ints[b.offset..b.offset + b.length];
+    let n = match CoreHelper::miss_match_i32(left, right) {
+      -1 => return output1.clone(),
+      0 => return None,
       n => n as usize,
     };
-
-    if mismatch == output1.length {
+    if n == a.length {
       output1.clone()
-    } else if mismatch == output2.length {
+    } else if n == b.length {
       output2.clone()
     } else {
-      IntsRef::from_slice(output1.ints.clone(), output1.offset, mismatch)
+      Some(IntsRef::from_slice(a.ints.clone(), a.offset, n))
     }
   }
 
-  fn subtract<'a>(&self, output: &'a Self::V, inc: &Self::V) -> std::borrow::Cow<'a, Self::V> {
-    if IntsRef::equals(inc, self.no_output) {
-      return std::borrow::Cow::Borrowed(output);
-    } else if inc.length == output.length {
-      return std::borrow::Cow::Owned(self.no_output.clone());
+  fn subtract(&self, output: &Option<Self::V>, inc: &Option<Self::V>) -> Option<Self::V> {
+    let Some(inc) = inc else {
+      return output.clone();
+    };
+    let Some(value) = output.as_ref() else {
+      debug_assert_eq!(inc.length, 0);
+      return None;
+    };
+    if inc.length == value.length {
+      return None;
     }
-
-    debug_assert!(inc.length < output.length);
-
-    std::borrow::Cow::Owned(IntsRef::from_slice(
-      output.ints.clone(),
-      output.offset + inc.length,
-      output.length - inc.length,
+    debug_assert!(inc.length < value.length);
+    Some(IntsRef::from_slice(
+      value.ints.clone(),
+      value.offset + inc.length,
+      value.length - inc.length,
     ))
   }
 
-  fn subtract_assign(&self, output: &mut Self::V, inc: &Self::V) {
-    if IntsRef::equals(inc, self.no_output) {
+  fn subtract_assign(&self, output: &mut Option<Self::V>, inc: &Option<Self::V>) {
+    let Some(inc) = inc else {
+      return;
+    };
+    let Some(value) = output.as_mut() else {
+      debug_assert_eq!(inc.length, 0);
+      return;
+    };
+    if inc.length == value.length {
+      *output = None;
       return;
     }
-    if inc.length == output.length {
-      *output = self.no_output.clone();
-      return;
-    }
-    debug_assert!(inc.length < output.length);
-    let offset = output.offset + inc.length;
-    let length = output.length - inc.length;
+    debug_assert!(inc.length < value.length);
+    let offset = value.offset + inc.length;
+    let length = value.length - inc.length;
     // Retain the constructor's validation before changing either field in debug builds.
     debug_assert!(matches!(
-      IntsRef::from_slice(output.ints.clone(), offset, length).is_valid(),
+      IntsRef::from_slice(value.ints.clone(), offset, length).is_valid(),
       Ok(true)
     ));
-    output.offset = offset;
-    output.length = length;
+    value.offset = offset;
+    value.length = length;
   }
 
-  fn add<'a>(&self, prefix: &'a Self::V, output: &'a Self::V) -> std::borrow::Cow<'a, Self::V> {
-    let no_output = self.no_output;
-    if IntsRef::equals(prefix, no_output) {
-      return std::borrow::Cow::Borrowed(output);
-    } else if IntsRef::equals(output, no_output) {
-      return std::borrow::Cow::Borrowed(prefix);
+  fn add<'a>(
+    &self,
+    prefix: &'a Option<Self::V>,
+    output: &'a Option<Self::V>,
+  ) -> Option<Cow<'a, Self::V>> {
+    match (prefix, output) {
+      (None, output) => output.as_ref().map(Cow::Borrowed),
+      (prefix, None) => prefix.as_ref().map(Cow::Borrowed),
+      (Some(prefix), Some(output)) => {
+        debug_assert!(prefix.length > 0);
+        debug_assert!(output.length > 0);
+        let len = prefix.length + output.length;
+        let mut buf = Vec::with_capacity(len);
+        buf.extend_from_slice(&prefix.ints[prefix.offset..prefix.offset + prefix.length]);
+        buf.extend_from_slice(&output.ints[output.offset..output.offset + output.length]);
+        Some(Cow::Owned(IntsRef::from_slice(Arc::new(buf), 0, len)))
+      },
     }
-    debug_assert!(prefix.length > 0);
-    debug_assert!(output.length > 0);
-    let mut buf = Vec::with_capacity(prefix.length + output.length);
-    buf.extend_from_slice(&prefix.ints[prefix.offset..prefix.offset + prefix.length]);
-    buf.extend_from_slice(&output.ints[output.offset..output.offset + output.length]);
-    std::borrow::Cow::Owned(IntsRef::from_slice(
-      Arc::new(buf),
-      0,
-      prefix.length + output.length,
-    ))
   }
 
-  fn add_assign(&self, prefix: &mut Self::V, output: &mut Self::V) {
-    if IntsRef::equals(prefix, self.no_output) {
+  fn add_assign(&self, prefix: &mut Option<Self::V>, output: &mut Option<Self::V>) {
+    if prefix.is_none() {
       std::mem::swap(prefix, output);
       return;
     }
-    if IntsRef::equals(output, self.no_output) {
+    let (Some(value), Some(output_value)) = (prefix.as_mut(), output.as_ref()) else {
       return;
-    }
-    debug_assert!(prefix.length > 0);
-    debug_assert!(output.length > 0);
+    };
+    debug_assert!(value.length > 0);
+    debug_assert!(output_value.length > 0);
 
-    if prefix.offset == 0
-      && prefix.length == prefix.ints.len()
-      && let Some(ints) = Arc::get_mut(&mut prefix.ints)
+    if value.offset == 0
+      && value.length == value.ints.len()
+      && let Some(ints) = Arc::get_mut(&mut value.ints)
     {
-      ints.extend_from_slice(&output.ints[output.offset..output.offset + output.length]);
-      prefix.length += output.length;
+      ints.extend_from_slice(
+        &output_value.ints[output_value.offset..output_value.offset + output_value.length],
+      );
+      value.length += output_value.length;
       return;
     }
-    *prefix = self.add(prefix, output).into_owned();
+    *prefix = self.add(prefix, output).map(Cow::into_owned);
   }
 
-  fn write<DO>(&self, output: &Self::V, out: &mut DO) -> Result<()>
+  fn write<DO>(&self, output: &Option<Self::V>, out: &mut DO) -> Result<()>
   where
     DO: DataOutput,
   {
+    let Some(output) = output else {
+      return out.write_vint(0);
+    };
     out.write_vint(output.length as i32)?;
     for i in 0..output.length {
       out.write_vint(output.ints[output.offset + i])?;
@@ -169,24 +160,19 @@ impl Outputs for IntSequenceOutputs {
     Ok(())
   }
 
-  fn read<DI>(&self, input: &mut DI) -> Result<std::borrow::Cow<'_, Self::V>>
+  fn read<DI>(&self, input: &mut DI) -> Result<Option<Self::V>>
   where
     DI: DataInput,
   {
     let len = input.read_vint()? as usize;
     if len == 0 {
-      Ok(std::borrow::Cow::Borrowed(self.no_output))
-    } else {
-      let mut buf = Vec::with_capacity(len);
-      for _ in 0..len {
-        buf.push(input.read_vint()?);
-      }
-      Ok(std::borrow::Cow::Owned(IntsRef::from_slice(
-        Arc::new(buf),
-        0,
-        len,
-      )))
+      return Ok(None);
     }
+    let mut buf = Vec::with_capacity(len);
+    for _ in 0..len {
+      buf.push(input.read_vint()?);
+    }
+    Ok(Some(IntsRef::from_slice(Arc::new(buf), 0, len)))
   }
 
   fn skip_output<DI>(&self, input: &mut DI) -> Result<()>
@@ -194,26 +180,23 @@ impl Outputs for IntSequenceOutputs {
     DI: DataInput,
   {
     let len = input.read_vint()?;
-    if len == 0 {
-      return Ok(());
-    }
     for _ in 0..len {
       input.read_vint()?;
     }
     Ok(())
   }
 
-  fn get_no_output(&self) -> &Self::V {
-    self.no_output
+  fn output_to_string(&self, output: &Option<Self::V>) -> String {
+    output
+      .as_ref()
+      .map_or_else(|| "[]".to_owned(), ToString::to_string)
   }
 
-  fn output_to_string(&self, output: &Self::V) -> String {
-    output.to_string()
-  }
-
-  fn ram_bytes_used(&self, output: &Self::V) -> i64 {
-    (std::mem::size_of_val(output.ints.as_ref()) as i64)
-      .saturating_add(size_of_vec(output.ints.as_ref()))
+  fn ram_bytes_used(&self, output: &Option<Self::V>) -> i64 {
+    output.as_ref().map_or(0, |output| {
+      (std::mem::size_of_val(output.ints.as_ref()) as i64)
+        .saturating_add(size_of_vec(output.ints.as_ref()))
+    })
   }
 }
 

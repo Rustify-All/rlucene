@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 use crate::core::store::IndexOutput;
+use crate::core::util::HashCode;
 use crate::core::util::allocator_byte::DirectAllocatorByte;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::fst_impl::byte_block_pool_reverse_bytes_reader::ByteBlockPoolReverseBytesReader;
