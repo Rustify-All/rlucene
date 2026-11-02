@@ -97,6 +97,26 @@ impl Outputs for IntSequenceOutputs {
     ))
   }
 
+  fn subtract_assign(&self, output: &mut Self::V, inc: &Self::V) {
+    if IntsRef::equals(inc, self.no_output) {
+      return;
+    }
+    if inc.length == output.length {
+      *output = self.no_output.clone();
+      return;
+    }
+    debug_assert!(inc.length < output.length);
+    let offset = output.offset + inc.length;
+    let length = output.length - inc.length;
+    // Retain the constructor's validation before changing either field in debug builds.
+    debug_assert!(matches!(
+      IntsRef::from_slice(output.ints.clone(), offset, length).is_valid(),
+      Ok(true)
+    ));
+    output.offset = offset;
+    output.length = length;
+  }
+
   fn add<'a>(&self, prefix: &'a Self::V, output: &'a Self::V) -> std::borrow::Cow<'a, Self::V> {
     let no_output = self.no_output;
     if IntsRef::equals(prefix, no_output) {
@@ -114,6 +134,28 @@ impl Outputs for IntSequenceOutputs {
       0,
       prefix.length + output.length,
     ))
+  }
+
+  fn add_assign(&self, prefix: &mut Self::V, output: &mut Self::V) {
+    if IntsRef::equals(prefix, self.no_output) {
+      std::mem::swap(prefix, output);
+      return;
+    }
+    if IntsRef::equals(output, self.no_output) {
+      return;
+    }
+    debug_assert!(prefix.length > 0);
+    debug_assert!(output.length > 0);
+
+    if prefix.offset == 0
+      && prefix.length == prefix.ints.len()
+      && let Some(ints) = Arc::get_mut(&mut prefix.ints)
+    {
+      ints.extend_from_slice(&output.ints[output.offset..output.offset + output.length]);
+      prefix.length += output.length;
+      return;
+    }
+    *prefix = self.add(prefix, output).into_owned();
   }
 
   fn write<DO>(&self, output: &Self::V, out: &mut DO) -> Result<()>

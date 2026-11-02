@@ -172,8 +172,11 @@ impl QueryBase for ConstantScoreQuery {
     IRC: IndexReaderContext + 'static;
 
   fn to_string(&self, field: &str) -> Result<String> {
-    let inner = self.query.to_string(field)?;
-    Ok(format!("ConstantScore({})", inner))
+    let mut inner = self.query.to_string(field)?;
+    inner.reserve("ConstantScore()".len());
+    inner.insert_str(0, "ConstantScore(");
+    inner.push(')');
+    Ok(inner)
   }
 
   fn create_weight<IRC, SIM>(

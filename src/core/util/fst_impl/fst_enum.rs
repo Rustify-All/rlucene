@@ -60,6 +60,19 @@ where
       target_length: 0,
     })
   }
+  fn set_output(outputs: &O, slots: &mut Vec<O::V>, upto: usize, arc_output: &O::V) {
+    if upto < slots.len() {
+      let (prefix, current) = slots.split_at_mut(upto);
+      match outputs.add(&prefix[upto - 1], arc_output) {
+        std::borrow::Cow::Borrowed(output) => current[0].assign_from(output),
+        std::borrow::Cow::Owned(output) => current[0] = output,
+      }
+    } else {
+      let output = outputs.add(&slots[upto - 1], arc_output).into_owned();
+      slots.push(output);
+    }
+  }
+
   /// Rewinds enum state to match the shared prefix between current term and
   /// target term.
   fn rewind_prefix<FB>(&mut self, sub: &mut FB, target: &FB::V) -> Result<()>
@@ -227,16 +240,7 @@ where
         self.fst.read_arc_by_continuous(arc, reader, target_index)?;
         debug_assert_eq!(arc.label(), target_label);
 
-        let output = self
-          .fst
-          .outputs
-          .add(&self.output[self.upto - 1], &arc.output)
-          .into_owned();
-        if let Some(current) = self.output.get_mut(self.upto) {
-          *current = output;
-        } else {
-          self.output.push(output);
-        }
+        Self::set_output(&self.fst.outputs, &mut self.output, self.upto, &arc.output);
 
         if target_label == END_LABEL {
           return Ok(None);
@@ -282,16 +286,7 @@ where
           .read_arc_by_direct_addressing(arc, reader, target_index)?;
         debug_assert_eq!(arc.label(), target_label);
 
-        let output = self
-          .fst
-          .outputs
-          .add(&self.output[self.upto - 1], &arc.output)
-          .into_owned();
-        if let Some(current) = self.output.get_mut(self.upto) {
-          *current = output;
-        } else {
-          self.output.push(output);
-        }
+        Self::set_output(&self.fst.outputs, &mut self.output, self.upto, &arc.output);
 
         if target_label == END_LABEL {
           return Ok(None);
@@ -338,16 +333,7 @@ where
       debug_assert_eq!(arc.arc_idx(), idx);
       debug_assert_eq!(arc.label(), target_label);
 
-      let output = self
-        .fst
-        .outputs
-        .add(&self.output[self.upto - 1], &arc.output)
-        .into_owned();
-      if let Some(current) = self.output.get_mut(self.upto) {
-        *current = output;
-      } else {
-        self.output.push(output);
-      }
+      Self::set_output(&self.fst.outputs, &mut self.output, self.upto, &arc.output);
 
       if target_label == END_LABEL {
         return Ok(None);
@@ -409,16 +395,7 @@ where
     let upto = arc_index;
     let arc = &mut self.arcs[upto];
     if arc.label() == target_label {
-      let output = self
-        .fst
-        .outputs
-        .add(&self.output[self.upto - 1], &arc.output)
-        .into_owned();
-      if let Some(current) = self.output.get_mut(self.upto) {
-        *current = output;
-      } else {
-        self.output.push(output);
-      }
+      Self::set_output(&self.fst.outputs, &mut self.output, self.upto, &arc.output);
 
       if target_label == END_LABEL {
         return Ok(None);
@@ -561,16 +538,7 @@ where
       self.fst.read_arc_by_continuous(arc, reader, target_index)?;
       debug_assert_eq!(arc.label(), target_label);
 
-      let output = self
-        .fst
-        .outputs
-        .add(&self.output[self.upto - 1], &arc.output)
-        .into_owned();
-      if let Some(current) = self.output.get_mut(self.upto) {
-        *current = output;
-      } else {
-        self.output.push(output);
-      }
+      Self::set_output(&self.fst.outputs, &mut self.output, self.upto, &arc.output);
 
       if target_label == END_LABEL {
         return Ok(None);
@@ -619,16 +587,7 @@ where
           .read_arc_by_direct_addressing(arc, reader, target_index)?;
         debug_assert_eq!(arc.label(), target_label);
 
-        let output = self
-          .fst
-          .outputs
-          .add(&self.output[self.upto - 1], &arc.output)
-          .into_owned();
-        if let Some(current) = self.output.get_mut(self.upto) {
-          *current = output;
-        } else {
-          self.output.push(output);
-        }
+        Self::set_output(&self.fst.outputs, &mut self.output, self.upto, &arc.output);
 
         if target_label == END_LABEL {
           return Ok(None);
@@ -870,16 +829,7 @@ where
         target_label,
         idx
       );
-      let output = self
-        .fst
-        .outputs
-        .add(&self.output[self.upto - 1], &arc.output)
-        .into_owned();
-      if let Some(current) = self.output.get_mut(self.upto) {
-        *current = output;
-      } else {
-        self.output.push(output);
-      }
+      Self::set_output(&self.fst.outputs, &mut self.output, self.upto, &arc.output);
 
       if target_label == END_LABEL {
         return Ok(None);
@@ -925,16 +875,7 @@ where
     let upto = arc_index;
     let arc = &mut self.arcs[upto];
     if arc.label() == target_label {
-      let output = self
-        .fst
-        .outputs
-        .add(&self.output[self.upto - 1], &arc.output)
-        .into_owned();
-      if let Some(current) = self.output.get_mut(self.upto) {
-        *current = output;
-      } else {
-        self.output.push(output);
-      }
+      Self::set_output(&self.fst.outputs, &mut self.output, self.upto, &arc.output);
 
       if target_label == END_LABEL {
         return Ok(None);
@@ -1018,16 +959,12 @@ where
         return Ok(false);
       }
 
-      let output = self
-        .fst
-        .outputs
-        .add(&self.output[self.upto - 1], &next_arc.output)
-        .into_owned();
-      if let Some(current) = self.output.get_mut(self.upto) {
-        *current = output;
-      } else {
-        self.output.push(output);
-      }
+      Self::set_output(
+        &self.fst.outputs,
+        &mut self.output,
+        self.upto,
+        &next_arc.output,
+      );
 
       if target_label == END_LABEL {
         return Ok(true);

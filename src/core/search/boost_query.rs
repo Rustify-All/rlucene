@@ -94,12 +94,9 @@ impl QueryBase for BoostQuery {
     IRC: IndexReaderContext + 'static;
 
   fn to_string(&self, field: &str) -> Result<String> {
-    let inner = self.query.to_string(field)?;
-    let mut s = String::new();
-    s.push('(');
-    s.push_str(&inner);
-    s.push(')');
-    s.push('^');
+    let mut s = self.query.to_string(field)?;
+    s.insert(0, '(');
+    s.push_str(")^");
     write!(s, "{:.1}", self.boost)?;
     Ok(s)
   }

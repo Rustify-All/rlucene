@@ -286,7 +286,13 @@ where
     }
     if bottom != self.bottom || bottom_term != self.bottom_term.as_ref() {
       self.bottom = bottom;
-      self.bottom_term = bottom_term.cloned();
+      if let (Some(previous), Some(current)) = (&mut self.bottom_term, bottom_term) {
+        previous.bytes.clone_from(&current.bytes);
+        previous.offset = current.offset;
+        previous.length = current.length;
+      } else {
+        self.bottom_term = bottom_term.cloned();
+      }
       // clone the term before potentially doing something with it
       // this is a rare but wonderful occurrence anyway
 

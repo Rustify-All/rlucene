@@ -207,7 +207,12 @@ impl OutputsBound for IntsRef<Arc<Vec<i32>>> {
 
   fn assign_from(&mut self, output: &Self) {
     if !self.is_same_reference(output) {
-      *self = output.clone();
+      if Arc::ptr_eq(&self.ints, &output.ints) {
+        self.offset = output.offset;
+        self.length = output.length;
+      } else {
+        *self = output.clone();
+      }
     }
   }
 }

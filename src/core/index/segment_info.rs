@@ -565,11 +565,13 @@ use crate::core::index::{CODEC_FILE_PATTERN, IndexFileNames};
 /// Strips any segment name from the file and renames it with this segment.
 /// This is because "segment names" can change, e.g., by addIndexes(Dir).
 pub fn named_for_this_segment<T: AsRef<str> + Into<String>>(name: &str, file: T) -> String {
-  let file = file.into();
+  let mut file = file.into();
   let stripped = IndexFileNames::strip_segment_name(&file);
   if file.len() == name.len() + stripped.len() && file.starts_with(name) {
     file
   } else {
-    format!("{}{}", name, stripped)
+    let prefix_length = file.len() - stripped.len();
+    file.replace_range(..prefix_length, name);
+    file
   }
 }
