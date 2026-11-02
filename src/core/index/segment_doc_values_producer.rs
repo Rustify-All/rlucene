@@ -66,9 +66,18 @@ where
       0
     };
     let mut dv_producers_by_field = HashMap::with_capacity(num_dv_fields);
-    let mut dv_producers = Vec::with_capacity(num_dv_fields);
-    let mut producer_indices = HashMap::with_capacity(num_dv_fields);
-    let mut dv_gens = Vec::with_capacity(num_dv_fields);
+    let num_dv_gens = all_infos
+      .iter()
+      .filter(|fi| {
+        *fi.get_doc_values_type() != DocValuesType::None && fi.get_doc_values_gen() != -1
+      })
+      .count()
+      + usize::from(all_infos.iter().any(|fi| {
+        *fi.get_doc_values_type() != DocValuesType::None && fi.get_doc_values_gen() == -1
+      }));
+    let mut dv_producers = Vec::with_capacity(num_dv_gens);
+    let mut producer_indices = HashMap::with_capacity(num_dv_gens);
+    let mut dv_gens = Vec::with_capacity(num_dv_gens);
 
     let mut base_producer_index = None;
 

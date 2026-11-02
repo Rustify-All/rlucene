@@ -275,9 +275,13 @@ impl RewritingWeightBase for BlendedRewritingWeight {
         let dropped = high_frequency_terms.insert_with_overflow(idx)?;
 
         if let Some(dropped_idx) = dropped {
-          let mut dropped_pe = high_frequency_terms.compare.postings_enum[dropped_idx]
-            .take()
-            .ok_or_else(|| LuceneError::illegal_state("posting enum is None"))?;
+          // The just-added posting is no longer referenced by the queue when rejected.
+          let mut dropped_pe = if dropped_idx == idx {
+            high_frequency_terms.compare.postings_enum.pop().flatten()
+          } else {
+            high_frequency_terms.compare.postings_enum[dropped_idx].take()
+          }
+          .ok_or_else(|| LuceneError::illegal_state("posting enum is None"))?;
           other_terms.add_disi(&mut dropped_pe)?;
           // Reuse the postings that drop out of the PQ. Note that `dropped` will be None here
           // if nothing is evicted, meaning we will _not_ reuse any postings (which is intentional

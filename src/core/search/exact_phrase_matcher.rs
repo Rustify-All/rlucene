@@ -496,7 +496,12 @@ where
     // the competitive impact consists of the lowest freq among all entries of
     // the PQ (the top) and the highest norm (tracked separately).
     // The empty and single-list cases above do not need a merge queue.
-    let mut pq = PriorityQueue::new(impact_len, SubIteratorCmp)?;
+    let queue_size = if impact_len < i32::MAX as usize {
+      sub_iterators.len()
+    } else {
+      impact_len
+    };
+    let mut pq = PriorityQueue::new(queue_size, SubIteratorCmp)?;
     pq.add_all(sub_iterators)?;
 
     let mut merged_impacts: Vec<Impact> = Vec::new();

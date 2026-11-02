@@ -220,6 +220,9 @@ impl QueryBase for SynonymQuery {
       // If scores are not needed, let BooleanWeight deal with optimizing that case.
       let mut builder = boolean_query::Builder::new();
       let data = Arc::unwrap_or_clone(self.data);
+      if data.terms.len() <= index_searcher::get_max_clause_count() {
+        builder.clauses.reserve_exact(data.terms.len());
+      }
       for term in data.terms {
         builder.add(
           TermQuery::new(Term::new(data.field.clone(), term.term)),

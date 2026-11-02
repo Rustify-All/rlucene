@@ -145,7 +145,8 @@ impl QueryBase for NGramPhraseQuery {
     let terms = self.phrase_query.get_terms();
 
     let terms_len = terms.len();
-    let mut builder = PhraseQueryBuilder::new();
+    let selected_count = (terms_len - 1).div_ceil(n) + 1;
+    let mut builder = PhraseQueryBuilder::with_capacity(selected_count);
 
     for (i, term) in terms.iter().enumerate() {
       if i % n == 0 || i == terms_len - 1 {

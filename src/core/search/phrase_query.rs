@@ -398,6 +398,15 @@ impl Builder {
       positions: Vec::new(),
     }
   }
+  /// Reserves space for an internal rewrite with a known number of terms.
+  pub(crate) fn with_capacity(capacity: usize) -> Self {
+    Self {
+      slop: 0,
+      terms: Vec::with_capacity(capacity),
+      positions: Vec::with_capacity(capacity),
+    }
+  }
+
   pub fn set_slop(&mut self, slop: usize) -> &mut Self {
     self.slop = slop;
     self

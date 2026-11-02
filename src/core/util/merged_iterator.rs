@@ -83,15 +83,25 @@ where
       sub_iterator: sub_iterators,
     };
 
-    let mut queue = PriorityQueue::new(len, cmp)?;
+    let queue_size = if len < i32::MAX as usize {
+      sub_iterator_len
+    } else {
+      len
+    };
+    let mut queue = PriorityQueue::new(queue_size, cmp)?;
 
     for i in 0..sub_iterator_len {
       queue.add(i)?;
     }
+    let top_len = if remove_duplicates {
+      sub_iterator_len
+    } else {
+      sub_iterator_len.min(1)
+    };
     Ok(Self {
       current: None,
       queue,
-      top: vec![0; sub_iterator_len].into_boxed_slice(),
+      top: vec![0; top_len].into_boxed_slice(),
       remove_duplicates,
       num_top: 0,
     })

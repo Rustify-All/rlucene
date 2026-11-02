@@ -1053,7 +1053,7 @@ pub struct OutputAccumulator {
 impl OutputAccumulator {
   pub(crate) fn new() -> Self {
     Self {
-      outputs: Vec::with_capacity(16),
+      outputs: Vec::new(),
       num: 0,
       current_index: 0,
       index: 0,
@@ -1063,6 +1063,9 @@ impl OutputAccumulator {
     if !BytesRef::equals(output, &NO_OUTPUT) {
       debug_assert!(output.length > 0);
       if self.outputs.len() == self.num {
+        if self.outputs.capacity() == 0 {
+          self.outputs.reserve_exact(16);
+        }
         self.outputs.push(output.clone());
       } else if !BytesRef::equals(&self.outputs[self.num], output) {
         self.outputs[self.num] = output.clone();

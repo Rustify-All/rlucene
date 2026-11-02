@@ -32,7 +32,7 @@ use crate::core::search::boolean_clause::Occur;
 use crate::core::search::boolean_query::Builder as BooleanQueryBuilder;
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
 use crate::core::search::exact_phrase_matcher::ExactPhraseMatcher;
-use crate::core::search::index_searcher::IndexSearcher;
+use crate::core::search::index_searcher::{IndexSearcher, get_max_clause_count};
 use crate::core::search::match_no_docs_query::MatchNoDocsQuery;
 use crate::core::search::phrase_matcher::PhraseMatcherEnum;
 use crate::core::search::phrase_query::{PostingsAndFreq, term_positions_cost};
@@ -338,6 +338,11 @@ impl QueryBase for MultiPhraseQuery {
       ))
     } else if self.data.term_arrays.len() == 1 {
       let mut builder = BooleanQueryBuilder::new();
+      if self.data.term_arrays[0].len() <= get_max_clause_count() {
+        builder
+          .clauses
+          .reserve_exact(self.data.term_arrays[0].len());
+      }
       for term in &self.data.term_arrays[0] {
         builder.add(TermQuery::new(term.clone()), Occur::Should)?;
       }

@@ -109,13 +109,14 @@ impl<S> SegmentTermsEnumFrame<S> {
       .new_term_state()?;
     state.as_mut().total_term_freq = -1;
     let state = <P::TermState as Into<S>>::into(state);
-    let suffix_bytes = vec![0u8; 32];
+    // The static frame only retains a term state and never loads a block.
+    let suffix_bytes = vec![0u8; if ord == -1 { 0 } else { 32 }];
     let suffixes_reader = ByteArrayDataInput::with_bytes(suffix_bytes);
-    let suffix_length_bytes = vec![0u8; 32];
+    let suffix_length_bytes = vec![0u8; if ord == -1 { 0 } else { 32 }];
     let suffix_lengths_reader = ByteArrayDataInput::with_bytes(suffix_length_bytes);
-    let stat_bytes = vec![0u8; 64];
+    let stat_bytes = vec![0u8; if ord == -1 { 0 } else { 64 }];
     let stats_reader = ByteArrayDataInput::with_bytes(stat_bytes);
-    let bytes = vec![0u8; 32];
+    let bytes = vec![0u8; if ord == -1 { 0 } else { 32 }];
     let bytes_reader = ByteArrayDataInput::with_bytes(bytes);
     Ok(Self {
       ord,

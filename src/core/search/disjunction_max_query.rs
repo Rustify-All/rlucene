@@ -29,7 +29,7 @@ use crate::core::search::disjunction_max_bulk_scorer::DisjunctionMaxBulkScorer;
 use crate::core::search::disjunction_max_scorer::DisjunctionMaxScorer;
 use crate::core::search::disjunction_scorer::DisjunctionScorer;
 use crate::core::search::explanation::Explanation;
-use crate::core::search::index_searcher::IndexSearcher;
+use crate::core::search::index_searcher::{IndexSearcher, get_max_clause_count};
 use crate::core::search::match_no_docs_query::MatchNoDocsQuery;
 use crate::core::search::matches_utils::from_sub_matches;
 use crate::core::search::query::{
@@ -194,6 +194,9 @@ impl QueryBase for DisjunctionMaxQuery {
 
     if self.tie_breaker_multiplier == 1.0 {
       let mut builder = Builder::new();
+      if self.ordered_queries.len() <= get_max_clause_count() {
+        builder.clauses.reserve_exact(self.ordered_queries.len());
+      }
       for sub in self.ordered_queries.iter() {
         builder.add(sub.clone(), Occur::Should)?;
       }

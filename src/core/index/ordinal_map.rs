@@ -285,7 +285,12 @@ impl OrdinalMap {
     }
     let len = terms_enum_indices.len();
     let cmp = TermsEnumPriorityQueueCmp::new(terms_enum_indices);
-    let mut queue = PriorityQueue::new(sub_len, cmp)?;
+    let queue_size = if sub_len < i32::MAX as usize {
+      len
+    } else {
+      sub_len
+    };
+    let mut queue = PriorityQueue::new(queue_size, cmp)?;
     for i in 0..len {
       queue.add(i)?;
     }

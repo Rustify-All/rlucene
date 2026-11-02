@@ -52,6 +52,13 @@ pub struct BooleanQuery {
 impl BooleanQuery {
   fn new(minimum_number_should_match: i32, clauses: Vec<BooleanClause>) -> BooleanQuery {
     let mut clause_sets: [Vec<usize>; 4] = [const { Vec::new() }; 4];
+    for occur in [Occur::Should, Occur::Must] {
+      let count = clauses
+        .iter()
+        .filter(|clause| clause.occur == occur)
+        .count();
+      clause_sets[occur as usize].reserve_exact(count);
+    }
 
     for (idx, clause) in clauses.iter().enumerate() {
       let occur = clause.occur;

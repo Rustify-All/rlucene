@@ -51,7 +51,11 @@ where
     debug_assert!(buffer_size > 0);
     // Round to the next multiple of 64
     buffer_size = ((buffer_size + 63) as u32 & 0xFFFFFFC0) as i32;
-    let next_values = vec![0i64; buffer_size as usize];
+    let next_values = if num_values == 0 && SUPPORTED_BITS_PER_VALUE.contains(&bits_per_value) {
+      Vec::new()
+    } else {
+      vec![0i64; buffer_size as usize]
+    };
     let next_blocks_size =
       (buffer_size * bits_per_value) as usize / i8::BITS as usize + BitUtil::LONG_BYTES - 1;
     let next_blocks = if num_values == 0 && SUPPORTED_BITS_PER_VALUE.contains(&bits_per_value) {

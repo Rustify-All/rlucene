@@ -859,7 +859,7 @@ impl Operations {
   fn get_live_states_to_accept(a: &Automaton) -> Result<BitSet> {
     let num_states = a.get_num_states();
     // build reversed automaton
-    let mut builder = Builder::new();
+    let mut builder = Builder::with_capacity(num_states as usize, a.get_num_transitions() as usize);
     for _ in 0..num_states {
       builder.create_state();
     }
@@ -912,7 +912,7 @@ impl Operations {
     }
 
     let mut map = vec![0; state_count];
-    let mut result = Automaton::new();
+    let mut result = Automaton::with_capacity(live_set.count().max(2), 2);
 
     for (i, state) in (0..num_states).enumerate() {
       if live_set.contains(i) {
