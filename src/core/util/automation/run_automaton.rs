@@ -63,7 +63,11 @@ impl RunAutomaton {
     let state_count = std::cmp::max(1, automaton_states);
     let size = state_count as usize;
     let mut accept = FixedBitSet::new(size);
-    let mut transitions = vec![-1; size * points.len()];
+    let mut transitions = if automaton_states == 0 {
+      vec![-1; size * points.len()]
+    } else {
+      Vec::with_capacity(size * points.len())
+    };
 
     let mut transition = Transition::default();
     // The empty language retains one rejecting run state, but has no source
@@ -76,10 +80,10 @@ impl RunAutomaton {
       transition.source = n;
       transition.transition_upto = None;
 
-      for (c_idx, &point) in points.iter().enumerate() {
+      for &point in &points {
         let dest = automaton.next(&mut transition, point);
         debug_assert!(dest == -1 || dest < state_count);
-        transitions[state_index * points.len() + c_idx] = dest;
+        transitions.push(dest);
       }
     }
 

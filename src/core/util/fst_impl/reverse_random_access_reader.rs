@@ -52,8 +52,10 @@ where
 
   #[inline]
   fn get_bytes(&mut self, len: usize) -> Result<std::borrow::Cow<'_, [u8]>> {
-    let mut bytes = vec![0; len];
-    self.read_bytes(&mut bytes, 0, len)?;
+    let mut bytes = Vec::with_capacity(len);
+    for _ in 0..len {
+      bytes.push(self.read_byte()?);
+    }
     Ok(std::borrow::Cow::Owned(bytes))
   }
 

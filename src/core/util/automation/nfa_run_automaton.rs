@@ -68,14 +68,14 @@ impl NFARunAutomaton {
   pub fn with_alphabet_size(automaton: Automaton, alphabet_size: i32) -> Result<Self> {
     let points = automaton.get_start_points();
     let classmap_len = std::cmp::min(256, alphabet_size) as usize;
-    let mut classmap = vec![0; classmap_len];
+    let mut classmap = Vec::with_capacity(classmap_len);
     let mut i = 0;
-    for (j, class) in classmap.iter_mut().enumerate() {
+    for j in 0..classmap_len {
       if i + 1 < points.len() && j as i32 == points[i + 1] {
         i += 1;
       }
       // At most 256 entries, each increasing the class by at most one.
-      *class = i as u16;
+      classmap.push(i as u16);
     }
 
     let state = State {

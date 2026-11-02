@@ -445,7 +445,7 @@ where
     .wrapping_add(1);
   debug_assert!(max_lon_delta > 0);
 
-  let mut relations = vec![0u8; (max_lat_delta * max_lon_delta) as usize];
+  let mut relations = Vec::with_capacity((max_lat_delta * max_lon_delta) as usize);
   for i in 0..max_lat_delta {
     for j in 0..max_lon_delta {
       let box_min_lat = lat_base
@@ -464,7 +464,7 @@ where
         GeoEncodingUtils::decode_longitude(box_min_lon),
         GeoEncodingUtils::decode_longitude(box_max_lon),
       )?;
-      relations[(i * max_lon_delta + j) as usize] = box_to_relation(rect)?.ordinal() as u8;
+      relations.push(box_to_relation(rect)?.ordinal() as u8);
     }
   }
 

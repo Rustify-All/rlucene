@@ -660,7 +660,7 @@ where
       // read prefix lengths
       for (i, slot) in prefix_lengths.iter_mut().enumerate().take(num_fields) {
         let term_count = num_terms[skip + i];
-        let mut field_prefix_lengths = vec![0; term_count];
+        let mut field_prefix_lengths = Vec::with_capacity(term_count);
         let mut j = 0;
 
         while j < term_count {
@@ -668,8 +668,8 @@ where
             .reader
             .next_batch(term_count - j, &mut self.vectors_stream)?;
           let src = &next.longs[next.offset..][..next.length];
-          for (k, &val) in src.iter().enumerate() {
-            field_prefix_lengths[j + k] = val as usize;
+          for &val in src {
+            field_prefix_lengths.push(val as usize);
           }
           j += next.length;
         }
@@ -693,14 +693,14 @@ where
 
       for i in 0..num_fields {
         let term_count = num_terms[skip + i];
-        let mut field_suffix_lengths = vec![0; term_count];
+        let mut field_suffix_lengths = Vec::with_capacity(term_count);
         let mut j = 0;
         while j < term_count {
           let next = self
             .reader
             .next_batch(term_count - j, &mut self.vectors_stream)?;
           for k in 0..next.length {
-            field_suffix_lengths[j] = next.longs[next.offset + k] as usize;
+            field_suffix_lengths.push(next.longs[next.offset + k] as usize);
             j += 1;
           }
         }
@@ -963,11 +963,11 @@ where
         && payload_offset + payload_len <= suffix_bytes.bytes.len()
     );
 
-    let mut field_flags = vec![0u8; num_fields];
+    let mut field_flags = Vec::with_capacity(num_fields);
 
-    for (i, flag_slot) in field_flags.iter_mut().enumerate() {
+    for i in 0..num_fields {
       // The packed flags use four bits, including all values of malformed flag masks.
-      *flag_slot = all_flags[skip + i] as u8;
+      field_flags.push(all_flags[skip + i] as u8);
     }
 
     let field_term_freqs = if num_fields == 1 && skip == 0 && num_terms[0] == term_freqs.len() {

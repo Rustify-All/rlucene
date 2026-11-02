@@ -70,16 +70,14 @@ impl MonotonicBlockPackedReader {
     let block_size = block_size as usize;
     let num_blocks = PackedInts::num_blocks(value_count, block_size)?;
     let block_mask = block_size - 1;
-    let mut min_values = vec![0; num_blocks];
-    let mut averages = vec![0.0; num_blocks];
-    let mut sub_readers: Vec<_> = (0..num_blocks)
-      .map(|_| LongValuesEnum2::A(Zeroes))
-      .collect();
+    let mut min_values = Vec::with_capacity(num_blocks);
+    let mut averages = Vec::with_capacity(num_blocks);
+    let mut sub_readers = Vec::with_capacity(num_blocks);
     let mut sum_bpv: i64 = 0;
     let mut total_byte_count = 0;
     for i in 0..num_blocks {
-      min_values[i] = input.read_zlong()?;
-      averages[i] = f32::from_bits(input.read_int()? as u32);
+      min_values.push(input.read_zlong()?);
+      averages.push(f32::from_bits(input.read_int()? as u32));
       let bits_per_value = input.read_vint()?;
       sum_bpv += bits_per_value as i64;
       if bits_per_value > 64 {
@@ -87,7 +85,8 @@ impl MonotonicBlockPackedReader {
       }
 
       if bits_per_value == 0 {
-        // sub_readers inited with Zeroes,so no-op here
+        // Zero-bit blocks have no residual bytes.
+        sub_readers.push(LongValuesEnum2::A(Zeroes));
         continue;
       } else {
         let size = std::cmp::min(block_size, value_count - i * block_size);
@@ -97,12 +96,12 @@ impl MonotonicBlockPackedReader {
         let blocks = input.get_bytes(byte_count)?.into_owned();
         let mask_right = 1u64.wrapping_shl(bits_per_value as u32).wrapping_sub(1);
         let bpv_minus_block_size = bits_per_value - BLOCK_SIZE;
-        sub_readers[i] = LongValuesEnum2::B(MonotonicLongValues {
+        sub_readers.push(LongValuesEnum2::B(MonotonicLongValues {
           bits_per_values: bits_per_value,
           bpv_minus_block_size,
           blocks: blocks.into_boxed_slice(),
           mask_right,
-        });
+        }));
       }
     }
 

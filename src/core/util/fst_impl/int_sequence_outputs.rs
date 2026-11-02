@@ -135,9 +135,9 @@ impl Outputs for IntSequenceOutputs {
     if len == 0 {
       Ok(std::borrow::Cow::Borrowed(self.no_output))
     } else {
-      let mut buf = vec![0; len];
-      for item in buf.iter_mut().take(len) {
-        *item = input.read_vint()?;
+      let mut buf = Vec::with_capacity(len);
+      for _ in 0..len {
+        buf.push(input.read_vint()?);
       }
       Ok(std::borrow::Cow::Owned(IntsRef::from_slice(
         Arc::new(buf),

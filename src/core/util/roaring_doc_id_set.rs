@@ -207,14 +207,14 @@ impl Builder {
         && BLOCK_SIZE - self.current_block_cardinality < MAX_ARRAY_LENGTH
       {
         let capacity = BLOCK_SIZE - self.current_block_cardinality;
-        let mut excluded_docs: Vec<i16> = vec![0; capacity];
+        let mut excluded_docs: Vec<i16> = Vec::with_capacity(capacity);
         self.dense_buffer.flip_range(0, self.dense_buffer.length());
         let mut excluded_doc: usize = 0;
 
-        for excluded_doc_ref in excluded_docs.iter_mut() {
+        for _ in 0..capacity {
           let v = self.dense_buffer.next_set_bit(excluded_doc);
           debug_assert_ne!(v, NO_MORE_DOCS as usize);
-          *excluded_doc_ref = v as i16;
+          excluded_docs.push(v as i16);
           excluded_doc = v + 1;
         }
 
