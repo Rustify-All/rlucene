@@ -27,6 +27,7 @@ use crate::core::geo::{lat_lon_geometry, xy_geometry};
 use crate::core::index::point_values::Relation;
 use crate::core::util::error::lucene_error::Result;
 use crate::either_component2d_named;
+use smallvec::SmallVec;
 
 /// 2D polygon implementation represented as a balanced interval tree of edges.
 ///
@@ -76,13 +77,27 @@ impl Polygon2D {
   }
 
   fn from_xy_polygon(polygon: &XYPolygon, holes: Option<HolesType>) -> Result<Self> {
+    let x: SmallVec<[f64; 16]> = if polygon.get_poly_x().len() <= 16 {
+      polygon.get_poly_x().iter().map(|&v| f64::from(v)).collect()
+    } else {
+      SmallVec::from_vec(XYEncodingUtils::float_array_to_double_array(
+        polygon.get_poly_x(),
+      ))
+    };
+    let y: SmallVec<[f64; 16]> = if polygon.get_poly_y().len() <= 16 {
+      polygon.get_poly_y().iter().map(|&v| f64::from(v)).collect()
+    } else {
+      SmallVec::from_vec(XYEncodingUtils::float_array_to_double_array(
+        polygon.get_poly_y(),
+      ))
+    };
     Self::new(
       polygon.min_x as f64,
       polygon.max_x as f64,
       polygon.min_y as f64,
       polygon.max_y as f64,
-      &XYEncodingUtils::float_array_to_double_array(polygon.get_poly_x()),
-      &XYEncodingUtils::float_array_to_double_array(polygon.get_poly_y()),
+      &x,
+      &y,
       holes,
     )
   }

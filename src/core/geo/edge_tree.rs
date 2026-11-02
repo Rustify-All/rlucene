@@ -398,6 +398,17 @@ pub(crate) fn create_tree(x: &[f64], y: &[f64]) -> Result<EdgeTree> {
     ));
   }
 
+  if x.len() == 2 {
+    return Ok(EdgeTree::new(
+      x[0],
+      y[0],
+      x[1],
+      y[1],
+      CoreHelper::min_f64(y[0], y[1]),
+      CoreHelper::max_f64(y[0], y[1]),
+    ));
+  }
+
   let mut edges = Vec::with_capacity(x.len() - 1);
   for i in 1..x.len() {
     let x1 = x[i - 1];

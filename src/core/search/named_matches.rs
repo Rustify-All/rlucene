@@ -124,8 +124,11 @@ where
     'a: 'b,
   {
     let mut named_matches = Vec::new();
+    if let QueryWeightMatches::NamedMatches(matches) = matches {
+      named_matches.push(matches.as_ref());
+    }
     let mut to_process = VecDeque::new();
-    to_process.push_back(matches);
+    to_process.extend(matches.get_sub_matches());
     while let Some(matches) = to_process.pop_front() {
       if let QueryWeightMatches::NamedMatches(matches) = matches {
         named_matches.push(matches.as_ref());

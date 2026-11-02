@@ -23,6 +23,7 @@ use crate::core::geo::xy_encoding_utils::XYEncodingUtils;
 use crate::core::geo::xy_line::XYLine;
 use crate::core::index::point_values::Relation;
 use crate::core::util::error::lucene_error::Result;
+use smallvec::SmallVec;
 
 /// 2D geo line implementation represented as a balanced interval tree of edges.
 ///
@@ -57,15 +58,22 @@ impl Line2D {
   }
 
   fn from_xy_line(line: &XYLine) -> Result<Self> {
+    let x: SmallVec<[f64; 16]> = if line.get_xs().len() <= 16 {
+      line.get_xs().iter().map(|&v| f64::from(v)).collect()
+    } else {
+      SmallVec::from_vec(XYEncodingUtils::float_array_to_double_array(line.get_xs()))
+    };
+    let y: SmallVec<[f64; 16]> = if line.get_ys().len() <= 16 {
+      line.get_ys().iter().map(|&v| f64::from(v)).collect()
+    } else {
+      SmallVec::from_vec(XYEncodingUtils::float_array_to_double_array(line.get_ys()))
+    };
     Ok(Self {
       min_y: line.min_y as f64,
       max_y: line.max_y as f64,
       min_x: line.min_x as f64,
       max_x: line.max_x as f64,
-      tree: create_tree(
-        &XYEncodingUtils::float_array_to_double_array(line.get_xs()),
-        &XYEncodingUtils::float_array_to_double_array(line.get_ys()),
-      )?,
+      tree: create_tree(&x, &y)?,
     })
   }
 }

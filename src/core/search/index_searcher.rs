@@ -907,7 +907,8 @@ where
   sorted_leaves.sort_by_key(|leaf| std::cmp::Reverse(leaf.1));
 
   if allow_segment_partitions {
-    let mut grouped_leaf_partitions: Vec<Vec<LeafReaderContextPartition>> = Vec::new();
+    let mut grouped_leaf_partitions: SmallVec<[Vec<LeafReaderContextPartition>; 4]> =
+      SmallVec::new();
     let mut current_slice_num_docs = 0;
     let mut group: Option<Vec<LeafReaderContextPartition>> = None;
 
@@ -967,7 +968,7 @@ where
     );
   }
 
-  let mut grouped_leaves: Vec<Vec<&LeafReaderContext<LR>>> = Vec::new();
+  let mut grouped_leaves: SmallVec<[Vec<&LeafReaderContext<LR>>; 4]> = SmallVec::new();
   let mut doc_sum: i64 = 0;
   let mut group: Option<Vec<&LeafReaderContext<LR>>> = None;
 
@@ -1028,8 +1029,15 @@ where
 fn enforce_distinct_leaves(leaf_slice: &LeafSlice) -> Result<()> {
   let mut distinct_leaves = HashSet::new();
 
-  for partition in &leaf_slice.partitions {
-    if !distinct_leaves.insert(partition.ctx) {
+  for (index, partition) in leaf_slice.partitions.iter().enumerate() {
+    let duplicate = if leaf_slice.partitions.len() <= 8 {
+      leaf_slice.partitions[..index]
+        .iter()
+        .any(|previous| previous.ctx == partition.ctx)
+    } else {
+      !distinct_leaves.insert(partition.ctx)
+    };
+    if duplicate {
       return Err(LuceneError::illegal_state(
         "The same slice targets multiple leaf partitions of the same leaf reader context. \
                 A physical segment should rather get partitioned to be searched concurrently from \

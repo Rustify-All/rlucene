@@ -18,13 +18,17 @@ use crate::core::index::BytesRefBuilder;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::selector::Selector;
 use crate::core::util::{IntroSelector, IntroSelectorBase, IntroSelectorBaseDefault, TryIntoInt};
+use smallvec::SmallVec;
 
 // Size of histograms: 256 + 1 to indicate that the string is finished.
 const HISTOGRAM_SIZE: usize = 257;
 
+// Bounds the cached prefix to 96 bytes without a separate allocation.
+const MAX_COMMON_PREFIX_LENGTH: usize = 24;
+
 pub struct RadixSelector<T> {
   max_length: usize,
-  common_prefix: Vec<i32>,
+  common_prefix: SmallVec<[i32; MAX_COMMON_PREFIX_LENGTH]>,
   histogram: [usize; HISTOGRAM_SIZE],
   pub(crate) sub_selector: T,
 }
@@ -44,7 +48,7 @@ where
   pub fn new(max_length: usize, sub_selector: T) -> Self {
     RadixSelector {
       max_length,
-      common_prefix: vec![0; std::cmp::min(24, max_length)],
+      common_prefix: SmallVec::from_elem(0, std::cmp::min(MAX_COMMON_PREFIX_LENGTH, max_length)),
       histogram: [0; HISTOGRAM_SIZE],
       sub_selector,
     }
