@@ -147,21 +147,21 @@ impl<PA: PostingsArray> TermsHashPerField<PA> {
     byte_pool: &mut ByteBlockPool,
   ) -> Result<()> {
     let upto = *stream_address;
-    let mut block_index = (upto >> BYTE_BLOCK_SHIFT) as usize;
+    let block_index = (upto >> BYTE_BLOCK_SHIFT) as usize;
     debug_assert!(block_index <= byte_pool.buffer_upto()?);
-    let mut bytes = byte_pool.get_buffer_mut(block_index);
-    let mut offset = (upto & BYTE_BLOCK_MASK) as usize;
-    if bytes[offset] != 0 {
+    let offset = (upto & BYTE_BLOCK_MASK) as usize;
+    let slot = &mut byte_pool.get_buffer_mut(block_index)[offset];
+    if *slot == 0 {
+      *slot = b;
+    } else {
       // End of slice; allocate a new one
-      offset = self
+      let offset = self
         .slice_pool
         .alloc_slice(block_index, offset, byte_pool)?;
       *stream_address = offset as i32 + byte_pool.byte_offset;
-      // try update bytes
-      block_index = byte_pool.buffer_upto()?;
-      bytes = byte_pool.get_buffer_mut(block_index);
+      let block_index = byte_pool.buffer_upto()?;
+      byte_pool.get_buffer_mut(block_index)[offset] = b;
     }
-    bytes[offset] = b;
     *stream_address += 1;
     Ok(())
   }
