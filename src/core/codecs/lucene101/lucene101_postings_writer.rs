@@ -751,8 +751,10 @@ where
           .pos_out
           .as_mut()
           .ok_or_else(|| LuceneError::illegal_state("positions output is missing"))?;
-        for i in 0..self.pos_buffer_upto {
-          let pos_delta = self.pos_delta_buffer[i];
+        for (i, &pos_delta) in self.pos_delta_buffer[..self.pos_buffer_upto]
+          .iter()
+          .enumerate()
+        {
           if options.write_payloads {
             let payload_length = self.payload_length_buffer[i];
             if payload_length != last_payload_length {
