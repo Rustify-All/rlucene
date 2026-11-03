@@ -480,17 +480,9 @@ where
     end_offset: i32,
     options: &FieldWriteOptions,
   ) -> Result<()> {
-    if position > MAX_POSITION {
-      return Err(LuceneError::corrupt_index(format!(
-        "position={} is too large (> IndexWriter.MAX_POSITION={})  resource {}",
-        position, MAX_POSITION, self.doc_out
-      )));
-    }
-    if position < 0 {
-      return Err(LuceneError::corrupt_index(format!(
-        "position={} is < 0  resource {}",
-        position, self.doc_out
-      )));
+    // As unsigned values, negative positions also exceed MAX_POSITION.
+    if position as u32 > MAX_POSITION as u32 {
+      return Err(self.invalid_position_error(position));
     }
 
     let idx = self.pos_buffer_upto;
@@ -560,6 +552,20 @@ where
     }
 
     Ok(())
+  }
+
+  #[cold]
+  #[inline(never)]
+  fn invalid_position_error(&self, position: i32) -> LuceneError {
+    let message = if position < 0 {
+      format!("position={} is < 0  resource {}", position, self.doc_out)
+    } else {
+      format!(
+        "position={} is too large (> IndexWriter.MAX_POSITION={})  resource {}",
+        position, MAX_POSITION, self.doc_out
+      )
+    };
+    LuceneError::corrupt_index(message)
   }
 }
 impl<O> PostingsWriterBase for Lucene101PostingsWriter<O>
