@@ -157,7 +157,32 @@ where
 
   fn append_range(&mut self, csq: Option<&str>, start: usize, end: usize) -> Result<&mut Self> {
     let csq = csq.unwrap_or("null");
-    let csq_len = csq.chars().count();
+    let (csq_len, ascii) = if csq.len() <= 64 {
+      let ascii = csq.as_bytes().last().is_none_or(u8::is_ascii) && csq.is_ascii();
+      let len = if ascii {
+        csq.len()
+      } else {
+        csq.chars().count()
+      };
+      (len, ascii)
+    } else {
+      let ascii_prefix = csq
+        .as_bytes()
+        .as_chunks::<64>()
+        .0
+        .iter()
+        .take_while(|chunk| chunk.is_ascii())
+        .count()
+        * 64;
+      // Every preceding byte is ASCII, so the suffix starts at a character boundary.
+      let suffix = &csq[ascii_prefix..];
+      let len = if suffix.len() >= 64 || !suffix.is_ascii() {
+        ascii_prefix + suffix.chars().count()
+      } else {
+        csq.len()
+      };
+      (len, len == csq.len())
+    };
     CoreHelper::check_from_to_index(start, end, csq_len)?;
 
     let len = end - start;
@@ -167,7 +192,7 @@ where
 
     self.resize_buffer(self.term_length + len)?;
     if len > 4 {
-      if csq.is_ascii() {
+      if ascii {
         for (slot, c) in self.term_buffer[self.term_length..self.term_length + len]
           .iter_mut()
           .zip(&csq.as_bytes()[start..end])
@@ -203,9 +228,22 @@ where
     let Some(s) = s else {
       return self.append_null();
     };
-    let len = s.chars().count();
+    let ascii = s.as_bytes().last().is_none_or(u8::is_ascii) && s.is_ascii();
+    if !ascii && self.term_buffer.len() - self.term_length >= s.len() {
+      let mut len = 0;
+      for (slot, c) in self.term_buffer[self.term_length..]
+        .iter_mut()
+        .zip(s.chars())
+      {
+        *slot = c;
+        len += 1;
+      }
+      self.term_length += len;
+      return Ok(self);
+    }
+    let len = if ascii { s.len() } else { s.chars().count() };
     self.resize_buffer(self.term_length + len)?;
-    if len == s.len() {
+    if ascii {
       for (slot, c) in self.term_buffer[self.term_length..self.term_length + len]
         .iter_mut()
         .zip(s.bytes())
