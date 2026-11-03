@@ -386,14 +386,9 @@ macro_rules! impl_norms_producer {
       type MergeInstance = Lucene90NormsProducer<I, true>;
 
       fn get_norms(&self, field: &Arc<FieldInfo>) -> Result<Self::NumericDocValues> {
-        // copy on stack is acceptable, of course we could have a better way
-        let entry = self
-          .norms
-          .get(&field.number)
-          .ok_or_else(|| {
-            LuceneError::illegal_state(format!("norms entry is missing for field {}", field.name))
-          })?
-          .clone();
+        let entry = self.norms.get(&field.number).ok_or_else(|| {
+          LuceneError::illegal_state(format!("norms entry is missing for field {}", field.name))
+        })?;
         if entry.docs_with_field_offset == -2 {
           // empty
           return Ok(Lucene90NormNumericDocValuesEnum::Empty(
@@ -412,7 +407,7 @@ macro_rules! impl_norms_producer {
               dense_norms_iterator,
             ));
           }
-          let slice = match self.get_data_input(field, &entry)? {
+          let slice = match self.get_data_input(field, entry)? {
             RandomAccessSliceEnum::$variant(slice) => slice,
             _ => {
               return Err(LuceneError::illegal_state(
@@ -459,8 +454,8 @@ macro_rules! impl_norms_producer {
         }
         // sparse
         let (jump_table, input) = match (
-          self.get_disi_jump_table(field, &entry)?,
-          self.get_disi_input(field, &entry)?,
+          self.get_disi_jump_table(field, entry)?,
+          self.get_disi_input(field, entry)?,
         ) {
           (Some(RandomAccessSliceEnum::$variant(jt)), SliceEnum::$variant(input)) => {
             (Some(jt), input)
@@ -490,7 +485,7 @@ macro_rules! impl_norms_producer {
           ));
         }
 
-        let slice = match self.get_data_input(field, &entry)? {
+        let slice = match self.get_data_input(field, entry)? {
           RandomAccessSliceEnum::$variant(slice) => slice,
           _ => {
             return Err(LuceneError::illegal_state(
