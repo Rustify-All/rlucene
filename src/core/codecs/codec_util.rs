@@ -79,7 +79,7 @@ impl CodecUtil {
   where
     DO: DataOutput,
   {
-    if codec.len() != codec.encode_utf16().count() || codec.len() >= 128 {
+    if !codec.is_ascii() || codec.len() >= 128 {
       return Err(LuceneError::illegal_argument(format!(
         "codec must be simple ASCII, less than 128 characters in length [got {codec}]"
       )));
@@ -139,7 +139,7 @@ impl CodecUtil {
     Self::write_header(out, codec, version)?;
     out.write_bytes_range(id, 0, StringHelper::ID_LENGTH)?;
     let suffix_bytes = suffix.as_bytes();
-    if suffix_bytes.len() != suffix.encode_utf16().count() || suffix_bytes.len() >= 256 {
+    if !suffix.is_ascii() || suffix_bytes.len() >= 256 {
       return Err(LuceneError::illegal_argument(format!(
         "suffix must be simple ASCII, less than 256 characters in length [got {suffix}]"
       )));
