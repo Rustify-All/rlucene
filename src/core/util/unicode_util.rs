@@ -24,33 +24,6 @@ impl UnicodeUtil {
   pub const UNI_SUR_LOW_START: i32 = 0xDC00;
   pub const UNI_SUR_LOW_END: i32 = 0xDFFF;
   pub const MAX_UTF8_BYTES_PER_CHAR: i32 = 3;
-  pub fn valid_utf16_string(s: &str) -> bool {
-    let mut utf16 = s.encode_utf16();
-    while let Some(ch) = utf16.next() {
-      let ch = ch as i32;
-      if (Self::UNI_SUR_HIGH_START..=Self::UNI_SUR_HIGH_END).contains(&ch) {
-        // High surrogate
-        if let Some(next) = utf16.next() {
-          let next = next as i32;
-          if (Self::UNI_SUR_LOW_START..=Self::UNI_SUR_LOW_END).contains(&next) {
-            // Valid surrogate pair
-            continue;
-          } else {
-            // Unmatched high surrogate
-            return false;
-          }
-        } else {
-          // Trailing high surrogate
-          return false;
-        }
-      } else if (Self::UNI_SUR_LOW_START..=Self::UNI_SUR_LOW_END).contains(&ch) {
-        // Unmatched low surrogate
-        return false;
-      }
-    }
-    true
-  }
-
   pub(crate) fn code_point_at<'a>(
     utf8: &[u8],
     pos: usize,

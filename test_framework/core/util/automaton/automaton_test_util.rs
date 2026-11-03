@@ -52,9 +52,6 @@ impl AutomatonTestUtil {
   {
     loop {
       let regexp = Self::random_regexp_string(random);
-      if !UnicodeUtil::valid_utf16_string(regexp.as_str()) {
-        continue;
-      }
       let result = RegExp::parse(&regexp, RegExp::NONE, 0);
       if result.is_ok() {
         return Ok(regexp);
