@@ -50,7 +50,9 @@ impl CompetitiveImpactAccumulator {
   /// Reset to the same state it was in after creation.
   pub fn clear(&mut self) {
     self.max_freqs = [0; 256];
-    self.other_freq_norm_pairs.clear();
+    if !self.other_freq_norm_pairs.is_empty() {
+      self.other_freq_norm_pairs.clear();
+    }
     debug_assert!(self.assert_consistent());
   }
 
