@@ -191,16 +191,12 @@ impl From<StringReader> for ReaderEnum {
 }
 
 /// A character stream whose source is a string.
+///
+/// Input is stored as UTF-8; reads produce Unicode scalar values (`char`).
 #[derive(Debug, Clone)]
 pub struct StringReader {
-  source: StringReaderSource,
+  source: Option<Arc<String>>,
   next: usize,
-}
-
-#[derive(Debug, Clone)]
-enum StringReaderSource {
-  Chars(Option<Arc<Vec<char>>>),
-  Utf8(Option<Arc<String>>),
 }
 
 impl StringReader {
@@ -208,10 +204,7 @@ impl StringReader {
   where
     T: Into<Cow<'a, str>>,
   {
-    Self {
-      source: StringReaderSource::Chars(Some(Arc::new(s.into().chars().collect()))),
-      next: 0,
-    }
+    Self::from(s.into().into_owned())
   }
 
   fn check_range(buf_len: usize, off: usize, len: usize) -> Result<usize> {
@@ -230,7 +223,7 @@ impl StringReader {
 impl From<Arc<String>> for StringReader {
   fn from(text: Arc<String>) -> Self {
     Self {
-      source: StringReaderSource::Utf8(Some(text)),
+      source: Some(text),
       next: 0,
     }
   }
@@ -244,91 +237,51 @@ impl From<String> for StringReader {
 
 impl Reader for StringReader {
   fn read(&mut self) -> Result<i32> {
-    match &mut self.source {
-      StringReaderSource::Chars(chars) => {
-        let chars = chars
-          .as_ref()
-          .ok_or_else(|| LuceneError::illegal_state("Stream closed"))?;
-        if self.next >= chars.len() {
-          return Ok(-1);
-        }
-        let ch = chars[self.next];
-        self.next += 1;
-        Ok(ch as i32)
-      },
-      StringReaderSource::Utf8(text) => {
-        if let Some(s) = text.as_ref()
-          && self.next < s.len()
-        {
-          let ch = expect_invariant!(
-            s[self.next..].chars().next(),
-            "reader position stays on a character boundary"
-          );
-          self.next += ch.len_utf8();
-          return Ok(ch as i32);
-        }
-        *text = None;
-        Ok(-1)
-      },
+    let s = self
+      .source
+      .as_ref()
+      .ok_or_else(|| LuceneError::illegal_state("Stream closed"))?;
+    if self.next >= s.len() {
+      return Ok(-1);
     }
+    let ch = expect_invariant!(
+      s[self.next..].chars().next(),
+      "reader position stays on a character boundary"
+    );
+    self.next += ch.len_utf8();
+    Ok(ch as i32)
   }
 
   fn read_range(&mut self, buf: &mut [char], off: usize, len: usize) -> Result<i32> {
-    match &mut self.source {
-      StringReaderSource::Chars(chars) => {
-        let chars = chars
-          .as_ref()
-          .ok_or_else(|| LuceneError::illegal_state("Stream closed"))?;
-        Self::check_range(buf.len(), off, len)?;
-        if len == 0 {
-          return Ok(0);
-        }
-        if self.next >= chars.len() {
-          return Ok(-1);
-        }
-        let to_read = len.min(chars.len() - self.next);
-        buf[off..off + to_read].copy_from_slice(&chars[self.next..self.next + to_read]);
-        self.next += to_read;
-        Ok(to_read as i32)
-      },
-      StringReaderSource::Utf8(text) => {
-        if let Some(s) = text.as_ref()
-          && self.next < s.len()
-        {
-          Self::check_range(buf.len(), off, len)?;
-          let bytes = &s.as_bytes()[self.next..];
-          let to_read = len.min(bytes.len());
-          if to_read >= 16 && (bytes[0] | bytes[to_read - 1]) < 0x80 && bytes[..to_read].is_ascii()
-          {
-            for (dest, &byte) in buf[off..off + to_read].iter_mut().zip(bytes) {
-              *dest = byte as char;
-            }
-            self.next += to_read;
-            return Ok(to_read as i32);
-          }
-          let mut read = 0usize;
-          let mut chars = s[self.next..].chars();
-          for (dest, ch) in buf[off..off + len].iter_mut().zip(chars.by_ref()) {
-            *dest = ch;
-            read += 1;
-          }
-          self.next = s.len() - chars.as_str().len();
-          return Ok(read as i32);
-        }
-        *text = None;
-        Ok(-1)
-      },
+    let s = self
+      .source
+      .as_ref()
+      .ok_or_else(|| LuceneError::illegal_state("Stream closed"))?;
+    Self::check_range(buf.len(), off, len)?;
+    if self.next >= s.len() {
+      return Ok(if len == 0 { 0 } else { -1 });
     }
+    let bytes = &s.as_bytes()[self.next..];
+    let to_read = len.min(bytes.len());
+    if to_read >= 16 && (bytes[0] | bytes[to_read - 1]) < 0x80 && bytes[..to_read].is_ascii() {
+      for (dest, &byte) in buf[off..off + to_read].iter_mut().zip(bytes) {
+        *dest = byte as char;
+      }
+      self.next += to_read;
+      return Ok(to_read as i32);
+    }
+    let mut read = 0usize;
+    let mut chars = s[self.next..].chars();
+    for (dest, ch) in buf[off..off + len].iter_mut().zip(chars.by_ref()) {
+      *dest = ch;
+      read += 1;
+    }
+    self.next = s.len() - chars.as_str().len();
+    Ok(read as i32)
   }
 
   fn close(&mut self) -> Result<()> {
-    match &mut self.source {
-      StringReaderSource::Chars(chars) => *chars = None,
-      StringReaderSource::Utf8(text) => {
-        *text = None;
-        self.next = 0;
-      },
-    }
+    self.source = None;
     Ok(())
   }
 }
