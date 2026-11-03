@@ -43,14 +43,7 @@ impl<T> CharArrayMap<T> {
   {
     for (k, val) in v {
       let key = key_fn(k);
-      match norm(self.ignore, &key) {
-        Cow::Borrowed(_) => {
-          self.map.insert(key, val);
-        },
-        Cow::Owned(o) => {
-          self.map.insert(o, val);
-        },
-      }
+      self.put(key, val);
     }
   }
 
@@ -116,9 +109,22 @@ impl<T> CharArrayMap<T> {
     K: Into<Cow<'a, [char]>>,
   {
     let chars = key.into();
-    match norm(self.ignore, &chars) {
-      Cow::Borrowed(_) => self.map.insert(chars.into_owned(), val),
-      Cow::Owned(o) => self.map.insert(o, val),
+    if !self.ignore {
+      return self.map.insert(chars.into_owned(), val);
+    }
+    match chars {
+      Cow::Owned(mut chars) => {
+        // Match Lucene's single-code-point lowercase mapping (U+0130 becomes 'i').
+        for c in &mut chars {
+          *c = if *c < '\u{C0}' {
+            c.to_ascii_lowercase()
+          } else {
+            c.to_lowercase().next().unwrap_or(*c)
+          };
+        }
+        self.map.insert(chars, val)
+      },
+      Cow::Borrowed(chars) => self.map.insert(norm(self.ignore, chars).into_owned(), val),
     }
   }
   pub fn put_str(&mut self, key: &str, val: T) -> Option<T> {
@@ -195,7 +201,15 @@ where
 }
 fn norm(ignore: bool, s: &[char]) -> Cow<'_, [char]> {
   // Match Lucene's single-code-point lowercase mapping (U+0130 becomes 'i').
-  let lowercase = || s.iter().map(|c| c.to_lowercase().next().unwrap_or(*c));
+  let lowercase = || {
+    s.iter().map(|c| {
+      if *c < '\u{C0}' {
+        c.to_ascii_lowercase()
+      } else {
+        c.to_lowercase().next().unwrap_or(*c)
+      }
+    })
+  };
   if ignore && !s.iter().copied().eq(lowercase()) {
     Cow::Owned(lowercase().collect())
   } else {
