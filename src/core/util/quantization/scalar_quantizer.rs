@@ -124,6 +124,17 @@ impl ScalarQuantizer {
     debug_assert!(
       similarity_function != VectorSimilarityFunction::Cosine || VECTOR_UTIL.is_unit_vector(src)
     );
+    if similarity_function == VectorSimilarityFunction::Euclidean
+      && src.len() == dest.len()
+      && src.len() >= 16
+      && (1..=8).contains(&self.bits)
+      && self.scale > 0.0
+      && self.scale.is_finite()
+    {
+      self.quantize_euclidean(src, dest);
+      return 0.0;
+    }
+
     let mut correction = 0.0;
     for (i, &value) in src.iter().enumerate() {
       correction += self.quantize_float(value, Some(dest), i);
@@ -132,6 +143,30 @@ impl ScalarQuantizer {
       return 0.0;
     }
     correction
+  }
+
+  #[inline(never)]
+  fn quantize_euclidean(&self, src: &[f32], dest: &mut [u8]) {
+    use wide::{bytemuck::cast, f32x4, i32x4};
+
+    let (src, tail) = src.as_chunks::<4>();
+    let (dest, dest_tail) = dest.as_chunks_mut::<4>();
+    let min = f32x4::splat(self.min_quantile);
+    let max = f32x4::splat(self.max_quantile);
+    let scale = f32x4::splat(self.scale);
+    let half = f32x4::splat(0.5);
+    for (&values, output) in src.iter().zip(dest) {
+      let values = f32x4::new(values);
+      let clipped = min.max(max.min(values));
+      let scaled = (clipped - min) * scale;
+      // Below one half, adding one half can round up to one in f32.
+      let round_nonzero: i32x4 = cast(scaled.simd_ge(half) & values.simd_eq(values));
+      let rounded = (scaled + half).fast_trunc_int() & round_nonzero;
+      *output = rounded.to_array().map(|value| value as u8);
+    }
+    for (i, &value) in tail.iter().enumerate() {
+      self.quantize_float(value, Some(dest_tail), i);
+    }
   }
 
   fn quantize_float(&self, v: f32, dest: Option<&mut [u8]>, dest_index: usize) -> f32 {

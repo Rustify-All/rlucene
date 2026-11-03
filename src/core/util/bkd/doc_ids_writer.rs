@@ -193,8 +193,9 @@ impl DocIdsWriter {
     out.write_vint(offset_words)?;
     out.write_vint(total_word_count.try_convert()?)?;
     // build bit set streaming
-    for i in 0..count {
-      let index = doc_ids[start + i] - offset_bits;
+    let mut remaining = &doc_ids[start..start + count];
+    while let Some((&doc, tail)) = remaining.split_first() {
+      let index = doc - offset_bits;
       let next_word_index = index >> 6;
       debug_assert!(
         current_word_index <= next_word_index,
@@ -209,7 +210,20 @@ impl DocIdsWriter {
           out.write_long(0)?;
         }
       }
-      current_word |= 1i64.wrapping_shl(index as u32);
+      // In this sorted slice, matching endpoint words also cover both inner IDs.
+      if let Some(&[first, second, third, fourth]) = remaining.first_chunk::<4>()
+        && (first >> 6) == (fourth >> 6)
+      {
+        let first_pair = wide::u64x2::new([first as u32 as u64, second as u32 as u64]);
+        let second_pair = wide::u64x2::new([third as u32 as u64, fourth as u32 as u64]);
+        let bits = (wide::u64x2::ONE << first_pair) | (wide::u64x2::ONE << second_pair);
+        let [low, high] = bits.to_array();
+        current_word |= (low | high) as i64;
+        remaining = &remaining[4..];
+      } else {
+        current_word |= 1i64.wrapping_shl(index as u32);
+        remaining = tail;
+      }
     }
     out.write_long(current_word)?;
     debug_assert!(

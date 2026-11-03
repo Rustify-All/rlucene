@@ -163,29 +163,38 @@ impl ForUtil {
     {
       match bits_per_value {
         1 => {
-          for i in 0..4 {
-            tmp[i] = (ints[i] << 7)
-              | (ints[4 + i] << 6)
-              | (ints[8 + i] << 5)
-              | (ints[12 + i] << 4)
-              | (ints[16 + i] << 3)
-              | (ints[20 + i] << 2)
-              | (ints[24 + i] << 1)
-              | ints[28 + i];
-          }
+          let input = ints[..32].as_chunks::<4>().0;
+          let lanes = |i: usize| wide::i32x4::new(input[i]);
+          let packed = (lanes(0) << 7u32)
+            | (lanes(1) << 6u32)
+            | (lanes(2) << 5u32)
+            | (lanes(3) << 4u32)
+            | (lanes(4) << 3u32)
+            | (lanes(5) << 2u32)
+            | (lanes(6) << 1u32)
+            | lanes(7);
+          tmp[..4].copy_from_slice(&packed.to_array());
           out.write_ints(&tmp[..4])?;
           return Ok(());
         },
         2 => {
-          for i in 0..8 {
-            tmp[i] = (ints[i] << 6) | (ints[8 + i] << 4) | (ints[16 + i] << 2) | ints[24 + i];
+          let input = ints[..32].as_chunks::<4>().0;
+          let lanes = |i: usize| wide::i32x4::new(input[i]);
+          for (i, packed) in tmp[..8].as_chunks_mut::<4>().0.iter_mut().enumerate() {
+            *packed =
+              ((lanes(i) << 6u32) | (lanes(2 + i) << 4u32) | (lanes(4 + i) << 2u32) | lanes(6 + i))
+                .to_array();
           }
           out.write_ints(&tmp[..8])?;
           return Ok(());
         },
         4 => {
-          for i in 0..16 {
-            tmp[i] = (ints[i] << 4) | ints[16 + i];
+          let (high, low) = ints[..32].split_at(16);
+          let high = high.as_chunks::<4>().0;
+          let low = low.as_chunks::<4>().0;
+          let packed = tmp[..16].as_chunks_mut::<4>().0;
+          for ((packed, &high), &low) in packed.iter_mut().zip(high).zip(low) {
+            *packed = ((wide::i32x4::new(high) << 4u32) | wide::i32x4::new(low)).to_array();
           }
           out.write_ints(&tmp[..16])?;
           return Ok(());
@@ -224,23 +233,29 @@ impl ForUtil {
     {
       match (primitive_size, bits_per_value) {
         (32, 18) => {
-          for group in 0..8 {
-            tmp[group * 9] |= ((ints[idx + group * 7] as u32 >> 4) as i32) & Self::MASKS32[14];
-            tmp[group * 9 + 1] |= ((ints[idx + group * 7] & Self::MASKS32[4]) << 10)
-              | (((ints[idx + group * 7 + 1] as u32 >> 8) as i32) & Self::MASKS32[10]);
-            tmp[group * 9 + 2] |= ((ints[idx + group * 7 + 1] & Self::MASKS32[8]) << 6)
-              | (((ints[idx + group * 7 + 2] as u32 >> 12) as i32) & Self::MASKS32[6]);
-            tmp[group * 9 + 3] |= ((ints[idx + group * 7 + 2] & Self::MASKS32[12]) << 2)
-              | (((ints[idx + group * 7 + 3] as u32 >> 16) as i32) & Self::MASKS32[2]);
-            tmp[group * 9 + 4] |=
-              ((ints[idx + group * 7 + 3] as u32 >> 2) as i32) & Self::MASKS32[14];
-            tmp[group * 9 + 5] |= ((ints[idx + group * 7 + 3] & Self::MASKS32[2]) << 12)
-              | (((ints[idx + group * 7 + 4] as u32 >> 6) as i32) & Self::MASKS32[12]);
-            tmp[group * 9 + 6] |= ((ints[idx + group * 7 + 4] & Self::MASKS32[6]) << 8)
-              | (((ints[idx + group * 7 + 5] as u32 >> 10) as i32) & Self::MASKS32[8]);
-            tmp[group * 9 + 7] |= ((ints[idx + group * 7 + 5] & Self::MASKS32[10]) << 4)
-              | (((ints[idx + group * 7 + 6] as u32 >> 14) as i32) & Self::MASKS32[4]);
-            tmp[group * 9 + 8] |= ints[idx + group * 7 + 6] & Self::MASKS32[14];
+          use wide::{bytemuck::cast, u32x4};
+
+          const LEFT_SHIFTS: [u32x4; 2] = [u32x4::new([0, 10, 6, 2]), u32x4::new([0, 12, 8, 4])];
+          const RIGHT_SHIFTS: [u32x4; 2] = [u32x4::new([4, 8, 12, 16]), u32x4::new([2, 6, 10, 14])];
+          const RIGHT_MASKS: [u32x4; 2] = [
+            u32x4::new([0x3fff, 0x03ff, 0x003f, 0x0003]),
+            u32x4::new([0x3fff, 0x0fff, 0x00ff, 0x000f]),
+          ];
+          const TAIL_MASK: u32x4 = u32x4::splat(0x3fff);
+
+          let groups = ints[idx..num_ints].as_chunks::<7>().0;
+          let packed = tmp[..num_ints_per_shift].as_chunks_mut::<9>().0;
+          for (&[a, b, c, d, e, f, g], packed) in groups.iter().zip(packed) {
+            // Seven 18-bit inputs contribute nine 14-bit tails.
+            let left: [u32x4; 2] = [cast([0, a, b, c]), cast([0, d, e, f])];
+            let right: [u32x4; 2] = [cast([a, b, c, d]), cast([d, e, f, g])];
+            let (lanes, last) = packed.as_chunks_mut::<4>();
+            for (j, words) in lanes.iter_mut().enumerate() {
+              let tail = ((left[j] << LEFT_SHIFTS[j]) & TAIL_MASK)
+                | ((right[j] >> RIGHT_SHIFTS[j]) & RIGHT_MASKS[j]);
+              *words = cast(cast::<_, u32x4>(*words) | tail);
+            }
+            last[0] |= g & Self::MASKS32[14];
           }
           true
         },

@@ -359,27 +359,50 @@ impl GroupVIntUtil {
 
     // encode each group
     while (limit - read_pos) >= 4 {
+      let group = [
+        values[read_pos],
+        values[read_pos + 1],
+        values[read_pos + 2],
+        values[read_pos + 3],
+      ];
+      let combined = (group[0] | group[1] | group[2] | group[3]) as u32;
+      if scratch.len() >= 8 && combined <= u32::from(u8::MAX) {
+        // The scalar stores also write the last value's three high bytes into
+        // scratch, even though the output only consumes the first five bytes.
+        let bytes: wide::u8x16 = wide::bytemuck::cast(group.map(i32::to_le));
+        let order = wide::u8x16::new([
+          255, 0, 4, 8, 12, 13, 14, 15, 255, 255, 255, 255, 255, 255, 255, 255,
+        ]);
+        // This shuffle is available in the minimum supported wide version.
+        #[allow(deprecated)]
+        let packed = bytes.swizzle_relaxed(order).to_array();
+        scratch[..8].copy_from_slice(&packed[..8]);
+        data_output.write_bytes_with_len(scratch, 5)?;
+        read_pos += 4;
+        continue;
+      }
+
       let mut write_pos: usize = 0;
-      let n1_minus1 = Self::num_bytes(values[read_pos]);
-      let n2_minus1 = Self::num_bytes(values[read_pos + 1]);
-      let n3_minus1 = Self::num_bytes(values[read_pos + 2]);
-      let n4_minus1 = Self::num_bytes(values[read_pos + 3]);
+      let n1_minus1 = Self::num_bytes(group[0]);
+      let n2_minus1 = Self::num_bytes(group[1]);
+      let n3_minus1 = Self::num_bytes(group[2]);
+      let n4_minus1 = Self::num_bytes(group[3]);
 
       let flag =
         ((n1_minus1 - 1) << 6) | ((n2_minus1 - 1) << 4) | ((n3_minus1 - 1) << 2) | (n4_minus1 - 1);
       scratch[write_pos] = flag as u8;
       write_pos += 1;
 
-      scratch[write_pos..write_pos + 4].copy_from_slice(&values[read_pos].to_le_bytes());
+      scratch[write_pos..write_pos + 4].copy_from_slice(&group[0].to_le_bytes());
       write_pos += n1_minus1;
 
-      scratch[write_pos..write_pos + 4].copy_from_slice(&values[read_pos + 1].to_le_bytes());
+      scratch[write_pos..write_pos + 4].copy_from_slice(&group[1].to_le_bytes());
       write_pos += n2_minus1;
 
-      scratch[write_pos..write_pos + 4].copy_from_slice(&values[read_pos + 2].to_le_bytes());
+      scratch[write_pos..write_pos + 4].copy_from_slice(&group[2].to_le_bytes());
       write_pos += n3_minus1;
 
-      scratch[write_pos..write_pos + 4].copy_from_slice(&values[read_pos + 3].to_le_bytes());
+      scratch[write_pos..write_pos + 4].copy_from_slice(&group[3].to_le_bytes());
       write_pos += n4_minus1;
 
       data_output.write_bytes_with_len(scratch, write_pos)?;

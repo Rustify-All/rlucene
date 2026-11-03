@@ -242,18 +242,95 @@ impl StringReader {
       self.next += to_read;
       return Ok((to_read as i32, to_read));
     }
-    let mut read = 0usize;
+    let (read, units, consumed) =
+      Self::read_utf8::<COUNT_UTF16>(&s[self.next..], &mut buf[off..off + len]);
+    self.next += consumed;
+    Ok((read, units))
+  }
+
+  #[inline(never)]
+  fn read_utf8<const COUNT_UTF16: bool>(source: &str, buf: &mut [char]) -> (i32, usize, usize) {
+    let bytes = source.as_bytes();
+    let to_read = buf.len().min(bytes.len());
+    let ascii_prefix = if to_read >= 64 && (bytes[0] | bytes[15]) < 0x80 {
+      bytes[..to_read]
+        .as_chunks::<16>()
+        .0
+        .iter()
+        .take_while(|&&block| wide::u8x16::new(block).to_bitmask() == 0)
+        .count()
+        * 16
+    } else {
+      0
+    };
+    for (dest, &byte) in buf[..ascii_prefix].iter_mut().zip(bytes) {
+      *dest = byte as char;
+    }
+    if ascii_prefix != 0 && buf.len() - ascii_prefix >= 16 {
+      let (read, units, consumed) =
+        Self::read_ascii_runs::<COUNT_UTF16>(&source[ascii_prefix..], &mut buf[ascii_prefix..]);
+      return (
+        (ascii_prefix + read) as i32,
+        ascii_prefix + units,
+        ascii_prefix + consumed,
+      );
+    }
+    let mut read = ascii_prefix;
     let mut supplementary = 0;
-    let mut chars = s[self.next..].chars();
-    for (dest, ch) in buf[off..off + len].iter_mut().zip(chars.by_ref()) {
+    // The prefix consists of ASCII bytes, so the suffix starts on a character boundary.
+    let mut chars = source[ascii_prefix..].chars();
+    for (dest, ch) in buf[ascii_prefix..].iter_mut().zip(chars.by_ref()) {
       *dest = ch;
       read += 1;
       if COUNT_UTF16 {
         supplementary += usize::from(ch.len_utf16() == 2);
       }
     }
-    self.next = s.len() - chars.as_str().len();
-    Ok((read as i32, read + supplementary))
+    let consumed = source.len() - chars.as_str().len();
+    (read as i32, read + supplementary, consumed)
+  }
+  #[inline(never)]
+  fn read_ascii_runs<const COUNT_UTF16: bool>(
+    source: &str,
+    buf: &mut [char],
+  ) -> (usize, usize, usize) {
+    let mut chars = source.chars();
+    let mut read = 0;
+    let mut supplementary = 0;
+    let (groups, tail) = buf.as_chunks_mut::<16>();
+    for group in groups {
+      let rest = chars.as_str();
+      if rest.is_empty() {
+        break;
+      }
+      if let Some(&bytes) = rest.as_bytes().first_chunk::<16>()
+        && wide::u8x16::new(bytes).to_bitmask() == 0
+      {
+        *group = bytes.map(char::from);
+        chars = rest[16..].chars();
+        read += 16;
+      } else {
+        for (dest, ch) in group.iter_mut().zip(chars.by_ref()) {
+          *dest = ch;
+          read += 1;
+          if COUNT_UTF16 {
+            supplementary += usize::from(ch.len_utf16() == 2);
+          }
+        }
+      }
+    }
+    for (dest, ch) in tail.iter_mut().zip(chars.by_ref()) {
+      *dest = ch;
+      read += 1;
+      if COUNT_UTF16 {
+        supplementary += usize::from(ch.len_utf16() == 2);
+      }
+    }
+    (
+      read,
+      read + supplementary,
+      source.len() - chars.as_str().len(),
+    )
   }
 }
 
