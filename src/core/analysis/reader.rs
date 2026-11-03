@@ -296,10 +296,20 @@ impl Reader for StringReader {
           && self.next < s.len()
         {
           Self::check_range(buf.len(), off, len)?;
-          let mut read = 0;
+          let bytes = &s.as_bytes()[self.next..];
+          let to_read = len.min(bytes.len());
+          if to_read >= 16 && (bytes[0] | bytes[to_read - 1]) < 0x80 && bytes[..to_read].is_ascii()
+          {
+            for (dest, &byte) in buf[off..off + to_read].iter_mut().zip(bytes) {
+              *dest = byte as char;
+            }
+            self.next += to_read;
+            return Ok(to_read as i32);
+          }
+          let mut read = 0usize;
           let mut chars = s[self.next..].chars();
-          for ch in chars.by_ref().take(len) {
-            buf[off + read] = ch;
+          for (dest, ch) in buf[off..off + len].iter_mut().zip(chars.by_ref()) {
+            *dest = ch;
             read += 1;
           }
           self.next = s.len() - chars.as_str().len();
