@@ -420,7 +420,10 @@ pub struct StandardTokenizerImpl {
   zz_marked_pos: usize,
   zz_start_read: usize,
   zz_end_read: usize,
+  zz_end_read_units: usize,
+  zz_buffered_end: usize,
   yychar: usize,
+  pub(crate) match_length_units: usize,
   zz_buffer_size: usize,
   lexical_state: i32,
   at_eof: bool,
@@ -439,7 +442,10 @@ impl StandardTokenizerImpl {
       zz_marked_pos: 0,
       zz_start_read: 0,
       zz_end_read: 0,
+      zz_end_read_units: 0,
+      zz_buffered_end: 0,
       yychar: 0,
+      match_length_units: 0,
       zz_buffer_size,
       lexical_state: YYINITIAL,
       at_eof: false,
@@ -467,7 +473,7 @@ impl StandardTokenizerImpl {
   pub const HANGUL_TYPE: i32 = HANGUL;
   /// Emoji token type
   pub const EMOJI_TYPE: i32 = EMOJI;
-  /// Character count processed so far
+  /// Number of UTF-16 units before the current match.
   pub fn yychar(&self) -> i32 {
     self.yychar as i32
   }
@@ -482,7 +488,7 @@ impl StandardTokenizerImpl {
       self.zz_marked_pos - self.zz_start_read,
     )
   }
-  ///  Sets the scanner buffer size in chars
+  /// Sets the scanner window size in UTF-16 units.
   pub fn set_buffer_size(&mut self, num_chars: usize) {
     self.zz_buffer_size = num_chars;
     if num_chars >= self.zz_buffer.len() {
@@ -511,40 +517,101 @@ impl StandardTokenizerImpl {
   /// Returns an error if any I/O error occurs.
   fn zz_refill(&mut self) -> Result<bool> {
     if self.zz_start_read > 0 {
-      let len = self.zz_end_read - self.zz_start_read;
+      let mut consumed = self.zz_start_read;
+      if self.zz_end_read_units != self.zz_end_read {
+        consumed += self.zz_buffer[..self.zz_start_read]
+          .iter()
+          .filter(|&&ch| ch.len_utf16() == 2)
+          .count();
+      }
       self
         .zz_buffer
-        .copy_within(self.zz_start_read..self.zz_end_read, 0);
-      self.zz_end_read = len;
+        .copy_within(self.zz_start_read..self.zz_buffered_end, 0);
+      self.zz_end_read_units -= consumed;
+      self.zz_end_read -= self.zz_start_read;
+      self.zz_buffered_end -= self.zz_start_read;
       self.zz_current_pos -= self.zz_start_read;
       self.zz_marked_pos -= self.zz_start_read;
       self.zz_start_read = 0;
     }
 
-    let requested = self.zz_buffer_size.saturating_sub(self.zz_end_read);
-    if requested == 0 {
-      // Mirrors JFlex: a full scan buffer cannot be refilled.
-      return Ok(true);
-    }
+    // Keep the same scan-window limit as JFlex. A Rust reader returns whole
+    // scalars, so any read-ahead beyond the window stays in the buffer for the
+    // next refill, including a supplementary scalar that straddles the limit.
+    let mut read_from_reader = false;
+    loop {
+      let requested = self.zz_buffer_size.saturating_sub(self.zz_end_read_units);
+      if requested == 0 {
+        break;
+      }
+      let known_units = if self.zz_end_read == self.zz_buffered_end {
+        if read_from_reader {
+          break;
+        }
+        let (num_read, units) = match &mut self.zz_reader {
+          ReaderEnum::String(reader) => {
+            let (read, units) = reader.read_range_with_units::<true>(
+              &mut self.zz_buffer,
+              self.zz_end_read,
+              requested,
+            )?;
+            (read, Some(units))
+          },
+          reader => (
+            reader.read_range(&mut self.zz_buffer, self.zz_end_read, requested)?,
+            None,
+          ),
+        };
+        if num_read == 0 {
+          return Err(LuceneError::io(Error::other(
+            "Reader returned 0 characters. See JFlex examples/zero-reader for a workaround.",
+          )));
+        }
+        if num_read == -1 {
+          break;
+        }
+        self.zz_buffered_end += num_read as usize;
+        read_from_reader = true;
+        units
+      } else {
+        None
+      };
 
-    let num_read = self
-      .zz_reader
-      .read_range(&mut self.zz_buffer, self.zz_end_read, requested)?;
-    if num_read == 0 {
-      return Err(LuceneError::io(Error::other(
-        "Reader returned 0 characters. See JFlex examples/zero-reader for a workaround.",
-      )));
+      let available = &self.zz_buffer[self.zz_end_read..self.zz_buffered_end];
+      let units = known_units.unwrap_or_else(|| {
+        available.len() + available.iter().filter(|&&ch| ch.len_utf16() == 2).count()
+      });
+      if units <= requested {
+        self.zz_end_read = self.zz_buffered_end;
+        self.zz_end_read_units += units;
+      } else {
+        for ch in available {
+          let units = ch.len_utf16();
+          if units > self.zz_buffer_size - self.zz_end_read_units {
+            break;
+          }
+          self.zz_end_read += 1;
+          self.zz_end_read_units += units;
+        }
+        break;
+      }
     }
-    if num_read == -1 {
-      return Ok(true);
-    }
-    self.zz_end_read += num_read as usize;
-    Ok(false)
+    Ok(self.zz_current_pos == self.zz_end_read)
   }
   /// Closes the input reader.
   pub fn yyclose(&mut self) -> Result<()> {
     self.at_eof = true;
+    if self.zz_end_read_units != self.zz_end_read {
+      self.zz_end_read_units = self.zz_start_read
+        + self.zz_buffer[..self.zz_start_read]
+          .iter()
+          .filter(|&&ch| ch.len_utf16() == 2)
+          .count();
+    } else {
+      self.zz_end_read_units = self.zz_start_read;
+    }
     self.zz_end_read = self.zz_start_read;
+    self.zz_buffered_end = self.zz_start_read;
     self.zz_reader.close()
   }
   /// Resets the scanner to read from a new input stream.
@@ -574,7 +641,10 @@ impl StandardTokenizerImpl {
     self.zz_marked_pos = 0;
     self.zz_start_read = 0;
     self.zz_end_read = 0;
+    self.zz_end_read_units = 0;
+    self.zz_buffered_end = 0;
     self.yychar = 0;
+    self.match_length_units = 0;
   }
 
   /// Returns whether the scanner has reached the end of the reader it reads from.
@@ -620,6 +690,7 @@ impl StandardTokenizerImpl {
   pub fn yylength(&self) -> usize {
     self.zz_marked_pos - self.zz_start_read
   }
+
   /// Reports an error that occurred while scanning.
   ///
   /// In a well-formed scanner, with no misuse of `yypushback(i32)` and with a
@@ -656,7 +727,12 @@ impl StandardTokenizerImpl {
     if number > self.yylength() {
       Self::zz_scan_error(ZZ_PUSHBACK_2BIG);
     }
+    let end = self.zz_marked_pos;
     self.zz_marked_pos -= number;
+    self.match_length_units -= self.zz_buffer[self.zz_marked_pos..end]
+      .iter()
+      .map(|ch| ch.len_utf16())
+      .sum::<usize>();
   }
   /// Resumes scanning until the next regular expression is matched, the end of
   /// input is reached, or an I/O error occurs.
@@ -672,7 +748,7 @@ impl StandardTokenizerImpl {
     let zz_attr = ZZ_ATTRIBUTE.as_slice();
     loop {
       let zz_marked_pos = self.zz_marked_pos;
-      self.yychar += zz_marked_pos - self.zz_start_read;
+      self.yychar += self.match_length_units;
       let mut zz_action = None;
 
       let mut zz_current_pos_l = zz_marked_pos;
@@ -724,6 +800,15 @@ impl StandardTokenizerImpl {
       };
 
       self.zz_marked_pos = zz_marked_pos_l;
+      // Keep the matched length in Lucene offset units for both the caller
+      // and the next scan. A BMP-only window needs no second pass.
+      self.match_length_units = self.yylength();
+      if self.zz_end_read_units != self.zz_end_read {
+        self.match_length_units += self.zz_buffer[self.zz_start_read..zz_marked_pos_l]
+          .iter()
+          .filter(|&&ch| ch.len_utf16() == 2)
+          .count();
+      }
 
       if zz_input == YYEOF && self.zz_start_read == self.zz_current_pos {
         self.at_eof = true;

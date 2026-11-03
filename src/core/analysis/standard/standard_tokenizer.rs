@@ -153,13 +153,14 @@ impl TokenStream for StandardTokenizer {
             return Ok(false);
           }
 
-          if self.scanner.yylength() <= self.max_token_length {
+          let length = self.scanner.match_length_units;
+          if length <= self.max_token_length {
             {
               att.set_position_increment(self.skipped_positions + 1)?;
               self.scanner.get_text(att)?;
             }
             let start = self.scanner.yychar();
-            let end = start + att.length()? as i32;
+            let end = start + length as i32;
             let start = self.tokenizer_base.input.correct_offset(start);
             let end = self.tokenizer_base.input.correct_offset(end);
             att.set_offset(start, end)?;
@@ -186,7 +187,8 @@ impl TokenStream for StandardTokenizer {
 
   fn end(&mut self) -> Result<()> {
     self.tokenizer_base.end()?;
-    let final_offset = self.correct_offset(self.scanner.yychar() + self.scanner.yylength() as i32);
+    let final_offset =
+      self.correct_offset(self.scanner.yychar() + self.scanner.match_length_units as i32);
     let att = &mut self.tokenizer_base.token_stream_base.att;
     att.set_offset(final_offset, final_offset)?;
     let position_increment = att.get_position_increment()?;

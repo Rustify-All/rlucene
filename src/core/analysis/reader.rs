@@ -218,6 +218,43 @@ impl StringReader {
     }
     Ok(end)
   }
+
+  pub(crate) fn read_range_with_units<const COUNT_UTF16: bool>(
+    &mut self,
+    buf: &mut [char],
+    off: usize,
+    len: usize,
+  ) -> Result<(i32, usize)> {
+    let s = self
+      .source
+      .as_ref()
+      .ok_or_else(|| LuceneError::illegal_state("Stream closed"))?;
+    Self::check_range(buf.len(), off, len)?;
+    if self.next >= s.len() {
+      return Ok((if len == 0 { 0 } else { -1 }, 0));
+    }
+    let bytes = &s.as_bytes()[self.next..];
+    let to_read = len.min(bytes.len());
+    if to_read >= 16 && (bytes[0] | bytes[to_read - 1]) < 0x80 && bytes[..to_read].is_ascii() {
+      for (dest, &byte) in buf[off..off + to_read].iter_mut().zip(bytes) {
+        *dest = byte as char;
+      }
+      self.next += to_read;
+      return Ok((to_read as i32, to_read));
+    }
+    let mut read = 0usize;
+    let mut supplementary = 0;
+    let mut chars = s[self.next..].chars();
+    for (dest, ch) in buf[off..off + len].iter_mut().zip(chars.by_ref()) {
+      *dest = ch;
+      read += 1;
+      if COUNT_UTF16 {
+        supplementary += usize::from(ch.len_utf16() == 2);
+      }
+    }
+    self.next = s.len() - chars.as_str().len();
+    Ok((read as i32, read + supplementary))
+  }
 }
 
 impl From<Arc<String>> for StringReader {
@@ -253,31 +290,7 @@ impl Reader for StringReader {
   }
 
   fn read_range(&mut self, buf: &mut [char], off: usize, len: usize) -> Result<i32> {
-    let s = self
-      .source
-      .as_ref()
-      .ok_or_else(|| LuceneError::illegal_state("Stream closed"))?;
-    Self::check_range(buf.len(), off, len)?;
-    if self.next >= s.len() {
-      return Ok(if len == 0 { 0 } else { -1 });
-    }
-    let bytes = &s.as_bytes()[self.next..];
-    let to_read = len.min(bytes.len());
-    if to_read >= 16 && (bytes[0] | bytes[to_read - 1]) < 0x80 && bytes[..to_read].is_ascii() {
-      for (dest, &byte) in buf[off..off + to_read].iter_mut().zip(bytes) {
-        *dest = byte as char;
-      }
-      self.next += to_read;
-      return Ok(to_read as i32);
-    }
-    let mut read = 0usize;
-    let mut chars = s[self.next..].chars();
-    for (dest, ch) in buf[off..off + len].iter_mut().zip(chars.by_ref()) {
-      *dest = ch;
-      read += 1;
-    }
-    self.next = s.len() - chars.as_str().len();
-    Ok(read as i32)
+    Ok(self.read_range_with_units::<false>(buf, off, len)?.0)
   }
 
   fn close(&mut self) -> Result<()> {

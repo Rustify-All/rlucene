@@ -1981,6 +1981,7 @@ impl CheckIndex<DirectoryEnum, LockEnum, Sink> {
       let mut sum_total_term_freq = 0;
       let mut sum_doc_freq = 0;
       let mut visited_docs = FixedBitSet::new(max_doc.try_convert()?);
+      let mut field_hash_code = None;
       loop {
         let term = {
           let Some(term) = terms_enum.next()? else {
@@ -2414,8 +2415,10 @@ impl CheckIndex<DirectoryEnum, LockEnum, Sink> {
           let mut impacts_enum = terms_enum.impacts(FREQS as i32)?;
           postings = Some(terms_enum.postings_with_flags(postings.take(), FREQS as i32)?);
 
-          let field_hash_code = field.encode_utf16().fold(0i32, |hash, value| {
-            hash.wrapping_mul(31).wrapping_add(i32::from(value))
+          let field_hash_code = *field_hash_code.get_or_insert_with(|| {
+            field.encode_utf16().fold(0i32, |hash, value| {
+              hash.wrapping_mul(31).wrapping_add(i32::from(value))
+            })
           });
           let mut max = -1;
           let mut max_freq = 0;

@@ -59,14 +59,14 @@ impl CharacterRunAutomaton {
     let iter = decode_utf16(chars[offset..offset + length].iter().cloned());
 
     for result in iter {
-      match result {
-        Ok(ch) => {
-          state = self.base.step(state, ch as i32);
-          if state == -1 {
-            return Ok(false);
-          }
-        },
-        Err(_) => return Ok(false),
+      // Java's codePointAt returns an unpaired surrogate as its own code unit.
+      let code_point = match result {
+        Ok(ch) => ch as i32,
+        Err(error) => i32::from(error.unpaired_surrogate()),
+      };
+      state = self.base.step(state, code_point);
+      if state == -1 {
+        return Ok(false);
       }
     }
 

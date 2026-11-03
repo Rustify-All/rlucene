@@ -226,10 +226,16 @@ pub trait Analyzer: Closeable + Send + Sync {
       let filtered = IOUtils::use_or_suppress_caught_result(filtered_result, close_result)?;
 
       let att = self.attribute_factory(field_name);
-      debug_assert!(text.len() <= i32::MAX as usize);
+      let length = if text.is_ascii() {
+        text.len()
+      } else {
+        text.chars().map(char::len_utf16).sum()
+      };
+      let length = i32::try_from(length)
+        .map_err(|_| LuceneError::illegal_argument("string UTF-16 length exceeds i32::MAX"))?;
       let mut ts = self.normalize_from_ts(
         field_name,
-        StringTokenStream::new(att, filtered, text.len() as i32).into(),
+        StringTokenStream::new(att, filtered, length).into(),
       )?;
 
       let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(

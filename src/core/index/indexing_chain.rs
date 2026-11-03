@@ -1097,11 +1097,16 @@ where
       if let FieldDataEnum::String(s) = stored_value
         && s.len() > MAX_STORED_STRING_LENGTH
       {
-        return Err(LuceneError::illegal_argument(format!(
-          "stored field \"{}\" is too large ({} characters) to store",
-          field.name(),
-          s.len()
-        )));
+        // UTF-8 byte length bounds UTF-16 length from above. Only count units
+        // when the byte length alone cannot prove that the string fits.
+        let length: usize = s.chars().map(char::len_utf16).sum();
+        if length > MAX_STORED_STRING_LENGTH {
+          return Err(LuceneError::illegal_argument(format!(
+            "stored field \"{}\" is too large ({} characters) to store",
+            field.name(),
+            length
+          )));
+        }
       };
       catch_aborting_exception!(
         &mut self.has_hit_aborting_exception,
