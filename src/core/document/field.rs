@@ -977,8 +977,12 @@ impl StringTokenStream {
   pub(crate) fn set_value(&mut self, value: &str) -> Result<()> {
     let utf16_length = if value.is_ascii() {
       value.len()
+    } else if value.len() <= char::MAX.len_utf8() {
+      value.chars().map(char::len_utf16).sum()
     } else {
-      value.encode_utf16().count()
+      // Rust strings already contain valid scalar values. Four-byte UTF-8
+      // sequences contribute one extra unit to Java-compatible offsets.
+      value.chars().count() + value.bytes().filter(|byte| *byte >= 0xF0).count()
     };
     self.end_offset = i32::try_from(utf16_length)
       .map_err(|_| LuceneError::illegal_argument("string UTF-16 length exceeds i32::MAX"))?;
