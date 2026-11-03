@@ -16,7 +16,6 @@
  */
 use crate::test_framework::core::util::lucene_test_case::{new_bytes_ref_from_string, random};
 use std::collections::{BTreeMap, HashMap};
-use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 
@@ -56,17 +55,14 @@ fn create_new_hash(new_called: AtomicI64, add_called: AtomicI64) -> TermsHashPer
   new_terms_hash_per_field_mock(new_called, add_called)
 }
 
-fn assert_doc_and_freq<P>(
-  reader: &mut ByteSliceReader<P>,
+fn assert_doc_and_freq(
+  reader: &mut ByteSliceReader<'_>,
   postings_array: &FreqProxPostingsArray,
   prev_doc: i32,
   term_id: i32,
   doc: i32,
   frequency: i32,
-) -> Result<bool>
-where
-  P: Deref<Target = ByteBlockPool>,
-{
+) -> Result<bool> {
   assert!(term_id >= 0);
   let term_id = term_id as usize;
   let mut doc_id = prev_doc;

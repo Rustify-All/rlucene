@@ -356,6 +356,9 @@ impl ByteBlockPool {
   pub fn get_buffer(&self, buffer_index: usize) -> &Vec<u8> {
     &self.buffers[buffer_index]
   }
+  pub(crate) fn get_buffer_or_empty(&self, buffer_index: usize) -> &[u8] {
+    self.buffers.get(buffer_index).map_or(&[], Vec::as_slice)
+  }
   pub fn get_bytes_used(&self) -> i64 {
     self.allocator.get_used()
   }

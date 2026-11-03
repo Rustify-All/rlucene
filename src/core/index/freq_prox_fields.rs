@@ -499,7 +499,7 @@ impl<'data> TermsEnum for FreqProxTermsEnum<'data> {
 pub(crate) struct FreqProxDocsEnum<'a> {
   pub(crate) terms: &'a FreqProxTermsWriterPerField,
   int_pool: &'a IntBlockPool,
-  pub(crate) reader: ByteSliceReader<&'a ByteBlockPool>,
+  pub(crate) reader: ByteSliceReader<'a>,
   pub(crate) read_term_freq: bool,
   pub(crate) doc_id: i32,
   pub(crate) freq: i32,
@@ -640,8 +640,8 @@ impl<'data> PostingsEnum for FreqProxDocsEnum<'data> {
 pub(crate) struct FreqProxPostingsEnum<'a> {
   terms: &'a FreqProxTermsWriterPerField,
   int_pool: &'a IntBlockPool,
-  reader: ByteSliceReader<&'a ByteBlockPool>,
-  pos_reader: ByteSliceReader<&'a ByteBlockPool>,
+  reader: ByteSliceReader<'a>,
+  pos_reader: ByteSliceReader<'a>,
   read_offsets: bool,
   doc_id: i32,
   freq: i32,

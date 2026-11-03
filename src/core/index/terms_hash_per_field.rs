@@ -30,7 +30,6 @@ use crate::core::util::{
   BYTE_BLOCK_MASK, BYTE_BLOCK_SHIFT, BYTE_BLOCK_SIZE, ByteBlockPool, Counter, SharedCounter,
   SliceCopyOps, size_of_slice,
 };
-use std::ops::Deref;
 
 /// This struct stores streams of information per term without knowing the size
 /// of the stream ahead of time. Each stream typically encodes one level of
@@ -89,16 +88,13 @@ impl<PA: PostingsArray> TermsHashPerField<PA> {
       index_options,
     })
   }
-  pub(crate) fn init_reader<P>(
+  pub(crate) fn init_reader(
     &self,
-    reader: &mut ByteSliceReader<P>,
+    reader: &mut ByteSliceReader<'_>,
     term_id: usize,
     stream: i32,
     int_pool: &IntBlockPool,
-  ) -> Result<()>
-  where
-    P: Deref<Target = ByteBlockPool>,
-  {
+  ) -> Result<()> {
     debug_assert!(stream < self.stream_count);
     let postings_array_wrapper = &self.bytes_hash.bytes_start_array.per_field;
     let stream_start_offset = postings_array_wrapper

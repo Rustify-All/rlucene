@@ -25,13 +25,13 @@ use crate::core::util::{
   BYTE_BLOCK_MASK, BYTE_BLOCK_SIZE, ByteBlockPool, SliceCopyOps, TryIntoInt,
 };
 use std::fmt::{Display, Formatter};
-use std::ops::Deref;
 
 /// IndexInput that knows how to read the byte slices written by Posting and PostingVector.
 /// We read the bytes in each slice until we hit the end of that slice at which point we read the forwarding address of the next slice and then jump to it.
-pub(crate) struct ByteSliceReader<P> {
-  pool: P,
+pub(crate) struct ByteSliceReader<'a> {
+  pool: &'a ByteBlockPool,
   buffer_upto: usize,
+  buffer: &'a [u8],
   upto: usize,
   limit: usize,
   level: usize,
@@ -39,11 +39,12 @@ pub(crate) struct ByteSliceReader<P> {
   end_index: usize,
 }
 
-impl<P> ByteSliceReader<P> {
-  pub(crate) fn new(pool: P) -> Self {
+impl<'a> ByteSliceReader<'a> {
+  pub(crate) fn new(pool: &'a ByteBlockPool) -> Self {
     Self {
       pool,
       buffer_upto: 0,
+      buffer: &[],
       upto: 0,
       limit: 0,
       level: 0,
@@ -58,10 +59,7 @@ impl<P> ByteSliceReader<P> {
   }
 }
 
-impl<P> ByteSliceReader<P>
-where
-  P: Deref<Target = ByteBlockPool>,
-{
+impl<'a> ByteSliceReader<'a> {
   pub(crate) fn init(&mut self, start_index: usize, end_index: usize) {
     debug_assert!(end_index >= start_index);
 
@@ -70,6 +68,8 @@ where
 
     self.buffer_upto = start_index / BYTE_BLOCK_SIZE as usize;
     self.buffer_offset = self.buffer_upto * BYTE_BLOCK_SIZE as usize;
+    // Like Java's nullable buffer, an unallocated block fails when read.
+    self.buffer = self.pool.get_buffer_or_empty(self.buffer_upto);
     self.upto = start_index & BYTE_BLOCK_MASK as usize;
 
     let first_size = ByteSlicePool::LEVEL_SIZE_ARRAY[0] as usize;
@@ -89,21 +89,18 @@ where
   {
     let mut size = 0;
     loop {
+      let buffer = if self.buffer.is_empty() {
+        self.pool.get_buffer(self.buffer_upto).as_slice()
+      } else {
+        self.buffer
+      };
       if self.limit + self.buffer_offset == self.end_index {
         debug_assert!(self.end_index - self.buffer_offset >= self.upto);
-        out.write_bytes_range(
-          self.pool.get_buffer(self.buffer_upto),
-          self.upto,
-          self.limit - self.upto,
-        )?;
+        out.write_bytes_range(buffer, self.upto, self.limit - self.upto)?;
         size += self.limit - self.upto;
         break;
       } else {
-        out.write_bytes_range(
-          self.pool.get_buffer(self.buffer_upto),
-          self.upto,
-          self.limit - self.upto,
-        )?;
+        out.write_bytes_range(buffer, self.upto, self.limit - self.upto)?;
         size += self.limit - self.upto;
         self.next_slice()?;
       }
@@ -112,14 +109,15 @@ where
   }
 
   pub(crate) fn next_slice(&mut self) -> Result<()> {
-    let buffer = self.pool.get_buffer(self.buffer_upto);
-    let next_index = BitUtil::get_i32_le(buffer, self.limit).try_convert()?;
+    let next_index = BitUtil::get_i32_le(self.buffer, self.limit).try_convert()?;
 
     self.level = ByteSlicePool::NEXT_LEVEL_ARRAY[self.level];
     let new_size = ByteSlicePool::LEVEL_SIZE_ARRAY[self.level] as usize;
 
     self.buffer_upto = next_index / BYTE_BLOCK_SIZE as usize;
     self.buffer_offset = self.buffer_upto * BYTE_BLOCK_SIZE as usize;
+    // Like Java's nullable buffer, an unallocated block fails when read.
+    self.buffer = self.pool.get_buffer_or_empty(self.buffer_upto);
     self.upto = next_index & BYTE_BLOCK_MASK as usize;
 
     if next_index + new_size >= self.end_index {
@@ -134,12 +132,9 @@ where
   }
 }
 
-impl<P> crate::core::util::close::Closeable for ByteSliceReader<P> {}
+impl crate::core::util::close::Closeable for ByteSliceReader<'_> {}
 
-impl<P> DataInput for ByteSliceReader<P>
-where
-  P: Deref<Target = ByteBlockPool>,
-{
+impl DataInput for ByteSliceReader<'_> {
   fn read_byte(&mut self) -> Result<u8> {
     debug_assert!(!self.eof());
     debug_assert!(self.upto <= self.limit);
@@ -148,7 +143,7 @@ where
       self.next_slice()?;
     }
 
-    let byte = self.pool.get_buffer(self.buffer_upto)[self.upto];
+    let byte = self.buffer[self.upto];
     self.upto += 1;
     Ok(byte)
   }
@@ -164,14 +159,14 @@ where
       let num_left = self.limit - self.upto;
       if num_left < len {
         {
-          let buffer = self.pool.get_buffer(self.buffer_upto);
+          let buffer = self.buffer;
           b.copy_from(&buffer[self.upto..self.upto + num_left], offset);
         }
         offset += num_left;
         len -= num_left;
         self.next_slice()?;
       } else {
-        let buffer = self.pool.get_buffer(self.buffer_upto);
+        let buffer = self.buffer;
         b.copy_from(&buffer[self.upto..(self.upto + len)], offset);
         self.upto += len;
         break;
@@ -205,9 +200,9 @@ where
   }
 }
 
-impl<P> DataInputExt for ByteSliceReader<P> where P: Deref<Target = ByteBlockPool> {}
+impl DataInputExt for ByteSliceReader<'_> {}
 
-impl<P> Display for ByteSliceReader<P> {
+impl Display for ByteSliceReader<'_> {
   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
     write!(f, "{}", std::any::type_name::<Self>())
   }
