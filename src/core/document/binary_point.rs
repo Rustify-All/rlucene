@@ -323,7 +323,8 @@ impl BinaryPoint {
       return Ok(MatchNoDocsQuery::with_reason("empty BinaryPoint.newSetQuery").into());
     };
 
-    let mut sorted_values: Vec<&[u8]> = values.iter().map(|value| value.as_ref()).collect();
+    let mut sorted_values = smallvec::SmallVec::<[&[u8]; 4]>::with_capacity(values.len());
+    sorted_values.extend(values.iter().map(|value| value.as_ref()));
     sorted_values.sort_unstable();
 
     Ok(
@@ -340,12 +341,12 @@ impl BinaryPoint {
 }
 
 struct BinaryPointSetBytesRefIterator<'a> {
-  sorted_values: Vec<&'a [u8]>,
+  sorted_values: smallvec::SmallVec<[&'a [u8]; 4]>,
   upto: usize,
 }
 
 impl<'a> BinaryPointSetBytesRefIterator<'a> {
-  fn new(sorted_values: Vec<&'a [u8]>) -> Self {
+  fn new(sorted_values: smallvec::SmallVec<[&'a [u8]; 4]>) -> Self {
     Self {
       sorted_values,
       upto: 0,

@@ -456,7 +456,8 @@ where
       }
     }
     assert_eq!(
-      select_slice.partition, min,
+      select_slice.partition.as_slice(),
+      min.as_slice(),
       "Partition point does not equal the minimum of the right slice"
     );
     let left_slice = match select_slice.left_writer {

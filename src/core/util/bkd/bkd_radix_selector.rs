@@ -47,9 +47,9 @@ pub struct BKDRadixSelector<const N: usize = 0> {
   // reusable buffer
   offline_buffer: Vec<u8>,
   // holder for partition points
-  partition_bucket: Vec<usize>,
+  partition_bucket: smallvec::SmallVec<[usize; 8]>,
   // scratch array to hold temporary data
-  scratch: Vec<u8>,
+  scratch: smallvec::SmallVec<[u8; 16]>,
   // prefix for temp files
   temp_file_name_prefix: Arc<str>,
   // BKD tree configuration
@@ -59,7 +59,7 @@ pub struct SelectorSlice<O, const N: usize = 0>
 where
   O: IndexOutput,
 {
-  pub(crate) partition: Vec<u8>,
+  pub(crate) partition: smallvec::SmallVec<[u8; 16]>,
 
   pub(crate) left_writer: Option<PointWriterEnum<O, N>>,
   pub(crate) left_from: usize,
@@ -74,7 +74,7 @@ where
   O: IndexOutput,
 {
   fn new(
-    partition: Vec<u8>,
+    partition: smallvec::SmallVec<[u8; 16]>,
     left_writer: Option<PointWriterEnum<O, N>>,
     left_from: usize,
     left_to: usize,
@@ -126,9 +126,9 @@ impl<const N: usize> BKDRadixSelector<N> {
       + BitUtil::INT_BYTES;
     let number_of_points_offline = Self::MAX_SIZE_OFFLINE_BUFFER / config.bytes_per_doc();
     let offline_buffer = vec![0u8; number_of_points_offline * config.bytes_per_doc()];
-    let partition_bucket = vec![0; bytes_sorted];
+    let partition_bucket = smallvec::smallvec![0; bytes_sorted];
     let histogram = [0; 256];
-    let scratch = vec![0u8; bytes_sorted];
+    let scratch = smallvec::smallvec![0u8; bytes_sorted];
     BKDRadixSelector {
       config,
       max_points_sort_in_heap,
@@ -467,7 +467,7 @@ impl<const N: usize> BKDRadixSelector<N> {
     points: &mut OfflinePointWriter<D::IndexOutput>,
     writers: (&mut L, &mut R),
     args: ((usize, usize), usize, usize, usize, usize, usize, usize, &D),
-  ) -> Result<Vec<u8>>
+  ) -> Result<smallvec::SmallVec<[u8; 16]>>
   where
     D: Directory,
     L: PointWriter,
@@ -671,8 +671,8 @@ impl<const N: usize> BKDRadixSelector<N> {
     Ok(())
   }
 
-  fn partition_point_from_common_prefix(&self) -> Result<Vec<u8>> {
-    let mut partition = vec![0u8; self.config.bytes_per_dim];
+  fn partition_point_from_common_prefix(&self) -> Result<smallvec::SmallVec<[u8; 16]>> {
+    let mut partition = smallvec::smallvec![0u8; self.config.bytes_per_dim];
     for (i, p) in partition
       .iter_mut()
       .enumerate()
@@ -694,7 +694,7 @@ impl<const N: usize> BKDRadixSelector<N> {
     to: usize,
     partition_point: usize,
     common_prefix: usize,
-  ) -> Result<Vec<u8>>
+  ) -> Result<smallvec::SmallVec<[u8; 16]>>
   where
     L: PointWriter,
     R: PointWriter,
@@ -723,7 +723,7 @@ impl<const N: usize> BKDRadixSelector<N> {
     to: usize,
     partition_point: usize,
     common_prefix_length: usize,
-  ) -> Result<Vec<u8>> {
+  ) -> Result<smallvec::SmallVec<[u8; 16]>> {
     let bytes_per_dim = self.config.bytes_per_dim;
     let dim_offset = dim * bytes_per_dim + common_prefix_length;
     let max_length = self
@@ -753,7 +753,7 @@ impl<const N: usize> BKDRadixSelector<N> {
     let mut radix_selector = RadixSelector::new(max_length, sub_selector);
     radix_selector.select(from, to, partition_point)?;
 
-    let mut partition = Vec::with_capacity(bytes_per_dim);
+    let mut partition = smallvec::SmallVec::with_capacity(bytes_per_dim);
 
     {
       let point_value = points.get_packed_value_slice(partition_point)?;

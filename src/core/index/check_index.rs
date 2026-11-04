@@ -1532,10 +1532,12 @@ impl CheckIndex<DirectoryEnum, LockEnum, Sink> {
       }
 
       let fields = sort.get_sort();
-      let reverse_mul: Vec<i32> = fields
-        .iter()
-        .map(|field| if field.get_reverse() { -1 } else { 1 })
-        .collect();
+      let mut reverse_mul = smallvec::SmallVec::<[i32; 4]>::with_capacity(fields.len());
+      reverse_mul.extend(
+        fields
+          .iter()
+          .map(|field| if field.get_reverse() { -1 } else { 1 }),
+      );
       let reader_context = LeafReaderContext::from_top_lr(reader)?;
       let mut comparators = Vec::with_capacity(fields.len());
       let mut leaf_comparators = Vec::with_capacity(fields.len());
@@ -3359,9 +3361,9 @@ pub struct VerifyPointsVisitor<'a> {
   point_count_seen: i64,
   last_doc_id: i32,
   docs_seen: FixedBitSet,
-  last_min_packed_value: RefCell<Vec<u8>>,
-  last_max_packed_value: RefCell<Vec<u8>>,
-  last_packed_value: Vec<u8>,
+  last_min_packed_value: RefCell<smallvec::SmallVec<[u8; 16]>>,
+  last_max_packed_value: RefCell<smallvec::SmallVec<[u8; 16]>>,
+  last_packed_value: smallvec::SmallVec<[u8; 16]>,
   global_min_packed_value: Option<Cow<'a, [u8]>>,
   global_max_packed_value: Option<Cow<'a, [u8]>>,
   packed_bytes_count: usize,
@@ -3390,9 +3392,16 @@ impl<'a> VerifyPointsVisitor<'a> {
     let global_min_packed_value = values.get_min_packed_value()?;
     let global_max_packed_value = values.get_max_packed_value()?;
     let docs_seen = FixedBitSet::new(max_doc.try_convert()?);
-    let last_min_packed_value = RefCell::new(vec![0; packed_index_bytes_count]);
-    let last_max_packed_value = RefCell::new(vec![0; packed_index_bytes_count]);
-    let last_packed_value = vec![0; packed_bytes_count];
+    let mut last_min_packed_value =
+      smallvec::SmallVec::<[u8; 16]>::with_capacity(packed_index_bytes_count);
+    last_min_packed_value.resize(packed_index_bytes_count, 0);
+    let last_min_packed_value = RefCell::new(last_min_packed_value);
+    let mut last_max_packed_value =
+      smallvec::SmallVec::<[u8; 16]>::with_capacity(packed_index_bytes_count);
+    last_max_packed_value.resize(packed_index_bytes_count, 0);
+    let last_max_packed_value = RefCell::new(last_max_packed_value);
+    let mut last_packed_value = smallvec::SmallVec::<[u8; 16]>::with_capacity(packed_bytes_count);
+    last_packed_value.resize(packed_bytes_count, 0);
 
     let doc_count = values.get_doc_count()?;
     let size = values.size()?;

@@ -76,20 +76,20 @@ where
 
   #[allow(dead_code)]
   max_mb_sort_in_heap: f64,
-  scratch_diff: Vec<u8>,
-  scratch: Vec<u8>,
+  scratch_diff: smallvec::SmallVec<[u8; 16]>,
+  scratch: smallvec::SmallVec<[u8; 32]>,
   scratch_bytes_ref1: BytesRef<Vec<u8>>,
   scratch_bytes_ref2: BytesRef<Vec<u8>>,
-  common_prefix_lengths: Vec<usize>,
-  used_bytes: Vec<Option<FixedBitSet>>,
+  common_prefix_lengths: smallvec::SmallVec<[usize; 4]>,
+  used_bytes: smallvec::SmallVec<[Option<FixedBitSet>; 4]>,
   docs_seen: FixedBitSet,
   point_writer: Option<PointWriterEnum<<TrackingDirectoryWrapper<D> as Directory>::IndexOutput, N>>,
   finished: bool,
   max_points_sort_in_heap: usize,
   /// Minimum per-dim values, packed.
-  min_packed_value: Vec<u8>,
+  min_packed_value: smallvec::SmallVec<[u8; 32]>,
   /// Maximum per-dim values, packed.
-  max_packed_value: Vec<u8>,
+  max_packed_value: smallvec::SmallVec<[u8; 32]>,
   point_count: i64,
   /// An upper bound on how many points the caller will add (includes
   /// deletions).
@@ -136,12 +136,12 @@ where
     let common_prefix_comparator = BKDPrefix(BKDBytes::new(bytes_per_dim));
     let docs_seen = FixedBitSet::new(max_doc as usize);
 
-    let scratch_diff = vec![0u8; config.bytes_per_dim];
-    let scratch = vec![0u8; packed_bytes_length];
-    let common_prefix_lengths = vec![0; config.num_dims];
+    let scratch_diff = smallvec::smallvec![0u8; config.bytes_per_dim];
+    let scratch = smallvec::smallvec![0u8; packed_bytes_length];
+    let common_prefix_lengths = smallvec::smallvec![0; config.num_dims];
 
-    let min_packed_value = vec![0u8; packed_index_bytes_length];
-    let max_packed_value = vec![0u8; packed_index_bytes_length];
+    let min_packed_value = smallvec::smallvec![0u8; packed_index_bytes_length];
+    let max_packed_value = smallvec::smallvec![0u8; packed_index_bytes_length];
 
     // Maximum number of points we hold in memory at any time
     let max_points_sort_in_heap =
@@ -170,7 +170,7 @@ where
       scratch_bytes_ref1: BytesRef::default(),
       scratch_bytes_ref2: BytesRef::default(),
       common_prefix_lengths,
-      used_bytes: Vec::new(),
+      used_bytes: smallvec::SmallVec::new(),
       docs_seen,
       point_writer: None,
       finished: false,
@@ -398,11 +398,11 @@ where
     self.check_max_leaf_node_count(num_leaves)?;
 
     let mut split_packed_values = vec![0u8; num_splits * self.config.bytes_per_dim];
-    let mut split_dimension_values = vec![0u8; num_splits];
+    let mut split_dimension_values = smallvec::smallvec![0u8; num_splits];
     let mut leaf_block_fps = vec![0usize; num_leaves];
 
-    let mut min_packed_value = vec![0u8; self.min_packed_value.len()];
-    let mut max_packed_value = vec![0u8; self.max_packed_value.len()];
+    let mut min_packed_value = smallvec::smallvec![0u8; self.min_packed_value.len()];
+    let mut max_packed_value = smallvec::smallvec![0u8; self.max_packed_value.len()];
     // MutablePointTree accesses are limited to signed i32 positions.
     let _: i32 = point_count.try_convert()?;
     // Compute the min/max for this slice
@@ -452,8 +452,8 @@ where
       0,
       point_count,
       data_out,
-      self.min_packed_value.clone(),
-      self.max_packed_value.clone(),
+      smallvec::SmallVec::from_slice(&self.min_packed_value),
+      smallvec::SmallVec::from_slice(&self.max_packed_value),
       parent_splits,
       &mut split_packed_values,
       &mut split_dimension_values,
@@ -658,7 +658,7 @@ where
     // We do `1+` because the lead byte at each recursion says which dim we
     // split on.
     let mut split_packed_values = vec![0u8; num_splits * self.config.bytes_per_dim];
-    let mut split_dimension_values = vec![0u8; num_splits];
+    let mut split_dimension_values = smallvec::smallvec![0u8; num_splits];
 
     // +1 because leaf count is power of 2 (e.g. 8), and innerNodeCount is
     // power of 2 minus 1 (e.g. 7)
@@ -754,7 +754,7 @@ where
   fn make_writer(
     &self,
     split_packed_values: BytesRef<Vec<u8>>,
-    split_dimension_values: Vec<u8>,
+    split_dimension_values: smallvec::SmallVec<[u8; 16]>,
     leaf_block_fps: Vec<usize>,
     data_start_fp: usize,
   ) -> Result<Option<IORunnable>> {
@@ -779,8 +779,15 @@ where
     let mut write_buffer = ByteBuffersDataOutput::new_resettable_instance();
 
     // This is the "file" to which the bytes are appended.
-    let mut blocks: Vec<Option<Vec<u8>>> = Vec::with_capacity(leaf_nodes.num_leaves());
-    let mut last_split_values = vec![0u8; self.config.bytes_per_dim * self.config.num_index_dims];
+    let mut blocks =
+      smallvec::SmallVec::<[Option<Vec<u8>>; 1]>::with_capacity(leaf_nodes.num_leaves());
+    stack_or_heap_buffer!(
+      last_split_values,
+      u8,
+      self.config.bytes_per_dim * self.config.num_index_dims,
+      MAX_NUM_BYTES * BKDConfig::MAX_INDEX_DIMS,
+      0
+    );
 
     stack_or_heap_buffer!(
       negative_deltas,
@@ -794,37 +801,24 @@ where
       leaf_nodes,
       0,
       &mut blocks,
-      &mut last_split_values,
+      last_split_values,
       negative_deltas,
       false,
       0,
       leaf_nodes.num_leaves(),
     )?;
 
-    // A single block already is the complete index.
-    if blocks.len() == 1 {
-      let block = blocks
-        .pop()
-        .flatten()
-        .ok_or_else(|| LuceneError::illegal_state("block should not be None"))?;
-      debug_assert!(block.len() == total_size);
-      return Ok(block);
+    let mut blocks = blocks.into_iter();
+    let mut index = blocks
+      .next()
+      .flatten()
+      .ok_or_else(|| LuceneError::illegal_state("block should not be None"))?;
+    index.reserve_exact(total_size - index.len());
+    for block in blocks {
+      let block = block.ok_or_else(|| LuceneError::illegal_state("block should not be None"))?;
+      index.extend_from_slice(&block);
     }
-
-    // Compact the byte blocks into a single byte index.
-    let mut index = vec![0u8; total_size];
-    let mut upto = 0;
-    for block in &blocks {
-      let block = match block {
-        None => return Err(LuceneError::illegal_state("block should not be None")),
-        Some(block) => block,
-      };
-      let block_len = block.len();
-      index.copy_from(block, upto);
-      upto += block_len;
-    }
-
-    debug_assert!(upto == total_size);
+    debug_assert_eq!(index.len(), total_size);
 
     Ok(index)
   }
@@ -834,10 +828,18 @@ where
   fn append_block(
     &self,
     write_buffer: &mut ByteBuffersDataOutput,
-    blocks: &mut Vec<Option<Vec<u8>>>,
+    blocks: &mut smallvec::SmallVec<[Option<Vec<u8>>; 1]>,
   ) -> usize {
-    let block = write_buffer.try_get_array_ownership();
+    // The first block becomes the final index buffer.
+    let block = if blocks.is_empty() {
+      write_buffer.try_get_array_ownership()
+    } else {
+      write_buffer.get_array_copy()
+    };
     let block_len = block.len();
+    if blocks.spilled() && blocks.len() == blocks.capacity() {
+      blocks.reserve_exact(blocks.len());
+    }
     blocks.push(Option::from(block));
     write_buffer.reset();
     block_len
@@ -850,7 +852,7 @@ where
     write_buffer: &mut ByteBuffersDataOutput,
     leaf_nodes: &T,
     min_block_fp: usize,
-    blocks: &mut Vec<Option<Vec<u8>>>,
+    blocks: &mut smallvec::SmallVec<[Option<Vec<u8>>; 1]>,
     last_split_values: &mut [u8],
     negative_deltas: &mut [bool],
     is_left: bool,
@@ -952,7 +954,12 @@ where
       let num_bytes = self.append_block(write_buffer, blocks);
 
       let idx_sav = blocks.len();
-      blocks.push(None);
+      if num_left_leaf_nodes != 1 {
+        if blocks.spilled() && blocks.len() == blocks.capacity() {
+          blocks.reserve_exact(blocks.len());
+        }
+        blocks.push(None);
+      }
 
       let sav_negative_delta = negative_deltas[split_dim];
       negative_deltas[split_dim] = true;
@@ -969,18 +976,18 @@ where
         num_left_leaf_nodes,
       )?;
 
-      if num_left_leaf_nodes != 1 {
+      let bytes2_len = if num_left_leaf_nodes != 1 {
         write_buffer.write_vint(left_num_bytes.try_convert()?)?;
+        let bytes = write_buffer.get_array_copy();
+        let len = bytes.len();
+        debug_assert!(len <= i32::MAX as usize);
+        write_buffer.reset();
+        blocks[idx_sav] = Some(bytes);
+        len
       } else {
         debug_assert!(left_num_bytes == 0, "leftNumBytes={left_num_bytes}");
-      }
-
-      let bytes2 = write_buffer.try_get_array_ownership();
-      let bytes2_len = bytes2.len();
-      debug_assert!(bytes2_len <= i32::MAX as usize);
-      write_buffer.reset();
-      // replace our placeholder:
-      blocks[idx_sav] = Some(bytes2);
+        0
+      };
 
       negative_deltas[split_dim] = false;
       let right_num_bytes = self.recurse_pack_index(
@@ -1613,8 +1620,8 @@ where
     from: usize,
     to: usize,
     out: &mut IO,
-    mut min_packed_value: Vec<u8>,
-    mut max_packed_value: Vec<u8>,
+    mut min_packed_value: smallvec::SmallVec<[u8; 32]>,
+    mut max_packed_value: smallvec::SmallVec<[u8; 32]>,
     parent_splits: &mut [i32],
     split_packed_values: &mut [u8],
     split_dimension_values: &mut [u8],
@@ -1657,9 +1664,9 @@ where
         // Find the dimension that has the least number of unique bytes
         // at commonPrefixLengths[dim]
         if self.used_bytes.is_empty() {
-          self.used_bytes = vec![None; self.config.num_dims];
+          self.used_bytes = smallvec::smallvec![None; self.config.num_dims];
         }
-        let used_bytes = &mut self.used_bytes;
+        let used_bytes = self.used_bytes.as_mut_slice();
         for (dim, used) in used_bytes.iter_mut().take(self.config.num_dims).enumerate() {
           if self.common_prefix_lengths[dim] < self.config.bytes_per_dim {
             match used {
@@ -1859,15 +1866,11 @@ where
         address,
       );
 
-      let mut min_split_packed_value = ArrayUtil::copy_of_sub_array(
-        &self.min_packed_value,
-        0,
-        self.config.packed_index_bytes_length(),
+      let mut min_split_packed_value = smallvec::SmallVec::from_slice(
+        &self.min_packed_value[..self.config.packed_index_bytes_length()],
       );
-      let mut max_split_packed_value = ArrayUtil::copy_of_sub_array(
-        &self.max_packed_value,
-        0,
-        self.config.packed_index_bytes_length(),
+      let mut max_split_packed_value = smallvec::SmallVec::from_slice(
+        &self.max_packed_value[..self.config.packed_index_bytes_length()],
       );
 
       let start = value.offset + (split_dim * self.config.bytes_per_dim);
@@ -2040,9 +2043,9 @@ where
         self.compute_common_prefix_length(heap_source, from, to)?;
         let mut sorted_dim_cardinality = i32::MAX as usize;
         if self.used_bytes.is_empty() {
-          self.used_bytes = vec![None; self.config.num_dims];
+          self.used_bytes = smallvec::smallvec![None; self.config.num_dims];
         }
-        let used_bytes = &mut self.used_bytes;
+        let used_bytes = self.used_bytes.as_mut_slice();
         for (dim, used) in used_bytes.iter_mut().take(self.config.num_dims).enumerate() {
           if self.common_prefix_lengths[dim] < self.config.bytes_per_dim {
             match used {
@@ -2952,7 +2955,7 @@ impl BKDTreeLeafNodes for BKDTreeLeafNodesOneDimension {
 struct BKDTreeLeafNodesImpl {
   scratch_bytes_ref1: BytesRef<Vec<u8>>,
   leaf_block_fps: Vec<usize>,
-  split_dimension_values: Vec<u8>,
+  split_dimension_values: smallvec::SmallVec<[u8; 16]>,
   bytes_per_dim: usize,
 }
 impl BKDTreeLeafNodes for BKDTreeLeafNodesImpl {

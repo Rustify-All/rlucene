@@ -19,8 +19,7 @@ use crate::core::codecs::lucene90_points_writer::Lucene90PointsWriter;
 use crate::core::codecs::points_reader::PointsReader;
 use crate::core::index::codec_reader::CodecReader;
 use crate::core::index::field_info::FieldInfo;
-use crate::core::index::merge_state::SharedDocMap;
-use crate::core::index::merge_state::{DocMap, MergeState, MergeStateDocMap};
+use crate::core::index::merge_state::{DocMap, MergeState};
 use crate::core::index::point_values::Relation::CellCrossesQuery;
 use crate::core::index::point_values::{IntersectVisitor, PointTree, PointValues, Relation};
 use crate::core::index::segment_info::SegmentInfo;
@@ -82,9 +81,9 @@ pub trait PointsWriter: Closeable {
       };
 
       max_point_count += values.size()?;
-      point_values.push((values, merge_state.doc_map(i)));
+      point_values.push((values, &merge_state.doc_maps[i]));
     }
-    let mut points_reader: PointsReaderImpl<'_, _, SharedDocMap<MergeStateDocMap<CR>>> =
+    let mut points_reader =
       PointsReaderImpl::new(field_info.as_ref(), max_point_count, &point_values);
     self.write_field(
       field_info,
@@ -206,7 +205,7 @@ where
 struct PointsReaderImpl<'a, P, DM> {
   field_info: &'a FieldInfo,
   final_max_point_count: usize,
-  point_values: &'a [(P, DM)],
+  point_values: &'a [(P, &'a DM)],
 }
 
 impl<P, DM> CloseableRef for PointsReaderImpl<'_, P, DM> {}
@@ -215,7 +214,7 @@ impl<'a, P, DM> PointsReaderImpl<'a, P, DM> {
   fn new(
     field_info: &'a FieldInfo,
     final_max_point_count: usize,
-    point_values: &'a [(P, DM)],
+    point_values: &'a [(P, &'a DM)],
   ) -> Self {
     Self {
       field_info,
@@ -251,10 +250,10 @@ where
 
 struct PointValuesImpl<'a, P, DM> {
   final_max_point_count: usize,
-  point_values: &'a [(P, DM)],
+  point_values: &'a [(P, &'a DM)],
 }
 impl<'a, P, DM> PointValuesImpl<'a, P, DM> {
-  fn new(final_max_point_count: usize, point_values: &'a [(P, DM)]) -> Self {
+  fn new(final_max_point_count: usize, point_values: &'a [(P, &'a DM)]) -> Self {
     Self {
       final_max_point_count,
       point_values,
@@ -307,10 +306,10 @@ where
 
 struct PointTreeImpl<'a, P, DM> {
   final_max_point_count: usize,
-  point_values: &'a [(P, DM)],
+  point_values: &'a [(P, &'a DM)],
 }
 impl<'a, P, DM> PointTreeImpl<'a, P, DM> {
-  fn new(final_max_point_count: usize, point_values: &'a [(P, DM)]) -> Self {
+  fn new(final_max_point_count: usize, point_values: &'a [(P, &'a DM)]) -> Self {
     Self {
       final_max_point_count,
       point_values,
@@ -374,7 +373,7 @@ where
     IV: IntersectVisitor,
   {
     for (values, doc_map) in self.point_values.iter() {
-      let mut v: IntersectVisitorImpl<'_, _, DM> = IntersectVisitorImpl::new(doc_map, visitor);
+      let mut v = IntersectVisitorImpl::new(*doc_map, visitor);
       values.get_point_tree()?.visit_doc_values(&mut v)?;
     }
     Ok(())

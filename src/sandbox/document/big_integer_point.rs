@@ -231,7 +231,9 @@ impl BigIntegerPoint {
     T: Into<String>,
     V: AsRef<[BigInt]>,
   {
-    let mut sorted_values: Vec<&BigInt> = values.as_ref().iter().collect();
+    let values = values.as_ref();
+    let mut sorted_values = smallvec::SmallVec::<[&BigInt; 4]>::with_capacity(values.len());
+    sorted_values.extend(values.iter());
     sorted_values.sort();
 
     PointInSetQuery::new(
@@ -245,13 +247,13 @@ impl BigIntegerPoint {
 }
 
 struct BigIntegerPointSetBytesRefIterator<'a> {
-  sorted_values: Vec<&'a BigInt>,
+  sorted_values: smallvec::SmallVec<[&'a BigInt; 4]>,
   upto: usize,
   encoded: BytesRef<Vec<u8>>,
 }
 
 impl<'a> BigIntegerPointSetBytesRefIterator<'a> {
-  fn new(sorted_values: Vec<&'a BigInt>) -> Self {
+  fn new(sorted_values: smallvec::SmallVec<[&'a BigInt; 4]>) -> Self {
     Self {
       sorted_values,
       upto: 0,
