@@ -330,7 +330,7 @@ where
     if !self.commits_to_delete.load(SeqCst) {
       return Ok(());
     }
-    let mut removed = Vec::with_capacity(self.commits.len());
+    let mut removed = smallvec::SmallVec::<[_; 2]>::new();
     // commits retains each owner until the compaction below.
     for commit in &self.commits {
       if commit.is_deleted() {

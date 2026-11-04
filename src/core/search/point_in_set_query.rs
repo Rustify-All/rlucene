@@ -20,6 +20,7 @@ use crate::core::document::float_point::FloatPointInSetQuery;
 use crate::core::document::inet_address_point::InetAddressPointInSetQuery;
 use crate::core::document::int_point::IntPointInSetQuery;
 use crate::core::document::long_point::LongPointInSetQuery;
+use crate::core::index::BytesRefValue;
 use crate::core::index::bytes_ref_builder::BytesRefBuilder;
 use crate::core::index::index_reader::{Identity, IndexReader};
 use crate::core::index::index_reader_context::{IRCLeafReader, IndexReaderContext};
@@ -31,7 +32,6 @@ use crate::core::index::point_values::{
 use crate::core::index::prefix_coded_terms::{
   PrefixCodedTerms, PrefixCodedTermsBuilder, TermIteratorRef,
 };
-use crate::core::index::{BytesRef, BytesRefValue};
 use crate::core::search::constant_score_scorer::ConstantScoreDisiScorer;
 use crate::core::search::constant_score_scorer::ConstantScoreScorer;
 use crate::core::search::constant_score_weight::ConstantScoreWeight;
@@ -621,7 +621,7 @@ where
 pub struct MergePointVisitor<'a> {
   result: DocIdSetBuilder,
   iterator: RefCell<TermIteratorRef<'a>>,
-  next_query_point: RefCell<Option<BytesRef<Vec<u8>>>>,
+  next_query_point: RefCell<Option<smallvec::SmallVec<[u8; 16]>>>,
   comparator: ByteArrayComparatorEnum,
 }
 
@@ -632,7 +632,9 @@ impl<'a> MergePointVisitor<'a> {
     bytes_per_dim: usize,
   ) -> Result<Self> {
     let mut iterator = sorted_packed_points.iterator()?;
-    let next_query_point = iterator.next()?.map(|point| point.into_owned());
+    let next_query_point = iterator
+      .next()?
+      .map(|point| smallvec::SmallVec::from_slice(point.as_bytes()));
     Ok(Self {
       result,
       iterator: RefCell::new(iterator),
@@ -646,9 +648,11 @@ impl<'a> MergePointVisitor<'a> {
     let point = iterator.next()?;
     let mut next_query_point = self.next_query_point.borrow_mut();
     match point {
-      Some(point) => point
-        .into_value()
-        .copy_or_move_into(next_query_point.get_or_insert_with(BytesRef::default)),
+      Some(point) => {
+        let bytes = next_query_point.get_or_insert_with(smallvec::SmallVec::new);
+        bytes.clear();
+        bytes.extend_from_slice(point.as_bytes());
+      },
       None => *next_query_point = None,
     }
     Ok(())
@@ -657,12 +661,9 @@ impl<'a> MergePointVisitor<'a> {
   fn matches(&mut self, packed_value: &[u8]) -> Result<bool> {
     loop {
       let cmp = match self.next_query_point.get_mut().as_ref() {
-        Some(next_query_point) => self.comparator.compare(
-          &next_query_point.bytes,
-          next_query_point.offset,
-          packed_value,
-          0,
-        ),
+        Some(next_query_point) => self
+          .comparator
+          .compare(next_query_point, 0, packed_value, 0),
         None => return Ok(false),
       };
       if cmp == 0 {
@@ -723,23 +724,17 @@ impl IntersectVisitor for MergePointVisitor<'_> {
       let Some(next_query_point) = next_query_point_ref.as_ref() else {
         return Ok(Relation::CellOutsideQuery);
       };
-      let cmp_min = self.comparator.compare(
-        &next_query_point.bytes,
-        next_query_point.offset,
-        min_packed_value,
-        0,
-      );
+      let cmp_min = self
+        .comparator
+        .compare(next_query_point, 0, min_packed_value, 0);
       if cmp_min < 0 {
         drop(next_query_point_ref);
         self.next_query_point()?;
         continue;
       }
-      let cmp_max = self.comparator.compare(
-        &next_query_point.bytes,
-        next_query_point.offset,
-        max_packed_value,
-        0,
-      );
+      let cmp_max = self
+        .comparator
+        .compare(next_query_point, 0, max_packed_value, 0);
       if cmp_max > 0 {
         return Ok(Relation::CellOutsideQuery);
       }

@@ -799,7 +799,7 @@ where
     Self: 'a;
 
   fn get_impacts(&self) -> Result<Self::Impacts<'_>> {
-    let mut impacts = Vec::with_capacity(self.impacts_enums.len());
+    let mut impacts = SmallVec::with_capacity(self.impacts_enums.len());
     let mut lead = 0;
     let mut lead_doc_id_up_to = None;
 
@@ -824,7 +824,7 @@ where
 
 #[doc(hidden)]
 pub struct SynonymImpacts<'a, I, IE> {
-  impacts: Vec<I>,
+  impacts: SmallVec<[I; 2]>,
   impacts_enums: &'a [IE],
   boosts: &'a [f32],
   lead: usize,

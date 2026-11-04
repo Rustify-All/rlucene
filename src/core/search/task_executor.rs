@@ -71,7 +71,7 @@ impl TaskExecutor {
     I: IntoIterator<Item = F>,
   {
     let callables = callables.into_iter();
-    let mut tasks = Vec::with_capacity(callables.size_hint().0);
+    let mut tasks = smallvec::SmallVec::<[Task<F, T>; 1]>::with_capacity(callables.size_hint().0);
     for callable in callables {
       tasks.push(Task::new(callable));
     }
@@ -200,7 +200,7 @@ where
   }
 }
 
-fn collect_results<F, T>(tasks: Vec<Task<F, T>>) -> Result<Vec<T>> {
+fn collect_results<F, T>(tasks: smallvec::SmallVec<[Task<F, T>; 1]>) -> Result<Vec<T>> {
   let mut first_failure: Option<CaughtResult<T>> = None;
   let mut results = Vec::with_capacity(tasks.len());
   for task in tasks {

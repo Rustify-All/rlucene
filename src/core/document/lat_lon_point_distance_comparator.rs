@@ -60,7 +60,7 @@ pub struct LatLonPointDistanceComparator {
   // the number of times setBottom has been called (adversary protection)
   set_bottom_counter: i32,
 
-  current_values: Vec<i64>,
+  current_values: smallvec::SmallVec<[i64; 4]>,
   values_doc_id: i32,
 }
 
@@ -79,7 +79,7 @@ impl LatLonPointDistanceComparator {
       max_lat: i32::MAX,
       min_lon2: i32::MAX,
       set_bottom_counter: 0,
-      current_values: vec![0; 4],
+      current_values: smallvec::smallvec![0; 4],
       values_doc_id: -1,
     }
   }
@@ -163,8 +163,16 @@ where
 
       comparator.values_doc_id = self.current_docs.doc_id();
       let count = self.current_docs.doc_value_count()? as usize;
-      if count > comparator.current_values.len() {
-        ArrayUtil::grow_no_copy(&mut comparator.current_values, count, || 0)?;
+      let values = &mut comparator.current_values;
+      if count > values.len() {
+        let capacity = ArrayUtil::oversize(count, std::mem::size_of::<i64>())?;
+        if count > values.capacity() {
+          let mut replacement = smallvec::SmallVec::with_capacity(capacity);
+          replacement.resize(count, 0);
+          *values = replacement;
+        } else {
+          values.resize(count, 0);
+        }
       }
 
       for i in 0..count {

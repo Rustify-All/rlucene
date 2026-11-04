@@ -501,7 +501,7 @@ where
   }
 }
 struct ValueAndDoc {
-  value: Option<Vec<u8>>,
+  value: Option<smallvec::SmallVec<[u8; 8]>>,
   doc_id: i32,
   done: bool,
 }
@@ -727,7 +727,7 @@ impl<'a> IntersectVisitor for IntersectVisitorImpl<'a> {
         let cmp = self.comparator.compare(packed_value, 0, self.value, 0);
 
         if cmp > 0 || (cmp == 0 && self.allow_equal) {
-          self.vd.value = Some(packed_value.to_vec());
+          self.vd.value = Some(smallvec::SmallVec::from_slice(packed_value));
           self.vd.doc_id = doc_id;
         }
       },

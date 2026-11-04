@@ -102,14 +102,15 @@ where
   // For the user's convenience, we allow None collectors to be passed.
   // However, to improve performance, these None collectors are found
   // and dropped from the array we save for actual collection time.
-  let mut collectors: Vec<C> = collectors.into_iter().flatten().collect();
-  match collectors.len() {
-    0 => Err(LuceneError::illegal_argument(
-      "At least 1 collector must not be None",
-    )),
-    1 => Ok(OneOrMultiCollector::One(collectors.remove(0))),
-    _ => Ok(OneOrMultiCollector::Multi(MultiCollector::new(collectors)?)),
-  }
+  let mut collectors = collectors.into_iter().flatten();
+  let first = collectors
+    .next()
+    .ok_or_else(|| LuceneError::illegal_argument("At least 1 collector must not be None"))?;
+  let Some(second) = collectors.next() else {
+    return Ok(OneOrMultiCollector::One(first));
+  };
+  let collectors = [first, second].into_iter().chain(collectors);
+  Ok(OneOrMultiCollector::Multi(MultiCollector::new(collectors)?))
 }
 
 impl<C> Collector for MultiCollector<C>
