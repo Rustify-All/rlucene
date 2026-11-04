@@ -261,8 +261,16 @@ impl<D> SegmentCommitInfo<D> {
       return Ok(current_size);
     }
     let mut sum = 0;
-    for file_name in self.files()? {
-      sum += self.info.dir.file_length(&file_name)?;
+    let files = if !self.has_deletions()
+      && self.field_infos_files.is_empty()
+      && self.dv_updates_files.is_empty()
+    {
+      Cow::Borrowed(self.info.files()?)
+    } else {
+      Cow::Owned(self.files()?)
+    };
+    for file_name in files.iter() {
+      sum += self.info.dir.file_length(file_name)?;
     }
     let v: i64 = sum.try_convert()?;
     self.size_in_bytes.store(v, Ordering::SeqCst);

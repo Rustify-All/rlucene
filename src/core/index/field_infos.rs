@@ -53,7 +53,7 @@ pub struct FieldInfos {
 
   parent_field: Option<Arc<FieldInfo>>,
   // Dense field numbers use the already sorted values; sparse numbers retain indexed slots.
-  by_number: Option<Box<[Option<Arc<FieldInfo>>]>>,
+  by_number: Option<Box<[usize]>>,
   by_name: HashMap<String, Arc<FieldInfo>>,
   values: Box<[Arc<FieldInfo>]>,
   pub(crate) hook: FieldInfosHook,
@@ -160,7 +160,7 @@ impl FieldInfosDefaults {
     Ok(match &in_.by_number {
       Some(by_number) => by_number
         .get(field_number as usize)
-        .and_then(|fi| fi.as_ref()),
+        .and_then(|&index| in_.values.get(index)),
       None => in_.values.get(field_number as usize),
     })
   }
@@ -379,19 +379,17 @@ impl FieldInfos {
       infos.shrink_to_fit();
       values = infos;
     } else {
-      let mut indexed_slots: Vec<Option<Arc<FieldInfo>>> = vec![None; by_number_len];
+      let mut indexed_slots: smallvec::SmallVec<[Option<Arc<FieldInfo>>; 8]> =
+        smallvec::smallvec![None; by_number_len];
       for field_info in &infos {
         let field_number = field_info.number as usize;
-        match &indexed_slots[field_number] {
-          None => {},
-          Some(existing) => {
-            return Err(LuceneError::illegal_argument(format!(
-              "duplicate field numbers: {} and {} have: {}",
-              existing.name, field_info.name, field_info.number
-            )));
-          },
+        if let Some(existing) = &indexed_slots[field_number] {
+          return Err(LuceneError::illegal_argument(format!(
+            "duplicate field numbers: {} and {} have: {}",
+            existing.name, field_info.name, field_info.number
+          )));
         }
-        indexed_slots[field_number] = Some(field_info.clone());
+        indexed_slots[field_number] = Some(Arc::clone(field_info));
       }
       if by_number_len == infos.len() {
         // Unique field numbers now cover 0..infos.len(), so retain these owners
@@ -408,9 +406,19 @@ impl FieldInfos {
         if !field_number_strictly_ascending {
           infos.sort_unstable_by_key(|fi| fi.number);
         }
+        // Occupied slots appear in the same field-number order as the sorted values.
+        let mut indices = 0..infos.len();
+        let to_index =
+          |slot: Option<Arc<FieldInfo>>| slot.and_then(|_| indices.next()).unwrap_or(usize::MAX);
         infos.shrink_to_fit();
         values = infos;
-        by_number = Some(indexed_slots);
+        by_number = Some(if indexed_slots.spilled() {
+          indexed_slots.into_vec().into_iter().map(to_index).collect()
+        } else {
+          let mut slots = Vec::with_capacity(by_number_len);
+          slots.extend(indexed_slots.into_iter().map(to_index));
+          slots
+        });
       }
     }
 
@@ -1042,8 +1050,8 @@ impl FieldNumbers {
     }
   }
 
-  pub fn get_field_names(&self) -> HashSet<String> {
-    self.field_properties.keys().cloned().collect()
+  pub fn get_field_names(&self) -> impl ExactSizeIterator<Item = &str> {
+    self.field_properties.keys().map(String::as_str)
   }
 
   pub fn clear(&mut self) {

@@ -21,6 +21,7 @@ use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
 use parking_lot::{ReentrantMutex, ReentrantMutexGuard};
+use smallvec::SmallVec;
 
 use crate::core::index::index_commit::{IndexCommit, cmp_commit, is_same_commit};
 use crate::core::index::index_deletion_policy::{IndexDeletionPolicy, IndexDeletionPolicyEnum};
@@ -195,8 +196,8 @@ where
   fn wrap_commits<'a>(
     &'a self,
     commits: &'a [Arc<CommitPoint<D>>],
-  ) -> Vec<SnapshotCommitPoint<'a, D>> {
-    let mut wrapped_commits = Vec::with_capacity(commits.len());
+  ) -> SmallVec<[SnapshotCommitPoint<'a, D>; 2]> {
+    let mut wrapped_commits = SmallVec::with_capacity(commits.len());
     for ic in commits {
       wrapped_commits.push(SnapshotCommitPoint::new(&self.shared.inner, ic));
     }

@@ -172,7 +172,7 @@ impl Lucene99SegmentInfoFormat {
       attributes,
       index_sort,
     )?;
-    si.set_files(files)?;
+    si.replace_files(files)?;
     Ok(si)
   }
   fn write_segment_info<D, DO>(output: &mut DO, si: &SegmentInfo<D>) -> Result<()>

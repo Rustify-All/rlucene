@@ -299,14 +299,23 @@ impl<D> SegmentInfo<D> {
     self.set_files = Some(HashSet::new());
     self.add_files(files)
   }
-  /// Replaces the files written for this segment and returns the previous set.
-  pub(crate) fn replace_files<I, S>(&mut self, files: I) -> Result<HashSet<String>>
-  where
-    I: IntoIterator<Item = S>,
-    S: AsRef<str> + Into<String>,
-  {
-    let previous = self.take_files()?;
-    self.set_files(files)?;
+  /// Replaces the files written for this segment and returns the previous set, if any.
+  pub(crate) fn replace_files(&mut self, files: HashSet<String>) -> Result<HashSet<String>> {
+    let previous = self.set_files.replace(HashSet::new()).unwrap_or_default();
+    self.check_file_names(&files)?;
+    self.set_files = Some(
+      if files
+        .iter()
+        .all(|file| IndexFileNames::parse_segment_name(file) == self.name.as_ref())
+      {
+        files
+      } else {
+        files
+          .into_iter()
+          .map(|file| named_for_this_segment(&self.name, file))
+          .collect()
+      },
+    );
     Ok(previous)
   }
   /// Converts this segment information into a formatted string with deletions

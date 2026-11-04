@@ -699,7 +699,7 @@ where
         // postings:
         self.pending_updates.clear_delete_terms();
         let files = self.directory.take_created_files();
-        self.segment_info.set_files(files)?;
+        self.segment_info.replace_files(files)?;
 
         let dir = self.segment_info.dir.clone();
         // Retain a file-only mirror before moving SegmentInfo into SegmentCommitInfo,

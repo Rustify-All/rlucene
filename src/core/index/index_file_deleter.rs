@@ -75,7 +75,7 @@ where
   commits: Vec<Arc<CommitPoint<D>>>,
 
   /// Holds files we had incref'd from the previous non-commit checkpoint.
-  last_files: Vec<String>,
+  last_files: HashSet<String>,
 
   /// Commits that the IndexDeletionPolicy have decided to delete.
   commits_to_delete: Arc<AtomicBool>,
@@ -112,7 +112,7 @@ where
   {
     // init fields
     let files = files.into_iter();
-    let commits = Vec::with_capacity(files.size_hint().0);
+    let commits = Vec::new();
     let mut last_segment_infos: Option<SegmentInfos<D>> = None;
 
     let current_segments_file_opt = segment_infos.get_segments_file_name();
@@ -133,7 +133,7 @@ where
 
     let mut index_file_deleter = Self {
       commits,
-      last_files: Vec::new(),
+      last_files: HashSet::new(),
       commits_to_delete: Arc::new(AtomicBool::new(false)),
       info_stream,
       directory_orig: directory_orig.clone(),
@@ -169,12 +169,13 @@ where
               index_file_deleter.commits_to_delete.clone(),
               directory_orig.clone(),
               &sis,
+              None,
             )?);
             if sis.get_generation() == current_gen {
               current_commit_point = Some(Arc::clone(&commit_point));
             }
-            index_file_deleter.commits.push(commit_point);
-            index_file_deleter.inc_ref_from_segment(&sis, true)?;
+            index_file_deleter.commits.push(Arc::clone(&commit_point));
+            index_file_deleter.inc_ref_files(commit_point.files.iter())?;
 
             if last_segment_infos
               .as_ref()
@@ -222,10 +223,11 @@ where
         index_file_deleter.commits_to_delete.clone(),
         directory_orig.clone(),
         &sis,
+        None,
       )?);
       current_commit_point = Some(Arc::clone(&commit_point));
-      index_file_deleter.commits.push(commit_point);
-      index_file_deleter.inc_ref_from_segment(&sis, true)?;
+      index_file_deleter.commits.push(Arc::clone(&commit_point));
+      index_file_deleter.inc_ref_files(commit_point.files.iter())?;
     }
 
     if is_reader_init {
@@ -471,15 +473,15 @@ where
         // TODO:
       }
     }
-    // Incref the files:
-    self.inc_ref_from_segment(segment_infos, is_commit)?;
-
     if is_commit {
+      let files = segment_infos.files(true)?;
+      self.inc_ref_files(files.iter())?;
       // Append to our commits list:
       self.commits.push(Arc::new(CommitPoint::new(
         Arc::clone(&self.commits_to_delete),
         Arc::clone(&self.directory_orig),
         segment_infos,
+        Some(files),
       )?));
 
       debug_assert!(self.assert_commits_are_not_deleted(&self.commits));
@@ -487,13 +489,13 @@ where
       // Decref files for commits that were deleted by the policy:
       self.delete_commits()?;
     } else {
+      let new_files = segment_infos.files(false)?;
+      self.inc_ref_files(new_files.iter())?;
       // DecRef old files from the last checkpoint, if any:
-      let mut files = std::mem::take(&mut self.last_files);
+      let files = std::mem::take(&mut self.last_files);
       self.dec_ref(files.iter())?;
-      files.clear();
-      // Save files so we can decr on next checkpoint/commit:
-      files.extend(segment_infos.files(false)?);
-      self.last_files = files;
+      drop(files);
+      self.last_files = new_files;
     }
 
     {
@@ -584,6 +586,7 @@ where
     commits_to_delete: Arc<AtomicBool>,
     directory_orig: Arc<D>,
     segment_infos: &SegmentInfos<D>,
+    referenced_files: Option<HashSet<String>>,
   ) -> Result<Self> {
     // TODO：是不是只要保存segment的ID就行,避免一些拷贝
     let user_data = segment_infos.get_user_data().clone();
@@ -591,7 +594,12 @@ where
       .get_segments_file_name()
       .ok_or_else(|| LuceneError::illegal_state("segment_N file is none"))?;
     let generation = segment_infos.get_generation();
-    let files = segment_infos.files(true)?.into_iter().collect();
+    let files = match referenced_files {
+      Some(files) => files,
+      None => segment_infos.files(true)?,
+    }
+    .into_iter()
+    .collect();
     let segment_count = segment_infos.size();
 
     Ok(CommitPoint {
@@ -773,7 +781,14 @@ where
     } else {
       let segment_name = IndexFileNames::parse_segment_name(file_name);
       debug_assert!(segment_name.starts_with('_'), "wtf? file={file_name}");
-      if file_name.to_lowercase().ends_with(".tmp") {
+      let is_temp_file = if file_name.is_ascii() {
+        file_name
+          .get(file_name.len().saturating_sub(4)..)
+          .is_some_and(|suffix| suffix.eq_ignore_ascii_case(".tmp"))
+      } else {
+        file_name.to_lowercase().ends_with(".tmp")
+      };
+      if is_temp_file {
         // A temp file: don't try to look at its gen
         continue;
       }

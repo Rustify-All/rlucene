@@ -272,7 +272,7 @@ where
   D: Directory,
 {
   pending_commit: RefCell<Option<SegmentInfos<D>>>,
-  files_to_commit: RefCell<Option<Vec<String>>>,
+  files_to_commit: RefCell<Option<Arc<Vec<String>>>>,
   start_commit_time: Cell<Instant>,
 }
 
@@ -548,15 +548,13 @@ where
       // even for the uncommitted segments:
       let global_field_number_map = Self::get_field_number_map(&conf, &segment_infos)?;
 
-      let fields = global_field_number_map.get_field_names();
-      if !create
-        && !fields.is_empty()
-        && let Some(parent_field) = conf.get_parent_field()
-        && !fields.contains(parent_field)
-      {
-        return Err(LuceneError::illegal_argument(
-          "can't add a parent field to an already existing index without a parent field",
-        ));
+      if !create && let Some(parent_field) = conf.get_parent_field() {
+        let mut fields = global_field_number_map.get_field_names();
+        if fields.len() > 0 && !fields.any(|field| field == parent_field) {
+          return Err(LuceneError::illegal_argument(
+            "can't add a parent field to an already existing index without a parent field",
+          ));
+        }
       }
 
       Self::validate_index_sort(&conf, &segment_infos)?;
@@ -1734,7 +1732,12 @@ where
   /// Return an unmodifiable set of all field names as visible from this IndexWriter, across all segments of the index.
   pub fn get_field_names(&self) -> HashSet<String> {
     // `FieldNumbers::get_field_names` returns an immutable set.
-    self.global_field_number_map.lock().get_field_names()
+    self
+      .global_field_number_map
+      .lock()
+      .get_field_names()
+      .map(str::to_owned)
+      .collect()
   }
 
   #[cfg(test)]
@@ -2058,7 +2061,7 @@ where
         merger
           .merge_state
           .segment_info
-          .set_files(dir_wrapper.take_created_files())?;
+          .replace_files(dir_wrapper.take_created_files())?;
         if !merger.should_merge()? {
           debug_assert!(merger.merge_state.segment_info.max_doc()? == 0);
           success = self.commit_merge(merge, &doc_maps)?;
@@ -2919,7 +2922,11 @@ where
         let dec_result = {
           pending_commit_ref.rollback_commit(self.directory.as_ref());
           std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            inner.deleter.dec_ref_from_segment(pending_commit_ref)
+            let files = commit_lock.files_to_commit.borrow_mut().take();
+            match files {
+              Some(files) => inner.deleter.dec_ref(files.iter()),
+              None => inner.deleter.dec_ref_from_segment(pending_commit_ref),
+            }
           }))
         };
         *pending_commit = None;
@@ -2931,7 +2938,7 @@ where
       // Keep the same segmentInfos instance but replace all
       // of its SegmentInfo instances so IFD below will remove
       // any segments we flushed since the last commit:
-      let rollback_segments = inner.rollback_segments.clone();
+      let rollback_segments = std::mem::take(&mut inner.rollback_segments);
       inner
         .segment_infos
         .rollback_segment_infos(rollback_segments)?;
@@ -3002,8 +3009,11 @@ where
             let pending_result =
               std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
                 pending_commit_ref.rollback_commit(self.directory.as_ref());
-                inner.deleter.dec_ref_from_segment(pending_commit_ref)?;
-                Ok(())
+                let files = commit_lock.files_to_commit.borrow_mut().take();
+                match files {
+                  Some(files) => inner.deleter.dec_ref(files.iter()),
+                  None => inner.deleter.dec_ref_from_segment(pending_commit_ref),
+                }
               }));
             *pending_commit = None;
             throwable.add_suppressed(pending_result, "panic while rolling back pending commit");
@@ -4104,7 +4114,7 @@ where
       .ok_or_else(|| LuceneError::illegal_state("merge info is none"))?;
     Arc::get_mut(&mut sci.info)
       .ok_or_else(|| LuceneError::illegal_state("Arc not unique"))?
-      .set_files(tracking_dir.take_created_files())?;
+      .replace_files(tracking_dir.take_created_files())?;
     set_diagnostics_impl(
       Arc::get_mut(&mut sci.info).ok_or_else(|| LuceneError::illegal_state("Arc not unique"))?,
       SOURCE_ADDINDEXES_READERS,
@@ -4316,6 +4326,7 @@ where
     // locals (to be filled by the next parts)
     let mut to_commit: Option<Arc<Mutex<SegmentInfos<D>>>> = None;
     let mut any_changes = false;
+    let mut protected_files = None;
     let mut seq_no: i64 = 0;
     let mut point_in_time_merges: Option<UpdatePendingMergesResult<D>> = None;
     let stop_adding_merged_segments = Arc::new(AtomicBool::new(false));
@@ -4380,9 +4391,8 @@ where
                 // we are trying to sync all referenced files, a
                 // merge completes which would otherwise have
                 // removed the files we are now syncing.
-                inner
-                  .deleter
-                  .inc_ref_files(commit_infos.lock().files(false)?)?;
+                let files = commit_infos.lock().files(false)?;
+                inner.deleter.inc_ref_files(files.iter())?;
 
                 if max_commit_merge_wait_millis > 0 {
                   // We can safely call preparePointInTimeMerge since writeReaderPool(true) above wrote
@@ -4394,6 +4404,9 @@ where
                     PointInTimeMergeFinished::NoOp,
                     &mut inner,
                   )?;
+                }
+                if point_in_time_merges.is_none() {
+                  protected_files = Some(files);
                 }
               }
               success = true;
@@ -4454,13 +4467,23 @@ where
     // merges
     // did complete
     let to_commit = to_commit.ok_or_else(|| LuceneError::illegal_state("toCommit is none"))?;
-    *commit_lock.files_to_commit.borrow_mut() =
-      Some(to_commit.lock().files(false)?.into_iter().collect());
+    let files = match protected_files {
+      Some(files) => files,
+      None => to_commit.lock().files(false)?,
+    };
+    *commit_lock.files_to_commit.borrow_mut() = Some(Arc::new(files.into_iter().collect()));
     let mut ret = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<i64> {
       if any_changes {
         self.maybe_merge.store(true, Ordering::SeqCst);
       }
-      let to_commit_for_commit = to_commit.lock().try_clone()?;
+      let to_commit_for_commit = if point_in_time_merges.is_none() {
+        match Arc::try_unwrap(to_commit) {
+          Ok(snapshot) => snapshot.into_inner(),
+          Err(shared) => shared.lock().try_clone()?,
+        }
+      } else {
+        to_commit.lock().try_clone()?
+      };
       self.start_commit(Some(to_commit_for_commit), commit_lock)?;
       if commit_lock.pending_commit.borrow().is_none() {
         Ok(-1)
@@ -4892,7 +4915,7 @@ where
                 Ordering::SeqCst,
               );
 
-              inner.rollback_segments = pending.create_backup_segment_infos()?;
+              inner.rollback_segments = std::mem::take(&mut pending.segments);
 
               Ok(())
             }));
@@ -6196,19 +6219,20 @@ where
         }
         // This call can take a long time -- 10s of seconds
         // or more.  We do it without syncing on this:
-        let mut files_to_sync_list = Vec::new();
+        let mut files_to_sync_list = None;
         let mut success = false;
         let sync_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
-          files_to_sync_list = {
-            let pending_commit = commit_lock.pending_commit.borrow();
-            pending_commit
-              .as_ref()
-              .ok_or_else(|| LuceneError::illegal_state("pending commit is missing"))?
-              .files(false)?
-              .into_iter()
-              .collect()
-          };
-          self.directory.sync(&files_to_sync_list)?;
+          if commit_lock.pending_commit.borrow().is_none() {
+            return Err(LuceneError::illegal_state("pending commit is missing"));
+          }
+          let files = commit_lock
+            .files_to_commit
+            .borrow()
+            .as_ref()
+            .cloned()
+            .ok_or_else(|| LuceneError::illegal_state("files to commit are missing"))?;
+          self.directory.sync(&files)?;
+          files_to_sync_list = Some(files);
           success = true;
           Ok(())
         }));
@@ -6227,9 +6251,13 @@ where
         unwrap_caught_result!(sync_res)?;
 
         if self.info_stream.is_enabled("IW") {
-          self
-            .info_stream
-            .message("IW", &format!("done all syncs: {:?}", files_to_sync_list))?;
+          self.info_stream.message(
+            "IW",
+            &format!(
+              "done all syncs: {:?}",
+              files_to_sync_list.as_deref().map_or(&[][..], Vec::as_slice)
+            ),
+          )?;
         }
 
         self.test_point("midStartCommitSuccess")?;
@@ -8562,7 +8590,9 @@ where
   }
   unwrap_caught_result!(write_result)?;
   // Replace all previous files with the CFS/CFE files:
-  info.replace_files(filename)
+  let previous = info.take_files()?;
+  info.set_files(filename)?;
+  Ok(previous)
 }
 struct Permits {
   avail: Mutex<usize>,

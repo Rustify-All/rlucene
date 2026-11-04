@@ -917,6 +917,12 @@ impl<D> SegmentInfos<D> {
   /// collection is recomputed on each invocation.
   pub fn files(&self, include_segments_file: bool) -> Result<HashSet<String>> {
     let size = self.size();
+    if size == 1 && !include_segments_file {
+      return self
+        .info(0)
+        .ok_or_else(|| LuceneError::illegal_state("segment was None"))?
+        .files();
+    }
     let mut files = HashSet::with_capacity(size + usize::from(include_segments_file));
     if include_segments_file && let Some(segment_file_name) = self.get_segments_file_name() {
       files.insert(segment_file_name);

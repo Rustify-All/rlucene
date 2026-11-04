@@ -613,6 +613,7 @@ where
       commits_to_delete.clone(),
       dir.clone(),
       &sis,
+      None,
     )?);
   }
   commits.sort_unstable();

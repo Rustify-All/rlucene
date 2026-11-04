@@ -227,7 +227,7 @@ where
     I: IntoIterator<Item = &'a S>,
     S: AsRef<str> + ?Sized + 'a,
   {
-    let files: Vec<&str> = file_names.into_iter().map(AsRef::as_ref).collect();
+    let files: smallvec::SmallVec<[&str; 4]> = file_names.into_iter().map(AsRef::as_ref).collect();
 
     if let Some(messenger) = &self.messenger {
       messenger.accept(
@@ -283,7 +283,9 @@ where
 /// Tracks the reference count for a single index file:
 pub struct RefCount {
   // fileName used only for better assert error messages
+  #[cfg(debug_assertions)]
   file_name: String,
+  #[cfg(debug_assertions)]
   init_done: bool,
   count: usize,
 }
@@ -292,14 +294,18 @@ impl RefCount {
   where
     T: Into<String>,
   {
+    let _file_name = file_name.into();
     Self {
-      file_name: file_name.into(),
+      #[cfg(debug_assertions)]
+      file_name: _file_name,
+      #[cfg(debug_assertions)]
       init_done: false,
       count: 0,
     }
   }
 
   pub fn inc_ref(&mut self) -> usize {
+    #[cfg(debug_assertions)]
     if !self.init_done {
       self.init_done = true;
     } else {
@@ -317,6 +323,7 @@ impl RefCount {
   }
 
   pub fn dec_ref(&mut self) -> usize {
+    #[cfg(debug_assertions)]
     debug_assert!(
       self.count > 0,
       "{}: RefCount is 0 pre-increment for file `{}`",
