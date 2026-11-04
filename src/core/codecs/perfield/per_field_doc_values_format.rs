@@ -233,7 +233,7 @@ where
         }
 
         let segment_suffix =
-          get_full_segment_suffix(&write_state.segment_suffix, get_suffix(format_name, suffix));
+          get_full_segment_suffix(&write_state.segment_suffix, format_name, suffix);
         let state = SegmentWriteState::copy_with_suffix(write_state, segment_suffix);
         let consumer = format.fields_consumer(&state, segment_info)?;
         self
@@ -255,8 +255,7 @@ where
       LuceneError::illegal_state(format!("missing suffix for field: {}", field.name))
     })?;
     field.put_attribute(PER_FIELD_SUFFIX_KEY.to_string(), suffix.to_string());
-    let segment_suffix =
-      get_full_segment_suffix(&write_state.segment_suffix, get_suffix(format_name, suffix));
+    let segment_suffix = get_full_segment_suffix(&write_state.segment_suffix, format_name, suffix);
     let consumer = self.formats.get_mut(&identity).ok_or_else(|| {
       LuceneError::illegal_state(format!(
         "missing doc values consumer for field: {}",
@@ -410,18 +409,15 @@ where
   }
 }
 
-fn get_suffix<T>(format_name: &str, suffix: T) -> String
-where
-  T: Display,
-{
-  format!("{format_name}_{suffix}")
-}
-
-fn get_full_segment_suffix(outer_segment_suffix: &str, segment_suffix: String) -> String {
+fn get_full_segment_suffix<T: Display>(
+  outer_segment_suffix: &str,
+  format_name: &str,
+  suffix: T,
+) -> String {
   if outer_segment_suffix.is_empty() {
-    segment_suffix
+    format!("{format_name}_{suffix}")
   } else {
-    format!("{outer_segment_suffix}_{segment_suffix}")
+    format!("{outer_segment_suffix}_{format_name}_{suffix}")
   }
 }
 
@@ -521,23 +517,22 @@ where
           continue;
         }
         let field_name = &field_info.name;
-        let Some(format_name) = field_info.get_attribute(PER_FIELD_FORMAT_KEY) else {
+        let attributes = field_info.attributes();
+        let Some(format_name) = attributes.get(PER_FIELD_FORMAT_KEY) else {
           // Null format name means the field is in field infos, but has no doc values.
           continue;
         };
-        let suffix = field_info
-          .get_attribute(PER_FIELD_SUFFIX_KEY)
-          .ok_or_else(|| {
-            LuceneError::illegal_state(format!(
-              "missing attribute: {PER_FIELD_SUFFIX_KEY} for field: {field_name}"
-            ))
-          })?;
+        let suffix = attributes.get(PER_FIELD_SUFFIX_KEY).ok_or_else(|| {
+          LuceneError::illegal_state(format!(
+            "missing attribute: {PER_FIELD_SUFFIX_KEY} for field: {field_name}"
+          ))
+        })?;
         let segment_suffix =
-          get_full_segment_suffix(&read_state.segment_suffix, get_suffix(&format_name, suffix));
+          get_full_segment_suffix(&read_state.segment_suffix, format_name, suffix);
         let producer = match formats.entry(segment_suffix) {
           Entry::Occupied(entry) => Arc::clone(entry.get()),
           Entry::Vacant(entry) => {
-            let format = PF::for_name(&format_name)?;
+            let format = PF::for_name(format_name)?;
             let state = SegmentReadState::copy_with_suffix(read_state, entry.key());
             let producer = Arc::new(format.fields_producer(&state, segment_info)?);
             Arc::clone(entry.insert(producer))

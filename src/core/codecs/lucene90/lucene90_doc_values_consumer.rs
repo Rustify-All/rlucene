@@ -682,8 +682,11 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
     let shift = Lucene90DocValuesFormat::TERMS_DICT_BLOCK_LZ4_SHIFT;
     meta.write_int(Lucene90DocValuesFormat::DIRECT_MONOTONIC_BLOCK_SHIFT)?;
 
-    let mut address_output =
-      ByteBuffersIndexOutput::new(ByteBuffersDataOutput::new(), "temp", "temp");
+    let mut address_output = ByteBuffersIndexOutput::new(
+      ByteBuffersDataOutput::new_resettable_instance(),
+      "temp",
+      "temp",
+    );
     let num_blocks = (size + block_mask) >> shift;
     let mut writer = DirectMonotonicWriter::get_instance(
       meta,
@@ -712,7 +715,9 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
         let term = term.as_bytes_ref();
         let length = term.length;
         let offset = term.offset;
+        let prefix_length;
         if (ord & block_mask) == 0 {
+          prefix_length = 0;
           if ord != 0 {
             let uncompressed_length = Self::compress_and_get_terms_dict_block_length(
               buffered_output,
@@ -734,7 +739,7 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
           buffered_output.write_bytes_range(term.bytes, offset, length)?;
           dict_length = length;
         } else {
-          let prefix_length = StringHelper::bytes_difference(previous.get_bytes_mut_ref(), &term)?;
+          prefix_length = StringHelper::bytes_difference(previous.get_bytes_mut_ref(), &term)?;
           let suffix_length = length - prefix_length;
           // Will write (suffixLength + 1 byte + 2 vint) bytes. Grow
           // the buffer in need.
@@ -751,7 +756,12 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
         }
 
         max_length = max_length.max(length);
-        previous.copy_bytes_from_ref(&term)?;
+        if previous.bytes().bytes.len() >= length {
+          previous.set_length(prefix_length);
+          previous.append_with_range(term.bytes, offset + prefix_length, length - prefix_length)?;
+        } else {
+          previous.copy_bytes_from_ref(&term)?;
+        }
         ord += 1;
       }
       // Compress and write out the last block
@@ -777,7 +787,8 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
     address_output.delegate()?.copy_to(data)?;
     meta.write_long(start as i64)?;
     meta.write_long((data.get_file_pointer()? - start) as i64)?;
-    self.write_terms_index(values)?;
+    address_output.delegate_mut()?.reset();
+    self.write_terms_index(values, address_output)?;
     Ok(())
   }
 
@@ -818,7 +829,11 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
     Ok(())
   }
 
-  fn write_terms_index<T>(&mut self, values: &mut T) -> Result<()>
+  fn write_terms_index<T>(
+    &mut self,
+    values: &mut T,
+    mut address_output: ByteBuffersIndexOutput,
+  ) -> Result<()>
   where
     T: SortedSetDocValues,
   {
@@ -832,8 +847,6 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
       + ((size + Lucene90DocValuesFormat::TERMS_DICT_REVERSE_INDEX_MASK as i64)
         >> Lucene90DocValuesFormat::TERMS_DICT_REVERSE_INDEX_SHIFT);
 
-    let mut address_output =
-      ByteBuffersIndexOutput::new(ByteBuffersDataOutput::new(), "temp", "temp");
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       let mut writer = DirectMonotonicWriter::get_instance(
         &mut self.meta,
@@ -878,7 +891,10 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
         .write_long((self.data.get_file_pointer()? - start) as i64)?;
 
       let start = self.data.get_file_pointer()?;
-      address_output.delegate()?.copy_to(&mut self.data)?;
+      let addresses = address_output.delegate()?;
+      if addresses.size() != 0 {
+        addresses.copy_to(&mut self.data)?;
+      }
       self.meta.write_long(start as i64)?;
       self
         .meta

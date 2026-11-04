@@ -56,7 +56,7 @@ use crate::core::util::packed::packed_long_values::{
   Builder, PackedLongValues, PackedLongValuesIterator,
 };
 use crate::core::util::packed::{Mutable, PackedInts, Reader};
-use crate::core::util::ram_usage_estimator::size_of_vec;
+use crate::core::util::ram_usage_estimator::size_of_array_capacity;
 use crate::core::util::{BYTE_BLOCK_SIZE, ByteBlockPool, Counter, SharedCounter, TryIntoInt};
 use std::borrow::Borrow;
 use std::fmt::{Display, Formatter};
@@ -309,7 +309,7 @@ pub(crate) struct SortedSetDocValuesWriter {
   field_info: Arc<FieldInfo>,
 
   current_doc: i32,
-  current_values: Vec<i32>,
+  current_values: smallvec::SmallVec<[i32; 4]>,
   max_count: usize,
 
   final_ords: Option<PackedLongValues>,
@@ -327,9 +327,14 @@ impl SortedSetDocValuesWriter {
     let hash = BytesRefHash::from_bytes_start_array(DEFAULT_CAPACITY, bytes_start_array)?;
     let pending = PackedLongValues::packed_long_values_builder_default(PackedInts::COMPACT)?;
     let docs_with_field = DocsWithFieldSet::new();
-    let current_values = Vec::with_capacity(8);
-    let bytes_used =
-      pending.ram_bytes_used()? + docs_with_field.ram_bytes_used()? + size_of_vec(&current_values);
+    let current_values = smallvec::SmallVec::<[i32; 4]>::new();
+    let bytes_used = pending.ram_bytes_used()?
+      + docs_with_field.ram_bytes_used()?
+      + size_of_array_capacity::<i32>(if current_values.spilled() {
+        current_values.capacity()
+      } else {
+        0
+      });
     iw_bytes_used.add_and_get(bytes_used);
     Ok(Self {
       hash,
@@ -421,7 +426,10 @@ impl SortedSetDocValuesWriter {
     }
     if self.current_values.len() == self.current_values.capacity() {
       let required = self.current_values.len() + 1;
-      ArrayUtil::grow_capacity(&mut self.current_values, required)?;
+      ArrayUtil::oversize(required, std::mem::size_of::<i32>())?;
+      self
+        .current_values
+        .reserve(required - self.current_values.len());
     }
     self.current_values.push(term_id);
     Ok(())
@@ -436,7 +444,11 @@ impl SortedSetDocValuesWriter {
     let new_used = self.pending.ram_bytes_used()?
       + pc_used
       + self.docs_with_field.ram_bytes_used()?
-      + size_of_vec(&self.current_values);
+      + size_of_array_capacity::<i32>(if self.current_values.spilled() {
+        self.current_values.capacity()
+      } else {
+        0
+      });
     let delta = new_used - self.bytes_used;
     if delta != 0 {
       self.iw_bytes_used.add_and_get(delta);
@@ -763,7 +775,7 @@ pub(crate) struct BufferedSortedSetDocValues<D, V: Borrow<PackedLongValues> = Pa
   ords_iter: PackedLongValuesIterator<V>,
   ord_counts_iter: PackedLongValuesIterator<V>,
   docs_with_field: D,
-  current_doc: Vec<i32>,
+  current_doc: smallvec::SmallVec<[i32; 4]>,
   ord_count: usize,
   ord_upto: usize,
 }
@@ -786,7 +798,7 @@ impl<D, V: Borrow<PackedLongValues>> BufferedSortedSetDocValues<D, V> {
       ords_iter: PackedLongValuesIterator::new(ords())?,
       ord_counts_iter: PackedLongValuesIterator::new(ord_counts())?,
       docs_with_field,
-      current_doc: vec![0; max_count],
+      current_doc: smallvec::smallvec![0; max_count],
       ord_count: 0,
       ord_upto: 0,
     })

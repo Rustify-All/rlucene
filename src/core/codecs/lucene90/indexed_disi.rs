@@ -1079,7 +1079,7 @@ where
   let mut block_cardinality = 0;
   let mut buffer = FixedBitSet::new(1 << 16);
   let jumps_len = ArrayUtil::oversize(1, BitUtil::INT_BYTES * 2)?;
-  let mut jumps: Vec<i32> = vec![0; jumps_len];
+  let mut jumps: smallvec::SmallVec<[i32; 4]> = smallvec::smallvec![0; jumps_len];
   let mut prev_block = -1;
   let mut jump_block_index = 0;
 
@@ -1322,7 +1322,7 @@ fn create_rank(buffer: &FixedBitSet, dense_rank_power: u8) -> ([u8; DENSE_BLOCK_
 
 // Adds entries to the offset & index jump-table for blocks
 fn add_jumps(
-  jumps: &mut Vec<i32>,
+  jumps: &mut smallvec::SmallVec<[i32; 4]>,
   offset: usize,
   index: i32,
   start_block: usize,
@@ -1332,7 +1332,16 @@ fn add_jumps(
     offset < i32::MAX as usize,
     "Logically the offset should not exceed 2^30 but was >= i32::MAX"
   );
-  ArrayUtil::grow_with(jumps, (end_block + 1) * 2, || 0)?;
+  let required = (end_block + 1) * 2;
+  if jumps.len() < required {
+    ArrayUtil::oversize(required, std::mem::size_of::<i32>())?;
+    if jumps.capacity() < required {
+      // A sparse gap may jump past several blocks; preserve Vec's growth.
+      let capacity = required.max(jumps.capacity() * 2);
+      jumps.reserve_exact(capacity - jumps.len());
+    }
+    jumps.resize(required, 0);
+  }
   let offset = offset as i32;
   for b in start_block..end_block {
     let i = b * 2;

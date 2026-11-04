@@ -186,7 +186,13 @@ where
       return Err(LuceneError::illegal_argument("wrong fieldInfo"));
     }
 
-    let mut subs = Vec::with_capacity(self.merge_state.doc_values_producers.len());
+    let producer_count = self
+      .merge_state
+      .norms_producers
+      .iter()
+      .filter(|producer| producer.is_some())
+      .count();
+    let mut subs = Vec::with_capacity(producer_count);
     debug_assert!(self.merge_state.doc_maps.len() == self.merge_state.doc_values_producers.len());
     for i in 0..self.merge_state.doc_values_producers.len() {
       let mut norms = None;

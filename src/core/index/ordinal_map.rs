@@ -96,7 +96,7 @@ impl OrdinalMap {
   {
     let len = values.len();
     let mut subs = Vec::with_capacity(len);
-    let mut weights = Vec::with_capacity(len);
+    let mut weights = smallvec::SmallVec::<[i64; 4]>::with_capacity(len);
 
     for dv in values.iter_mut() {
       let count = dv.get_value_count()? as i64;
@@ -120,7 +120,7 @@ impl OrdinalMap {
   {
     let len = values.len();
     let mut subs = Vec::with_capacity(len);
-    let mut weights = Vec::with_capacity(len);
+    let mut weights = smallvec::SmallVec::<[i64; 4]>::with_capacity(len);
 
     for dv in values.iter_mut() {
       let count = dv.get_value_count()?;
@@ -267,15 +267,12 @@ impl OrdinalMap {
       )?);
     }
 
-    let mut ord_delta_bits = vec![0i64; sub_len];
-    let mut segment_ords = vec![0i64; sub_len];
+    let mut counters = vec![0i64; sub_len * 2];
+    let (ord_delta_bits, segment_ords) = counters.split_at_mut(sub_len);
 
     //  queue of term enums
     let mut terms_enum_indices = Vec::with_capacity(sub_len);
-    let mut subs_with_holes = Vec::with_capacity(sub_len);
-    for sub in subs {
-      subs_with_holes.push(Some(sub));
-    }
+    let mut subs_with_holes: Vec<_> = subs.into_iter().map(Some).collect();
     for i in 0..sub_len {
       let mapped = segment_map.new_to_old(i);
       let mut sub = TermsEnumIndex::new(subs_with_holes[mapped].take(), i);
@@ -519,52 +516,57 @@ where
 }
 
 pub struct SegmentMap {
-  new_to_old: Box<[i32]>,
-  old_to_new: Box<[i32]>,
+  // Contiguous forward and inverse segment permutations.
+  ordinals: Box<[i32]>,
 }
 
 impl SegmentMap {
   pub fn new(weights: &[i64]) -> Result<Self> {
-    let new_to_old = map(weights)?;
-    let old_to_new = inverse(&new_to_old);
-    debug_assert_eq!(new_to_old, inverse(&old_to_new));
+    let mut ordinals = map(weights)?;
+    let (new_to_old, old_to_new) = ordinals.split_at_mut(weights.len());
+    inverse(new_to_old, old_to_new);
+    debug_assert!(
+      new_to_old
+        .iter()
+        .enumerate()
+        .all(|(new_ord, &old_ord)| { old_to_new[old_ord as usize] == new_ord as i32 })
+    );
 
     Ok(Self {
-      new_to_old: new_to_old.into_boxed_slice(),
-      old_to_new: old_to_new.into_boxed_slice(),
+      ordinals: ordinals.into_boxed_slice(),
     })
   }
 
   fn new_to_old(&self, segment: usize) -> usize {
-    self.new_to_old[segment] as usize
+    self.ordinals[segment] as usize
   }
 
   fn old_to_new(&self, segment: usize) -> i32 {
-    self.old_to_new[segment]
+    self.ordinals[self.ordinals.len() / 2 + segment]
   }
 }
 impl Accountable for SegmentMap {
   fn ram_bytes_used(&self) -> Result<i64> {
-    Ok(size_of_slice(&self.new_to_old).saturating_add(size_of_slice(&self.old_to_new)))
+    Ok(size_of_slice(&self.ordinals))
   }
 }
 
 fn map(weights: &[i64]) -> Result<Vec<i32>> {
-  let mut new_to_old: Vec<i32> = (0..weights.len() as i32).collect();
-  let sub = InPlaceMergeSorterSorter::new(weights, &mut new_to_old);
+  let ordinals = 0..weights.len() as i32;
+  let len = ordinals.len();
+  let mut new_to_old = Vec::with_capacity(len * 2);
+  new_to_old.extend(ordinals);
+  new_to_old.resize(len * 2, 0);
+  let sub = InPlaceMergeSorterSorter::new(weights, &mut new_to_old[..len]);
   let mut sorter = InPlaceMergeSorter::new(sub);
   sorter.sort(0, weights.len())?;
   Ok(new_to_old)
 }
 /// Inverse the map.
-fn inverse(map: &[i32]) -> Vec<i32> {
-  let mut inverse = vec![0; map.len()];
-
+fn inverse(map: &[i32], inverse: &mut [i32]) {
   for (new_ord, &old_ord) in map.iter().enumerate() {
     inverse[old_ord as usize] = new_ord as i32;
   }
-
-  inverse
 }
 struct InPlaceMergeSorterSorter<'a> {
   weights: &'a [i64],

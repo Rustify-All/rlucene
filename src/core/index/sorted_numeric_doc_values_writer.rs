@@ -48,7 +48,7 @@ use crate::core::util::packed::PackedInts;
 use crate::core::util::packed::packed_long_values::{
   Builder, PackedLongValues, PackedLongValuesIterator,
 };
-use crate::core::util::ram_usage_estimator::size_of_vec;
+use crate::core::util::ram_usage_estimator::size_of_array_capacity;
 use crate::core::util::{ByteBlockPool, Counter, SharedCounter, TryIntoInt};
 use std::borrow::Borrow;
 use std::fmt::{Display, Formatter};
@@ -178,7 +178,7 @@ pub(crate) struct SortedNumericDocValuesWriter {
   bytes_used: i64, // this only tracks differences in 'pending' and 'pendingCounts'
   field_info: Arc<FieldInfo>,
   current_doc: i32,
-  current_values: Vec<i64>,
+  current_values: smallvec::SmallVec<[i64; 4]>,
   current_upto: usize,
 
   final_values: Option<PackedLongValues>,
@@ -187,12 +187,17 @@ pub(crate) struct SortedNumericDocValuesWriter {
 
 impl SortedNumericDocValuesWriter {
   pub(crate) fn new(field_info: Arc<FieldInfo>, iw_bytes_used: SharedCounter) -> Result<Self> {
-    let current_values = Vec::with_capacity(8);
+    let current_values = smallvec::SmallVec::<[i64; 4]>::new();
     let docs_with_field = DocsWithFieldSet::new();
     let pending = PackedLongValues::delta_packed_long_values_builder_default(PackedInts::COMPACT)?;
 
-    let bytes_used =
-      pending.ram_bytes_used()? + docs_with_field.ram_bytes_used()? + size_of_vec(&current_values);
+    let bytes_used = pending.ram_bytes_used()?
+      + docs_with_field.ram_bytes_used()?
+      + size_of_array_capacity::<i64>(if current_values.spilled() {
+        current_values.capacity()
+      } else {
+        0
+      });
 
     iw_bytes_used.add_and_get(bytes_used);
 
@@ -252,7 +257,10 @@ impl SortedNumericDocValuesWriter {
 
   fn add_one_value(&mut self, value: i64) -> Result<()> {
     if self.current_values.len() == self.current_values.capacity() {
-      ArrayUtil::grow_capacity(&mut self.current_values, self.current_upto + 1)?;
+      ArrayUtil::oversize(self.current_upto + 1, std::mem::size_of::<i64>())?;
+      self
+        .current_values
+        .reserve(self.current_upto + 1 - self.current_values.len());
     }
     self.current_values.push(value);
     self.current_upto += 1;
@@ -267,7 +275,11 @@ impl SortedNumericDocValuesWriter {
     let new_bytes_used = self.pending.ram_bytes_used()?
       + pending_counts_usage
       + self.docs_with_field.ram_bytes_used()?
-      + size_of_vec(&self.current_values);
+      + size_of_array_capacity::<i64>(if self.current_values.spilled() {
+        self.current_values.capacity()
+      } else {
+        0
+      });
 
     let delta = new_bytes_used - self.bytes_used;
     if delta != 0 {

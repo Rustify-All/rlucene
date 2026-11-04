@@ -259,7 +259,7 @@ pub trait DocValuesConsumer: Closeable {
     let num_readers = to_merge.len();
     // step 1: iterate thru each sub and mark terms still in use
     let mut live_terms = Vec::with_capacity(num_readers);
-    let mut weights = Vec::with_capacity(num_readers);
+    let mut weights = smallvec::SmallVec::<[i64; 4]>::with_capacity(num_readers);
 
     let mut remaining = to_merge.as_mut_slice();
     let mut sub = 0;
@@ -344,7 +344,7 @@ pub trait DocValuesConsumer: Closeable {
     // step 1: iterate thru each sub and mark terms still in use
     let num_readers = to_merge.len();
     let mut live_terms = Vec::with_capacity(num_readers);
-    let mut weights = Vec::with_capacity(num_readers);
+    let mut weights = smallvec::SmallVec::<[i64; 4]>::with_capacity(num_readers);
 
     for (sub, dv) in to_merge.iter_mut().enumerate() {
       let live_docs_opt = merge_state.live_docs()[sub].as_ref();
@@ -556,8 +556,13 @@ where
     debug_assert!(
       self.merge_state.doc_maps().len() == self.merge_state.doc_values_producers().len()
     );
-    let reader_count = self.merge_state.doc_values_producers().len();
-    subs.reserve(reader_count);
+    let producers = self.merge_state.doc_values_producers();
+    let reader_count = producers.len();
+    let producer_count = producers
+      .iter()
+      .filter(|producer| producer.is_some())
+      .count();
+    subs.reserve_exact(producer_count);
     for i in 0..reader_count {
       let mut values = None;
       let doc_values_producer_opt = &self.merge_state.doc_values_producers()[i];
@@ -730,8 +735,13 @@ where
       self.merge_state.doc_maps().len() == self.merge_state.doc_values_producers().len()
     );
 
-    let reader_count = self.merge_state.doc_values_producers().len();
-    subs.reserve(reader_count);
+    let producers = self.merge_state.doc_values_producers();
+    let reader_count = producers.len();
+    let producer_count = producers
+      .iter()
+      .filter(|producer| producer.is_some())
+      .count();
+    subs.reserve_exact(producer_count);
     for i in 0..reader_count {
       let mut values = None;
       let doc_values_producer_opt = &self.merge_state.doc_values_producers()[i];
