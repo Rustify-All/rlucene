@@ -63,6 +63,14 @@ impl PForUtil {
   where
     O: DataOutput,
   {
+    if ints.len() >= ForUtil::BLOCK_SIZE
+      && (0..=u8::MAX as i32).contains(&ints[0])
+      && Self::all_equal(ints)
+    {
+      out.write_byte(0)?;
+      return out.write_vint(ints[0]);
+    }
+
     let top = match &mut self.top {
       Some(top) => top,
       slot => slot.insert(LongHeap::new(Self::MAX_EXCEPTIONS + 1)?),

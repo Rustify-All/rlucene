@@ -146,7 +146,8 @@ where
     // Maximum number of points we hold in memory at any time
     let max_points_sort_in_heap =
       ((max_mb_sort_in_heap * 1024.0 * 1024.0) / config.bytes_per_doc() as f64) as usize;
-    let doc_ids_writer = DocIdsWriter::new(config.max_points_in_leaf_node);
+    // Only the reader uses the packed document ID decoding buffer.
+    let doc_ids_writer = DocIdsWriter::new(0);
     // Finally, we must be able to hold at least the leaf node in heap
     // during build:
     if max_points_sort_in_heap < config.max_points_in_leaf_node {

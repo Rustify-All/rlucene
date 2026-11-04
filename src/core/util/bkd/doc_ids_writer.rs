@@ -106,26 +106,14 @@ impl DocIdsWriter {
     }
     if min2max <= 0xffff {
       out.write_byte(DocIdsWriter::DELTA_BPV_16 as u8)?;
-      let mut temporary = Vec::new();
-      let scratch = if count <= self.scratch_ints_ref.ints.len() {
-        &mut self.scratch_ints_ref.ints[..count]
-      } else {
-        temporary.resize(count, 0);
-        &mut temporary[..]
-      };
-      for i in 0..count {
-        scratch[i] = doc_ids[start + i] - min;
-      }
+      let docs = &doc_ids[start..start + count];
       out.write_vint(min)?;
-      let half_len = count >> 1;
-      for i in 0..half_len {
-        scratch[i] = scratch[half_len + i] | (scratch[i] << 16);
-      }
-      for value in scratch.iter().take(half_len) {
-        out.write_int(*value)?;
+      let (first, second) = docs.split_at(count >> 1);
+      for (&high, &low) in first.iter().zip(second) {
+        out.write_int((low - min) | ((high - min) << 16))?;
       }
       if count & 1 == 1 {
-        out.write_short(scratch[count - 1] as i16)?;
+        out.write_short((docs[count - 1] - min) as i16)?;
       }
     } else if max <= 0xFFFFFF {
       out.write_byte(DocIdsWriter::BPV_24 as u8)?;
