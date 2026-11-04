@@ -171,11 +171,11 @@ impl Util {
     let mut start_arc = Arc::default();
     fst.get_first_arc(&mut start_arc);
 
-    let mut this_level_queue = Vec::new();
-    let mut next_level_queue = Vec::new();
+    let mut this_level_queue = smallvec::SmallVec::<[i64; 4]>::new();
+    let mut next_level_queue = smallvec::SmallVec::<[i64; 4]>::new();
     next_level_queue.push(start_arc.target());
 
-    let mut same_level_states = Vec::new();
+    let mut same_level_states = smallvec::SmallVec::<[i64; 4]>::new();
     let mut seen = HashSet::new();
     seen.insert(start_arc.target());
 

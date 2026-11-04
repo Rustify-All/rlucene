@@ -1253,7 +1253,7 @@ impl Operations {
     let num_states = a.get_num_states() as usize;
     let mut on_stack = BitSet::with_capacity(num_states);
     let mut visited = BitSet::with_capacity(num_states);
-    let mut stack = Vec::new();
+    let mut stack = smallvec::SmallVec::<[i32; 8]>::new();
     stack.push(0); // Assume initial state is 0
     let mut upto = 0;
     let mut t = Transition::default();

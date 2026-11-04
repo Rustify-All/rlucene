@@ -1493,7 +1493,7 @@ impl MakeRegexGroup for ConcatGroup {
 
 impl Drop for RegExp {
   fn drop(&mut self) {
-    let mut stack = Vec::new();
+    let mut stack = smallvec::SmallVec::<[Box<RegExp>; 4]>::new();
     if let Some(exp1) = self.exp1.take() {
       stack.push(exp1);
     }

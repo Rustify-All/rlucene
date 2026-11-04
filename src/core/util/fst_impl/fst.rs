@@ -1278,7 +1278,17 @@ impl<O: Outputs> FSTMetadata<O> {
       // Serialize empty-string output
       let mut ros = ByteBuffersDataOutput::new();
       self.outputs.write_final_output(empty_output, &mut ros)?;
-      let mut empty_output_bytes = ros.try_get_array_ownership();
+      let mut empty_output_bytes = if ros.buffer_slices().count() == 1 {
+        let (length, mut buffers) = ros.to_buffer_list_owner(false);
+        let mut bytes = buffers
+          .pop()
+          .ok_or_else(|| LuceneError::illegal_state("transferred FST output block is missing"))?
+          .into_inner();
+        bytes.truncate(length);
+        bytes
+      } else {
+        ros.try_get_array_ownership()
+      };
       let empty_len = empty_output_bytes.len();
       // reverse
       let stop_at = empty_len / 2;

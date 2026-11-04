@@ -37,12 +37,12 @@ pub struct LevenshteinAutomata {
   /// Input word.
   word: Vec<i32>,
   /// The automata alphabet.
-  alphabet: Vec<i32>,
+  alphabet: smallvec::SmallVec<[i32; 8]>,
   /// The maximum symbol in the alphabet (e.g. 255 for UTF-8 or 10FFFF for UTF-32).
   #[allow(dead_code)]
   alpha_max: i32,
   /// Inclusive bounds for ranges outside of alphabet.
-  ranges: Vec<(i32, i32)>,
+  ranges: smallvec::SmallVec<[(i32, i32); 4]>,
   num_ranges: usize,
   descriptions: [Option<ParametricDescription>; 3],
 }
@@ -68,7 +68,7 @@ impl LevenshteinAutomata {
     W: Into<Vec<i32>>,
   {
     let word = word.into();
-    let mut alphabet = Vec::with_capacity(word.len());
+    let mut alphabet = smallvec::SmallVec::<[i32; 8]>::with_capacity(word.len());
     for &v in &word {
       if v > alpha_max {
         return Err(LuceneError::illegal_argument(format!(
@@ -81,7 +81,8 @@ impl LevenshteinAutomata {
     alphabet.dedup();
     alphabet.shrink_to_fit();
 
-    let mut ranges = vec![(0, 0); alphabet.len() + 1];
+    let mut ranges = smallvec::SmallVec::<[(i32, i32); 4]>::with_capacity(alphabet.len() + 1);
+    ranges.resize(alphabet.len() + 1, (0, 0));
     let mut num_ranges = 0;
 
     let mut lower = 0;

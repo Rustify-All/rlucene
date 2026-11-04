@@ -19,21 +19,21 @@ use crate::core::util::SliceCopyOps;
 use crate::core::util::accountable::Accountable;
 use crate::core::util::array_util::ArrayUtil;
 use crate::core::util::error::lucene_error::Result;
-use crate::core::util::ram_usage_estimator::size_of_vec;
+use crate::core::util::ram_usage_estimator::size_of_array_capacity;
 // Store one contiguous byte buffer for the current FST node. The buffer only
 // grows; it never shrinks.
 // Note: This is only safe for usage that is bounded in the number of bytes
 // written. Do not make this public! Public users should instead use
 // ByteBuffersDataOutput
 pub(crate) struct GrowableByteArrayDataOutput {
-  bytes: Vec<u8>,
+  bytes: smallvec::SmallVec<[u8; 256]>,
   next_write: usize,
 }
 impl GrowableByteArrayDataOutput {
   const INITIAL_SIZE: usize = 1 << 8;
   pub fn new() -> Self {
     Self {
-      bytes: vec![0u8; Self::INITIAL_SIZE],
+      bytes: smallvec::smallvec![0u8; Self::INITIAL_SIZE],
       next_write: 0,
     }
   }
@@ -60,7 +60,16 @@ impl GrowableByteArrayDataOutput {
   /// Ensure we can write additional `capacity_to_write` bytes.
   #[inline]
   fn ensure_capacity(&mut self, capacity_to_write: usize) -> Result<()> {
-    ArrayUtil::grow_with(&mut self.bytes, self.next_write + capacity_to_write, || 0)
+    let required = self.next_write + capacity_to_write;
+    if self.bytes.len() < required {
+      ArrayUtil::oversize(required, std::mem::size_of::<u8>())?;
+      if self.bytes.capacity() < required {
+        let capacity = required.max(self.bytes.capacity() * 2);
+        self.bytes.reserve_exact(capacity - self.bytes.len());
+      }
+      self.bytes.resize(required, 0);
+    }
+    Ok(())
   }
   /// Writes all of our bytes to the target `Write`.
   pub fn write_to_data_output<DO>(&self, out: &mut DO) -> Result<()>
@@ -105,6 +114,6 @@ impl DataOutput for GrowableByteArrayDataOutput {
 }
 impl Accountable for GrowableByteArrayDataOutput {
   fn ram_bytes_used(&self) -> Result<i64> {
-    Ok(size_of_vec(&self.bytes))
+    Ok(size_of_array_capacity::<u8>(self.bytes.capacity()))
   }
 }

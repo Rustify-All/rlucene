@@ -674,7 +674,7 @@ impl PendingBlock {
 
     while let Some(index_ent) = sub_index_enum.next_value()? {
       Util::to_ints_ref(&index_ent.input, scratch_ints_ref)?;
-      fst_compiler.add(scratch_ints_ref.get(), index_ent.output.clone())?;
+      fst_compiler.add(scratch_ints_ref.get(), sub_index_enum.result.output.take())?;
     }
 
     Ok(())
@@ -738,7 +738,7 @@ where
   // term/sub-block starting with 't'.  We use this to figure out when
   // to write a new block:
   last_term: BytesRefBuilder<Vec<u8>>,
-  prefix_starts: Vec<i32>,
+  prefix_starts: smallvec::SmallVec<[i32; 8]>,
   // Pending stack of terms and blocks.  As terms arrive (in sorted order)
   // we append to this stack, and once the top of the stack has enough
   // terms starting with a common prefix, we write a new block with
@@ -759,7 +759,6 @@ where
   scratch_ints_ref: IntsRefBuilder<Vec<i32>>,
   version: i32,
   first_pending_term_bytes: Option<Arc<Vec<u8>>>,
-  last_pending_term_bytes: Option<Arc<Vec<u8>>>,
   terms_out: &'a mut O,
   postings_writer: &'a mut PW,
 }
@@ -788,7 +787,7 @@ where
       sum_total_term_freq: 0,
       sum_doc_freq: 0,
       last_term: BytesRefBuilder::new(),
-      prefix_starts: vec![0; 8],
+      prefix_starts: smallvec::smallvec![0; 8],
       pending: Vec::with_capacity(max_items_in_block.min(DEFAULT_MAX_BLOCK_SIZE) as usize),
       new_blocks: Vec::new(),
       suffix_lengths_writer: ByteBuffersDataOutput::new_resettable_instance(),
@@ -804,7 +803,6 @@ where
       scratch_ints_ref: IntsRefBuilder::new(),
       version,
       first_pending_term_bytes: None,
-      last_pending_term_bytes: None,
       terms_out,
       postings_writer,
     };
@@ -972,7 +970,14 @@ where
     self.terms_out.write_vint(code)?;
 
     let is_leaf_block = !has_sub_blocks;
-    let mut sub_indices = Vec::with_capacity(if has_sub_blocks { num_entries } else { 0 });
+    let mut sub_indices = Vec::with_capacity(if has_sub_blocks {
+      self.pending[start..end]
+        .iter()
+        .filter(|entry| matches!(entry, PendingEntryEnum::Block(_)))
+        .count()
+    } else {
+      0
+    });
     let mut absolute = true;
 
     if is_leaf_block {
@@ -1236,7 +1241,6 @@ where
       if self.first_pending_term_bytes.is_none() {
         self.first_pending_term_bytes = Some(term.term_bytes.clone());
       }
-      self.last_pending_term_bytes = Some(term.term_bytes.clone());
       self.pending.push(PendingEntryEnum::Term(term));
     }
 
@@ -1265,14 +1269,32 @@ where
     let old_length = self.prefix_starts.len();
     let pending_count = self.pending.len() as i32;
     if old_length < text.length {
-      ArrayUtil::grow_with(&mut self.prefix_starts, text.length, || pending_count)?;
+      ArrayUtil::oversize(text.length, std::mem::size_of::<i32>())?;
+      if text.length > self.prefix_starts.capacity() {
+        let capacity = text
+          .length
+          .max(self.prefix_starts.capacity().saturating_mul(2));
+        self
+          .prefix_starts
+          .reserve_exact(capacity - self.prefix_starts.len());
+      }
+      self.prefix_starts.resize(text.length, pending_count);
     }
 
     for i in prefix_length..text.length.min(old_length) {
       self.prefix_starts[i] = pending_count;
     }
 
-    self.last_term.copy_bytes_from_ref(text)?;
+    if self.last_term.bytes().bytes.len() >= text.length {
+      self.last_term.set_length(prefix_length);
+      self.last_term.append_with_range(
+        &text.bytes,
+        text.offset + prefix_length,
+        text.length - prefix_length,
+      )?;
+    } else {
+      self.last_term.copy_bytes_from_ref(text)?;
+    }
     Ok(())
   }
   pub fn finish(&mut self, fields: &mut Vec<ByteBuffersDataOutput>, index_out: &mut O) -> Result<()>
@@ -1281,6 +1303,10 @@ where
     PW: PostingsWriterBase,
   {
     if self.num_terms > 0 {
+      let last_pending_term_bytes = match self.pending.last() {
+        Some(PendingEntryEnum::Term(term)) => Some(term.term_bytes.clone()),
+        _ => None,
+      };
       self.push_term(&BytesRef::new())?;
       self.push_term(&BytesRef::new())?;
 
@@ -1334,9 +1360,7 @@ where
         .take()
         .ok_or_else(|| LuceneError::illegal_state("first pending term is missing"))?;
       self.write_bytes_ref(&mut meta_out, &BytesRef::from_bytes(first_term_bytes))?;
-      let last_term_bytes = self
-        .last_pending_term_bytes
-        .take()
+      let last_term_bytes = last_pending_term_bytes
         .ok_or_else(|| LuceneError::illegal_state("last pending term is missing"))?;
       self.write_bytes_ref(&mut meta_out, &BytesRef::from_bytes(last_term_bytes))?;
       meta_out.write_vlong(index_out.get_file_pointer()? as i64)?;
