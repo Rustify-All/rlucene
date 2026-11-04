@@ -23,7 +23,7 @@ use crate::core::util::allocator_byte::DirectTrackingAllocatorByte;
 use crate::core::util::array_util::ArrayUtil;
 use crate::core::util::byte_block_pool::{BYTE_BLOCK_MASK, BYTE_BLOCK_SHIFT, BYTE_BLOCK_SIZE};
 use crate::core::util::error::lucene_error::{LuceneError, Result};
-use crate::core::util::ram_usage_estimator::size_of_vec;
+use crate::core::util::ram_usage_estimator::{size_of_array_capacity, size_of_vec};
 use crate::core::util::sortable_bytes_ref_array::SortableBytesRefArray;
 use crate::core::util::{
   ByteBlockPool, BytesRefComparator, Counter, MSBRadixSorterBase, SharedCounter, SliceCopyOps,
@@ -41,7 +41,7 @@ use crate::core::util::{
 #[derive(Debug)]
 pub struct BytesRefArray {
   pool: ByteBlockPool,
-  offsets: Vec<usize>,
+  offsets: smallvec::SmallVec<[usize; 1]>,
   last_element: usize,
   current_offset: usize,
   byte_used: SharedCounter,
@@ -52,8 +52,8 @@ impl BytesRefArray {
     let allocator = DirectTrackingAllocatorByte::new(byte_used.clone());
     let mut pool = ByteBlockPool::new(allocator);
     pool.next_buffer()?;
-    let offsets = Vec::with_capacity(1);
-    byte_used.add_and_get(size_of_vec(&offsets));
+    let offsets = smallvec::SmallVec::with_capacity(1);
+    byte_used.add_and_get(size_of_array_capacity::<usize>(offsets.capacity()));
     Ok(BytesRefArray {
       pool,
       offsets,
@@ -178,11 +178,15 @@ impl BytesRefArray {
     C: BytesRefComparator<Cow<'a, Vec<u8>>>,
   {
     let size = self.size();
-    let mut ordered_entries: Vec<usize> = (0..size).collect();
+    let mut indices = (size > 1).then(|| (0..size).collect::<Vec<_>>());
+    let mut identity = [0];
+    let ordered_entries = indices
+      .as_deref_mut()
+      .unwrap_or(&mut identity[..size.min(1)]);
     if stable {
       let delegate = StableStringSorterImpl {
         tmp: Vec::new(),
-        ordered_entries: ordered_entries.as_mut_slice(),
+        ordered_entries,
         bytes_ref_array: self,
       };
       let stable_string_sorter = StableStringSorter::new(delegate);
@@ -190,13 +194,13 @@ impl BytesRefArray {
       string_sorter.sort(0, size)?;
     } else {
       let delegate = StringSorterImpl {
-        ordered_entries: ordered_entries.as_mut_slice(),
+        ordered_entries,
         bytes_ref_array: self,
       };
       let mut string_sorter = StringSorter::new(delegate, comp);
       string_sorter.sort(0, size)?;
     }
-    Ok(SortState::new(Some(ordered_entries)))
+    Ok(SortState::new(indices))
   }
   pub fn iterator(&'_ self) -> IndexedBytesRefIteratorImpl<'_> {
     IndexedBytesRefIteratorImpl::new(None, self)
@@ -237,12 +241,15 @@ impl<'a> SortableBytesRefArray<'a> for BytesRefArray {
   fn append<AV: ByteSource>(&mut self, bytes: &BytesRef<AV>) -> Result<usize> {
     let view = bytes.as_byte_slice();
     if self.offsets.len() == self.offsets.capacity() {
-      let old_size = size_of_vec(&self.offsets);
+      let old_size = size_of_array_capacity::<usize>(self.offsets.capacity());
       let min_size = self.offsets.len() + 1;
-      ArrayUtil::grow_capacity(&mut self.offsets, min_size)?;
+      ArrayUtil::oversize(min_size, size_of::<usize>())?;
+      // Match Vec's minimum nonzero growth capacity for word-sized elements.
+      let capacity = min_size.max(self.offsets.capacity() * 2).max(4);
+      self.offsets.reserve_exact(capacity - self.offsets.len());
       self
         .byte_used
-        .add_and_get(size_of_vec(&self.offsets) - old_size);
+        .add_and_get(size_of_array_capacity::<usize>(self.offsets.capacity()) - old_size);
     }
     self.pool.append(view)?;
     self.offsets.push(self.current_offset);

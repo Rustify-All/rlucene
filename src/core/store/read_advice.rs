@@ -53,19 +53,16 @@ impl ReadAdvice {
   }
 
   pub fn from_str_custom(s: &str) -> Option<ReadAdvice> {
-    let uppercase = if s
-      .bytes()
-      .all(|byte| byte.is_ascii() && !byte.is_ascii_lowercase())
-    {
+    let uppercase = if s.is_ascii() {
       Cow::Borrowed(s)
     } else {
       Cow::Owned(s.to_uppercase())
     };
     match uppercase.as_ref() {
-      "NORMAL" => Some(ReadAdvice::Normal),
-      "RANDOM" => Some(ReadAdvice::Random),
-      "SEQUENTIAL" => Some(ReadAdvice::Sequential),
-      "RANDOM_PRELOAD" => Some(ReadAdvice::RandomPreload),
+      value if value.eq_ignore_ascii_case("NORMAL") => Some(ReadAdvice::Normal),
+      value if value.eq_ignore_ascii_case("RANDOM") => Some(ReadAdvice::Random),
+      value if value.eq_ignore_ascii_case("SEQUENTIAL") => Some(ReadAdvice::Sequential),
+      value if value.eq_ignore_ascii_case("RANDOM_PRELOAD") => Some(ReadAdvice::RandomPreload),
       _ => None,
     }
   }

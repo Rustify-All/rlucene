@@ -21,7 +21,7 @@ use crate::core::util::error::lucene_error::{LuceneError, Result};
 pub struct IntBlockPool {
   /// array of buffers currently used in the pool. Buffers are allocated if
   /// needed don't modify this outside of this struct
-  pub(crate) buffers: Vec<Vec<i32>>,
+  pub(crate) buffers: smallvec::SmallVec<[Vec<i32>; 4]>,
   /// index into the buffers array pointing to the current buffer used as the
   /// head.
   pub(crate) buffer_upto: Option<usize>,
@@ -50,7 +50,7 @@ impl IntBlockPool {
   /// See `IntBlockPool::next_buffer()` for more details.
   pub fn with_allocator(allocator: AllocatorIntEnum) -> Self {
     IntBlockPool {
-      buffers: vec![],
+      buffers: smallvec::SmallVec::new(),
       buffer_upto: None,
       int_upto: INT_BLOCK_SIZE,
       int_offset: -INT_BLOCK_SIZE,

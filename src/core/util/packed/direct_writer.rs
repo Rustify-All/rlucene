@@ -36,8 +36,10 @@ pub struct DirectWriter<'a, D> {
   count: i64,
   finished: bool,
   off: usize,
-  next_blocks: Vec<u8>,
-  next_values: Vec<i64>,
+  // Value cells followed by an aligned view of the encoded-byte staging area.
+  buffers: Vec<i64>,
+  next_values_len: usize,
+  next_blocks_len: usize,
 }
 impl<'a, D> DirectWriter<'a, D>
 where
@@ -51,18 +53,19 @@ where
     debug_assert!(buffer_size > 0);
     // Round to the next multiple of 64
     buffer_size = ((buffer_size + 63) as u32 & 0xFFFFFFC0) as i32;
-    let next_values = if num_values == 0 && SUPPORTED_BITS_PER_VALUE.contains(&bits_per_value) {
-      Vec::new()
-    } else {
-      vec![0i64; buffer_size as usize]
-    };
+    if num_values > 0
+      && num_values < i64::from(buffer_size)
+      && SUPPORTED_BITS_PER_VALUE.contains(&bits_per_value)
+    {
+      // Keep short streams buffered until finish, including multiples of 64.
+      buffer_size = ((num_values + 64) & !63) as i32;
+    }
+    let empty = num_values == 0 && SUPPORTED_BITS_PER_VALUE.contains(&bits_per_value);
+    let next_values_len = if empty { 0 } else { buffer_size as usize };
     let next_blocks_size =
       (buffer_size * bits_per_value) as usize / i8::BITS as usize + BitUtil::LONG_BYTES - 1;
-    let next_blocks = if num_values == 0 && SUPPORTED_BITS_PER_VALUE.contains(&bits_per_value) {
-      Vec::new()
-    } else {
-      vec![0u8; next_blocks_size]
-    };
+    let next_blocks_len = if empty { 0 } else { next_blocks_size };
+    let buffers = vec![0i64; next_values_len + next_blocks_len.div_ceil(BitUtil::LONG_BYTES)];
 
     Ok(DirectWriter {
       bits_per_value,
@@ -71,8 +74,9 @@ where
       count: 0,
       finished: false,
       off: 0,
-      next_blocks,
-      next_values,
+      buffers,
+      next_values_len,
+      next_blocks_len,
     })
   }
   /// Adds a value to this writer.
@@ -88,8 +92,8 @@ where
     }
     let off = self.off;
     self.off += 1;
-    self.next_values[off] = l;
-    if self.off == self.next_values.len() {
+    self.buffers[..self.next_values_len][off] = l;
+    if self.off == self.next_values_len {
       self.flush()?;
     }
     self.count += 1;
@@ -99,25 +103,21 @@ where
     if self.off == 0 {
       return Ok(());
     }
+    let (next_values, blocks) = self.buffers.split_at_mut(self.next_values_len);
+    let next_blocks =
+      &mut wide::bytemuck::cast_slice_mut::<i64, u8>(blocks)[..self.next_blocks_len];
     // Avoid writing bits from values that are outside of the range we need
     // to encode
-    for i in self.off..self.next_values.len() {
-      self.next_values[i] = 0;
+    for value in &mut next_values[self.off..] {
+      *value = 0;
     }
-    Self::encode(
-      &self.next_values,
-      self.off,
-      &mut self.next_blocks,
-      self.bits_per_value,
-    );
+    Self::encode(next_values, self.off, next_blocks, self.bits_per_value);
     let block_count = Packed(PackedImpl::new(0)).byte_count(
       PackedInts::VERSION_CURRENT,
       self.off,
       self.bits_per_value,
     );
-    self
-      .output
-      .write_bytes_with_len(&self.next_blocks, block_count)?;
+    self.output.write_bytes_with_len(next_blocks, block_count)?;
     self.off = 0;
     Ok(())
   }

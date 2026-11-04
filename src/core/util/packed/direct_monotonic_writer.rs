@@ -33,7 +33,7 @@ pub struct DirectMonotonicWriter<'a, I1, I2> {
   data: &'a mut I2,
   num_values: i64,
   base_data_pointer: usize,
-  buffer: Vec<i64>,
+  buffer: smallvec::SmallVec<[i64; 4]>,
   buffer_size: usize,
   count: i64,
   finished: bool,
@@ -81,7 +81,7 @@ where
 
     let block_size = 1i64 << block_shift;
     let buffer_len = std::cmp::min(num_values, block_size) as usize;
-    let buffer = vec![0i64; buffer_len];
+    let buffer = smallvec::smallvec![0i64; buffer_len];
     let base_data_pointer = data_out.get_file_pointer()?;
 
     Ok(DirectMonotonicWriter {

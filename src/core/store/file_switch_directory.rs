@@ -279,8 +279,8 @@ where
   }
 
   fn sync(&self, names: &[String]) -> Result<()> {
-    let mut primary_names = Vec::new();
-    let mut secondary_names = Vec::new();
+    let mut primary_names = smallvec::SmallVec::<[String; 2]>::new();
+    let mut secondary_names = smallvec::SmallVec::<[String; 2]>::new();
 
     for name in names {
       if self.primary_extensions.contains(get_extension(name)) {

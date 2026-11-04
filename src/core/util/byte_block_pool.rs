@@ -23,7 +23,7 @@ use crate::core::util::accountable::Accountable;
 use crate::core::util::allocator_byte::{AllocatorByte, AllocatorByteEnum, DirectAllocatorByte};
 use crate::core::util::array_util::ArrayUtil;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
-use crate::core::util::ram_usage_estimator::size_of_vec;
+use crate::core::util::ram_usage_estimator::{size_of_array_capacity, size_of_vec};
 use crate::core::util::{SliceCopyOps, TryIntoInt};
 
 /// This struct enables the allocation of fixed-size buffers and their
@@ -38,7 +38,7 @@ use crate::core::util::{SliceCopyOps, TryIntoInt};
 /// This is an internal API.
 #[derive(Debug)]
 pub struct ByteBlockPool {
-  buffers: Vec<Vec<u8>>,
+  buffers: smallvec::SmallVec<[Vec<u8>; 1]>,
   // Current head buffer's index
   pub(crate) buffer_upto: Option<usize>,
   allocator: AllocatorByteEnum,
@@ -62,7 +62,7 @@ impl ByteBlockPool {
   {
     let allocator = allocator.into();
     ByteBlockPool {
-      buffers: vec![],
+      buffers: smallvec::SmallVec::new(),
       buffer_upto: None,
       allocator,
       byte_offset: -BYTE_BLOCK_SIZE,
@@ -123,7 +123,11 @@ impl ByteBlockPool {
     };
 
     if next_upto == self.buffers.len() {
-      self.buffers.push(self.allocator.get_byte_block());
+      let block = self.allocator.get_byte_block();
+      if self.buffers.len() == 1 && !self.buffers.spilled() {
+        self.buffers.reserve_exact(3);
+      }
+      self.buffers.push(block);
     }
     // Allocate new buffer and advance the pool to it
     self.buffer_upto = Some(next_upto);
@@ -375,7 +379,11 @@ impl ByteBlockPool {
 }
 impl Accountable for ByteBlockPool {
   fn ram_bytes_used(&self) -> Result<i64> {
-    let mut bytes = size_of_vec(&self.buffers);
+    let mut bytes = if self.buffers.spilled() {
+      size_of_array_capacity::<Vec<u8>>(self.buffers.capacity())
+    } else {
+      0
+    };
     for buffer in &self.buffers {
       bytes = bytes.saturating_add(size_of_vec(buffer));
     }

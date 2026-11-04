@@ -25,8 +25,8 @@ pub(crate) struct PackedWriter<'a, T> {
   finished: bool,
   format: Format,
   encoder: &'static BulkOperationPackedEnum,
-  next_blocks: Vec<u8>,
-  next_values: Vec<i64>,
+  next_blocks: smallvec::SmallVec<[u8; 32]>,
+  next_values: smallvec::SmallVec<[i64; 8]>,
   iterations: usize,
   off: usize,
   written: i32,
@@ -48,8 +48,8 @@ where
     let encoder = of(format, bits_per_value)?;
     debug_assert!(value_count >= 0);
     let iterations = encoder.compute_iterations(value_count, mem) as usize;
-    let next_blocks = vec![0; iterations * Encoder::byte_block_count(encoder)];
-    let next_values = vec![0; iterations * Encoder::byte_value_count(encoder)];
+    let next_blocks = smallvec::smallvec![0; iterations * Encoder::byte_block_count(encoder)];
+    let next_values = smallvec::smallvec![0; iterations * Encoder::byte_value_count(encoder)];
 
     Ok(Self {
       finished: false,

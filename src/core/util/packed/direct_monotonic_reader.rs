@@ -34,9 +34,7 @@ pub struct DirectMonotonicReader<R> {
   block_mask: usize,
   readers: Box<[DirectPackedEnum<R>]>,
   has_merge_reader: bool,
-  mins: Box<[i64]>,
-  avgs: Box<[f32]>,
-  bpvs: Box<[u8]>,
+  metadata: Box<[(i64, f32, u8)]>,
   slice: R,
 }
 
@@ -44,13 +42,14 @@ impl<R> DirectMonotonicReader<R> {
   pub(crate) fn new(
     block_shift: i32,
     readers: Vec<DirectPackedEnum<R>>,
-    mins: Vec<i64>,
-    avgs: Vec<f32>,
-    bpvs: Vec<u8>,
+    meta: &Meta,
     slice: R,
   ) -> Result<Self> {
     let readers_len = readers.len();
-    if readers_len != mins.len() || readers_len != avgs.len() || readers_len != bpvs.len() {
+    if readers_len != meta.mins.len()
+      || readers_len != meta.avgs.len()
+      || readers_len != meta.bpvs.len()
+    {
       return Err(LuceneError::illegal_argument(String::from(
         "Mismatched array lengths",
       )));
@@ -64,9 +63,13 @@ impl<R> DirectMonotonicReader<R> {
       block_mask,
       readers: readers.into_boxed_slice(),
       has_merge_reader,
-      mins: mins.into_boxed_slice(),
-      avgs: avgs.into_boxed_slice(),
-      bpvs: bpvs.into_boxed_slice(),
+      metadata: meta
+        .mins
+        .iter()
+        .zip(&meta.avgs)
+        .zip(&meta.bpvs)
+        .map(|((&min, &avg), &bpv)| (min, avg, bpv))
+        .collect(),
       slice,
     })
   }
@@ -81,12 +84,13 @@ where
   fn get_bounds(&self, index: usize) -> Result<[i64; 2]> {
     let block = index >> self.block_shift;
     let block_index = index & self.block_mask;
-    let lower_bound =
-      self.mins[block].wrapping_add((self.avgs[block] * (block_index as f32)) as i64);
+    let lower_bound = self.metadata[block]
+      .0
+      .wrapping_add((self.metadata[block].1 * (block_index as f32)) as i64);
     let upper_bound = lower_bound
-      .wrapping_add(1i64.wrapping_shl(self.bpvs[block] as u32))
+      .wrapping_add(1i64.wrapping_shl(self.metadata[block].2 as u32))
       .wrapping_sub(1);
-    if self.bpvs[block] == 64 || upper_bound < lower_bound {
+    if self.metadata[block].2 == 64 || upper_bound < lower_bound {
       Ok([i64::MIN, i64::MAX])
     } else {
       Ok([lower_bound, upper_bound])
@@ -159,14 +163,7 @@ where
         )?);
       }
     }
-    DirectMonotonicReader::new(
-      meta.block_shift,
-      readers,
-      meta.mins.clone(),
-      meta.avgs.clone(),
-      meta.bpvs.clone(),
-      data,
-    )
+    DirectMonotonicReader::new(meta.block_shift, readers, meta, data)
   }
 }
 impl<R> LongValues for DirectMonotonicReader<R>
@@ -178,8 +175,9 @@ where
     let block_index = index & self.block_mask;
     let delta = self.readers[block].read_from_slice(block_index, Some(&self.slice))?;
     Ok(
-      self.mins[block]
-        .wrapping_add((self.avgs[block] * (block_index as f32)) as i64)
+      self.metadata[block]
+        .0
+        .wrapping_add((self.metadata[block].1 * (block_index as f32)) as i64)
         .wrapping_add(delta),
     )
   }
@@ -190,8 +188,9 @@ where
     let block_index = index & self.block_mask;
     let delta = self.readers[block].read_from_slice_shared(block_index, Some(&self.slice))?;
     Ok(
-      self.mins[block]
-        .wrapping_add((self.avgs[block] * (block_index as f32)) as i64)
+      self.metadata[block]
+        .0
+        .wrapping_add((self.metadata[block].1 * (block_index as f32)) as i64)
         .wrapping_add(delta),
     )
   }

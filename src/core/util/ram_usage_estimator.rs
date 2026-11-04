@@ -163,7 +163,7 @@ pub fn human_readable_units(bytes: i64) -> String {
   }
 }
 
-fn size_of_array_capacity<T>(capacity: usize) -> i64 {
+pub(crate) fn size_of_array_capacity<T>(capacity: usize) -> i64 {
   let elem_size = mem::size_of::<T>();
   if elem_size == 0 || capacity == 0 {
     return 0;
