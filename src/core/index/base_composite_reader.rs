@@ -112,11 +112,11 @@ where
     sub_readers: Arc<[R]>,
     index_reader_base: &IndexReaderBase,
   ) -> Result<Self> {
-    let mut starts = vec![0usize; sub_readers.len() + 1];
+    let mut starts = Vec::with_capacity(sub_readers.len() + 1);
     let mut max_doc: i64 = 0;
 
-    for (i, reader) in sub_readers.iter().enumerate() {
-      starts[i] = max_doc as usize;
+    for reader in sub_readers.iter() {
+      starts.push(max_doc as usize);
       max_doc += reader.max_doc()? as i64;
       reader.register_parent_reader(index_reader_base)?;
     }
@@ -129,7 +129,7 @@ where
       )));
     }
     let max_doc_i32 = max_doc.try_convert()?;
-    starts[sub_readers.len()] = max_doc_i32;
+    starts.push(max_doc_i32);
 
     Ok(Self {
       sub_reader: sub_readers,

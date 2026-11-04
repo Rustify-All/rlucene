@@ -214,23 +214,16 @@ where
   D: Directory + 'static,
   IO: IOFunction<SegmentCommitInfo<D>, Inner<D>, DefaultLeafReader<D>>,
 {
-  let snapshot;
-  let infos = match infos {
-    Some(infos) => infos,
-    None => {
-      snapshot = inner.segment_infos.try_clone()?;
-      &snapshot
-    },
-  };
+  let mut segment_infos = infos.unwrap_or(&inner.segment_infos).try_clone()?;
   // IndexWriter synchronizes externally before calling
   // us, which ensures infos will not change; so there's
   // no need to process segments in reverse order
-  let num_segments = infos.size();
+  let num_segments = segment_infos.size();
   let mut readers = Vec::with_capacity(num_segments);
   let dir = writer.get_directory();
   let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-    let mut segment_infos = infos.try_clone()?;
-    let mut infos_upto = 0;
+    let mut dropped = Vec::new();
+    let infos = infos.unwrap_or(&segment_infos);
     for i in 0..num_segments {
       // NOTE: important that we use infos not
       // segmentInfos here, so that we pass the unpruned entry from the
@@ -254,11 +247,13 @@ where
       {
         // Steal the ref
         readers.push(reader);
-        infos_upto += 1;
       } else {
         reader.dec_ref()?;
-        segment_infos.remove(infos_upto);
+        dropped.push(i);
       }
+    }
+    for (removed, original_index) in dropped.into_iter().enumerate() {
+      segment_infos.remove(original_index - removed);
     }
     let leaf_sorter = writer.get_config()?.get_leaf_sorter().cloned();
     writer.inc_ref_deleter(&segment_infos, Some(inner))?;

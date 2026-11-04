@@ -367,10 +367,11 @@ where
     }
     Ok(any)
   }
-  /// Returns a list of all currently maintained `ReadersAndUpdates` sorted by their RAM consumption
-  /// from largest to smallest. This list can also contain readers that don't consume any RAM at this
-  /// point, i.e. readers without any buffered updates.
-  pub(crate) fn get_readers_by_ram(&self) -> Vec<Arc<ReadersAndUpdates<D>>> {
+  /// Iterates over all currently maintained `ReadersAndUpdates` in descending order of RAM usage.
+  /// This includes readers without any buffered updates.
+  pub(crate) fn get_readers_by_ram(
+    &self,
+  ) -> impl ExactSizeIterator<Item = Arc<ReadersAndUpdates<D>>> {
     struct RamRecordingHolder<D>
     where
       D: Directory,
@@ -381,9 +382,6 @@ where
 
     let mut holders: Vec<RamRecordingHolder<D>> = {
       let inner = self.inner.lock();
-      if inner.reader_map.is_empty() {
-        return Vec::new();
-      }
       // we have to record the RAM usage once and then sort
       // since the RAM usage can change concurrently and that will confuse the sort or hit an
       // assertion
@@ -401,7 +399,7 @@ where
     // Sort this outside of the lock by largest ramBytesUsed:
     holders.sort_unstable_by_key(|holder| std::cmp::Reverse(holder.ram_bytes_used));
 
-    holders.into_iter().map(|h| h.updates).collect()
+    holders.into_iter().map(|h| h.updates)
   }
   /// Remove all our references to readers, and commits any pending changes.
   pub(crate) fn drop_all(&self, segment_infos: &mut SegmentInfos<D>) -> Result<()> {

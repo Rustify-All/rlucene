@@ -129,6 +129,7 @@ struct ConcurrentMergeSchedulerShared {
 pub(crate) struct Inner {
   /** List of currently active merge work. */
   merge_threads: Vec<Arc<MergeThreadState>>,
+  active_merge_order: Vec<usize>,
   // Max number of merge threads allowed to be running at once. When there are more merges then
   // this, we forcefully pause the larger ones, letting the smaller ones run, up until
   // max_merge_count merges at which point we forcefully pause incoming threads (that presumably
@@ -762,6 +763,7 @@ impl ConcurrentMergeScheduler {
   pub(crate) fn with_hook(hook: ConcurrentMergeSchedulerHook) -> Self {
     let inner = Mutex::new(Inner {
       merge_threads: Vec::new(),
+      active_merge_order: Vec::new(),
       max_thread_count: AUTO_DETECT_MERGES_AND_THREADS,
       max_merge_count: AUTO_DETECT_MERGES_AND_THREADS,
       merge_thread_count: 0,
@@ -1013,7 +1015,9 @@ impl ConcurrentMergeSchedulerDefaults {
       thread_idx += 1;
     }
 
-    let mut active_merges: Vec<usize> = (0..inner.merge_threads.len()).collect();
+    let active_merges = &mut inner.active_merge_order;
+    active_merges.clear();
+    active_merges.extend(0..inner.merge_threads.len());
 
     // Sort the merge threads, largest first:
     active_merges.sort_by(|left, right| {
@@ -1040,7 +1044,7 @@ impl ConcurrentMergeSchedulerDefaults {
       }
     }
 
-    for (thread_idx, merge_idx) in active_merges.into_iter().enumerate() {
+    for (thread_idx, &merge_idx) in active_merges.iter().enumerate() {
       let merge_thread = &inner.merge_threads[merge_idx];
 
       // pause the thread if max_thread_count is smaller than the number of merge threads.
