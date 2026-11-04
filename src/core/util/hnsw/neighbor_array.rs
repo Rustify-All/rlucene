@@ -242,6 +242,13 @@ impl<const DESC_ORDER: bool> NeighborArray<DESC_ORDER> {
     &cast_slice::<u64, f32>(&self.data)[self.data.len()..]
   }
 
+  pub(crate) fn clear_with_capacity(&mut self, min_capacity: usize) {
+    self.clear();
+    if self.data.len() < min_capacity {
+      self.data.resize(min_capacity, 0);
+    }
+  }
+
   pub fn clear(&mut self) {
     self.size = 0;
     self.sorted_node_size = 0;

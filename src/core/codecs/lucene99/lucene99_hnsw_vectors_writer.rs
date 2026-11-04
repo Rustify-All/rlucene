@@ -328,14 +328,13 @@ where
 
     for level in 1..num_levels {
       let mut nodes_on_level = graph.get_nodes_on_level(level)?;
-      let mut new_nodes = vec![0usize; nodes_on_level.size()];
+      let mut new_nodes = Vec::with_capacity(nodes_on_level.size());
 
-      let mut n = 0;
       while nodes_on_level.has_next() {
-        new_nodes[n] = old_to_new_map[nodes_on_level
+        let node = nodes_on_level
           .next()
-          .ok_or_else(|| LuceneError::illegal_state("Expected more nodes on level"))?];
-        n += 1;
+          .ok_or_else(|| LuceneError::illegal_state("Expected more nodes on level"))?;
+        new_nodes.push(old_to_new_map[node]);
       }
 
       new_nodes.sort_unstable();
@@ -373,20 +372,18 @@ where
 
     nnodes[..size].sort_unstable();
 
-    for i in (1..size).rev() {
-      debug_assert!(
-        (nnodes[i] as usize) < max_ord,
-        "node too large: {} >= {}",
-        nnodes[i],
-        max_ord
-      );
-      nnodes[i] -= nnodes[i - 1];
-    }
+    Self::write_neighbor_deltas(vector_index, &nnodes[..size], max_ord)?;
 
-    for &node in nnodes.iter().take(size) {
-      vector_index.write_vint(node as i32)?;
-    }
+    Ok(())
+  }
 
+  fn write_neighbor_deltas(out: &mut F::IndexOutput, sorted: &[u32], max_ord: usize) -> Result<()> {
+    debug_assert!(sorted.iter().skip(1).all(|&node| (node as usize) < max_ord));
+    let mut previous = 0;
+    for &node in sorted {
+      out.write_vint((node - previous) as i32)?;
+      previous = node;
+    }
     Ok(())
   }
 
@@ -424,19 +421,7 @@ where
         let nnodes = &mut neighbors.nodes_mut()[..size];
         nnodes.sort_unstable();
 
-        for i in (1..size).rev() {
-          debug_assert!(
-            (nnodes[i] as usize) < count_on_level0,
-            "node too large: {} >= {}",
-            nnodes[i],
-            count_on_level0
-          );
-          nnodes[i] -= nnodes[i - 1];
-        }
-
-        for &n in nnodes.iter() {
-          vector_index.write_vint(n as i32)?;
-        }
+        Self::write_neighbor_deltas(vector_index, nnodes, count_on_level0)?;
 
         let offset = (vector_index.get_file_pointer()? - offset_start).try_convert()?;
 
@@ -493,12 +478,10 @@ where
 
         meta.write_vint(nol.len() as i32)?;
 
-        for i in (1..nol.len()).rev() {
-          nol[i] -= nol[i - 1];
-        }
-
-        for &n in &nol {
-          meta.write_vint(n as i32)?;
+        let mut previous = 0;
+        for &node in &nol {
+          meta.write_vint((node - previous) as i32)?;
+          previous = node;
         }
       } else {
         debug_assert_eq!(

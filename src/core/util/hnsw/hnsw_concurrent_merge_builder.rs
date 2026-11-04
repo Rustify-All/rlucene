@@ -134,10 +134,10 @@ where
       )?;
     }
 
-    let mut tasks = Vec::with_capacity(self.workers.len());
-    for worker in &mut self.workers {
-      tasks.push(move || worker.run(max_ord));
-    }
+    let tasks = self
+      .workers
+      .iter_mut()
+      .map(|worker| move || worker.run(max_ord));
     self.task_executor.invoke_all(tasks)?;
 
     self.finish()?;

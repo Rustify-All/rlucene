@@ -56,6 +56,8 @@ pub struct HnswGraphBuilder<
   graph_searcher: HnswGraphSearcher<BS, DEFAULT_SEARCHER>,
   entry_candidates: GraphBuilderKnnCollector,
   beam_candidates: GraphBuilderKnnCollector,
+  level_candidates: smallvec::SmallVec<[NeighborArray<false>; 1]>,
+  selected_candidates: smallvec::SmallVec<[bool; 128]>,
   hnsw: Arc<OnHeapHnswGraph>,
   hnsw_lock: Option<HnswLock>,
   info_stream: InfoStreamMT,
@@ -188,6 +190,8 @@ where
       graph_searcher,
       entry_candidates: GraphBuilderKnnCollector::new(1)?,
       beam_candidates: GraphBuilderKnnCollector::new(beam_width)?,
+      level_candidates: smallvec::SmallVec::new(),
+      selected_candidates: smallvec::SmallVec::new(),
       info_stream: get_default_info_stream(),
       frozen: false,
       hook,
@@ -476,6 +480,7 @@ where
 }
 
 impl HnswGraphBuilderDefaults {
+  #[allow(clippy::too_many_arguments)]
   fn add_diverse_neighbors<T>(
     hnsw: &OnHeapHnswGraph,
     scorer_supplier: &T,
@@ -484,6 +489,7 @@ impl HnswGraphBuilderDefaults {
     level: usize,
     node: usize,
     candidates: &NeighborArray<false>,
+    selected_candidates: &mut smallvec::SmallVec<[bool; 128]>,
   ) -> Result<()>
   where
     T: RandomVectorScorerSupplier,
@@ -494,15 +500,16 @@ impl HnswGraphBuilderDefaults {
      * already-selected neighbors (ie selected in this method,
      * since the node is new and has no prior neighbors).
      */
-    let mut mask_buffer = [false; 128];
-    let mask = Self::select_and_link_diverse(
+    selected_candidates.clear();
+    selected_candidates.resize(candidates.size(), false);
+    Self::select_and_link_diverse(
       hnsw,
       scorer_supplier,
       candidates,
       max_conn_on_level,
       level,
       node,
-      &mut mask_buffer,
+      selected_candidates,
     )?;
 
     // Link the selected nodes to the new node, and the new node to the selected
@@ -513,7 +520,7 @@ impl HnswGraphBuilderDefaults {
     // using local candidates and mask is a safer option.
     #[allow(clippy::needless_range_loop)]
     for i in 0..candidates.size() {
-      if !mask[i] {
+      if !selected_candidates[i] {
         continue;
       }
       let nbr = candidates.nodes()[i] as usize;
@@ -529,28 +536,21 @@ impl HnswGraphBuilderDefaults {
   }
   ///  This method will select neighbors to add and return a mask telling the
   /// caller which candidates are selected
-  fn select_and_link_diverse<'a, T>(
+  fn select_and_link_diverse<T>(
     hnsw: &OnHeapHnswGraph,
     scorer_supplier: &T,
     candidates: &NeighborArray<false>,
     max_conn_on_level: usize,
     level: usize,
     node: usize,
-    mask_buffer: &'a mut [bool; 128],
-  ) -> Result<Cow<'a, [bool]>>
+    mask: &mut [bool],
+  ) -> Result<()>
   where
     T: RandomVectorScorerSupplier,
   {
     let max_node_id = hnsw.max_node_id();
     hnsw.with_neighbors_mut(level, node, |neighbors| {
       debug_assert_eq!(neighbors.size(), 0); // new node
-      let mut heap_mask = Vec::new();
-      let mask = if candidates.size() <= mask_buffer.len() {
-        &mut mask_buffer[..candidates.size()]
-      } else {
-        heap_mask = vec![false; candidates.size()];
-        &mut heap_mask
-      };
       let mut i = candidates.size();
       // Select the best maxConnOnLevel neighbors of the new node, applying the
       // diversity heuristic
@@ -576,19 +576,15 @@ impl HnswGraphBuilderDefaults {
           neighbors.add_in_order(c_node, c_score)?;
         }
       }
-      if candidates.size() <= mask_buffer.len() {
-        Ok(Cow::Borrowed(&mask_buffer[..candidates.size()]))
-      } else {
-        Ok(Cow::Owned(heap_mask))
-      }
+      Ok(())
     })
   }
   pub(crate) fn pop_to_scratch(
     candidates: &mut GraphBuilderKnnCollector,
     scratch: &mut NeighborArray<false>,
   ) -> Result<()> {
-    scratch.clear();
     let candidate_count = candidates.size();
+    scratch.clear_with_capacity(candidate_count);
 
     for _ in 0..candidate_count {
       let max_similarity = candidates.minimum_score();
@@ -701,8 +697,13 @@ impl HnswGraphBuilderDefaults {
         }
       };
       let top = std::cmp::min(node_level, cur_max_level);
-      let mut scratch_per_level: smallvec::SmallVec<[NeighborArray<false>; 1]> =
-        smallvec::smallvec![NeighborArray::<false>::default(); top - lowest_unset_level + 1];
+      let level_count = top - lowest_unset_level + 1;
+      if builder.level_candidates.len() < level_count {
+        builder
+          .level_candidates
+          .resize_with(level_count, NeighborArray::default);
+      }
+      let scratch_per_level = &mut builder.level_candidates[..level_count];
       let candidates = &mut builder.entry_candidates;
       for level in (node_level + 1..=cur_max_level).rev() {
         candidates.clear();
@@ -760,14 +761,13 @@ impl HnswGraphBuilderDefaults {
         } else {
           Cow::Owned(candidates.pop_until_nearest_k_nodes()?)
         };
-        let mut scratch = NeighborArray::<false>::new(candidates.size());
-        Self::pop_to_scratch(candidates, &mut scratch)?;
-        scratch_per_level[i] = scratch;
+        let scratch = &mut scratch_per_level[i];
+        Self::pop_to_scratch(candidates, scratch)?;
       }
 
       // then do connections from bottom up
       let len = scratch_per_level.len();
-      for (i, scratch) in scratch_per_level.into_iter().enumerate() {
+      for (i, scratch) in scratch_per_level.iter().enumerate() {
         Self::add_diverse_neighbors(
           builder.hnsw.as_ref(),
           &builder.scorer_supplier,
@@ -775,7 +775,8 @@ impl HnswGraphBuilderDefaults {
           builder.hnsw_lock.as_ref(),
           i + lowest_unset_level,
           node,
-          &scratch,
+          scratch,
+          &mut builder.selected_candidates,
         )?;
       }
 
