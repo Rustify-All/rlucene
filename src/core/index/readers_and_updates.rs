@@ -436,7 +436,7 @@ where
         ty
       );
 
-      let mut updates_to_apply = Vec::with_capacity(updates.len());
+      let mut updates_to_apply = smallvec::SmallVec::with_capacity(updates.len());
       let mut bytes: i64 = 0;
 
       for update in updates {
@@ -1410,12 +1410,12 @@ where
 
 struct FunctionImpl<'a> {
   field_info: &'a Arc<FieldInfo>,
-  updates_to_apply: Vec<&'a Arc<DocValuesFieldUpdatesEnum>>,
+  updates_to_apply: smallvec::SmallVec<[&'a Arc<DocValuesFieldUpdatesEnum>; 4]>,
 }
 impl<'a> FunctionImpl<'a> {
   fn new(
     field_info: &'a Arc<FieldInfo>,
-    updates_to_apply: Vec<&'a Arc<DocValuesFieldUpdatesEnum>>,
+    updates_to_apply: smallvec::SmallVec<[&'a Arc<DocValuesFieldUpdatesEnum>; 4]>,
   ) -> Self {
     Self {
       field_info,

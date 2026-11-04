@@ -29,7 +29,7 @@ use crate::core::util::bits::{Bits, BitsEnum2, MatchAllBits};
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::fixed_bit_set::FixedBitSet;
 use crate::core::util::ram_usage_estimator::{
-  size_of_str as ram_size_of_str, size_of_string as ram_size_of_string, size_of_vec,
+  size_of_array_capacity, size_of_str as ram_size_of_str, size_of_string as ram_size_of_string,
 };
 use crate::core::util::{
   BytesRefArray, Counter, IndexedBytesRefIterator, IndexedBytesRefIteratorImpl, NaturalOrder,
@@ -64,14 +64,14 @@ pub(crate) struct FieldUpdatesBuffer {
   term_sort_state: Option<SortState>,
   // `None` when buffering numeric values.
   byte_values: Option<BytesRefArray>,
-  docs_upto: Vec<i32>,
+  docs_upto: smallvec::SmallVec<[i32; 1]>,
   // `None` when buffering binary values.
-  numeric_values: Option<Vec<i64>>,
+  numeric_values: Option<smallvec::SmallVec<[i64; 1]>>,
   has_values: Option<FixedBitSet>,
   max_numeric: i64,
   min_numeric: i64,
-  fields: Vec<usize>,
-  field_names: Vec<String>,
+  fields: smallvec::SmallVec<[usize; 1]>,
+  field_names: smallvec::SmallVec<[String; 1]>,
   is_numeric: bool,
   finished: bool,
 }
@@ -104,14 +104,18 @@ impl FieldUpdatesBuffer {
       term_values,
       term_sort_state: None,
       byte_values,
-      docs_upto: vec![doc_upto],
-      numeric_values: if is_numeric { Some(vec![]) } else { None },
+      docs_upto: smallvec::smallvec![doc_upto],
+      numeric_values: if is_numeric {
+        Some(smallvec::SmallVec::new())
+      } else {
+        None
+      },
       has_values,
       max_numeric: i64::MIN,
       min_numeric: i64::MAX,
       // TODO: we should estimate the size of the fields array
-      fields: vec![0],
-      field_names: vec![term.field.clone()],
+      fields: smallvec::smallvec![0],
+      field_names: smallvec::smallvec![term.field.clone()],
       is_numeric,
       finished: false,
     };
@@ -130,9 +134,9 @@ impl FieldUpdatesBuffer {
     let has_values = numeric.has_value();
     let (numeric_values, max_numeric, min_numeric) = if has_values {
       let value = numeric.get_value()?;
-      (vec![value], value, value)
+      (smallvec::smallvec![value], value, value)
     } else {
-      (vec![0], i64::MIN, i64::MAX)
+      (smallvec::smallvec![0], i64::MIN, i64::MAX)
     };
     let mut buffer = Self::new(bytes_used, initial_value, doc_upto, true)?;
     buffer.numeric_values = Some(numeric_values);
@@ -175,8 +179,7 @@ impl FieldUpdatesBuffer {
   }
 
   // Keep the old Vec<String> accounting so RAM-based flush thresholds do not change.
-  #[allow(clippy::ptr_arg)]
-  fn size_of_fields(fields: &Vec<usize>, field_names: &[String]) -> i64 {
+  fn size_of_fields(fields: &smallvec::SmallVec<[usize; 1]>, field_names: &[String]) -> i64 {
     let vec_size = (std::mem::size_of::<String>() as i64)
       .saturating_mul(i64::try_from(fields.capacity()).unwrap_or(i64::MAX));
     fields.iter().fold(vec_size, |size, field| {
@@ -227,7 +230,12 @@ impl FieldUpdatesBuffer {
         } else {
           0
         };
-        ArrayUtil::grow_with(&mut self.fields, ord + 1, || fill)?;
+        ArrayUtil::oversize(ord + 1, size_of::<usize>())?;
+        if self.fields.capacity() < ord + 1 {
+          let capacity = (ord + 1).max(self.fields.capacity() * 2).max(4);
+          self.fields.reserve_exact(capacity - self.fields.len());
+        }
+        self.fields.resize(ord + 1, fill);
         self.fields[ord] = field_index;
         self.bytes_used.add_and_get(
           Self::size_of_fields(&self.fields, &self.field_names).saturating_sub(old_size),
@@ -241,16 +249,23 @@ impl FieldUpdatesBuffer {
     let docs_upto_len = self.docs_upto.len();
     if self.docs_upto[0] != doc_upto || docs_upto_len != 1 {
       if docs_upto_len <= ord {
-        let old_size = size_of_vec(&self.docs_upto);
+        let old_size = size_of_array_capacity::<i32>(self.docs_upto.capacity());
         let fill = if docs_upto_len == 1 {
           self.docs_upto[0]
         } else {
           0
         };
-        ArrayUtil::grow_with(&mut self.docs_upto, ord + 1, || fill)?;
-        self
-          .bytes_used
-          .add_and_get(size_of_vec(&self.docs_upto).saturating_sub(old_size));
+        ArrayUtil::oversize(ord + 1, size_of::<i32>())?;
+        if self.docs_upto.capacity() < ord + 1 {
+          let capacity = (ord + 1).max(self.docs_upto.capacity() * 2).max(4);
+          self
+            .docs_upto
+            .reserve_exact(capacity - self.docs_upto.len());
+        }
+        self.docs_upto.resize(ord + 1, fill);
+        self.bytes_used.add_and_get(
+          size_of_array_capacity::<i32>(self.docs_upto.capacity()).saturating_sub(old_size),
+        );
       }
       self.docs_upto[ord] = doc_upto;
     }
@@ -295,16 +310,21 @@ impl FieldUpdatesBuffer {
     let numeric_values_len = numeric_values.len();
     if numeric_values[0] != value || numeric_values_len != 1 {
       if numeric_values_len <= ord {
-        let old_size = size_of_vec(numeric_values);
+        let old_size = (numeric_values.capacity() * BitUtil::LONG_BYTES) as i64;
         let fill = if numeric_values_len == 1 {
           numeric_values[0]
         } else {
           0
         };
-        ArrayUtil::grow_with(numeric_values, ord + 1, || fill)?;
-        self
-          .bytes_used
-          .add_and_get(size_of_vec(numeric_values).saturating_sub(old_size));
+        ArrayUtil::oversize(ord + 1, BitUtil::LONG_BYTES)?;
+        if numeric_values.capacity() < ord + 1 {
+          let capacity = (ord + 1).max(numeric_values.capacity() * 2).max(4);
+          numeric_values.reserve_exact(capacity - numeric_values.len());
+        }
+        numeric_values.resize(ord + 1, fill);
+        self.bytes_used.add_and_get(
+          ((numeric_values.capacity() * BitUtil::LONG_BYTES) as i64).saturating_sub(old_size),
+        );
       }
       numeric_values[ord] = value;
     }

@@ -49,7 +49,7 @@ use crate::core::util::bytes_ref_iterator::BytesRefIterator;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::info_stream::{InfoStream, InfoStreamMT};
 use crate::core::util::int_consumer::IntConsumer;
-use crate::core::util::ram_usage_estimator::size_of_vec;
+use crate::core::util::ram_usage_estimator::size_of_array_capacity;
 use crate::core::util::{Counter, ToInt};
 use parking_lot::lock_api::ReentrantMutexGuard;
 use parking_lot::{RawMutex, RawThreadId, ReentrantMutex};
@@ -77,9 +77,8 @@ pub(crate) struct FrozenBufferedUpdates {
   info_stream: InfoStreamMT,
   // Terms, in sorted order:
   pub delete_terms: PrefixCodedTerms,
-  // Parallel array of deleted query, and the docIDUpto for each
-  pub delete_queries: Vec<Query>,
-  delete_query_limits: Vec<i32>,
+  // Query owners and their matching docIDUpto limits.
+  pub delete_queries: Vec<(Query, i32)>,
   // Counts down once all deletes/updates have been applied
   pub(crate) applied: AtomicBool,
   pub(crate) apply_lock: ReentrantMutex<()>,
@@ -113,7 +112,6 @@ impl FrozenBufferedUpdates {
     let delete_terms = builder.finish();
 
     let mut delete_queries = Vec::with_capacity(updates.delete_queries.len());
-    let mut delete_query_limits = Vec::with_capacity(updates.delete_queries.len());
     for value in updates.field_updates.values_mut() {
       value.finish()?
     }
@@ -121,8 +119,8 @@ impl FrozenBufferedUpdates {
 
     let bytes_used = delete_terms
       .ram_bytes_used()?
-      .saturating_add(size_of_vec(&delete_queries))
-      .saturating_add(size_of_vec(&delete_query_limits))
+      .saturating_add(size_of_array_capacity::<Query>(delete_queries.capacity()))
+      .saturating_add(size_of_array_capacity::<i32>(delete_queries.capacity()))
       .saturating_add(updates.field_updates_bytes_used.get()) as i32;
     if info_stream.is_enabled("BD") {
       let private_segment_msg = match private_segment {
@@ -144,15 +142,13 @@ impl FrozenBufferedUpdates {
     }
     // Retain the source maps if a fallible freeze operation fails.
     for (query, limit) in std::mem::take(&mut updates.delete_queries) {
-      delete_queries.push(query);
-      delete_query_limits.push(limit);
+      delete_queries.push((query, limit));
     }
     let field_updates = std::mem::take(&mut updates.field_updates);
     Ok(Self {
       info_stream,
       delete_terms,
       delete_queries,
-      delete_query_limits,
       applied: AtomicBool::new(false),
       apply_lock: ReentrantMutex::new(()),
       field_updates,
@@ -296,7 +292,7 @@ impl FrozenBufferedUpdates {
   {
     let mut update_count: i64 = 0;
 
-    let mut resolved_updates = Vec::with_capacity(updates.len());
+    let mut resolved_updates = Vec::new();
 
     for (update_field, value) in updates.iter() {
       let is_numeric = value.is_numeric();
@@ -356,6 +352,9 @@ impl FrozenBufferedUpdates {
               let sub_type = sub.sub_type();
               DocValuesFieldUpdates::new(max_doc, del_gen, field, sub_type, sub)?
             };
+            if resolved_updates.is_empty() {
+              resolved_updates.reserve_exact(updates.len());
+            }
             resolved_updates.push(v);
             dv_updates = Some(resolved_updates.len() - 1);
           }
@@ -503,10 +502,10 @@ impl FrozenBufferedUpdates {
         .ok_or_else(|| LuceneError::illegal_state("segment is missing"))?;
       let mut reader_context = seg_state.reader.clone().get_context()?;
 
-      for (i, query0) in self.delete_queries.iter().cloned().enumerate() {
+      for (query0, query_limit) in self.delete_queries.iter().cloned() {
         let limit = if self.del_gen == seg_state.del_gen {
           debug_assert!(self.private_segment.is_some());
-          self.delete_query_limits[i]
+          query_limit
         } else {
           i32::MAX
         };

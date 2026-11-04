@@ -296,11 +296,17 @@ impl PrefixCodedTermsBuilder {
       0,
       suffix,
     )?;
-    // A size error must preserve the previous term used for prefix encoding.
-    self.last_term_bytes.grow_no_copy(bytes.length)?;
-    self
-      .last_term_bytes
-      .copy_bytes_from_vec(source, bytes.offset, bytes.length)?;
+    if self.last_term_bytes.bytes().bytes.len() >= bytes.length {
+      self.last_term_bytes.bytes_mut().bytes[prefix..bytes.length]
+        .copy_from_slice(&source[bytes.offset + prefix..bytes.offset + bytes.length]);
+      self.last_term_bytes.set_length(bytes.length);
+    } else {
+      // A size error must preserve the previous term used for prefix encoding.
+      self.last_term_bytes.grow_no_copy(bytes.length)?;
+      self
+        .last_term_bytes
+        .copy_bytes_from_vec(source, bytes.offset, bytes.length)?;
+    }
     if let Some(field) = new_field {
       self.last_field = field;
     }

@@ -25,7 +25,9 @@ use crate::core::util::array_util::ArrayUtil;
 use crate::core::util::bytes_ref_hash::DEFAULT_CAPACITY;
 use crate::core::util::bytes_ref_hash::{BytesRefHash, DirectBytesStartArray};
 use crate::core::util::error::lucene_error::{LuceneError, Result};
-use crate::core::util::ram_usage_estimator::{size_of_hash_map, size_of_string, size_of_vec};
+use crate::core::util::ram_usage_estimator::{
+  size_of_array_capacity, size_of_hash_map, size_of_string,
+};
 use crate::core::util::{AtomicCounter, ByteBlockPool, Counter, SharedCounter};
 #[cfg(test)]
 use parking_lot::Mutex;
@@ -375,8 +377,8 @@ impl DeletedTerms {
   where
     F: FnMut(&str, &BytesRef<&[u8]>, i32) -> Result<()>,
   {
-    let mut delete_fields: Vec<(&String, &mut BytesRefIntMap)> =
-      Vec::with_capacity(self.delete_terms.len());
+    let mut delete_fields: smallvec::SmallVec<[(&String, &mut BytesRefIntMap); 1]> =
+      smallvec::SmallVec::with_capacity(self.delete_terms.len());
     delete_fields.extend(self.delete_terms.iter_mut());
     delete_fields.sort_unstable_by(|a, b| a.0.cmp(b.0));
 
@@ -435,7 +437,7 @@ impl fmt::Display for DeletedTerms {
 struct BytesRefIntMap {
   counter: SharedCounter,
   pub(crate) bytes_ref_hash: BytesRefHash<DirectBytesStartArray>,
-  values: Vec<i32>,
+  values: smallvec::SmallVec<[i32; DEFAULT_CAPACITY]>,
 }
 
 impl BytesRefIntMap {
@@ -447,9 +449,8 @@ impl BytesRefIntMap {
     Ok(BytesRefIntMap::new_impl(counter, bytes_ref_hash))
   }
   fn new_impl(counter: SharedCounter, bytes_ref_hash: BytesRefHash<DirectBytesStartArray>) -> Self {
-    let values = Vec::with_capacity(DEFAULT_CAPACITY);
-
-    counter.add_and_get(size_of_vec(&values));
+    // Inline slots are already included in the map bucket payload.
+    let values = smallvec::SmallVec::with_capacity(DEFAULT_CAPACITY);
 
     Self {
       counter,
@@ -479,12 +480,22 @@ impl BytesRefIntMap {
     } else {
       let index = e as usize;
       if index >= self.values.len() {
-        let old_size = size_of_vec(&self.values);
+        let old_capacity = if self.values.spilled() {
+          self.values.capacity()
+        } else {
+          0
+        };
         debug_assert_eq!(index, self.values.len());
-        ArrayUtil::grow_capacity(&mut self.values, index + 1)?;
-        self
-          .counter
-          .add_and_get(size_of_vec(&self.values).saturating_sub(old_size));
+        ArrayUtil::oversize(index + 1, size_of::<i32>())?;
+        self.values.reserve(index + 1 - self.values.len());
+        let capacity = if self.values.spilled() {
+          self.values.capacity()
+        } else {
+          0
+        };
+        self.counter.add_and_get(size_of_array_capacity::<i32>(
+          capacity.saturating_sub(old_capacity),
+        ));
         self.values.push(value);
       } else {
         self.values[index] = value;
