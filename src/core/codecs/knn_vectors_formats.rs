@@ -47,6 +47,7 @@ use crate::core::search::doc_id_set_iterator::{BitSetIteratorAccess, DocIdSetIte
 use crate::core::search::knn_collector::KnnCollector;
 use crate::core::search::vector_scorer::VectorScorer;
 use crate::core::store::directory::Directory;
+use crate::core::store::memory_segment_index_input::MappedFloatVectors;
 use crate::core::store::{IndexInput, IndexOutput};
 use crate::core::util::HasIdentity;
 use crate::core::util::accountable::Accountable;
@@ -428,6 +429,13 @@ impl<I: IndexInput> KnnVectorValues for KnnVectorsFormatsFloatVectorValues<I> {
 }
 
 impl<I: IndexInput> FloatVectorValues for KnnVectorsFormatsFloatVectorValues<I> {
+  fn mapped_float_vectors(&self) -> Option<MappedFloatVectors> {
+    match self {
+      Self::Lucene99Hnsw(values) => values.mapped_float_vectors(),
+      Self::Lucene99ScalarQuantized(values) => values.mapped_float_vectors(),
+    }
+  }
+
   type VectorValue<'v>
     = FloatVectorValue<'v>
   where

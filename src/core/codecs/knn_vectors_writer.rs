@@ -41,6 +41,7 @@ use crate::core::search::doc_id_set_iterator::NO_MORE_DOCS;
 use crate::core::search::dummy::dummy_vector_scorer::DummyVectorScorer;
 use crate::core::store::IndexOutput;
 use crate::core::store::directory::Directory;
+use crate::core::store::memory_segment_index_input::MappedFloatVectors;
 use crate::core::util::TryIntoInt;
 use crate::core::util::accountable::Accountable;
 use crate::core::util::bits::Bits;
@@ -390,6 +391,7 @@ where
   F: FloatVectorValues,
 {
   values: F,
+  mapped: Option<MappedFloatVectors>,
   iterator: <F as KnnVectorValues>::DocIndexIterator,
   doc_map: DM,
 }
@@ -399,8 +401,10 @@ where
 {
   fn new(values: F, doc_map: DM) -> Result<Self> {
     let iterator = values.iterator()?;
+    let mapped = values.mapped_float_vectors();
     Ok(Self {
       values,
+      mapped,
       iterator,
       doc_map,
     })
@@ -732,6 +736,15 @@ where
       .ok_or_else(|| LuceneError::illegal_state("missing current vector sub"))?;
     let current_sub = &state.doc_id_merger.get_subs()[current].sub;
     let index: usize = current_sub.index()?.try_convert()?;
+    if let Some(mapped) = &current_sub.mapped
+      && let Some(vectors) = mapped.as_slice()
+      && let Some(start) = index.checked_mul(mapped.dimension())
+      && let Some(vector) = vectors
+        .get(start..)
+        .and_then(|tail| tail.get(..mapped.dimension()))
+    {
+      return consume(vector.into());
+    }
     let value: FloatVectorValue<'_> = current_sub.values.vector_value(index)?.into();
     consume(value)
   }

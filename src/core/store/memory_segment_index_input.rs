@@ -48,7 +48,7 @@ struct MappedFile {
 }
 
 /// An immutable native-float view retaining its indexed-file mapping.
-/// Used only by fresh owning scorers; ordinary buffered reads are unchanged.
+/// Used by owning scorers and merge readers; ordinary buffered reads are unchanged.
 pub struct MappedFloatVectors {
   file: Arc<MappedFile>,
   segment: usize,

@@ -42,6 +42,7 @@ use crate::core::index::vector_similarity_function::VectorSimilarityFunction;
 use crate::core::search::knn_collector::KnnCollector;
 use crate::core::store::check_sum_index_input::ChecksumIndexInput;
 use crate::core::store::directory::Directory;
+use crate::core::store::memory_segment_index_input::MappedFloatVectors;
 use crate::core::store::{IOContext, IndexInput, ReadAdvice};
 use crate::core::util::IOUtils;
 use crate::core::util::TryIntoInt;
@@ -704,6 +705,10 @@ where
   R: FloatVectorValues,
   Q: QuantizedByteVectorValues,
 {
+  fn mapped_float_vectors(&self) -> Option<MappedFloatVectors> {
+    self.raw_vector_values.mapped_float_vectors()
+  }
+
   type VectorValue<'v>
     = R::VectorValue<'v>
   where
