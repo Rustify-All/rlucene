@@ -46,9 +46,7 @@ use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
 use crate::core::search::doc_id_set_iterator::NO_MORE_DOCS;
 use crate::core::store::byte_buffers_data_input::ByteBuffersDataInput;
 use crate::core::store::directory::Directory;
-use crate::core::store::{
-  ByteArrayDataInput, ByteBuffersDataOutput, DataInput, IOContext, IndexInput, ReadAdvice,
-};
+use crate::core::store::{ByteArrayDataInput, DataInput, IOContext, IndexInput, ReadAdvice};
 use crate::core::util::IOUtils;
 use crate::core::util::access::ByteSource;
 use crate::core::util::array_util::ArrayUtil;
@@ -63,7 +61,7 @@ use crate::core::util::long_values::LongValues;
 use crate::core::util::packed::Format::Packed;
 use crate::core::util::packed::block_packed_reader_iterator::BlockPackedReaderIterator;
 use crate::core::util::packed::direct_reader::DirectReader;
-use crate::core::util::packed::direct_writer::{DirectWriter, bits_required};
+use crate::core::util::packed::direct_writer::bits_required;
 use crate::core::util::packed::{PackedImpl, PackedInts, ReaderIterator};
 use crate::core::util::{ToInt, TryIntoInt};
 use std::io::Cursor;
@@ -392,7 +390,7 @@ where
     &mut self,
     skip: usize,
     num_fields: usize,
-    flags: &[i32],
+    flags: &[u8],
     num_terms: &[usize],
     term_freqs: &[usize],
     flag: i32,
@@ -407,7 +405,7 @@ where
     let mut to_skip = 0;
     let mut term_index = 0;
     for i in 0..skip {
-      let f = flags[i];
+      let f = i32::from(flags[i]);
       let term_count = num_terms[i];
       if (f & flag) != 0 {
         for j in 0..term_count {
@@ -419,7 +417,7 @@ where
     self.reader.skip(to_skip, &mut self.vectors_stream)?;
     // read doc positions
     for i in 0..num_fields {
-      let f = flags[skip + i];
+      let f = i32::from(flags[skip + i]);
       let term_count = num_terms[skip + i];
 
       if (f & flag) != 0 {
@@ -548,7 +546,9 @@ where
         bits_per_field_num,
         1,
       )?;
-      let mut field_nums = vec![0; total_distinct_fields as usize];
+      let mut field_nums =
+        smallvec::SmallVec::<[i32; 4]>::with_capacity(total_distinct_fields as usize);
+      field_nums.resize(total_distinct_fields as usize, 0);
       for slot in &mut field_nums {
         *slot = it.next()? as i32;
       }
@@ -566,7 +566,7 @@ where
         bits_per_off,
       )?;
       let v = self.vectors_stream.read_vint()?;
-      let mut expanded_flags = smallvec::SmallVec::<[i32; 32]>::new();
+      let mut expanded_flags = smallvec::SmallVec::<[u8; 32]>::new();
       let flags = match v {
         0 => {
           let length = self.vectors_stream.read_vint()?.try_convert()?;
@@ -575,29 +575,13 @@ where
             ByteBuffersDataInput::new(vec![Cursor::new(bytes.as_ref())], length)?,
             *FLAGS_BITS,
           )?;
-          // Direct expansion is bounded by the existing inline flags buffer.
-          if total_fields <= expanded_flags.capacity() {
-            for i in 0..total_fields {
-              let field_num_off = all_field_num_offs.get(i)? as usize;
-              debug_assert!(field_num_off < field_nums.len());
-              expanded_flags.push(field_flags.get(field_num_off)? as i32);
-            }
-            None
-          } else {
-            let mut out = ByteBuffersDataOutput::new();
-            let mut writer =
-              DirectWriter::get_instance(&mut out, total_fields as i64, *FLAGS_BITS)?;
-            for i in 0..total_fields {
-              let field_num_off = all_field_num_offs.get(i)? as usize;
-              debug_assert!(field_num_off < field_nums.len());
-              writer.add(field_flags.get(field_num_off)?)?;
-            }
-            writer.finish()?;
-            Some(DirectReader::get_instance(
-              out.get_data_input_owner(false)?,
-              *FLAGS_BITS,
-            )?)
+          expanded_flags.reserve_exact(total_fields);
+          for i in 0..total_fields {
+            let field_num_off = all_field_num_offs.get(i)? as usize;
+            debug_assert!(field_num_off < field_nums.len());
+            expanded_flags.push(field_flags.get(field_num_off)? as u8);
           }
+          None
         },
         1 => {
           let bytes = Self::slice(&mut self.vectors_stream)?;
@@ -749,7 +733,7 @@ where
     #[allow(clippy::needless_range_loop)] // Preserve indexed failure timing for malformed chunks.
     for i in 0..total_fields {
       let f = if let Some(flags) = &flags {
-        let f = flags.get(i)? as i32;
+        let f = flags.get(i)? as u8;
         all_flags.push(f);
         f
       } else {
@@ -759,13 +743,13 @@ where
       for _ in 0..term_count {
         let freq = term_freqs[term_index];
         term_index += 1;
-        if (f & POSITIONS) != 0 {
+        if (i32::from(f) & POSITIONS) != 0 {
           total_positions += freq;
         }
-        if (f & OFFSETS) != 0 {
+        if (i32::from(f) & OFFSETS) != 0 {
           total_offsets += freq;
         }
-        if (f & PAYLOADS) != 0 {
+        if (i32::from(f) & PAYLOADS) != 0 {
           total_payloads += freq;
         }
       }
@@ -886,7 +870,7 @@ where
       // skip
       let mut term_index = 0;
       for i in 0..skip {
-        let f = all_flags[i];
+        let f = i32::from(all_flags[i]);
         let term_count = num_terms[i];
         if (f & PAYLOADS) != 0 {
           for j in 0..term_count {
@@ -903,7 +887,7 @@ where
 
       // read doc payload lengths
       for i in 0..num_fields {
-        let f = all_flags[skip + i];
+        let f = i32::from(all_flags[skip + i]);
         let term_count = num_terms[skip + i];
         if (f & PAYLOADS) != 0 {
           let total_freq = position_index[i][term_count];
@@ -926,7 +910,7 @@ where
       }
       total_payload_length += payload_len;
       for i in (skip + num_fields)..total_fields {
-        let f = all_flags[i];
+        let f = i32::from(all_flags[i]);
         let term_count = num_terms[i];
         if (f & PAYLOADS) != 0 {
           for j in 0..term_count {
@@ -963,35 +947,36 @@ where
         && payload_offset + payload_len <= suffix_bytes.bytes.len()
     );
 
-    let mut field_flags = Vec::with_capacity(num_fields);
-
-    for i in 0..num_fields {
-      // The packed flags use four bits, including all values of malformed flag masks.
-      field_flags.push(all_flags[skip + i] as u8);
-    }
-
-    let field_term_freqs = if num_fields == 1 && skip == 0 && num_terms[0] == term_freqs.len() {
-      // This field owns the entire decoded chunk; keep its exact-sized buffer.
-      vec![term_freqs]
+    let field_flags = if all_flags.spilled() && skip == 0 && num_fields == total_fields {
+      all_flags.into_vec()
     } else {
-      let mut field_term_freqs = vec![Vec::new(); num_fields];
-      let mut term_idx = 0;
-      #[allow(clippy::needless_range_loop)] // Preserve indexed failure timing for malformed chunks.
-      for n in 0..skip {
-        term_idx += num_terms[n];
-      }
-
-      for (i, slot) in field_term_freqs.iter_mut().enumerate().take(num_fields) {
-        let term_count = num_terms[skip + i];
-        let mut v = Vec::with_capacity(term_count);
-        for _ in 0..term_count {
-          v.push(term_freqs[term_idx]);
-          term_idx += 1;
-        }
-        *slot = v;
-      }
-      field_term_freqs
+      all_flags[skip..skip + num_fields].to_vec()
     };
+
+    let field_term_freqs: smallvec::SmallVec<[Vec<usize>; 1]> =
+      if num_fields == 1 && skip == 0 && num_terms[0] == term_freqs.len() {
+        // This field owns the entire decoded chunk; keep its exact-sized buffer.
+        smallvec::smallvec![term_freqs]
+      } else {
+        let mut field_term_freqs = smallvec::smallvec![Vec::new(); num_fields];
+        let mut term_idx = 0;
+        #[allow(clippy::needless_range_loop)]
+        // Preserve indexed failure timing for malformed chunks.
+        for n in 0..skip {
+          term_idx += num_terms[n];
+        }
+
+        for (i, slot) in field_term_freqs.iter_mut().enumerate().take(num_fields) {
+          let term_count = num_terms[skip + i];
+          let mut v = Vec::with_capacity(term_count);
+          for _ in 0..term_count {
+            v.push(term_freqs[term_idx]);
+            term_idx += 1;
+          }
+          *slot = v;
+        }
+        field_term_freqs
+      };
 
     debug_assert_eq!(sum(&field_lengths), doc_len);
 
@@ -1188,7 +1173,7 @@ pub struct TVFields {
 impl TVFields {
   #[allow(clippy::too_many_arguments)]
   pub(crate) fn new(
-    field_nums: Vec<i32>,
+    field_nums: smallvec::SmallVec<[i32; 4]>,
     field_flags: Vec<u8>,
     mut field_num_offs: Vec<usize>,
     field_lengths: Vec<usize>,

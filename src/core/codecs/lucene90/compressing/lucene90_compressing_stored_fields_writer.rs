@@ -49,7 +49,7 @@ use crate::core::util::close::Closeable;
 use crate::core::util::error::lucene_error::{LuceneError, LuceneErrorKind, Result};
 use crate::core::util::io_utils::IOUtils;
 use crate::core::util::packed::PackedInts;
-use crate::core::util::ram_usage_estimator::size_of_vec;
+use crate::core::util::ram_usage_estimator::size_of_array_capacity;
 
 /// [`StoredFieldsWriter`] implementation for
 /// [`Lucene90CompressingStoredFieldsFormat`](crate::core::codecs::lucene90::compressing::lucene90_compressing_stored_fields_format::Lucene90CompressingStoredFieldsFormat).
@@ -69,8 +69,8 @@ where
   chunk_size: i32,
   max_docs_per_chunk: i32,
   buffered_docs: ByteBuffersDataOutput,
-  num_stored_fields: Vec<i32>,
-  end_offsets: Vec<i32>,
+  num_stored_fields: smallvec::SmallVec<[i32; 8]>,
+  end_offsets: smallvec::SmallVec<[i32; 8]>,
   doc_base: usize,
   num_buffered_docs: usize,
   num_chunks: i64,
@@ -97,8 +97,8 @@ where
     let segment = &si.name;
     let compressor = compression_mode.new_compressor();
     let buffered_docs = ByteBuffersDataOutput::new_resettable_instance();
-    let num_stored_fields = Vec::with_capacity(16);
-    let end_offsets = Vec::with_capacity(16);
+    let num_stored_fields = smallvec::SmallVec::<[i32; 8]>::new();
+    let end_offsets = smallvec::SmallVec::<[i32; 8]>::new();
 
     let meta_file = IndexFileNames::segment_file_name(segment, segment_suffix, META_EXTENSION);
     let mut directory = Some(directory);
@@ -549,10 +549,16 @@ where
   }
   fn finish_document(&mut self) -> Result<()> {
     if self.num_stored_fields.len() == self.num_stored_fields.capacity() {
-      ArrayUtil::grow_capacity(&mut self.num_stored_fields, self.num_buffered_docs + 1)?;
+      ArrayUtil::oversize(self.num_buffered_docs + 1, std::mem::size_of::<i32>())?;
+      self
+        .num_stored_fields
+        .reserve(self.num_buffered_docs + 1 - self.num_stored_fields.len());
     }
     if self.end_offsets.len() == self.end_offsets.capacity() {
-      ArrayUtil::grow_capacity(&mut self.end_offsets, self.num_buffered_docs + 1)?;
+      ArrayUtil::oversize(self.num_buffered_docs + 1, std::mem::size_of::<i32>())?;
+      self
+        .end_offsets
+        .reserve(self.num_buffered_docs + 1 - self.end_offsets.len());
     }
     let end_offset = self.buffered_docs.size().try_convert()?;
     self.num_stored_fields.push(self.num_stored_fields_in_doc);
@@ -678,8 +684,8 @@ where
     Self: Sized,
   {
     let matching_readers = MatchingReaders::new(merge_state)?;
-    let mut visitors: Vec<Option<MergeVisitor<'_>>> =
-      vec![None; merge_state.stored_fields_readers.len()];
+    let mut visitors: smallvec::SmallVec<[Option<MergeVisitor<'_>>; 4]> =
+      smallvec::smallvec![None; merge_state.stored_fields_readers.len()];
     let mut subs = Vec::with_capacity(merge_state.stored_fields_readers.len());
 
     for (i, reader) in merge_state.stored_fields_readers.iter().enumerate() {
@@ -791,8 +797,20 @@ where
       self
         .buffered_docs
         .ram_bytes_used()?
-        .saturating_add(size_of_vec(&self.num_stored_fields))
-        .saturating_add(size_of_vec(&self.end_offsets)),
+        .saturating_add(size_of_array_capacity::<i32>(
+          if self.num_stored_fields.spilled() {
+            self.num_stored_fields.capacity()
+          } else {
+            0
+          },
+        ))
+        .saturating_add(size_of_array_capacity::<i32>(
+          if self.end_offsets.spilled() {
+            self.end_offsets.capacity()
+          } else {
+            0
+          },
+        )),
     )
   }
 }

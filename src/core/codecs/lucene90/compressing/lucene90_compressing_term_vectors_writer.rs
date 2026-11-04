@@ -86,11 +86,11 @@ where
   // current field
   cur_field: usize,
   last_term: BytesRef<Vec<u8>>,
-  field_nums: Vec<i32>,
+  field_nums: smallvec::SmallVec<[i32; 4]>,
 
   positions_buf: Vec<i32>,
-  start_offsets_buf: Vec<i32>,
-  lengths_buf: Vec<i32>,
+  // Start offsets and lengths share positions, initialization and lifetime.
+  offsets_buf: Vec<[i32; 2]>,
   payload_lengths_buf: Vec<i32>,
   // buffered term suffixes
   term_suffixes: ByteBuffersDataOutput,
@@ -197,17 +197,10 @@ where
 
       let writer = AbstractBlockPackedWriter::new(PACKED_BLOCK_SIZE, BlockPackedWriter)?;
       let positions_buf = Vec::new();
-      let start_offsets_buf = Vec::new();
-      let lengths_buf = Vec::new();
+      let offsets_buf = Vec::new();
       let payload_lengths_buf = Vec::new();
       success = true;
-      Ok((
-        writer,
-        positions_buf,
-        start_offsets_buf,
-        lengths_buf,
-        payload_lengths_buf,
-      ))
+      Ok((writer, positions_buf, offsets_buf, payload_lengths_buf))
     }));
     if !success {
       IOUtils::close_while_handling_exception_with(0..4, |operation| match operation {
@@ -216,8 +209,7 @@ where
         _ => index_writer.as_mut().map_or(Ok(()), Closeable::close),
       });
     }
-    let (writer, positions_buf, start_offsets_buf, lengths_buf, payload_lengths_buf) =
-      unwrap_caught_result!(result)?;
+    let (writer, positions_buf, offsets_buf, payload_lengths_buf) = unwrap_caught_result!(result)?;
     let meta_stream =
       meta_stream.ok_or_else(|| LuceneError::illegal_state("metadata output is missing"))?;
     let vectors_stream =
@@ -241,10 +233,9 @@ where
       cur_doc: 0,
       cur_field: 0,
       last_term,
-      field_nums: Vec::new(),
+      field_nums: smallvec::SmallVec::new(),
       positions_buf,
-      start_offsets_buf,
-      lengths_buf,
+      offsets_buf,
       payload_lengths_buf,
       term_suffixes,
       payload_bytes,
@@ -378,10 +369,18 @@ where
     }
   }
   /// Populates a sorted array containing unique field numbers
-  pub(crate) fn flush_field_nums(&mut self, field_nums: &mut Vec<i32>) -> Result<()> {
+  pub(crate) fn flush_field_nums(
+    &mut self,
+    field_nums: &mut smallvec::SmallVec<[i32; 4]>,
+  ) -> Result<()> {
     // 1. Collect unique field numbers
     field_nums.clear();
-    field_nums.reserve(self.pending_docs.first().map_or(0, |doc| doc.fields.len()));
+    let first_field_count = self.pending_docs.first().map_or(0, |doc| doc.fields.len());
+    if field_nums.spilled() {
+      field_nums.reserve(first_field_count);
+    } else {
+      field_nums.reserve_exact(first_field_count);
+    }
     for doc in &self.pending_docs {
       for field in &doc.fields {
         if let Err(index) = field_nums.binary_search(&field.field_num) {
@@ -557,7 +556,7 @@ where
 
     for doc in &self.pending_docs {
       for field in &doc.fields {
-        for &prefix_length in &field.prefix_lengths {
+        for &prefix_length in &field.term_lengths[..field.num_terms] {
           self
             .writer
             .add(prefix_length as i64, &mut self.vectors_stream)?;
@@ -571,7 +570,7 @@ where
 
     for doc in &self.pending_docs {
       for field in &doc.fields {
-        for &suffix_length in &field.suffix_lengths {
+        for &suffix_length in &field.term_lengths[field.num_terms..] {
           self
             .writer
             .add(suffix_length as i64, &mut self.vectors_stream)?;
@@ -649,7 +648,7 @@ where
             let position_idx = field.pos_start + pos + freq - 1;
             let offset_idx = field.off_start + pos + freq - 1;
             sum_pos[field_index] += self.positions_buf[position_idx] as u64;
-            sum_offsets[field_index] += self.start_offsets_buf[offset_idx] as u64;
+            sum_offsets[field_index] += self.offsets_buf[offset_idx][0] as u64;
             pos += freq;
           }
           debug_assert_eq!(pos, field.total_positions);
@@ -703,7 +702,7 @@ where
               } else {
                 0
               };
-              let start_offset = self.start_offsets_buf[field.off_start + pos];
+              let start_offset = self.offsets_buf[field.off_start + pos][0];
               let predicted = (cpt * (position - previous_pos) as f32) as i32;
               self.writer.add(
                 (start_offset - previous_off - predicted) as i64,
@@ -728,10 +727,10 @@ where
         if field.flags & OFFSETS != 0 {
           let mut pos = 0;
           for i in 0..field.num_terms {
-            let prefix = field.prefix_lengths[i];
-            let suffix = field.suffix_lengths[i];
+            let prefix = field.term_lengths[i];
+            let suffix = field.term_lengths[field.num_terms + i];
             for _ in 0..field.freqs[i] {
-              let length = self.lengths_buf[field.off_start + pos];
+              let length = self.offsets_buf[field.off_start + pos][1];
               self.writer.add(
                 (length - prefix as i32 - suffix as i32) as i64,
                 &mut self.vectors_stream,
@@ -943,10 +942,17 @@ where
   fn ram_bytes_used(&self) -> Result<i64> {
     Ok(
       size_of_vec(&self.positions_buf)
-        .saturating_add(size_of_vec(&self.start_offsets_buf))
-        .saturating_add(size_of_vec(&self.lengths_buf))
+        .saturating_add(size_of_vec(&self.offsets_buf))
         .saturating_add(size_of_vec(&self.payload_lengths_buf))
-        .saturating_add(size_of_vec(&self.field_nums))
+        .saturating_add(
+          crate::core::util::ram_usage_estimator::size_of_array_capacity::<i32>(
+            if self.field_nums.spilled() {
+              self.field_nums.capacity()
+            } else {
+              0
+            },
+          ),
+        )
         .saturating_add(self.term_suffixes.ram_bytes_used()?)
         .saturating_add(self.payload_bytes.ram_bytes_used()?)
         .saturating_add(size_of_vec(&self.last_term.bytes))
@@ -1018,9 +1024,8 @@ where
     if positions && self.positions_buf.is_empty() {
       ArrayUtil::grow_capacity(&mut self.positions_buf, 1024)?;
     }
-    if offsets && self.start_offsets_buf.is_empty() {
-      ArrayUtil::grow_capacity(&mut self.start_offsets_buf, 1024)?;
-      ArrayUtil::grow_capacity(&mut self.lengths_buf, 1024)?;
+    if offsets && self.offsets_buf.is_empty() {
+      ArrayUtil::grow_capacity(&mut self.offsets_buf, 1024)?;
     }
     if payloads && self.payload_lengths_buf.is_empty() {
       ArrayUtil::grow_capacity(&mut self.payload_lengths_buf, 1024)?;
@@ -1065,16 +1070,19 @@ where
       .term_suffixes
       .write_bytes_range(term.bytes, term.offset + prefix, suffix_len)?;
     // copy last term
-    if self.last_term.bytes.len() < term.length {
+    let copy_from = if self.last_term.bytes.len() < term.length {
       ArrayUtil::grow_no_copy(&mut self.last_term.bytes, term.length, || 0)?;
-    }
+      0
+    } else {
+      prefix
+    };
 
     self.last_term.offset = 0;
     self.last_term.length = term.length;
-    self
-      .last_term
-      .bytes
-      .copy_from(&term.bytes[term.offset..term.offset + term.length], 0);
+    self.last_term.bytes.copy_from(
+      &term.bytes[term.offset + copy_from..term.offset + term.length],
+      copy_from,
+    );
 
     Ok(())
   }
@@ -1109,8 +1117,7 @@ where
       length,
       payload_len,
       &mut self.positions_buf,
-      &mut self.start_offsets_buf,
-      &mut self.lengths_buf,
+      &mut self.offsets_buf,
       &mut self.payload_lengths_buf,
     )?;
 
@@ -1223,10 +1230,9 @@ where
       let offsets = offsets.ok_or_else(|| LuceneError::illegal_state("Offsets is None"))?;
       let off_start = cur_field.off_start + cur_field.total_positions;
       let len = off_start + num_prox;
-      if self.start_offsets_buf.len() < len {
+      if self.offsets_buf.len() < len {
         let new_length = ArrayUtil::oversize(len, 4)?;
-        ArrayUtil::grow_exact(&mut self.start_offsets_buf, new_length, || 0)?;
-        ArrayUtil::grow_exact(&mut self.lengths_buf, new_length, || 0)?;
+        ArrayUtil::grow_exact(&mut self.offsets_buf, new_length, || [0; 2])?;
       }
 
       let mut last_offset = 0;
@@ -1234,8 +1240,8 @@ where
         let start_offset = last_offset + offsets.read_vint()?;
         let end_offset = start_offset + offsets.read_vint()?;
         last_offset = end_offset;
-        self.start_offsets_buf[off_start + i] = start_offset;
-        self.lengths_buf[off_start + i] = end_offset - start_offset;
+        self.offsets_buf[off_start + i][0] = start_offset;
+        self.offsets_buf[off_start + i][1] = end_offset - start_offset;
       }
     }
 
@@ -1372,7 +1378,7 @@ where
 /// a pending doc
 pub(crate) struct DocData {
   pub num_fields: i32,
-  pub fields: Vec<FieldData>,
+  pub fields: smallvec::SmallVec<[FieldData; 1]>,
   pub pos_start: usize,
   pub off_start: usize,
   pub pay_start: usize,
@@ -1381,7 +1387,7 @@ impl DocData {
   pub(crate) fn new(num_fields: i32, pos_start: usize, off_start: usize, pay_start: usize) -> Self {
     Self {
       num_fields,
-      fields: Vec::with_capacity(num_fields as usize),
+      fields: smallvec::SmallVec::with_capacity(num_fields as usize),
       pos_start,
       off_start,
       pay_start,
@@ -1421,9 +1427,8 @@ pub(crate) struct FieldData {
   pub field_num: i32,
   pub flags: i32,
   pub num_terms: usize,
-  pub freqs: Vec<i32>,
-  pub prefix_lengths: Vec<usize>,
-  pub suffix_lengths: Vec<usize>,
+  pub freqs: smallvec::SmallVec<[i32; 4]>,
+  pub term_lengths: Vec<usize>,
   pub pos_start: usize,
   pub off_start: usize,
   pub pay_start: usize,
@@ -1453,9 +1458,8 @@ impl FieldData {
       field_num,
       flags,
       num_terms,
-      freqs: vec![0; num_terms],
-      prefix_lengths: vec![0; num_terms],
-      suffix_lengths: vec![0; num_terms],
+      freqs: smallvec::smallvec![0; num_terms],
+      term_lengths: vec![0; num_terms * 2],
       pos_start,
       off_start,
       pay_start,
@@ -1465,8 +1469,8 @@ impl FieldData {
   }
   pub(crate) fn add_term(&mut self, freq: i32, prefix_length: usize, suffix_length: usize) {
     self.freqs[self.ord] = freq;
-    self.prefix_lengths[self.ord] = prefix_length;
-    self.suffix_lengths[self.ord] = suffix_length;
+    self.term_lengths[self.ord] = prefix_length;
+    self.term_lengths[self.num_terms + self.ord] = suffix_length;
     self.ord += 1;
   }
   #[allow(clippy::too_many_arguments)]
@@ -1477,8 +1481,7 @@ impl FieldData {
     length: i32,
     payload_length: i32,
     positions_buf: &mut Vec<i32>,
-    start_offsets_buf: &mut Vec<i32>,
-    lengths_buf: &mut Vec<i32>,
+    offsets_buf: &mut Vec<[i32; 2]>,
     payload_lengths_buf: &mut Vec<i32>,
   ) -> Result<()> {
     if self.has_positions {
@@ -1493,14 +1496,11 @@ impl FieldData {
 
     if self.has_offsets {
       let required = self.off_start + self.total_positions;
-      if required == start_offsets_buf.len() {
-        ArrayUtil::grow_capacity(start_offsets_buf, required + 1)?;
-        ArrayUtil::grow_capacity(lengths_buf, required + 1)?;
-        start_offsets_buf.push(start_offset);
-        lengths_buf.push(length);
+      if required == offsets_buf.len() {
+        ArrayUtil::grow_capacity(offsets_buf, required + 1)?;
+        offsets_buf.push([start_offset, length]);
       } else {
-        start_offsets_buf[required] = start_offset;
-        lengths_buf[required] = length;
+        offsets_buf[required] = [start_offset, length];
       }
     }
 
