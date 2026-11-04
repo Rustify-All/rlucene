@@ -90,17 +90,14 @@ impl ReadWriteDataOutput {
     if self.byte_buffer.is_none() && self.byte_buffers.is_none() {
       self.num_bytes = self.data_output.size();
       if self.contiguous_reader {
-        self.byte_buffer = Some(Rc::new(self.data_output.try_get_array_ownership()));
+        let output = std::mem::take(&mut self.data_output);
+        self.byte_buffer = Some(Rc::new(output.into_array()));
       } else {
-        let (_, mut byte_buffers_raw) = self.data_output.to_buffer_list_owner(false);
-        if byte_buffers_raw.len() == 1 {
-          self.byte_buffer = Some(Rc::new(byte_buffers_raw.remove(0).into_inner()));
+        let mut blocks = self.data_output.take_raw_blocks();
+        if blocks.len() <= 1 {
+          self.byte_buffer = Some(Rc::new(blocks.next().unwrap_or_default()));
         } else {
-          let data = byte_buffers_raw
-            .into_iter()
-            .map(|b| b.into_inner())
-            .collect();
-          self.byte_buffers = Some(Rc::new(data));
+          self.byte_buffers = Some(Rc::new(blocks.collect()));
         }
       }
     }

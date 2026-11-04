@@ -348,6 +348,13 @@ impl ByteBuffersDataOutput {
 
     (size, data)
   }
+  pub(crate) fn take_raw_blocks(&mut self) -> impl ExactSizeIterator<Item = Vec<u8>> + use<> {
+    self.cached_ram_bytes.store(-1, Ordering::Relaxed);
+    std::mem::take(&mut self.blocks)
+      .into_iter()
+      .map(Cursor::into_inner)
+  }
+
   pub fn get_writeable_buffer_list(&mut self) -> Vec<&mut Cursor<Vec<u8>>> {
     todo!()
   }
@@ -368,6 +375,19 @@ impl ByteBuffersDataOutput {
     }
     buffer
   }
+  /// Transfers a sole block from a finished output, or gathers multiple blocks.
+  pub(crate) fn into_array(mut self) -> Vec<u8> {
+    if self.blocks.len() == 1
+      && let Some(block) = self.blocks.pop_front()
+    {
+      let end = block.position() as usize;
+      let mut bytes = block.into_inner();
+      bytes.truncate(end);
+      return bytes;
+    }
+    self.get_array_copy()
+  }
+
   /// See [`get_array_copy`](Self::get_array_copy) Before use this method.
   pub fn try_get_array_ownership(&mut self) -> Vec<u8> {
     self.cached_ram_bytes.store(-1, Ordering::Relaxed);

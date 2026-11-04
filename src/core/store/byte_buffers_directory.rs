@@ -135,13 +135,13 @@ fn output_as_many_buffers(
   file_name: &str,
   mut output: ByteBuffersDataOutput,
 ) -> Result<ByteBuffersIndexInputOwned> {
-  let (length, buffers) = output.to_buffer_list_owner(false);
-  let buffers = buffers.into_iter().map(|buffer| {
-    let position = buffer.position();
-    let mut shared = Cursor::new(Arc::new(buffer.into_inner()));
-    shared.set_position(position);
-    shared
-  });
+  let length = output.size();
+  let blocks = output.take_raw_blocks();
+  let empty_block_count = usize::from(blocks.len() == 0);
+  let buffers = std::iter::once_with(Vec::new)
+    .take(empty_block_count)
+    .chain(blocks)
+    .map(|block| Cursor::new(Arc::new(block)));
   let data_input = ByteBuffersDataInput::new(buffers, length)?;
   let input_name = format!(
     "{} (file={}, buffers={})",
@@ -158,21 +158,9 @@ fn output_as_many_buffers(
 /// Converts the buffered output to an input backed by one contiguous buffer.
 fn output_as_one_buffer(
   file_name: &str,
-  mut output: ByteBuffersDataOutput,
+  output: ByteBuffersDataOutput,
 ) -> Result<ByteBuffersIndexInputOwned> {
-  let bytes = if output.buffer_slices().count() == 1 {
-    // The output is consumed here: transfer its sole block without allocating
-    // a replacement buffer that would be dropped immediately afterward.
-    let (length, mut buffers) = output.to_buffer_list_owner(false);
-    let mut bytes = buffers
-      .pop()
-      .ok_or_else(|| LuceneError::illegal_state("transferred output block is missing"))?
-      .into_inner();
-    bytes.truncate(length);
-    bytes
-  } else {
-    output.try_get_array_ownership()
-  };
+  let bytes = output.into_array();
   let length = bytes.len();
   let data_input = ByteBuffersDataInput::new(vec![Cursor::new(Arc::new(bytes))], length)?;
   let input_name = format!(
@@ -398,25 +386,19 @@ where
   fn rename(&self, source: &str, dest: &str) -> Result<()> {
     self.ensure_open()?;
     let mut files = self.files.lock();
-    let file = files.get(source).cloned().ok_or_else(|| {
-      LuceneError::io_with_path(source, Error::new(ErrorKind::NotFound, source.to_string()))
-    })?;
-    match files.entry(Arc::from(dest)) {
-      Entry::Occupied(_) => {
-        return Err(LuceneError::io_with_path(
-          dest,
-          Error::new(ErrorKind::AlreadyExists, dest.to_string()),
-        ));
-      },
-      Entry::Vacant(entry) => {
-        entry.insert(file);
-      },
+    let missing_source =
+      || LuceneError::io_with_path(source, Error::new(ErrorKind::NotFound, source.to_string()));
+    if files.contains_key(dest) {
+      if !files.contains_key(source) {
+        return Err(missing_source());
+      }
+      return Err(LuceneError::io_with_path(
+        dest,
+        Error::new(ErrorKind::AlreadyExists, dest.to_string()),
+      ));
     }
-    if files.remove(source).is_none() {
-      return Err(LuceneError::illegal_state(format!(
-        "File was unexpectedly replaced: {source}"
-      )));
-    }
+    let file = files.remove(source).ok_or_else(missing_source)?;
+    files.insert(Arc::from(dest), file);
     Ok(())
   }
 

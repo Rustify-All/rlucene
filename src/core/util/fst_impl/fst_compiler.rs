@@ -135,9 +135,7 @@ where
     let fst_meta = FSTMetadata::new(input_type, outputs, None, -1, version, 0);
     let fst = FST::new(fst_meta, NullFSTReader);
     let mut frontier = Vec::with_capacity(16);
-    for i in 0..10 {
-      frontier.push(UnCompiledNode::new(i));
-    }
+    frontier.push(UnCompiledNode::new(0));
     Ok(Self {
       dedup_hash,
       fst,
@@ -275,16 +273,13 @@ where
     if self.frontier.len() < (input.length + 1) {
       let old_len = self.frontier.len();
       let min_size = input.length + 1;
-      let available_capacity = self.frontier.capacity().min(ArrayUtil::MAX_ARRAY_LENGTH);
-      let new_len = if available_capacity >= min_size {
-        available_capacity
-      } else {
-        ArrayUtil::oversize(min_size, std::mem::size_of::<UnCompiledNode<O::V>>())?
-      };
-      self.frontier.reserve_exact(new_len - old_len);
-      for i in old_len..new_len {
-        self.frontier.push(UnCompiledNode::new(i));
+      if self.frontier.capacity().min(ArrayUtil::MAX_ARRAY_LENGTH) < min_size {
+        let capacity = ArrayUtil::oversize(min_size, std::mem::size_of::<UnCompiledNode<O::V>>())?;
+        self.frontier.reserve_exact(capacity - old_len);
       }
+      self
+        .frontier
+        .extend((old_len..min_size).map(UnCompiledNode::new));
     }
     // minimize/compile states from previous input's
     // orphan'd suffix
