@@ -194,6 +194,15 @@ where
     let vector_data_offset = vector_data.align_file_pointer(BitUtil::FLOAT_BYTES)?;
 
     let dim = field_data.dim;
+    #[cfg(target_endian = "little")]
+    if dim >= 16 && vectors.iter().all(|vector| vector.len() == dim) {
+      for &ord in ord_map {
+        let bytes: &[u8] = wide::bytemuck::cast_slice(&vectors[ord]);
+        vector_data.write_bytes_range(bytes, 0, bytes.len())?;
+      }
+      return Ok(vector_data_offset);
+    }
+
     let byte_size = BitUtil::FLOAT_BYTES;
     stack_or_heap_buffer!(buffer, u8, dim * byte_size, 128, 0);
 
