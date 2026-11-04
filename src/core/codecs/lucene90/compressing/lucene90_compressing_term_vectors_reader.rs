@@ -362,14 +362,14 @@ where
     num_terms: &[usize],
     term_freqs: &[usize],
   ) -> Vec<Vec<usize>> {
-    let mut position_index = vec![Vec::new(); num_fields];
+    let mut position_index = Vec::with_capacity(num_fields);
     let mut term_index = 0;
     #[allow(clippy::needless_range_loop)] // Preserve indexed failure timing for malformed chunks.
     for i in 0..skip {
       let term_count = num_terms[i];
       term_index += term_count;
     }
-    for (i, slot) in position_index.iter_mut().enumerate().take(num_fields) {
+    for i in 0..num_fields {
       let term_count = num_terms[skip + i];
       let mut arr = Vec::with_capacity(term_count + 1);
       arr.push(0);
@@ -380,7 +380,7 @@ where
         arr.push(position);
       }
       term_index += term_count;
-      *slot = arr;
+      position_index.push(arr);
     }
     position_index
   }
@@ -548,15 +548,14 @@ where
       )?;
       let mut field_nums =
         smallvec::SmallVec::<[i32; 4]>::with_capacity(total_distinct_fields as usize);
-      field_nums.resize(total_distinct_fields as usize, 0);
-      for slot in &mut field_nums {
-        *slot = it.next()? as i32;
+      for _ in 0..total_distinct_fields {
+        field_nums.push(it.next()? as i32);
       }
       field_nums
     };
 
     // read field numbers and flags
-    let mut field_num_offs = vec![0; num_fields];
+    let mut field_num_offs = Vec::with_capacity(num_fields);
     let (flags, expanded_flags) = {
       let bits_per_off = bits_required((field_nums.len() - 1) as i64)?;
       let bytes = Self::slice(&mut self.vectors_stream)?;
@@ -597,8 +596,8 @@ where
           )));
         },
       };
-      for (slot, off) in field_num_offs.iter_mut().zip((skip..).take(num_fields)) {
-        *slot = all_field_num_offs.get(off)? as usize;
+      for off in (skip..).take(num_fields) {
+        field_num_offs.push(all_field_num_offs.get(off)? as usize);
       }
       (flags, expanded_flags)
     };
@@ -627,9 +626,9 @@ where
     let mut doc_len = 0;
     #[allow(unused)]
     let mut total_len = 0;
-    let mut field_lengths = vec![0; num_fields];
-    let mut prefix_lengths = vec![Vec::new(); num_fields];
-    let mut suffix_lengths = vec![Vec::new(); num_fields];
+    let mut field_lengths = Vec::with_capacity(num_fields);
+    let mut prefix_lengths = Vec::with_capacity(num_fields);
+    let mut suffix_lengths = Vec::with_capacity(num_fields);
     {
       self.reader.reset(total_terms);
 
@@ -642,7 +641,7 @@ where
       self.reader.skip(to_skip, &mut self.vectors_stream)?;
 
       // read prefix lengths
-      for (i, slot) in prefix_lengths.iter_mut().enumerate().take(num_fields) {
+      for i in 0..num_fields {
         let term_count = num_terms[skip + i];
         let mut field_prefix_lengths = Vec::with_capacity(term_count);
         let mut j = 0;
@@ -658,7 +657,7 @@ where
           j += next.length;
         }
 
-        *slot = field_prefix_lengths;
+        prefix_lengths.push(field_prefix_lengths);
       }
 
       self
@@ -688,9 +687,10 @@ where
             j += 1;
           }
         }
-        field_lengths[i] = sum(&field_suffix_lengths);
-        doc_len += field_lengths[i];
-        suffix_lengths[i] = field_suffix_lengths;
+        let field_length = sum(&field_suffix_lengths);
+        doc_len += field_length;
+        field_lengths.push(field_length);
+        suffix_lengths.push(field_suffix_lengths);
       }
 
       total_len = doc_off + doc_len;
@@ -705,18 +705,18 @@ where
 
     // term freqs
     let term_freqs = {
-      let mut term_freqs = vec![0; total_terms];
+      let mut term_freqs = Vec::with_capacity(total_terms);
       self.reader.reset(total_terms);
-      let mut i = 0;
-      debug_assert!((total_terms - i) <= i32::MAX as usize);
-      while i < total_terms {
+      debug_assert!(total_terms <= i32::MAX as usize);
+      while term_freqs.len() < total_terms {
         let next = self
           .reader
-          .next_batch(total_terms - i, &mut self.vectors_stream)?;
-        for k in 0..next.length {
-          term_freqs[i] = 1 + next.longs[next.offset + k] as usize;
-          i += 1;
-        }
+          .next_batch(total_terms - term_freqs.len(), &mut self.vectors_stream)?;
+        term_freqs.extend(
+          next.longs[next.offset..][..next.length]
+            .iter()
+            .map(|&freq| 1 + freq as usize),
+        );
       }
       term_freqs
     };
@@ -891,19 +891,17 @@ where
         let term_count = num_terms[skip + i];
         if (f & PAYLOADS) != 0 {
           let total_freq = position_index[i][term_count];
-          let mut field_payload_index = vec![0; total_freq + 1];
-          let mut pos_idx = 0;
-          field_payload_index[pos_idx] = payload_len;
+          let mut field_payload_index = Vec::with_capacity(total_freq + 1);
+          field_payload_index.push(payload_len);
           for j in 0..term_count {
             let freq = term_freqs[term_index + j];
             for _ in 0..freq {
               let payload_length = self.reader.next_value(&mut self.vectors_stream)? as usize;
               payload_len += payload_length;
-              pos_idx += 1;
-              field_payload_index[pos_idx] = payload_len;
+              field_payload_index.push(payload_len);
             }
           }
-          debug_assert_eq!(pos_idx, total_freq);
+          debug_assert_eq!(field_payload_index.len(), total_freq + 1);
           payload_index[i] = field_payload_index;
         }
         term_index += term_count;
