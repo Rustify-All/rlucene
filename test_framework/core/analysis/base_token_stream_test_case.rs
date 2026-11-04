@@ -958,7 +958,7 @@ where
   R: Rng + ?Sized,
 {
   with_analyzer_token_stream(a, input, |ts| {
-    let len = input.chars().count();
+    let len = input.encode_utf16().count();
     assert_token_stream_contents8(
       ts,
       output,
@@ -994,7 +994,7 @@ where
   R: Rng + ?Sized,
 {
   with_analyzer_token_stream(a, input, |ts| {
-    let len = input.chars().count();
+    let len = input.encode_utf16().count();
     assert_token_stream_contents6(
       ts,
       output,
@@ -1031,7 +1031,7 @@ where
   R: Rng + ?Sized,
 {
   with_analyzer_token_stream(a, input, |ts| {
-    let len = input.chars().count();
+    let len = input.encode_utf16().count();
     assert_token_stream_contents4(
       ts,
       output,
