@@ -69,9 +69,9 @@ where
     let count = rc.count;
 
     if let Some(messenger) = &self.messenger {
-      messenger.accept(
+      messenger.accept_formatted(
         MsgType::Ref,
-        &format!("IncRef \"{file_name}\": pre-incr count is {count}"),
+        format_args!("IncRef \"{file_name}\": pre-incr count is {count}"),
       )?;
     }
     rc.inc_ref();
@@ -105,9 +105,9 @@ where
     let rc = Self::get_ref_count_internal(&mut self.ref_counts, file_name)?;
     let count = rc.count;
     if let Some(ref mut messenger) = self.messenger {
-      messenger.accept(
+      messenger.accept_formatted(
         MsgType::Ref,
-        &format!("DecRef \"{file_name}\": pre-decr count is {count}"),
+        format_args!("DecRef \"{file_name}\": pre-decr count is {count}"),
       )?;
     }
     if rc.dec_ref() == 0 {
@@ -138,6 +138,13 @@ where
         .insert(file_name.to_string(), RefCount::new(file_name));
     }
   }
+  pub(crate) fn init_ref_count_owned(&mut self, file_name: String) {
+    self
+      .ref_counts
+      .entry(file_name)
+      .or_insert_with_key(|name| RefCount::new(name.as_str()));
+  }
+
   /// Get ref count for a provided file. If the file is not yet recorded, returns 0
   pub fn get_ref_count(&self, file_name: &str) -> usize {
     self
@@ -164,9 +171,9 @@ where
     for (file_name, rc) in &self.ref_counts {
       if rc.count == 0 {
         if let Some(messenger) = &self.messenger {
-          messenger.accept(
+          messenger.accept_formatted(
             MsgType::File,
-            &format!("removing unreferenced file \"{file_name}\""),
+            format_args!("removing unreferenced file \"{file_name}\""),
           )?;
         }
         unrefed.insert(file_name.as_str());
@@ -192,9 +199,9 @@ where
       // TestCrash.testCrashAfterReopen can hit this:
       if !self.exists(file_name) {
         if let Some(messenger) = &self.messenger {
-          messenger.accept(
+          messenger.accept_formatted(
             MsgType::File,
-            &format!("will delete new file \"{file_name}\""),
+            format_args!("will delete new file \"{file_name}\""),
           )?;
         }
         to_delete.insert(file_name);
@@ -212,9 +219,9 @@ where
   pub fn delete_file_if_no_ref(&mut self, file_name: &str) -> Result<()> {
     if !self.exists(file_name) {
       if let Some(messenger) = &self.messenger {
-        messenger.accept(
+        messenger.accept_formatted(
           MsgType::File,
-          &format!("will delete new file \"{file_name}\""),
+          format_args!("will delete new file \"{file_name}\""),
         )?;
       }
       self.delete_file(file_name)?;
@@ -230,9 +237,9 @@ where
     let files: smallvec::SmallVec<[&str; 4]> = file_names.into_iter().map(AsRef::as_ref).collect();
 
     if let Some(messenger) = &self.messenger {
-      messenger.accept(
+      messenger.accept_formatted(
         MsgType::File,
-        &format!("now delete {} files: {:?}", files.len(), files),
+        format_args!("now delete {} files: {:?}", files.len(), files),
       )?;
     }
 
@@ -339,6 +346,10 @@ impl RefCount {
 
 pub trait Messenger {
   fn accept(&self, msg_type: MsgType, message: &str) -> Result<()>;
+
+  fn accept_formatted(&self, msg_type: MsgType, message: std::fmt::Arguments<'_>) -> Result<()> {
+    self.accept(msg_type, &message.to_string())
+  }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MsgType {

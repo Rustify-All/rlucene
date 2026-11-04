@@ -336,7 +336,7 @@ impl PendingDeletesBase for PendingDeletes {
       // Delete any partially created file(s):
       IOUtils::delete_files_ignoring_exceptions(
         &tracking_dir.in_,
-        tracking_dir.get_created_files(),
+        tracking_dir.take_created_files(),
       );
     }
     unwrap_caught_result!(write_res)?;

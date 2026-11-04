@@ -154,8 +154,8 @@ where
           || file.starts_with(IndexFileNames::PENDING_SEGMENTS)
         {
           // Add this file to refCounts with initial count 0:
-          index_file_deleter.file_deleter.init_ref_count(&file);
           if is_segments {
+            index_file_deleter.file_deleter.init_ref_count(&file);
             // This is a commit (segments or segments_N), and
             // it's valid (<= the max gen).  Load it, then
             // incref all files it refers to:
@@ -183,6 +183,8 @@ where
             {
               last_segment_infos = Some(sis);
             }
+          } else {
+            index_file_deleter.file_deleter.init_ref_count_owned(file);
           }
         }
       }
@@ -719,6 +721,16 @@ impl Messenger for MessengerImpl {
     }
     if self.info_stream.is_enabled("IFD") {
       self.info_stream.message("IFD", msg)?;
+    }
+    Ok(())
+  }
+
+  fn accept_formatted(&self, msg_type: MsgType, msg: std::fmt::Arguments<'_>) -> Result<()> {
+    if msg_type == MsgType::Ref && !self.verbose_ref_counts {
+      return Ok(());
+    }
+    if self.info_stream.is_enabled("IFD") {
+      self.info_stream.message("IFD", &msg.to_string())?;
     }
     Ok(())
   }

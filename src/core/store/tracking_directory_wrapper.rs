@@ -44,6 +44,10 @@ impl<D> TrackingDirectoryWrapper<D> {
     self.created_filenames.lock().clone()
   }
 
+  pub(crate) fn has_created_file(&self, name: &str) -> bool {
+    self.created_filenames.lock().contains(name)
+  }
+
   pub fn has_created_files(&self) -> bool {
     !self.created_filenames.lock().is_empty()
   }

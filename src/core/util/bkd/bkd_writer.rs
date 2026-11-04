@@ -729,7 +729,7 @@ where
       );
       // If no error, we should have cleaned everything up:
       debug_assert!(
-        self.temp_dir.get_created_files().is_empty(),
+        !self.temp_dir.has_created_files(),
         "Temp directory should be empty"
       );
       success = true;
@@ -1457,7 +1457,7 @@ where
   ) -> Result<R> {
     if let PointWriterEnum::Offline(writer) = writer {
       // We are reading from a temp file; go verify the checksum:
-      if self.temp_dir.get_created_files().contains(&writer.name) {
+      if self.temp_dir.has_created_file(&writer.name) {
         let mut input = self.temp_dir.open_checksum_input(&writer.name)?;
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
           CodecUtil::check_footer_with_error(&mut input, Some(prior_result))

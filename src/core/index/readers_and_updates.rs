@@ -689,7 +689,7 @@ where
     if !success {
       info.advance_next_write_field_infos_gen();
       info.advance_next_write_doc_values_gen();
-      IOUtils::delete_files_ignoring_exceptions(&dir, tracking_dir.get_created_files());
+      IOUtils::delete_files_ignoring_exceptions(&dir, tracking_dir.take_created_files());
     }
     unwrap_caught_result!(result)?;
     // Prune the now-written DV updates:
