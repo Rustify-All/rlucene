@@ -485,18 +485,15 @@ pub(crate) fn find_segment_starts<LR>(
 where
   LR: LeafReader,
 {
-  let mut starts = vec![0usize; leaves.len() + 1];
-  let starts_len = starts.len();
-  starts[starts_len - 1] = docs.len();
-
-  if starts.len() == 2 {
-    return Ok(starts);
+  let mut starts = Vec::with_capacity(leaves.len() + 1);
+  if !leaves.is_empty() {
+    starts.push(0);
   }
 
   let mut result_index: usize = 0;
 
-  for i in 1..starts_len - 1 {
-    let upper = leaves[i].doc_base as i32;
+  for leaf in leaves.iter().skip(1) {
+    let upper = leaf.doc_base as i32;
 
     match docs[result_index..].binary_search(&upper) {
       Ok(pos) => {
@@ -507,8 +504,9 @@ where
       },
     }
 
-    starts[i] = result_index;
+    starts.push(result_index);
   }
+  starts.push(docs.len());
 
   Ok(starts)
 }

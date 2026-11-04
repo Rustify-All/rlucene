@@ -40,20 +40,24 @@ impl MatchingReaders {
     // identical fieldName -> number mapping, then this
     // array will be present at position i:
     let num_readers = merge_state.max_docs.len();
-    let mut matching_readers = vec![false; num_readers];
+    let mut matching_readers = Vec::with_capacity(num_readers);
     let mut matched_count = 0;
 
-    'next_reader: for (i, field_infos) in merge_state.field_infos.iter().enumerate() {
+    debug_assert_eq!(merge_state.field_infos.len(), num_readers);
+    'next_reader: for field_infos in merge_state.field_infos.iter() {
       for fi in &**field_infos {
         match merge_state
           .merge_field_infos
           .field_info_by_number(fi.number)?
         {
           Some(other) if other.name == fi.name => continue,
-          _ => continue 'next_reader,
+          _ => {
+            matching_readers.push(false);
+            continue 'next_reader;
+          },
         }
       }
-      matching_readers[i] = true;
+      matching_readers.push(true);
       matched_count += 1;
     }
     if merge_state.info_stream.is_enabled("SM") {

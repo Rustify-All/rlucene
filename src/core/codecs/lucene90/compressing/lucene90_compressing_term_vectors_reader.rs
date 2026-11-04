@@ -397,7 +397,7 @@ where
     total_positions: usize,
     position_index: &[Vec<usize>],
   ) -> Result<Vec<Vec<i32>>> {
-    let mut positions = vec![Vec::new(); num_fields];
+    let mut positions = Vec::with_capacity(num_fields);
     // reset reader
     self.reader.reset(total_positions);
 
@@ -433,7 +433,9 @@ where
           assert!(slice.len() <= remaining);
           field_positions.extend(slice.iter().map(|&val| val as i32));
         }
-        positions[i] = field_positions;
+        positions.push(field_positions);
+      } else {
+        positions.push(Vec::new());
       }
     }
     let read = self.reader.ord();
@@ -857,7 +859,7 @@ where
       }
     }
     let mut payload_index = if total_payloads > 0 {
-      vec![Vec::new(); num_fields]
+      Vec::with_capacity(num_fields)
     } else {
       Vec::new()
     };
@@ -902,7 +904,9 @@ where
             }
           }
           debug_assert_eq!(field_payload_index.len(), total_freq + 1);
-          payload_index[i] = field_payload_index;
+          payload_index.push(field_payload_index);
+        } else {
+          payload_index.push(Vec::new());
         }
         term_index += term_count;
       }
@@ -956,7 +960,7 @@ where
         // This field owns the entire decoded chunk; keep its exact-sized buffer.
         smallvec::smallvec![term_freqs]
       } else {
-        let mut field_term_freqs = smallvec::smallvec![Vec::new(); num_fields];
+        let mut field_term_freqs = smallvec::SmallVec::with_capacity(num_fields);
         let mut term_idx = 0;
         #[allow(clippy::needless_range_loop)]
         // Preserve indexed failure timing for malformed chunks.
@@ -964,14 +968,15 @@ where
           term_idx += num_terms[n];
         }
 
-        for (i, slot) in field_term_freqs.iter_mut().enumerate().take(num_fields) {
+        for i in 0..num_fields {
           let term_count = num_terms[skip + i];
-          let mut v = Vec::with_capacity(term_count);
-          for _ in 0..term_count {
-            v.push(term_freqs[term_idx]);
-            term_idx += 1;
+          if term_count == 0 {
+            field_term_freqs.push(Vec::new());
+          } else {
+            let end = term_idx + term_count;
+            field_term_freqs.push(term_freqs[term_idx..end].to_vec());
+            term_idx = end;
           }
-          *slot = v;
         }
         field_term_freqs
       };

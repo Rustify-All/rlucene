@@ -716,11 +716,14 @@ impl FieldEntry {
       } else {
         (0, 0, None, 0)
       };
-    let mut graph_level_node_index_offsets = vec![0usize; num_levels];
-    for i in 1..num_levels {
-      let nodes = &nodes_by_level[i - 1];
-      let node_count = if nodes.is_empty() { size } else { nodes.len() };
-      graph_level_node_index_offsets[i] = graph_level_node_index_offsets[i - 1] + node_count;
+    let mut graph_level_node_index_offsets = Vec::with_capacity(num_levels);
+    if num_levels > 0 {
+      let mut offset = 0;
+      graph_level_node_index_offsets.push(offset);
+      for nodes in &nodes_by_level[..num_levels - 1] {
+        offset += if nodes.is_empty() { size } else { nodes.len() };
+        graph_level_node_index_offsets.push(offset);
+      }
     }
     let graph_level_node_index_offsets = Arc::new(graph_level_node_index_offsets);
     let nodes_by_level = Arc::new(nodes_by_level);

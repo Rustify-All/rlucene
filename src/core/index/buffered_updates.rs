@@ -420,17 +420,23 @@ impl Accountable for DeletedTerms {
 impl fmt::Display for DeletedTerms {
   /// Used for `BufferedUpdates::VERBOSE_DELETES`.
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    use std::fmt::Write as _;
+
     let terms = self.key_set().map_err(|_| fmt::Error)?;
-    let mut entries = Vec::with_capacity(terms.len());
-    for term in &terms {
-      entries.push(format!(
+    let mut entries = String::new();
+    for (i, term) in terms.iter().enumerate() {
+      if i > 0 {
+        entries.push_str(", ");
+      }
+      write!(
+        &mut entries,
         "{}={}",
         term,
         self.get(term).map_err(|_| fmt::Error)?
-      ));
+      )?;
     }
 
-    write!(f, "{{{}}}", entries.join(", "))
+    write!(f, "{{{entries}}}")
   }
 }
 

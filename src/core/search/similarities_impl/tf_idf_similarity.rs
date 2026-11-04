@@ -373,12 +373,13 @@ impl Similarity for TFIDFSimilarity {
         .idf_explain_from_multi_ts(collection_stats, term_stats)
     };
 
-    let mut norm_table = vec![0f32; 256];
-    let length_table = &*LENGTH_TABLE;
-    for i in 1..256 {
-      let norm = self.sub.length_norm(length_table[i]);
-      norm_table[i] = norm;
-    }
+    let mut norm_table = Vec::with_capacity(LENGTH_TABLE.len());
+    norm_table.push(0.0);
+    norm_table.extend(
+      LENGTH_TABLE[1..]
+        .iter()
+        .map(|&length| self.sub.length_norm(length)),
+    );
     norm_table[0] = 1f32 / norm_table[255];
 
     TFIDFScorer::new(boost, idf, norm_table, self.sub.clone())

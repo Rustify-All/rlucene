@@ -903,6 +903,20 @@ where
     self.decompressed += to_decompress;
     Ok(())
   }
+
+  fn consume_bytes(&mut self, mut len: usize, mut consume: impl FnMut(&[u8])) -> Result<()> {
+    while len > self.bytes.length {
+      let end = self.bytes.offset + self.bytes.length;
+      consume(&self.bytes.bytes[self.bytes.offset..end]);
+      len -= self.bytes.length;
+      self.fill_buffer()?;
+    }
+    let end = self.bytes.offset + len;
+    consume(&self.bytes.bytes[self.bytes.offset..end]);
+    self.bytes.offset = end;
+    self.bytes.length -= len;
+    Ok(())
+  }
 }
 
 impl<I> Display for DataInputImpl<'_, I> {
@@ -938,28 +952,16 @@ where
       self.bytes.length -= len;
       return Ok(std::borrow::Cow::Borrowed(bytes));
     }
-    let mut bytes = vec![0; len];
-    self.read_bytes(&mut bytes, 0, len)?;
+    let mut bytes = Vec::with_capacity(len);
+    self.consume_bytes(len, |chunk| bytes.extend_from_slice(chunk))?;
     Ok(std::borrow::Cow::Owned(bytes))
   }
 
-  fn read_bytes(&mut self, b: &mut [u8], mut offset: usize, mut len: usize) -> Result<()> {
-    while len > self.bytes.length {
-      b.copy_from(
-        &self.bytes.bytes[self.bytes.offset..(self.bytes.offset + self.bytes.length)],
-        offset,
-      );
-      len -= self.bytes.length;
-      offset += self.bytes.length;
-      self.fill_buffer()?;
-    }
-    b.copy_from(
-      &self.bytes.bytes[self.bytes.offset..(self.bytes.offset + len)],
-      offset,
-    );
-    self.bytes.offset += len;
-    self.bytes.length -= len;
-    Ok(())
+  fn read_bytes(&mut self, b: &mut [u8], mut offset: usize, len: usize) -> Result<()> {
+    self.consume_bytes(len, |chunk| {
+      b.copy_from(chunk, offset);
+      offset += chunk.len();
+    })
   }
 
   fn read_group_vint(&mut self, dst: &mut [i32], offset: usize) -> Result<()> {

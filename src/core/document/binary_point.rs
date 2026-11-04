@@ -31,7 +31,6 @@ use crate::core::search::point_in_set_query::{PointInSetBase, PointInSetQuery};
 use crate::core::search::point_range_query::check_args;
 use crate::core::search::point_range_query::{PointRangeBase, PointRangeQuery};
 use crate::core::search::query::Query;
-use crate::core::util::SliceCopyOps;
 use crate::core::util::bytes_ref_iterator::BytesRefIterator;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::number::Number;
@@ -192,9 +191,9 @@ impl BinaryPoint {
       }
     }
 
-    let mut packed = vec![0u8; bytes_per_dim * point.len()];
-    for (i, dim) in point.iter().enumerate() {
-      packed.copy_from(&dim.as_ref()[0..bytes_per_dim], i * bytes_per_dim);
+    let mut packed = Vec::with_capacity(bytes_per_dim * point.len());
+    for dim in point {
+      packed.extend_from_slice(&dim.as_ref()[..bytes_per_dim]);
     }
 
     Ok(BytesRef::from_bytes(packed))

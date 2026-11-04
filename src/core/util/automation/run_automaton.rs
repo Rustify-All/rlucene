@@ -87,14 +87,15 @@ impl RunAutomaton {
       }
     }
 
-    let mut classmap = vec![0; alphabet_size.min(256)];
+    let classmap_len = alphabet_size.min(256);
+    let mut classmap = Vec::with_capacity(classmap_len);
     let mut i = 0;
-    for (j, class) in classmap.iter_mut().enumerate() {
+    for j in 0..classmap_len {
       if i + 1 < points.len() && j as i32 == points[i + 1] {
         i += 1;
       }
       // There are at most 256 iterations, each increasing i at most once.
-      *class = i as u16;
+      classmap.push(i as u16);
     }
 
     Ok(Self {

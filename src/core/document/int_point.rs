@@ -127,9 +127,11 @@ impl IntPoint {
         "point must not be 0 dimensions".to_string(),
       ));
     }
-    let mut packed = vec![0u8; point.len() * BitUtil::INT_BYTES];
-    for (i, &dim) in point.iter().enumerate() {
-      Self::encode_dimension(dim, &mut packed, i * BitUtil::INT_BYTES);
+    let mut packed = Vec::with_capacity(point.len() * BitUtil::INT_BYTES);
+    let mut encoded = [0; BitUtil::INT_BYTES];
+    for &dim in point {
+      Self::encode_dimension(dim, &mut encoded, 0);
+      packed.extend_from_slice(&encoded);
     }
     Ok(BytesRef::from_bytes(packed))
   }
