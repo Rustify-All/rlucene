@@ -837,9 +837,7 @@ impl<I: Impacts, IE> SynonymImpacts<'_, I, IE> {
 
   fn merge_impacts(to_merge: SmallVec<[Vec<Impact>; 8]>) -> Result<Vec<Impact>> {
     let mut pq = PriorityQueue::new(to_merge.len(), SynonymSubIteratorCmp)?;
-    let mut subs = Vec::with_capacity(to_merge.len());
-    subs.extend(to_merge.into_iter().map(SynonymSubIterator::new));
-    pq.add_all(subs)?;
+    pq.add_all_exact(to_merge.into_iter().map(SynonymSubIterator::new))?;
 
     let mut merged_impacts = Vec::new();
 

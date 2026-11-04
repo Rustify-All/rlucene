@@ -217,6 +217,13 @@ where
     I: IntoIterator<Item = T>,
   {
     let elements = elements.into_iter().collect::<Vec<_>>();
+    self.add_all_exact(elements.into_iter())
+  }
+
+  pub(crate) fn add_all_exact<I>(&mut self, elements: I) -> Result<()>
+  where
+    I: ExactSizeIterator<Item = T>,
+  {
     if (self.size + elements.len()) > self.max_size {
       return Err(LuceneError::array_index_out_of_bounds(format!(
         "Cannot add {} elements to a queue with remaining capacity: {}",
@@ -227,7 +234,7 @@ where
     // Heap with size S always takes first S elements of the array,
     // and thus it's safe to fill array further - no actual non-sentinel
     // value will be overwritten.
-    for element in elements.into_iter() {
+    for element in elements {
       self.heap[self.size + 1] = Some(element);
       self.size += 1;
     }
