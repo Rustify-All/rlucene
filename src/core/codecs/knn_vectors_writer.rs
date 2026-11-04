@@ -99,7 +99,7 @@ where
         let mut doc = iter.next_doc()?;
         while doc != NO_MORE_DOCS {
           let ord: usize = iter.index()?.try_convert()?;
-          let vector_value = iter.vector_value(ord)?;
+          let vector_value = iter.with_vector_value(ord, |value| Ok(value.into_owned()))?;
           self.add_value(doc, &vector_value, field_vectors_writer_idx)?;
           doc = iter.next_doc()?;
         }
@@ -115,7 +115,7 @@ where
         let mut doc = iter.next_doc()?;
         while doc != NO_MORE_DOCS {
           let ord: usize = iter.index()?.try_convert()?;
-          let vector_value = iter.vector_value(ord)?;
+          let vector_value = iter.with_vector_value(ord, |value| Ok(value.into_owned()))?;
           self.add_value(doc, &vector_value, field_vectors_writer_idx)?;
           doc = iter.next_doc()?;
         }
@@ -708,13 +708,16 @@ where
     Ok(self.index)
   }
 }
-impl<F, DM> MergeVectorValues for MergedFloat32VectorValuesIterator<F, DM>
+impl<F, DM> MergedFloat32VectorValuesIterator<F, DM>
 where
   F: FloatVectorValues,
   DM: MergeDocMap,
 {
-  type Element = f32;
-  fn vector_value(&self, ord: usize) -> Result<Vec<f32>> {
+  pub(crate) fn with_vector_value<R>(
+    &self,
+    ord: usize,
+    consume: impl FnOnce(FloatVectorValue<'_>) -> Result<R>,
+  ) -> Result<R> {
     let state = self.state.borrow();
     let ord: i32 = ord.try_convert()?;
     if ord != state.last_ord {
@@ -729,7 +732,8 @@ where
       .ok_or_else(|| LuceneError::illegal_state("missing current vector sub"))?;
     let current_sub = &state.doc_id_merger.get_subs()[current].sub;
     let index: usize = current_sub.index()?.try_convert()?;
-    Ok(Into::<FloatVectorValue<'_>>::into(current_sub.values.vector_value(index)?).into_owned())
+    let value: FloatVectorValue<'_> = current_sub.values.vector_value(index)?.into();
+    consume(value)
   }
 }
 
@@ -947,13 +951,16 @@ where
   }
 }
 
-impl<B, DM> MergeVectorValues for MergedByteVectorValuesIterator<B, DM>
+impl<B, DM> MergedByteVectorValuesIterator<B, DM>
 where
   B: ByteVectorValues,
   DM: MergeDocMap,
 {
-  type Element = u8;
-  fn vector_value(&self, ord: usize) -> Result<Vec<u8>> {
+  pub(crate) fn with_vector_value<R>(
+    &self,
+    ord: usize,
+    consume: impl FnOnce(ByteVectorValue<'_>) -> Result<R>,
+  ) -> Result<R> {
     let mut state = self.state.borrow_mut();
     let ord: i32 = ord.try_convert()?;
     if ord != state.last_ord + 1 {
@@ -969,13 +976,9 @@ where
       .ok_or_else(|| LuceneError::illegal_state("missing current vector sub"))?;
     let current_sub = &state.doc_id_merger.get_subs()[current].sub;
     let index: usize = current_sub.index()?.try_convert()?;
-    Ok(Into::<ByteVectorValue<'_>>::into(current_sub.values.vector_value(index)?).into_owned())
+    let value: ByteVectorValue<'_> = current_sub.values.vector_value(index)?.into();
+    consume(value)
   }
-}
-
-pub(crate) trait MergeVectorValues {
-  type Element;
-  fn vector_value(&self, ord: usize) -> Result<Vec<Self::Element>>;
 }
 
 fn merge_vector_values<D, CR, V, S, VSupplier, NewSub>(

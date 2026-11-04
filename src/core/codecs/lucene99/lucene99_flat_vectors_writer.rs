@@ -21,7 +21,7 @@ use crate::core::codecs::hnsw::flat_vectors_writer::FlatVectorsWriter;
 use crate::core::codecs::knn_field_vectors_writer::KnnFieldVectorsWriter;
 use crate::core::codecs::knn_field_vectors_writer::VectorInput;
 use crate::core::codecs::knn_vectors_writer::{
-  KnnVectorsWriter, MergeVectorValues, MergedByteVectorValues, MergedFloat32VectorValues,
+  KnnVectorsWriter, MergedByteVectorValues, MergedFloat32VectorValues,
   map_old_ord_to_new_ord, merge_byte_vector_values, merge_float_vector_values,
 };
 use crate::core::codecs::lucene95::off_heap_byte_vector_values;
@@ -155,8 +155,9 @@ where
 
   fn write_float32_vectors(vector_data: &mut O, dim: usize, vectors: &[Box<[f32]>]) -> Result<()> {
     #[cfg(target_endian = "little")]
-    if dim >= 16 && vectors.iter().all(|vector| vector.len() == dim) {
+    if dim >= 16 {
       for vector in vectors {
+        debug_assert_eq!(vector.len(), dim);
         let bytes: &[u8] = wide::bytemuck::cast_slice(vector);
         vector_data.write_bytes_range(bytes, 0, bytes.len())?;
       }
@@ -195,9 +196,11 @@ where
 
     let dim = field_data.dim;
     #[cfg(target_endian = "little")]
-    if dim >= 16 && vectors.iter().all(|vector| vector.len() == dim) {
+    if dim >= 16 {
       for &ord in ord_map {
-        let bytes: &[u8] = wide::bytemuck::cast_slice(&vectors[ord]);
+        let vector = &vectors[ord];
+        debug_assert_eq!(vector.len(), dim);
+        let bytes: &[u8] = wide::bytemuck::cast_slice(vector);
         vector_data.write_bytes_range(bytes, 0, bytes.len())?;
       }
       return Ok(vector_data_offset);
@@ -804,9 +807,10 @@ where
       break;
     }
     let ord: usize = iter.index()?.try_convert()?;
-    let value = iter.vector_value(ord)?;
-    debug_assert_eq!(value.len(), dim);
-    output.write_bytes_range(&value, 0, value.len())?;
+    iter.with_vector_value(ord, |value| {
+      debug_assert_eq!(value.len(), dim);
+      output.write_bytes_range(&value, 0, value.len())
+    })?;
     docs_with_field.add(doc)?;
   }
   docs_with_field.finish();
@@ -825,7 +829,9 @@ where
   let mut docs_with_field = DocsWithFieldSet::new();
 
   let dim = float_vector_values.dimension();
+  #[cfg(target_endian = "big")]
   let byte_size = BitUtil::FLOAT_BYTES;
+  #[cfg(target_endian = "big")]
   stack_or_heap_buffer!(buffer, u8, dim * byte_size, 128, 0);
 
   let mut iter = float_vector_values.iterator()?;
@@ -835,13 +841,22 @@ where
       break;
     }
     let ord: usize = iter.index()?.try_convert()?;
-    let value = iter.vector_value(ord)?;
-    for (i, &v) in value.iter().enumerate() {
-      let bytes = v.to_le_bytes();
-      let start = i * byte_size;
-      buffer[start..start + byte_size].copy_from_slice(&bytes);
-    }
-    output.write_bytes_range(buffer, 0, buffer.len())?;
+    iter.with_vector_value(ord, |value| {
+      #[cfg(target_endian = "little")]
+      let bytes: &[u8] = {
+        debug_assert_eq!(value.len(), dim);
+        wide::bytemuck::cast_slice(&value)
+      };
+      #[cfg(target_endian = "big")]
+      let bytes: &[u8] = {
+        for (i, &v) in value.iter().enumerate() {
+          let start = i * byte_size;
+          buffer[start..start + byte_size].copy_from_slice(&v.to_le_bytes());
+        }
+        buffer
+      };
+      output.write_bytes_range(bytes, 0, bytes.len())
+    })?;
     docs_with_field.add(doc)?;
   }
   docs_with_field.finish();
