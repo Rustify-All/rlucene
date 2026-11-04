@@ -719,13 +719,39 @@ pub(crate) fn get_upper_and_lower_quantile(
     Selector::select(&mut selector, 0, len, len - selector_index)?;
     Selector::select(&mut selector, 0, len - selector_index, selector_index)?;
   }
+  let end = arr.len() - selector_index;
+  if end.saturating_sub(selector_index) >= 8
+    && let Some(values) = arr.get(selector_index..end)
+  {
+    use wide::{bytemuck::cast, i32x8};
+
+    let (groups, tail) = values.as_chunks::<8>();
+    let magnitude = i32x8::splat(i32::MAX);
+    let mut minimum = i32x8::splat(i32::MAX);
+    let mut maximum = i32x8::splat(i32::MIN);
+    for &group in groups {
+      let bits: i32x8 = cast(group);
+      // Flip the magnitude bits of negative values to preserve order, including -0.0.
+      let ordered = bits ^ ((bits >> 31) & magnitude);
+      minimum = minimum.min(ordered);
+      maximum = maximum.max(ordered);
+    }
+    let min_bits = minimum.reduce_min();
+    let max_bits = maximum.reduce_max();
+    let mut min = f32::from_bits((min_bits ^ ((min_bits >> 31) & i32::MAX)) as u32);
+    let mut max = f32::from_bits((max_bits ^ ((max_bits >> 31) & i32::MAX)) as u32);
+    // NaNs sort outside the infinities. Keep the original payload selection on that path.
+    if !min.is_nan() && !max.is_nan() {
+      for &value in tail {
+        min = CoreHelper::min_f32(min, value);
+        max = CoreHelper::max_f32(max, value);
+      }
+      return Ok([min, max]);
+    }
+  }
   let mut min = f32::INFINITY;
   let mut max = f32::NEG_INFINITY;
-  for &value in arr
-    .iter()
-    .take(arr.len() - selector_index)
-    .skip(selector_index)
-  {
+  for &value in arr.iter().take(end).skip(selector_index) {
     min = CoreHelper::min_f32(min, value);
     max = CoreHelper::max_f32(max, value);
   }
