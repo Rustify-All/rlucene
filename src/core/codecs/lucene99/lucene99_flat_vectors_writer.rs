@@ -154,6 +154,15 @@ where
   }
 
   fn write_float32_vectors(vector_data: &mut O, dim: usize, vectors: &[Box<[f32]>]) -> Result<()> {
+    #[cfg(target_endian = "little")]
+    if dim >= 16 && vectors.iter().all(|vector| vector.len() == dim) {
+      for vector in vectors {
+        let bytes: &[u8] = wide::bytemuck::cast_slice(vector);
+        vector_data.write_bytes_range(bytes, 0, bytes.len())?;
+      }
+      return Ok(());
+    }
+
     let byte_size = BitUtil::FLOAT_BYTES;
     stack_or_heap_buffer!(buffer, u8, dim * byte_size, 128, 0);
 
