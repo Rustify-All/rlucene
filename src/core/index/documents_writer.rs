@@ -914,7 +914,7 @@ where
   FN: FlushNotifications,
 {
   documents_writer: &'a DocumentsWriter<D, FN>,
-  writers: Vec<Arc<DwptWrapper<D>>>,
+  writers: smallvec::SmallVec<[Arc<DwptWrapper<D>>; 4]>,
   released: AtomicBool,
 }
 
@@ -926,7 +926,7 @@ where
   fn new(documents_writer: &'a DocumentsWriter<D, FN>) -> Self {
     Self {
       documents_writer,
-      writers: Vec::new(),
+      writers: smallvec::SmallVec::new(),
       released: AtomicBool::new(false),
     }
   }

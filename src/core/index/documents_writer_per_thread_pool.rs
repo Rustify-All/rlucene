@@ -218,12 +218,15 @@ where
 
   /// Filters all `DocumentsWriterPerThread`s that the given predicate applies to and that can be checked out of the pool via [`checkout`](Self::checkout).
   /// All returned DWPTs are already locked, and [`is_registered`](Self::is_registered) will return `true` for each one.
-  pub(crate) fn filter_and_lock<F1>(&self, predicate: F1) -> Result<Vec<Arc<DwptWrapper<D>>>>
+  pub(crate) fn filter_and_lock<F1>(
+    &self,
+    predicate: F1,
+  ) -> Result<smallvec::SmallVec<[Arc<DwptWrapper<D>>; 4]>>
   where
     F1: Fn(&Arc<DwptWrapper<D>>) -> bool,
   {
     let cloned_dwpt = self.iterator();
-    let mut list = Vec::with_capacity(cloned_dwpt.len());
+    let mut list = smallvec::SmallVec::new();
     for state in cloned_dwpt {
       if predicate(&state) {
         state.lock();

@@ -1264,7 +1264,7 @@ where
     D: 'static,
     Updates: IntoIterator<Item = Fields>,
   {
-    let soft_deletes = soft_deletes.into_iter().collect::<Vec<Fields>>();
+    let soft_deletes: smallvec::SmallVec<[Fields; 1]> = soft_deletes.into_iter().collect();
     if soft_deletes.is_empty() {
       return Err(LuceneError::illegal_argument(
         "at least one soft delete must be present",
@@ -1318,7 +1318,7 @@ where
     IndexReaderContextType<IR>: IndexReaderContext<LeafReader = DefaultLeafReader<D>>,
     Updates: IntoIterator<Item = Fields>,
   {
-    let fields = fields.into_iter().collect::<Vec<Fields>>();
+    let fields: smallvec::SmallVec<[Fields; 1]> = fields.into_iter().collect();
     let mut inner = self.inner.lock();
     let dv_updates = self.build_doc_values_update(None::<Arc<Term>>, fields)?;
     let modifier = DocModifierImpl2 { dv_updates };
@@ -1462,7 +1462,7 @@ where
     D: 'static,
     Updates: IntoIterator<Item = Fields>,
   {
-    let soft_deletes = soft_deletes.into_iter().collect::<Vec<Fields>>();
+    let soft_deletes: smallvec::SmallVec<[Fields; 1]> = soft_deletes.into_iter().collect();
     if soft_deletes.is_empty() {
       return Err(LuceneError::illegal_argument(
         "at least one soft delete must be present",
