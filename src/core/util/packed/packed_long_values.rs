@@ -272,11 +272,17 @@ impl Builder {
   }
   fn pack_impl(&mut self) -> Result<()> {
     let num_values = self.pending.len();
-    if let Some(sub_builder) = self.sub_builder.as_mut() {
-      sub_builder.pack(self.pending.as_mut(), num_values, self.values_off);
-    }
+    let normalized_bits = self
+      .sub_builder
+      .as_mut()
+      .and_then(|builder| builder.pack(self.pending.as_mut(), num_values, self.values_off));
 
-    self.pack(num_values, self.values_off, self.acceptable_overhead_ratio)?;
+    self.pack(
+      num_values,
+      self.values_off,
+      self.acceptable_overhead_ratio,
+      normalized_bits,
+    )?;
 
     self.ram_bytes_used = self
       .ram_bytes_used
@@ -291,14 +297,17 @@ impl Builder {
     num_values: usize,
     block: usize,
     acceptable_overhead_ratio: f32,
+    normalized_bits: Option<i64>,
   ) -> Result<()> {
-    let mut value_bits = self.pending[0];
-
-    if value_bits >= 0 {
-      for &value in self.pending.iter().take(num_values).skip(1) {
-        value_bits |= value;
+    let value_bits = normalized_bits.unwrap_or_else(|| {
+      let mut bits = self.pending[0];
+      if bits >= 0 {
+        for &value in self.pending.iter().take(num_values).skip(1) {
+          bits |= value;
+        }
       }
-    }
+      bits
+    });
 
     // The union preserves zero, the sign bit and the highest required bit.
     let reader = if value_bits == 0 {

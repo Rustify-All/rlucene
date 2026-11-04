@@ -97,7 +97,12 @@ impl DeltaPackedLongValuesBuilder {
 
     Ok(DeltaPackedLongValues::new(self.mins, sub_reader))
   }
-  pub(crate) fn pack(&mut self, values: &mut [i64], num_values: usize, block: usize) {
+  pub(crate) fn pack(
+    &mut self,
+    values: &mut [i64],
+    num_values: usize,
+    block: usize,
+  ) -> Option<i64> {
     if let Some(sub_builder) = self.sub_builder.as_mut() {
       sub_builder.pack(values, num_values, block);
     }
@@ -106,16 +111,34 @@ impl DeltaPackedLongValuesBuilder {
     for &value in values.iter().take(num_values).skip(1) {
       min = min.min(value);
     }
-    if min != 0 {
-      for value in values.iter_mut().take(num_values) {
-        *value = value.wrapping_sub(min);
+    let normalized_bits = if min == 0 {
+      None
+    } else {
+      use wide::i64x4;
+
+      let length = num_values.min(values.len());
+      let (groups, tail) = values[..length].as_chunks_mut::<4>();
+      let base = i64x4::splat(min);
+      let mut union = i64x4::ZERO;
+      for group in groups {
+        let deltas = i64x4::new(*group) - base;
+        *group = deltas.to_array();
+        union |= deltas;
       }
-    }
+      let [a, b, c, d] = union.to_array();
+      let mut bits = a | b | c | d;
+      for value in tail {
+        *value = value.wrapping_sub(min);
+        bits |= *value;
+      }
+      Some(bits)
+    };
     if block == self.mins.len() {
       self.mins.push(min);
     } else {
       self.mins[block] = min;
     }
+    normalized_bits
   }
 
   pub(crate) fn grow(&mut self, new_block_count: usize) -> Result<()> {
