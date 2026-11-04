@@ -272,10 +272,44 @@ impl Encoder for BulkOperationPacked {
     mut blocks_offset: usize,
     iterations: usize,
   ) {
+    let mut remaining_values = self.long_value_count * iterations;
+    if iterations >= 2
+      && matches!(self.bits_per_value, 16 | 32)
+      && let Some(input) = values
+        .get(values_offset..)
+        .and_then(|values| values.get(..remaining_values))
+      && let Some(output) = blocks
+        .get_mut(blocks_offset..)
+        .and_then(|blocks| blocks.get_mut(..iterations))
+    {
+      use wide::{bytemuck::cast, u64x2};
+
+      let (pairs, _) = output.as_chunks_mut::<2>();
+      if self.bits_per_value == 16 {
+        for (pair, group) in pairs.iter_mut().zip(input.as_chunks::<8>().0) {
+          let [ab, cd, ef, gh]: [u64x2; 4] = cast(*group);
+          let [a, b] = u64x2::transpose([ab, ef]);
+          let [c, d] = u64x2::transpose([cd, gh]);
+          *pair = ((a << 48u32) | (b << 32u32) | (c << 16u32) | d).to_array();
+        }
+      } else {
+        for (pair, group) in pairs.iter_mut().zip(input.as_chunks::<4>().0) {
+          let [ab, cd]: [u64x2; 2] = cast(*group);
+          let [high, low] = u64x2::transpose([ab, cd]);
+          *pair = ((high << 32u32) | low).to_array();
+        }
+      }
+      let written = pairs.len() * 2;
+      let consumed = written * self.long_value_count;
+      values_offset += consumed;
+      blocks_offset += written;
+      remaining_values -= consumed;
+    }
+
     let mut next_block: u64 = 0;
     let mut bits_left: i32 = 64;
 
-    for _ in 0..(self.long_value_count * iterations) {
+    for _ in 0..remaining_values {
       bits_left -= self.bits_per_value;
 
       match bits_left {

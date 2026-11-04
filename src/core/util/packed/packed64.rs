@@ -292,7 +292,10 @@ impl Mutable for Packed64 {
     );
 
     let iterations = len / long_value_count;
-    encoder.encode_i64_to_u64(&arr[off..], 0, &mut self.blocks, block_index, iterations);
+    let input = &arr[off..];
+    if iterations != 0 {
+      encoder.encode_i64_to_u64(input, 0, &mut self.blocks, block_index, iterations);
+    }
 
     let set_values = iterations * long_value_count;
     index += set_values;
