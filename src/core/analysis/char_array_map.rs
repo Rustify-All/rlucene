@@ -76,10 +76,7 @@ impl<T> CharArrayMap<T> {
   }
   pub fn contains_key(&self, key: &[char], off: usize, len: usize) -> bool {
     let slice = &key[off..off + len];
-    match norm(self.ignore, slice) {
-      Cow::Borrowed(_) => self.map.contains_key(slice),
-      Cow::Owned(o) => self.map.contains_key(o.as_slice()),
-    }
+    self.with_lookup_key(slice, |key| self.map.contains_key(key))
   }
   pub fn contains_key_str(&self, key: &str) -> bool {
     // UTF-8 byte length bounds the number of characters; longer keys keep the heap path.
@@ -92,9 +89,9 @@ impl<T> CharArrayMap<T> {
       }
       return self.map.contains_key(&chars[..len]);
     }
-    let chars: Vec<char> = key.chars().collect();
+    let chars = self.collect_key(key);
     debug_assert!(chars.len() <= i32::MAX as usize);
-    self.contains_key(chars.as_slice(), 0, chars.len())
+    self.map.contains_key(chars.as_slice())
   }
   pub fn contains_key_any<V>(&self, key: &V) -> bool
   where
@@ -110,7 +107,8 @@ impl<T> CharArrayMap<T> {
   {
     let chars = match key.into() {
       Cow::Owned(chars) => norm_owned(self.ignore, chars),
-      Cow::Borrowed(chars) => norm(self.ignore, chars).into_owned(),
+      Cow::Borrowed(chars) if self.ignore => chars.iter().map(lowercase).collect(),
+      Cow::Borrowed(chars) => chars.to_vec(),
     };
     self.map.insert(chars, val)
   }
@@ -127,10 +125,7 @@ impl<T> CharArrayMap<T> {
   }
   pub fn get(&self, key: &[char], off: usize, len: usize) -> Option<&T> {
     let slice = &key[off..off + len];
-    match norm(self.ignore, slice) {
-      Cow::Borrowed(_) => self.map.get(slice),
-      Cow::Owned(o) => self.map.get(o.as_slice()),
-    }
+    self.with_lookup_key(slice, |key| self.map.get(key))
   }
   pub fn get_str(&self, key: &str) -> Option<&T> {
     // UTF-8 byte length bounds the number of characters; longer keys keep the heap path.
@@ -143,9 +138,36 @@ impl<T> CharArrayMap<T> {
       }
       return self.map.get(&chars[..len]);
     }
-    let chars: Vec<char> = key.chars().collect();
-    self.get(chars.as_slice(), 0, chars.len())
+    let chars = self.collect_key(key);
+    self.map.get(chars.as_slice())
   }
+  fn with_lookup_key<R>(&self, key: &[char], lookup: impl FnOnce(&[char]) -> R) -> R {
+    if !self.ignore {
+      return lookup(key);
+    }
+    if key.len() <= 32 {
+      let Some(first_change) = key.iter().position(|ch| lowercase(ch) != *ch) else {
+        return lookup(key);
+      };
+      let mut chars = ['\0'; 32];
+      chars[..first_change].copy_from_slice(&key[..first_change]);
+      for (out, ch) in chars[first_change..].iter_mut().zip(&key[first_change..]) {
+        *out = lowercase(ch);
+      }
+      lookup(&chars[..key.len()])
+    } else {
+      lookup(norm(true, key).as_ref())
+    }
+  }
+
+  fn collect_key(&self, key: &str) -> Vec<char> {
+    if self.ignore {
+      key.chars().map(|ch| lowercase(&ch)).collect()
+    } else {
+      key.chars().collect()
+    }
+  }
+
   pub fn get_any<V>(&self, key: &V) -> Option<&T>
   where
     V: Display,
