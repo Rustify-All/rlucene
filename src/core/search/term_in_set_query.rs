@@ -41,7 +41,7 @@ use crate::core::util::automation::byte_run_automaton::ByteRunAutomaton;
 use crate::core::util::bytes_ref_iterator::BytesRefIterator;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use std::borrow::Cow;
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Formatter, Write as _};
 use std::hash::{Hash, Hasher};
 use std::sync::LazyLock;
 
@@ -189,7 +189,15 @@ impl QueryBase for TermInSetQuery {
       }
       first = false;
       let term = term.as_ref();
-      builder.push_str(&Term::get_string(term).unwrap_or_else(|_| term.to_string().into()));
+      let text = term
+        .offset
+        .checked_add(term.length)
+        .and_then(|end| term.bytes.get(term.offset..end))
+        .and_then(|bytes| std::str::from_utf8(bytes).ok());
+      match text {
+        Some(text) => builder.push_str(text),
+        None => write!(builder, "{term}")?,
+      }
     }
     builder.push(')');
     Ok(builder)

@@ -297,7 +297,7 @@ impl BM25Scorer {
   }
 
   fn explain_constant_factors(&self) -> Vec<Explanation> {
-    let mut subs = Vec::new();
+    let mut subs = Vec::with_capacity(3);
     if self.boost != 1.0 {
       subs.push(Explanation::match_no_details(
         Number::F32(self.boost),

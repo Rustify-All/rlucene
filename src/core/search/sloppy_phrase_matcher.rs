@@ -669,7 +669,8 @@ where
     bb: Vec<FixedBitSet>,
   ) -> Result<HashMap<&'a Term, usize>> {
     let mut tg: HashMap<&Term, usize> = HashMap::new();
-    let terms: Vec<&Term> = tord.keys().collect();
+    let mut terms = smallvec::SmallVec::<[&Term; 4]>::with_capacity(tord.len());
+    terms.extend(tord.keys());
 
     for (i, bits) in bb.iter().enumerate() {
       let mut ord = bits.next_set_bit(0);

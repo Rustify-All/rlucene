@@ -33,10 +33,16 @@ impl ToStringUtils {
       if bytes.is_empty() {
         return "null".to_string();
       }
-      let v = b.utf8_to_string();
+      let v = b.bytes.access(|bytes| {
+        b.offset
+          .checked_add(b.length)
+          .and_then(|end| bytes.get(b.offset..end))
+          .and_then(|bytes| std::str::from_utf8(bytes).ok())
+          .map(str::to_owned)
+      });
       match v {
-        Ok(s) => s,
-        Err(_) => {
+        Some(s) => s,
+        None => {
           // If BytesRef isn't actually UTF-8, or it's e.g. a prefix of UTF-8
           // that ends mid-unicode-char, we fall back to hex:
           b.to_string()

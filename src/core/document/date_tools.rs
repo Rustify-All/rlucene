@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use std::fmt::{Display, Formatter};
+use std::fmt::{Display, Formatter, Write};
 
 use chrono::{DateTime, Datelike, NaiveDate, Timelike, Utc};
 
@@ -49,7 +49,7 @@ impl DateTools {
   /// depending on the requested `resolution`, using UTC as the timezone.
   pub fn time_to_string(time: i64, resolution: Resolution) -> Result<String> {
     let date = date_time_from_millis(Self::round(time, resolution)?)?;
-    Ok(format_date(date, resolution))
+    format_date(date, resolution)
   }
 
   /// Converts a string produced by [`time_to_string`](Self::time_to_string) or
@@ -217,19 +217,34 @@ fn date_time(
     })
 }
 
-fn format_date(date: DateTime<Utc>, resolution: Resolution) -> String {
+fn format_date(date: DateTime<Utc>, resolution: Resolution) -> Result<String> {
+  let year_width = date
+    .year()
+    .unsigned_abs()
+    .checked_ilog10()
+    .map_or(1, |log| log as usize + 1)
+    + usize::from(date.year() < 0);
+  let mut text = String::with_capacity(resolution.format_len() + year_width.max(4) - 4);
   match resolution {
-    Resolution::Year => format!("{:04}", date.year()),
-    Resolution::Month => format!("{:04}{:02}", date.year(), date.month()),
-    Resolution::Day => format!("{:04}{:02}{:02}", date.year(), date.month(), date.day()),
-    Resolution::Hour => format!(
+    Resolution::Year => write!(text, "{:04}", date.year()),
+    Resolution::Month => write!(text, "{:04}{:02}", date.year(), date.month()),
+    Resolution::Day => write!(
+      text,
+      "{:04}{:02}{:02}",
+      date.year(),
+      date.month(),
+      date.day()
+    ),
+    Resolution::Hour => write!(
+      text,
       "{:04}{:02}{:02}{:02}",
       date.year(),
       date.month(),
       date.day(),
       date.hour()
     ),
-    Resolution::Minute => format!(
+    Resolution::Minute => write!(
+      text,
       "{:04}{:02}{:02}{:02}{:02}",
       date.year(),
       date.month(),
@@ -237,7 +252,8 @@ fn format_date(date: DateTime<Utc>, resolution: Resolution) -> String {
       date.hour(),
       date.minute()
     ),
-    Resolution::Second => format!(
+    Resolution::Second => write!(
+      text,
       "{:04}{:02}{:02}{:02}{:02}{:02}",
       date.year(),
       date.month(),
@@ -246,7 +262,8 @@ fn format_date(date: DateTime<Utc>, resolution: Resolution) -> String {
       date.minute(),
       date.second()
     ),
-    Resolution::Millisecond => format!(
+    Resolution::Millisecond => write!(
+      text,
       "{:04}{:02}{:02}{:02}{:02}{:02}{:03}",
       date.year(),
       date.month(),
@@ -256,7 +273,8 @@ fn format_date(date: DateTime<Utc>, resolution: Resolution) -> String {
       date.second(),
       date.timestamp_subsec_millis()
     ),
-  }
+  }?;
+  Ok(text)
 }
 
 fn parse_date_string(date_string: &str) -> Result<DateTime<Utc>> {

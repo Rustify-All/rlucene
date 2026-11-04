@@ -369,6 +369,15 @@ impl<'a> SimpleGeoJSONPolygonParser<'a> {
 
   fn parse_string(&mut self) -> Result<String> {
     self.scan_char('"')?;
+    if let Some(length) = self.input.as_bytes()[self.upto..]
+      .iter()
+      .position(|byte| *byte == b'"' || *byte == b'\\' || !byte.is_ascii())
+      && self.input.as_bytes()[self.upto + length] == b'"'
+    {
+      let value = self.input[self.upto..self.upto + length].to_owned();
+      self.upto += length + 1;
+      return Ok(value);
+    }
     let mut result = String::new();
     while self.upto < self.input.len() {
       let ch = self.input.as_bytes()[self.upto] as char;

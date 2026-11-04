@@ -42,7 +42,7 @@ use crate::core::search::two_phase_iterator::TwoPhaseIterator;
 use crate::core::search::weight::{DefaultScorerSupplier, Weight};
 use crate::core::util::core_helper::HasIdentity;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Formatter, Write};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
@@ -125,7 +125,7 @@ impl QueryBase for XYDocValuesPointInGeometryQuery {
       if i > 0 {
         sb.push_str(", ");
       }
-      sb.push_str(&geometry.to_string());
+      write!(sb, "{geometry}")?;
     }
     sb.push(')');
     Ok(sb)

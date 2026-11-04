@@ -267,11 +267,13 @@ impl Hash for DisjunctionMaxQuery {
   {
     CoreHelper::hash_bits_f32_for_primitive_eq(self.tie_breaker_multiplier).hash(state);
 
-    let mut entries: SmallVec<[_; 8]> = self
-      .disjuncts
-      .iter()
-      .map(|(query, count)| (query, count, OnceCell::new()))
-      .collect();
+    let mut entries: SmallVec<[_; 8]> = SmallVec::with_capacity(self.disjuncts.len());
+    entries.extend(
+      self
+        .disjuncts
+        .iter()
+        .map(|(query, count)| (query, count, OnceCell::new())),
+    );
     entries.sort_by(|a, b| {
       // compare name
       let cmp = a.0.name().cmp(b.0.name());

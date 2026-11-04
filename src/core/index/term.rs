@@ -20,7 +20,7 @@ use std::fmt;
 use std::fmt::Display;
 use std::hash::{Hash, Hasher};
 
-use crate::core::index::{BytesRef, BytesRefBuilder, BytesRefValue};
+use crate::core::index::{BytesRef, BytesRefBuilder};
 use crate::core::util::accountable::Accountable;
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::ram_usage_estimator::{size_of_string, size_of_vec};
@@ -90,9 +90,14 @@ impl Term {
   /// Returns a human-readable form of the term text. If the term is not valid
   /// UTF-8, the raw bytes will be printed instead.
   pub fn get_string(term_text: &BytesRef<Vec<u8>>) -> Result<Cow<'_, str>> {
-    match BytesRefValue::utf8_to_string(term_text) {
-      Ok(text) => Ok(Cow::Borrowed(text)),
-      Err(_) => Ok(Cow::Owned(term_text.to_string())),
+    match term_text
+      .offset
+      .checked_add(term_text.length)
+      .and_then(|end| term_text.bytes.get(term_text.offset..end))
+      .and_then(|bytes| std::str::from_utf8(bytes).ok())
+    {
+      Some(text) => Ok(Cow::Borrowed(text)),
+      None => Ok(Cow::Owned(term_text.to_string())),
     }
   }
 

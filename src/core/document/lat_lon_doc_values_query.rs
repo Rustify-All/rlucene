@@ -163,7 +163,7 @@ impl QueryBase for LatLonDocValuesQuery {
       if i > 0 {
         sb.push_str(", ");
       }
-      sb.push_str(&geometry.to_string());
+      write!(sb, "{geometry}")?;
     }
     sb.push(')');
     Ok(sb)

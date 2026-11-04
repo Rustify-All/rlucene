@@ -225,15 +225,6 @@ impl QueryBase for TermRangeQuery {
     IRC: IndexReaderContext + 'static;
 
   fn to_string(&self, field: &str) -> Result<String> {
-    let mut buffer = String::new();
-
-    if self.base.get_field() != field {
-      buffer.push_str(self.base.get_field());
-      buffer.push(':');
-    }
-
-    buffer.push(if self.include_lower { '[' } else { '{' });
-
     let lower_str = match self.lower_term() {
       Some(term) => {
         let s = BytesRefValue::utf8_to_string(term)?;
@@ -245,10 +236,6 @@ impl QueryBase for TermRangeQuery {
       },
       None => Cow::Borrowed("*"),
     };
-    buffer.push_str(&lower_str);
-
-    buffer.push_str(" TO ");
-
     let upper_str = match self.upper_term.as_ref() {
       Some(term) => {
         let s = BytesRefValue::utf8_to_string(term)?;
@@ -260,11 +247,16 @@ impl QueryBase for TermRangeQuery {
       },
       None => Cow::Borrowed("*"),
     };
-    buffer.push_str(&upper_str);
-
-    buffer.push(if self.include_upper { ']' } else { '}' });
-
-    Ok(buffer)
+    let open = if self.include_lower { '[' } else { '{' };
+    let close = if self.include_upper { ']' } else { '}' };
+    if self.base.get_field() == field {
+      Ok(format!("{open}{lower_str} TO {upper_str}{close}"))
+    } else {
+      Ok(format!(
+        "{}:{open}{lower_str} TO {upper_str}{close}",
+        self.base.get_field()
+      ))
+    }
   }
 
   fn create_weight<IRC, SIM>(

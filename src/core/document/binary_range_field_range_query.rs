@@ -141,11 +141,12 @@ impl QueryBase for BinaryRangeFieldRangeQuery {
     IRC: IndexReaderContext + 'static;
 
   fn to_string(&self, field: &str) -> Result<String> {
-    let mut sb = String::new();
-    if self.data.sub.field() != field {
-      sb.push_str(self.data.sub.field());
-      sb.push(':');
+    if self.data.sub.field() == field {
+      return Ok(self.data.sub.range_string());
     }
+    let mut sb = String::new();
+    sb.push_str(self.data.sub.field());
+    sb.push(':');
     sb.push_str(&self.data.sub.range_string());
     Ok(sb)
   }

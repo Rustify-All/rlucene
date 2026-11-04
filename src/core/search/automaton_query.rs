@@ -144,18 +144,14 @@ impl QueryBase for AutomatonQuery {
     IRC: IndexReaderContext + 'static;
 
   fn to_string(&self, field: &str) -> Result<String> {
-    let mut buffer = String::new();
-
-    if self.term.field() != field {
-      buffer.push_str(self.term.field());
-      buffer.push(':');
+    let text = "AutomatonQuery {\n}";
+    if self.term.field() == field {
+      return Ok(text.to_owned());
     }
-
-    buffer.push_str("AutomatonQuery");
-    buffer.push_str(" {");
-    buffer.push('\n');
-    buffer.push('}');
-
+    let mut buffer = String::with_capacity(self.term.field().len() + 1 + text.len());
+    buffer.push_str(self.term.field());
+    buffer.push(':');
+    buffer.push_str(text);
     Ok(buffer)
   }
 

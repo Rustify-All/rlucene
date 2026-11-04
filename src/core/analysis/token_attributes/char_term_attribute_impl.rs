@@ -31,7 +31,7 @@ use std::sync::Arc;
 
 /// Default implementation of [`CharTermAttribute`].
 pub struct CharTermAttributeImpl<T> {
-  term_buffer: Vec<char>,
+  term_buffer: smallvec::SmallVec<[char; 13]>,
   term_length: usize,
   /// Implementations may use this to convert to other character sets or encodings when implementing [`get_bytes_ref`](Self::get_bytes_ref).
   pub(crate) builder: BytesRefBuilder<Vec<u8>>,
@@ -63,7 +63,7 @@ where
 
     let size = ArrayUtil::oversize(Self::MIN_BUFFER_SIZE, std::mem::size_of::<char>())?;
     Ok(Self {
-      term_buffer: vec!['\0'; size],
+      term_buffer: smallvec::smallvec!['\0'; size],
       term_length: 0,
       builder: BytesRefBuilder::new(),
       sub,
@@ -73,7 +73,11 @@ where
   }
   fn grow_term_buffer(&mut self, new_size: usize) -> Result<()> {
     if self.term_buffer.len() < new_size {
-      ArrayUtil::grow_no_copy(&mut self.term_buffer, new_size, || '\0')?;
+      let new_capacity = ArrayUtil::oversize(new_size, size_of::<char>())?;
+      if self.term_buffer.capacity() < new_size {
+        self.term_buffer = smallvec::SmallVec::with_capacity(new_capacity);
+      }
+      self.term_buffer.resize(new_size, '\0');
     }
     Ok(())
   }
@@ -138,7 +142,14 @@ where
     if self.term_buffer.len() < new_size {
       // Not big enough; create a new array with slight
       // over allocation:
-      ArrayUtil::grow_with(&mut self.term_buffer, new_size, || '\0')?;
+      ArrayUtil::oversize(new_size, size_of::<char>())?;
+      if self.term_buffer.capacity() < new_size {
+        let capacity = new_size.max(self.term_buffer.capacity() * 2).max(4);
+        self
+          .term_buffer
+          .reserve_exact(capacity - self.term_buffer.len());
+      }
+      self.term_buffer.resize(new_size, '\0');
     }
     Ok(&mut self.term_buffer)
   }
@@ -297,7 +308,7 @@ where
 {
   fn clone(&self) -> Self {
     Self {
-      term_buffer: self.term_buffer.clone(),
+      term_buffer: smallvec::SmallVec::from_slice(&self.term_buffer),
       term_length: self.term_length,
       builder: BytesRefBuilder {
         bytes_ref: self.builder.bytes_ref.clone(),

@@ -66,9 +66,9 @@ where
     let size = reducable_collectors.len();
     // A single manager needs only one inline Vec descriptor; collectors keep their own buffers.
     let mut reducable_collectors_by_manager: SmallVec<[Vec<M::C>; 1]> =
-      (0..self.collector_managers.len())
-        .map(|_| Vec::with_capacity(size))
-        .collect();
+      SmallVec::with_capacity(self.collector_managers.len());
+    reducable_collectors_by_manager
+      .extend((0..self.collector_managers.len()).map(|_| Vec::with_capacity(size)));
 
     for collector in reducable_collectors {
       let collectors = match collector {

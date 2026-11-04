@@ -99,11 +99,7 @@ impl TermQuery {
       buffer.push(':');
     }
     if buffer.is_empty() {
-      return Ok(
-        term_bytes
-          .utf8_to_string()
-          .unwrap_or_else(|_| term_bytes.to_string()),
-      );
+      return Ok(Term::get_string(term_bytes)?.into_owned());
     }
     match Term::get_string(term_bytes) {
       Ok(text) => buffer.push_str(&text),

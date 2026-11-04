@@ -144,7 +144,8 @@ where
     let disi = &mut self.disi.two_phase_iterator.approximation;
     disi.advance_all_tail()?;
     let mut current = disi.lead;
-    let mut scorers: Vec<_> = disi.all_scorers.iter_mut().map(Some).collect();
+    let mut scorers: SmallVec<[_; 8]> = SmallVec::with_capacity(disi.all_scorers.len());
+    scorers.extend(disi.all_scorers.iter_mut().map(Some));
     let mut children = Vec::with_capacity(disi.freq);
     while let Some(idx) = current {
       let wrapper = scorers[idx]

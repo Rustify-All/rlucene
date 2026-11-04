@@ -278,7 +278,8 @@ where
   }
 
   fn get_children(&mut self) -> Result<Vec<ChildScorable<Self::Child<'_>>>> {
-    let mut scorers: SmallVec<[_; 8]> = self.base.all_scores.iter_mut().map(Some).collect();
+    let mut scorers: SmallVec<[_; 8]> = SmallVec::with_capacity(self.base.all_scores.len());
+    scorers.extend(self.base.all_scores.iter_mut().map(Some));
     self
       .base
       .all_scores_input_idx

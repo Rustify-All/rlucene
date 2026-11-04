@@ -231,16 +231,18 @@ impl Version {
           (r"^LUCENE_(\d)(\d)$", "$1.$2.0"),
         ];
 
-        for (pattern, replacement) in patterns.iter() {
-          let re = match Regex::new(pattern) {
-            Ok(r) => r,
-            Err(e) => {
-              let err = IllegalArgumentError::new(e.to_string());
-              return Err(VersionError::parse_error_with_error("", err.into()));
-            },
-          };
-          if let Cow::Owned(replaced) = re.replace_all(&version, *replacement) {
-            version = replaced;
+        if version.starts_with("LUCENE_") {
+          for (pattern, replacement) in patterns.iter() {
+            let re = match Regex::new(pattern) {
+              Ok(r) => r,
+              Err(e) => {
+                let err = IllegalArgumentError::new(e.to_string());
+                return Err(VersionError::parse_error_with_error("", err.into()));
+              },
+            };
+            if let Cow::Owned(replaced) = re.replace_all(&version, *replacement) {
+              version = replaced;
+            }
           }
         }
 

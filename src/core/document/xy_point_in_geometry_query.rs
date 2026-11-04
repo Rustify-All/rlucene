@@ -43,7 +43,7 @@ use crate::core::util::bit_util::BitUtil;
 use crate::core::util::core_helper::HasIdentity;
 use crate::core::util::doc_id_set_builder::DocIdSetBuilder;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Formatter, Write};
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
@@ -136,7 +136,7 @@ impl QueryBase for XYPointInGeometryQuery {
       if i > 0 {
         sb.push_str(", ");
       }
-      sb.push_str(&geometry.to_string());
+      write!(sb, "{geometry}")?;
     }
     sb.push(']');
     Ok(sb)

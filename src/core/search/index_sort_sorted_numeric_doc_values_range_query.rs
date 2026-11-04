@@ -17,7 +17,6 @@
 use crate::core::search::constant_score_scorer::ConstantScoreDisiScorer;
 use crate::core::search::query::QueryRef;
 use crate::core::search::similarities_impl::similarities::Similarity;
-use std::fmt::Write as _;
 
 use crate::core::document::int_point::IntPoint;
 use crate::core::document::long_point::LongPoint;
@@ -119,19 +118,14 @@ impl QueryBase for IndexSortSortedNumericDocValuesRangeQuery {
     IRC: IndexReaderContext + 'static;
 
   fn to_string(&self, field: &str) -> Result<String> {
-    let mut s = String::new();
-
-    if self.field.as_str() != field {
-      s.push_str(&self.field);
-      s.push(':');
+    if self.field.as_str() == field {
+      Ok(format!("[{} TO {}]", self.lower_value, self.upper_value))
+    } else {
+      Ok(format!(
+        "{}:[{} TO {}]",
+        self.field, self.lower_value, self.upper_value
+      ))
     }
-
-    s.push('[');
-    write!(s, "{}", self.lower_value)?;
-    s.push_str(" TO ");
-    write!(s, "{}", self.upper_value)?;
-    s.push(']');
-    Ok(s)
   }
 
   fn create_weight<IRC, SIM>(

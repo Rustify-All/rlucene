@@ -74,9 +74,9 @@ where
     {
       let att = self.base.input.get_attribute_source_mut();
       let missing_position_increment = match att {
-        Attributes::PackedToken(att) => att.get_position_increment().is_err(),
-        Attributes::BytesTerm(att) => att.get_position_increment().is_err(),
-        Attributes::BinaryTokenStream(att) => att.get_position_increment().is_err(),
+        Attributes::PackedToken(_) => false,
+        Attributes::BytesTerm(_) => true,
+        Attributes::BinaryTokenStream(_) => false,
         #[cfg(test)]
         Attributes::RandomTokenStream(att) => att.get_position_increment().is_err(),
       };
