@@ -184,8 +184,8 @@ where
     let format_name = format.get_name();
     let identity = format.identity().clone();
 
-    field.put_attribute(PER_FIELD_FORMAT_KEY.to_string(), format_name.to_string());
-    let writer_and_suffix = match self.formats.entry(identity.clone()) {
+    field.put_borrowed_attribute(PER_FIELD_FORMAT_KEY, format_name);
+    let (writer_and_suffix, segment_suffix) = match self.formats.entry(identity.clone()) {
       Entry::Occupied(entry) => {
         // We've already seen this format, so just grab its suffix.
         if !self.suffixes.contains_key(format_name) {
@@ -193,7 +193,9 @@ where
             "no suffix for format name: {format_name}"
           )));
         }
-        entry.into_mut()
+        let segment_suffix =
+          get_full_segment_suffix(&write_state.segment_suffix, format_name, entry.get().suffix);
+        (entry.into_mut(), segment_suffix)
       },
       Entry::Vacant(entry) => {
         // First time we are seeing this format; create a new instance.
@@ -209,17 +211,18 @@ where
         };
 
         let segment_suffix =
-          get_full_segment_suffix(&write_state.segment_suffix, get_suffix(format_name, suffix));
+          get_full_segment_suffix(&write_state.segment_suffix, format_name, suffix);
         let state = SegmentWriteState::copy_with_suffix(write_state, segment_suffix);
         let writer = format.fields_writer(&state, segment_info)?;
-        entry.insert(WriterAndSuffix { writer, suffix })
+        (
+          entry.insert(WriterAndSuffix { writer, suffix }),
+          state.segment_suffix,
+        )
       },
     };
     let suffix = writer_and_suffix.suffix;
 
     field.put_attribute(PER_FIELD_SUFFIX_KEY.to_string(), suffix.to_string());
-    let segment_suffix =
-      get_full_segment_suffix(&write_state.segment_suffix, get_suffix(format_name, suffix));
     Ok((identity, segment_suffix, &mut writer_and_suffix.writer))
   }
 }
@@ -367,7 +370,7 @@ where
             ))
           })?;
           let segment_suffix =
-            get_full_segment_suffix(&read_state.segment_suffix, get_suffix(format_name, suffix));
+            get_full_segment_suffix(&read_state.segment_suffix, format_name, suffix);
           let reader = match formats.entry(segment_suffix) {
             Entry::Occupied(entry) => Arc::clone(entry.get()),
             Entry::Vacant(entry) => {
@@ -564,18 +567,15 @@ where
   }
 }
 
-fn get_suffix<T>(format_name: &str, suffix: T) -> String
-where
-  T: Display,
-{
-  format!("{format_name}_{suffix}")
-}
-
-fn get_full_segment_suffix(outer_segment_suffix: &str, segment_suffix: String) -> String {
+fn get_full_segment_suffix<T: Display>(
+  outer_segment_suffix: &str,
+  format_name: &str,
+  suffix: T,
+) -> String {
   if outer_segment_suffix.is_empty() {
-    segment_suffix
+    format!("{format_name}_{suffix}")
   } else {
-    format!("{outer_segment_suffix}_{segment_suffix}")
+    format!("{outer_segment_suffix}_{format_name}_{suffix}")
   }
 }
 

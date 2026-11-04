@@ -210,7 +210,7 @@ where
     > = HashMap::new();
 
     // Holds last suffix of each PostingsFormat name.
-    let mut suffixes: HashMap<String, i32> = HashMap::new();
+    let mut suffixes: HashMap<&str, i32> = HashMap::new();
 
     // Assign field -> PostingsFormat.
     while indexed_field_names.has_next()? {
@@ -249,7 +249,7 @@ where
               *suffix
             },
             None => {
-              suffixes.insert(format_name.to_string(), 0);
+              suffixes.insert(format_name, 0);
               0
             },
           };
@@ -271,7 +271,7 @@ where
       };
 
       group_builder.add_field(field);
-      field_info.put_attribute(PER_FIELD_FORMAT_KEY.to_string(), format_name.to_string());
+      field_info.put_borrowed_attribute(PER_FIELD_FORMAT_KEY, format_name);
       field_info.put_attribute(
         PER_FIELD_SUFFIX_KEY.to_string(),
         group_builder.suffix.to_string(),

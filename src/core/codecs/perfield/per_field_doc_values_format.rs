@@ -184,10 +184,10 @@ where
     let format_name = format.get_name();
     let identity = format.identity().clone();
 
-    field.put_attribute(PER_FIELD_FORMAT_KEY.to_string(), format_name.to_string());
+    field.put_borrowed_attribute(PER_FIELD_FORMAT_KEY, format_name);
     let mut suffix = None;
 
-    match self.formats.get(&identity) {
+    let segment_suffix = match self.formats.get(&identity) {
       None => {
         // First time we are seeing this format; create a new instance.
 
@@ -239,6 +239,7 @@ where
         self
           .formats
           .insert(identity.clone(), ConsumerAndSuffix { consumer, suffix });
+        state.segment_suffix
       },
       Some(consumer) => {
         // We've already seen this format, so just grab its suffix.
@@ -248,14 +249,14 @@ where
           )));
         }
         suffix = Some(consumer.suffix);
+        get_full_segment_suffix(&write_state.segment_suffix, format_name, consumer.suffix)
       },
-    }
+    };
 
     let suffix = suffix.ok_or_else(|| {
       LuceneError::illegal_state(format!("missing suffix for field: {}", field.name))
     })?;
     field.put_attribute(PER_FIELD_SUFFIX_KEY.to_string(), suffix.to_string());
-    let segment_suffix = get_full_segment_suffix(&write_state.segment_suffix, format_name, suffix);
     let consumer = self.formats.get_mut(&identity).ok_or_else(|| {
       LuceneError::illegal_state(format!(
         "missing doc values consumer for field: {}",

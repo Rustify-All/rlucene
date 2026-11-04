@@ -606,6 +606,20 @@ impl FieldInfo {
     Arc::make_mut(&mut attributes).insert(key, value)
   }
 
+  pub(crate) fn put_borrowed_attribute(&self, key: &str, value: &str) {
+    let mut attributes = self.attributes.lock();
+    if attributes.get(key).is_some_and(|old| old == value) {
+      return;
+    }
+    let attributes = Arc::make_mut(&mut attributes);
+    if let Some(current) = attributes.get_mut(key) {
+      current.clear();
+      current.push_str(value);
+    } else {
+      attributes.insert(key.to_string(), value.to_string());
+    }
+  }
+
   /// Returns a shared snapshot of the internal codec attributes map.
   pub fn attributes(&self) -> Arc<HashMap<String, String>> {
     self.attributes.lock().clone()

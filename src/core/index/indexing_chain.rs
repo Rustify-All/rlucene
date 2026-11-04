@@ -1192,6 +1192,12 @@ where
     *doc_field_idx += 1;
     let pf = &mut self.per_fields[pf_idx];
     Self::update_doc_field_schema(field.name(), &mut pf.schema, &field_type)?;
+    if let Some(attrs) = field_type.get_attributes()
+      && pf.field_info.is_none()
+      && !attrs.is_empty()
+    {
+      pf.schema.update_attributes(attrs);
+    }
     Ok(())
   }
   /// Returns a previously created [`PerField`], absorbing the type information from
@@ -1287,12 +1293,6 @@ where
         *field_type.vector_similarity_function(),
         field_type.vector_dimension() as usize,
       )?;
-    }
-
-    if let Some(attrs) = field_type.get_attributes()
-      && !attrs.is_empty()
-    {
-      schema.update_attributes(attrs);
     }
 
     Ok(())
