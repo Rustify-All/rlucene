@@ -30,7 +30,7 @@ use crate::core::util::bits::Bits;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::fixed_bit_set::FixedBitSet;
 use crate::core::util::hnsw::hnsw_graph::{HnswGraph, NodesIterator};
-use std::collections::VecDeque;
+use smallvec::SmallVec;
 
 /// Utilities for use in tests involving HNSW graphs
 pub struct HnswUtil;
@@ -238,11 +238,11 @@ impl HnswUtil {
     G: HnswGraph,
   {
     // Start at entry point and search all nodes on this level
-    let mut stack = VecDeque::new();
-    stack.push_back(entry_point);
+    let mut stack = SmallVec::<[usize; 4]>::new();
+    stack.push(entry_point);
     let mut count = 0;
 
-    while let Some(node) = stack.pop_back() {
+    while let Some(node) = stack.pop() {
       if connected_nodes.get(node)? {
         continue;
       }
@@ -257,7 +257,7 @@ impl HnswUtil {
         friend_ord != NO_MORE_DOCS as usize
       } {
         friend_count += 1;
-        stack.push_back(friend_ord);
+        stack.push(friend_ord);
       }
 
       if friend_count < max_conn

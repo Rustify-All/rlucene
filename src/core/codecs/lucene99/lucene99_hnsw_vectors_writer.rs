@@ -231,14 +231,14 @@ where
       .get_docs_with_field_set(flat_field_vectors_writers)?
       .cardinality() as usize;
 
-    let mut ord_map = vec![0; cardinality];
-    let mut old_ord_map = vec![0; cardinality];
+    let mut ordinal_maps = vec![0; cardinality * 2];
+    let (old_ord_map, ord_map) = ordinal_maps.split_at_mut(cardinality);
 
     map_old_ord_to_new_ord(
       field_data.get_docs_with_field_set(flat_field_vectors_writers)?,
       sort_map,
-      Some(&mut old_ord_map),
-      Some(&mut ord_map),
+      Some(&mut *old_ord_map),
+      Some(&mut *ord_map),
       None,
     )?;
 
@@ -249,17 +249,13 @@ where
       .cardinality();
     let (field_info, graph) = field_data.get_graph_and_field_info(flat_field_vectors_writers)?;
 
-    let mut graph_level_node_offsets = if let Some(ref g) = graph {
-      vec![Vec::new(); g.num_levels()?]
-    } else {
-      Vec::new()
-    };
+    let mut graph_level_node_offsets = Vec::new();
 
     let mut mock_graph = Self::reconstruct_and_write_graph(
       &mut self.vector_index,
       graph,
-      ord_map.as_ref(),
-      old_ord_map.as_ref(),
+      ord_map,
+      old_ord_map,
       &mut graph_level_node_offsets,
     )?;
 
@@ -303,17 +299,17 @@ where
     graph: Option<&'a mut OnHeapHnswGraph>,
     new_to_old_map: &[usize],
     old_to_new_map: &[usize],
-    level_node_offsets: &mut [Vec<i32>],
+    level_node_offsets: &mut Vec<i32>,
   ) -> Result<Option<ReconstructedGraph<'a>>> {
     let Some(graph) = graph else {
       return Ok(None);
     };
     let num_levels = graph.num_levels()?;
-    let mut upper_level_nodes = Vec::with_capacity(num_levels.saturating_sub(1));
+    let mut upper_level_nodes = smallvec::SmallVec::with_capacity(num_levels.saturating_sub(1));
 
     let max_ord = graph.size();
     let mut nodes_on_level0 = graph.get_nodes_on_level(0)?;
-    level_node_offsets[0] = vec![0i32; nodes_on_level0.size()];
+    level_node_offsets.reserve_exact(max_ord + *graph.non_zero_level_size.get_mut());
 
     while nodes_on_level0.has_next() {
       let node = nodes_on_level0
@@ -327,15 +323,10 @@ where
 
       let delta = (vector_index.get_file_pointer()? - offset).try_convert()?;
 
-      level_node_offsets[0][node] = delta;
+      level_node_offsets.push(delta);
     }
 
-    for (level, level_offsets) in level_node_offsets
-      .iter_mut()
-      .enumerate()
-      .take(num_levels)
-      .skip(1)
-    {
+    for level in 1..num_levels {
       let mut nodes_on_level = graph.get_nodes_on_level(level)?;
       let mut new_nodes = vec![0usize; nodes_on_level.size()];
 
@@ -349,9 +340,7 @@ where
 
       new_nodes.sort_unstable();
 
-      *level_offsets = vec![0i32; new_nodes.len()];
-
-      for (node_offset_index, &node) in new_nodes.iter().enumerate() {
+      for &node in &new_nodes {
         let neighbors = graph.get_neighbors_mut(level, new_to_old_map[node])?;
 
         let offset = vector_index.get_file_pointer()?;
@@ -360,7 +349,7 @@ where
 
         let delta = (vector_index.get_file_pointer()? - offset).try_convert()?;
 
-        level_offsets[node_offset_index] = delta;
+        level_node_offsets.push(delta);
       }
       upper_level_nodes.push(new_nodes);
     }
@@ -409,22 +398,20 @@ where
   fn write_graph(
     vector_index: &mut F::IndexOutput,
     graph: Option<&mut OnHeapHnswGraph>,
-  ) -> Result<Vec<Vec<i32>>> {
+  ) -> Result<Vec<i32>> {
     let Some(graph) = graph else {
       return Ok(Vec::new());
     };
 
     let count_on_level0 = graph.size();
     let num_levels = graph.num_levels()?;
-    let mut offsets = vec![Vec::new(); num_levels];
+    let mut offsets = Vec::with_capacity(count_on_level0 + *graph.non_zero_level_size.get_mut());
 
-    for (level, level_offsets) in offsets.iter_mut().enumerate().take(num_levels) {
+    for level in 0..num_levels {
       let nodes = graph.get_nodes_on_level(level)?;
       // This private writer only accepts OnHeapHnswGraph. Level 0 is 0..size,
       // and generate_level_to_nodes builds upper levels in ascending node order.
       // Writing neighbors does not change these completed level directories.
-      let mut current_level_offsets = Vec::with_capacity(nodes.size());
-
       for node in nodes {
         let neighbors = graph.get_neighbors_mut(level, node)?;
         let size = neighbors.size();
@@ -453,10 +440,8 @@ where
 
         let offset = (vector_index.get_file_pointer()? - offset_start).try_convert()?;
 
-        current_level_offsets.push(offset);
+        offsets.push(offset);
       }
-
-      *level_offsets = current_level_offsets;
     }
 
     Ok(offsets)
@@ -471,7 +456,7 @@ where
     vector_index_length: i64,
     count: i32,
     graph: Option<&mut H>,
-    graph_level_node_offsets: &[Vec<i32>],
+    graph_level_node_offsets: &[i32],
   ) -> Result<()>
   where
     H: HnswGraph,
@@ -539,11 +524,9 @@ where
 
     let mut cumulative_offset_sum: i64 = 0;
 
-    for level_offsets in graph_level_node_offsets {
-      for &v in level_offsets {
-        memory_offsets_writer.add(cumulative_offset_sum)?;
-        cumulative_offset_sum += v as i64;
-      }
+    for &v in graph_level_node_offsets {
+      memory_offsets_writer.add(cumulative_offset_sum)?;
+      cumulative_offset_sum += v as i64;
     }
 
     memory_offsets_writer.finish()?;
@@ -1108,7 +1091,7 @@ where
   }
 }
 
-type ReconstructedGraph<'a> = (&'a mut OnHeapHnswGraph, Vec<Vec<usize>>);
+type ReconstructedGraph<'a> = (&'a mut OnHeapHnswGraph, smallvec::SmallVec<[Vec<usize>; 1]>);
 
 struct HnswGraphImpl<'a> {
   graph: &'a mut OnHeapHnswGraph,

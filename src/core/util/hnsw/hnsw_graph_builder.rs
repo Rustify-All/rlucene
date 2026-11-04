@@ -701,8 +701,8 @@ impl HnswGraphBuilderDefaults {
         }
       };
       let top = std::cmp::min(node_level, cur_max_level);
-      let mut scratch_per_level =
-        vec![NeighborArray::<false>::default(); top - lowest_unset_level + 1];
+      let mut scratch_per_level: smallvec::SmallVec<[NeighborArray<false>; 1]> =
+        smallvec::smallvec![NeighborArray::<false>::default(); top - lowest_unset_level + 1];
       let candidates = &mut builder.entry_candidates;
       for level in (node_level + 1..=cur_max_level).rev() {
         candidates.clear();
@@ -760,7 +760,7 @@ impl HnswGraphBuilderDefaults {
         } else {
           Cow::Owned(candidates.pop_until_nearest_k_nodes()?)
         };
-        let mut scratch = NeighborArray::<false>::new(std::cmp::max(candidates.k(), builder.m + 1));
+        let mut scratch = NeighborArray::<false>::new(candidates.size());
         Self::pop_to_scratch(candidates, &mut scratch)?;
         scratch_per_level[i] = scratch;
       }

@@ -184,7 +184,7 @@ fn test_sort_asc() -> Result<()> {
   neighbors.add_out_of_order(4, 5.0)?;
 
   let unchecked = neighbors.sort(&mut DummyRandomVectorScorer)?;
-  assert_eq!(unchecked, [0, 1, 2, 3, 4, 5, 6]);
+  assert_eq!(unchecked.as_slice(), &[0, 1, 2, 3, 4, 5, 6]);
   assert_nodes_equal(&[1, 2, 3, 4, 5, 6, 7], &neighbors);
   assert_scores_equal(&[2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &neighbors);
 
@@ -198,7 +198,7 @@ fn test_sort_asc() -> Result<()> {
   neighbors2.add_out_of_order(3, 4.0)?;
 
   let unchecked = neighbors2.sort(&mut DummyRandomVectorScorer)?;
-  assert_eq!(unchecked, [2, 3, 5, 6]);
+  assert_eq!(unchecked.as_slice(), &[2, 3, 5, 6]);
   assert_nodes_equal(&[0, 1, 2, 3, 4, 5, 6], &neighbors2);
   assert_scores_equal(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0], &neighbors2);
 
@@ -225,7 +225,7 @@ fn test_sort_desc() -> Result<()> {
   neighbors.add_out_of_order(4, 4.0)?;
 
   let unchecked = neighbors.sort(&mut DummyRandomVectorScorer)?;
-  assert_eq!(unchecked, [0, 1, 2, 3, 4, 5, 6]);
+  assert_eq!(unchecked.as_slice(), &[0, 1, 2, 3, 4, 5, 6]);
   assert_nodes_equal(&[1, 2, 3, 4, 5, 6, 7], &neighbors);
   assert_scores_equal(&[7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0], &neighbors);
 
@@ -239,7 +239,7 @@ fn test_sort_desc() -> Result<()> {
   neighbors2.add_out_of_order(4, 4.0)?;
 
   let unchecked = neighbors2.sort(&mut DummyRandomVectorScorer)?;
-  assert_eq!(unchecked, [2, 3, 5, 6]);
+  assert_eq!(unchecked.as_slice(), &[2, 3, 5, 6]);
   assert_nodes_equal(&[1, 2, 3, 4, 5, 6, 7], &neighbors2);
   assert_scores_equal(&[7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0], &neighbors2);
 
@@ -267,7 +267,7 @@ fn test_add_with_scoring_function() -> Result<()> {
 
   let mut scorer = TestRandomVectorScorer;
   let unchecked = neighbors.sort(&mut scorer)?;
-  assert_eq!(unchecked, [0, 1, 2, 3, 4, 5, 6]);
+  assert_eq!(unchecked.as_slice(), &[0, 1, 2, 3, 4, 5, 6]);
   assert_nodes_equal(&[1, 2, 3, 4, 5, 6, 7], &neighbors);
   assert_scores_equal(&[7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0], &neighbors);
 
@@ -295,7 +295,7 @@ fn test_add_with_scoring_function_large_ord() -> Result<()> {
 
   let mut scorer = TestRandomVectorScorer1;
   let unchecked = neighbors.sort(&mut scorer)?;
-  assert_eq!(unchecked, [0, 1, 2, 3, 4, 5, 6]);
+  assert_eq!(unchecked.as_slice(), &[0, 1, 2, 3, 4, 5, 6]);
   assert_nodes_equal(&[11, 12, 13, 14, 15, 16, 17], &neighbors);
   assert_scores_equal(&[7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0], &neighbors);
 

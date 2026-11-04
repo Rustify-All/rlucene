@@ -821,8 +821,8 @@ struct ScoreErrorCorrelator<'a> {
   function: VectorSimilarityFunction,
   nearest_neighbors: &'a [ScoreDocsAndScoreVariance],
   vectors: &'a [Vec<f32>],
-  query: Vec<u8>,
-  vector: Vec<u8>,
+  // Two equal-length quantized views with a shared scratch lifetime.
+  quantized: Vec<u8>,
   bits: u8,
 }
 
@@ -838,8 +838,7 @@ impl<'a> ScoreErrorCorrelator<'a> {
       errors: OnlineMeanAndVar::default(),
       function,
       nearest_neighbors,
-      query: vec![0; vectors[0].len()],
-      vector: vec![0; vectors[0].len()],
+      quantized: vec![0; vectors[0].len() * 2],
       bits,
       vectors,
     }
@@ -854,8 +853,9 @@ impl<'a> ScoreErrorCorrelator<'a> {
         quantizer.get_constant_multiplier(),
         quantizer.bits,
       );
+    let (query, vector) = self.quantized.split_at_mut(self.vectors[0].len());
     for i in 0..self.nearest_neighbors.len() {
-      let query_correction = quantizer.quantize(&self.vectors[i], &mut self.query, self.function);
+      let query_correction = quantizer.quantize(&self.vectors[i], query, self.function);
       let score_docs_and_score_variance = &self.nearest_neighbors[i];
       let score_variance = score_docs_and_score_variance.score_variance;
       // calculate the score for the vector against its nearest neighbors but with quantized
@@ -864,15 +864,12 @@ impl<'a> ScoreErrorCorrelator<'a> {
       for score_doc in
         &score_docs_and_score_variance.score_docs[..score_docs_and_score_variance.score_docs_len]
       {
-        let vector_correction = quantizer.quantize(
-          &self.vectors[score_doc.doc as usize],
-          &mut self.vector,
-          self.function,
-        );
+        let vector_correction =
+          quantizer.quantize(&self.vectors[score_doc.doc as usize], vector, self.function);
         let q_score = scalar_quantized_vector_similarity.score(
-          &self.query,
+          query,
           query_correction,
-          &self.vector,
+          vector,
           vector_correction,
         )?;
         self.errors.add((q_score - score_doc.score) as f64);

@@ -21,8 +21,8 @@ use crate::core::codecs::hnsw::flat_vectors_writer::FlatVectorsWriter;
 use crate::core::codecs::knn_field_vectors_writer::KnnFieldVectorsWriter;
 use crate::core::codecs::knn_field_vectors_writer::VectorInput;
 use crate::core::codecs::knn_vectors_writer::{
-  KnnVectorsWriter, MergedByteVectorValues, MergedFloat32VectorValues,
-  map_old_ord_to_new_ord, merge_byte_vector_values, merge_float_vector_values,
+  KnnVectorsWriter, MergedByteVectorValues, MergedFloat32VectorValues, map_old_ord_to_new_ord,
+  merge_byte_vector_values, merge_float_vector_values,
 };
 use crate::core::codecs::lucene95::off_heap_byte_vector_values;
 use crate::core::codecs::lucene95::off_heap_float_vector_values;
@@ -295,7 +295,7 @@ where
     let cardinality = field_data.get_docs_with_field_set().cardinality() as usize;
 
     // new ord -> old ord
-    let mut ord_map = vec![0usize; cardinality];
+    let mut ord_map: smallvec::SmallVec<[usize; 8]> = smallvec::smallvec![0; cardinality];
 
     let mut new_docs_with_field = DocsWithFieldSet::new();
 

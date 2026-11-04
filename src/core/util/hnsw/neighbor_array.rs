@@ -148,18 +148,19 @@ impl<const DESC_ORDER: bool> NeighborArray<DESC_ORDER> {
   ///
   /// Indexes of newly sorted (unchecked) nodes, in ascending order, or `None`
   /// if the array is already fully sorted.
-  pub(crate) fn sort<S>(&mut self, scorer: &mut S) -> Result<Vec<usize>>
+  pub(crate) fn sort<S>(&mut self, scorer: &mut S) -> Result<smallvec::SmallVec<[usize; 1]>>
   where
     S: RandomVectorScorer,
   {
     if self.size == self.sorted_node_size {
       // all nodes checked and sorted
-      return Ok(vec![]);
+      return Ok(smallvec::SmallVec::new());
     }
 
     debug_assert!(self.sorted_node_size < self.size);
 
-    let mut unchecked_indexes = vec![0usize; self.size - self.sorted_node_size];
+    let mut unchecked_indexes: smallvec::SmallVec<[usize; 1]> =
+      smallvec::smallvec![0usize; self.size - self.sorted_node_size];
     let mut count = 0;
 
     while self.sorted_node_size != self.size {

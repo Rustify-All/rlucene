@@ -52,7 +52,8 @@ pub struct OnHeapHnswGraph {
   // remember the size we are at last time to freeze the graph and generate
   // levelToNodes
   size: AtomicUsize,
-  non_zero_level_size: AtomicUsize,
+  // Total node memberships across all upper levels.
+  pub(crate) non_zero_level_size: AtomicUsize,
   // Node allocations have fixed capacity after initialization. Account for them once,
   // rather than locking and traversing every neighbor array on each RAM-budget check.
   nodes_ram_bytes: AtomicI64,
