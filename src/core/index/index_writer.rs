@@ -3486,7 +3486,8 @@ where
   where
     SD: Directory,
   {
-    let mut seen_dir_ids = HashSet::with_capacity(dirs.len());
+    let check_duplicates = dirs.len() > 1;
+    let mut seen_dir_ids = HashSet::with_capacity(if check_duplicates { dirs.len() } else { 0 });
     let self_dir_id = self.directory_orig.identity();
     for dir in dirs {
       let dir_id = dir.identity();
@@ -3495,7 +3496,7 @@ where
           "Cannot add directory to itself",
         ));
       }
-      if !seen_dir_ids.insert(dir_id) {
+      if check_duplicates && !seen_dir_ids.insert(dir_id) {
         return Err(LuceneError::illegal_argument(format!(
           "Directory {} appears more than once",
           dir
@@ -4372,7 +4373,9 @@ where
                   inner.change_count += 1;
                   inner.segment_infos.changed();
                 }
-                if let Some(commit_ud) = &inner.commit_user_data {
+                if let Some(commit_ud) = &inner.commit_user_data
+                  && inner.segment_infos.get_user_data() != commit_ud
+                {
                   let v = commit_ud.clone();
                   inner.segment_infos.set_user_data(Some(v), false);
                 }
@@ -5191,7 +5194,7 @@ where
     let _ = merged_deletes_and_updates.get_del_count(sci);
 
     // field -> delGen -> dv field updates
-    let mut mapped_dv_updates = HashMap::with_capacity(source_segments.len());
+    let mut mapped_dv_updates = HashMap::new();
     let mut any_dv_updates = false;
     debug_assert_eq!(source_segments.len(), doc_maps.len());
     for (i, info_id) in source_segments.iter().enumerate() {

@@ -178,14 +178,18 @@ where
     let mut mapping = HashMap::with_capacity(num_entries as usize);
     for _ in 0..num_entries {
       let id = entries_stream.read_string()?.into_owned();
-      if mapping.contains_key(&id) {
-        return Err(LuceneError::corrupt_index(format!(
-          "Duplicate cfs entry id={id} in CFS (resource={entries_stream})"
-        )));
-      }
+      let entry = match mapping.entry(id) {
+        std::collections::hash_map::Entry::Vacant(entry) => entry,
+        std::collections::hash_map::Entry::Occupied(entry) => {
+          return Err(LuceneError::corrupt_index(format!(
+            "Duplicate cfs entry id={} in CFS (resource={entries_stream})",
+            entry.key()
+          )));
+        },
+      };
       let offset = entries_stream.read_long()?.try_convert()?;
       let length = entries_stream.read_long()?.try_convert()?;
-      mapping.insert(id, FileEntry { offset, length });
+      entry.insert(FileEntry { offset, length });
     }
     Ok(mapping)
   }

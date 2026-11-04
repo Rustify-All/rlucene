@@ -566,10 +566,6 @@ where
     let mut inner = self.inner.lock();
     let start_time_ns = std::time::Instant::now();
 
-    let mut new_dv_files = HashMap::with_capacity(inner.pending_dv_updates.len());
-    let mut field_infos_files: Option<HashSet<String>> = None;
-    let mut field_infos = FieldInfos::default();
-
     let mut any = false;
     'outer: for updates in inner.pending_dv_updates.values() {
       for update in updates {
@@ -585,6 +581,9 @@ where
     }
 
     let info = info.ok_or_else(|| LuceneError::illegal_state("SegmentCommitInfo missing"))?;
+    let mut new_dv_files = HashMap::with_capacity(inner.pending_dv_updates.len());
+    let mut field_infos_files: Option<HashSet<String>> = None;
+    let mut field_infos = FieldInfos::default();
 
     // Do this so we can delete any created files on
     // error; this saves all codecs from having to do it:
