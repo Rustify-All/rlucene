@@ -94,8 +94,8 @@ where
     term_state.as_mut().total_term_freq = -1;
     let suffix_length_bytes = vec![0u8; 32];
     let suffix_bytes = vec![0u8; 128];
-    let stat_bytes = vec![0u8; 64];
-    let bytes = vec![0u8; 32];
+    let stat_bytes = Vec::new();
+    let bytes = Vec::new();
 
     Ok(Self {
       ord,

@@ -114,9 +114,9 @@ impl<S> SegmentTermsEnumFrame<S> {
     let suffixes_reader = ByteArrayDataInput::with_bytes(suffix_bytes);
     let suffix_length_bytes = vec![0u8; if ord == -1 { 0 } else { 32 }];
     let suffix_lengths_reader = ByteArrayDataInput::with_bytes(suffix_length_bytes);
-    let stat_bytes = vec![0u8; if ord == -1 { 0 } else { 64 }];
+    let stat_bytes = Vec::new();
     let stats_reader = ByteArrayDataInput::with_bytes(stat_bytes);
-    let bytes = vec![0u8; if ord == -1 { 0 } else { 32 }];
+    let bytes = Vec::new();
     let bytes_reader = ByteArrayDataInput::with_bytes(bytes);
     Ok(Self {
       ord,

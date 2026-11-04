@@ -205,15 +205,13 @@ where
 
             let doc_count = meta_in.read_vint()?;
             let min_term = Arc::new(read_bytes_ref(&mut meta_in)?);
-            let max_term = read_bytes_ref(&mut meta_in)?;
-
             let max_term = if num_terms == 1 {
-              debug_assert_eq!(&max_term, min_term.as_ref());
-              let shared_min = min_term.clone();
-              drop(max_term);
-              shared_min
+              let len = read_bytes_ref_len(&mut meta_in)?;
+              let bytes = meta_in.get_bytes(len)?;
+              debug_assert_eq!(&bytes[..len], &min_term.bytes[..min_term.length]);
+              Arc::clone(&min_term)
             } else {
-              Arc::new(max_term)
+              Arc::new(read_bytes_ref(&mut meta_in)?)
             };
 
             let max_doc = segment_info.max_doc()?;
@@ -457,15 +455,19 @@ fn read_bytes_ref<I>(input: &mut I) -> Result<BytesRef<Vec<u8>>>
 where
   I: IndexInput,
 {
+  let num_bytes = read_bytes_ref_len(input)?;
+  let buffer = input.get_bytes(num_bytes)?.into_owned();
+  Ok(BytesRef::from_slice(buffer, 0, num_bytes))
+}
+
+fn read_bytes_ref_len<I: IndexInput>(input: &mut I) -> Result<usize> {
   let num_bytes = input.read_vint()?;
   if num_bytes < 0 {
     return Err(LuceneError::corrupt_index(format!(
       "invalid bytes length: {num_bytes} (resource={input})"
     )));
   }
-  let num_bytes = num_bytes as usize;
-  let buffer = input.get_bytes(num_bytes)?.into_owned();
-  Ok(BytesRef::from_slice(buffer, 0, num_bytes))
+  Ok(num_bytes as usize)
 }
 fn sort_field_names<I, PR>(
   field_map: &HashMap<i32, FieldReader<I, PR>>,
