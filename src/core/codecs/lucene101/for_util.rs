@@ -294,6 +294,30 @@ impl ForUtil {
         last[0] |= g & Self::MASKS16[7];
       }
       true
+    } else if bits_per_value == 10
+      && primitive_size == 16
+      && ints.len() >= num_ints
+      && tmp.len() >= num_ints_per_shift
+    {
+      use wide::{bytemuck::cast, u32x4};
+
+      const LEFT_MASKS: u32x4 = u32x4::new([0, 0x000f_000f, 0, 0x0003_0003]);
+      const LEFT_SHIFTS: u32x4 = u32x4::new([0, 2, 0, 4]);
+      const RIGHT_MASKS: u32x4 = u32x4::new([0x003f_003f, 0x0003_0003, 0x003f_003f, 0x000f_000f]);
+      const RIGHT_SHIFTS: u32x4 = u32x4::new([4, 8, 2, 6]);
+
+      let groups = ints[idx..num_ints].as_chunks::<3>().0;
+      let packed = tmp[..num_ints_per_shift].as_chunks_mut::<5>().0;
+      for (&[a, b, c], packed) in groups.iter().zip(packed) {
+        // Three 10-bit inputs fill five 6-bit tails in each 16-bit lane.
+        let left: u32x4 = cast([0, a, 0, b]);
+        let right: u32x4 = cast([a, b, b, c]);
+        let tail = ((left & LEFT_MASKS) << LEFT_SHIFTS) | ((right >> RIGHT_SHIFTS) & RIGHT_MASKS);
+        let (lanes, last) = packed.as_chunks_mut::<4>();
+        lanes[0] = cast(cast::<_, u32x4>(lanes[0]) | tail);
+        last[0] |= c & Self::MASKS16[6];
+      }
+      true
     } else {
       false
     };
