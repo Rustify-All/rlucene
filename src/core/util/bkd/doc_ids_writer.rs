@@ -38,11 +38,11 @@ pub struct DocIdsWriter {
   /// fewer virtual calls then happening (once per read call rather than
   /// once per doc).
   scratch_ints_ref: IntsRef<Vec<i32>>,
+  max_points_in_leaf: usize,
 }
 impl Clone for DocIdsWriter {
   fn clone(&self) -> Self {
-    let max_points_in_leaf = self.scratch_ints_ref.ints.len();
-    DocIdsWriter::new(max_points_in_leaf)
+    Self::new(self.max_points_in_leaf)
   }
 }
 
@@ -58,9 +58,21 @@ impl DocIdsWriter {
   pub fn new(max_points_in_leaf: usize) -> Self {
     Self {
       scratch_longs: LongsRef::new(),
-      scratch_ints_ref: IntsRef::from_slice(vec![0; max_points_in_leaf], 0, 0),
+      scratch_ints_ref: IntsRef::from_slice(Vec::new(), 0, 0),
+      max_points_in_leaf,
     }
   }
+
+  fn scratch_ints(&mut self) -> &mut IntsRef<Vec<i32>> {
+    if self.scratch_ints_ref.ints.is_empty() {
+      self
+        .scratch_ints_ref
+        .ints
+        .resize(self.max_points_in_leaf, 0);
+    }
+    &mut self.scratch_ints_ref
+  }
+
   pub(crate) fn write_doc_ids<DO>(
     &mut self,
     doc_ids: &[i32],
@@ -510,9 +522,10 @@ impl DocIdsWriter {
     II: IndexInput,
     V: IntersectVisitor,
   {
-    Self::read_delta16(input, count, &mut self.scratch_ints_ref.ints)?;
-    self.scratch_ints_ref.length = count;
-    visitor.visit_with_ints_ref(&self.scratch_ints_ref)?;
+    let scratch = self.scratch_ints();
+    Self::read_delta16(input, count, &mut scratch.ints)?;
+    scratch.length = count;
+    visitor.visit_with_ints_ref(scratch)?;
     Ok(())
   }
   fn read_ints24_with_visitor<II, V>(input: &mut II, count: usize, visitor: &mut V) -> Result<()>
@@ -554,9 +567,10 @@ impl DocIdsWriter {
     II: IndexInput,
     V: IntersectVisitor,
   {
-    input.read_ints(&mut self.scratch_ints_ref.ints, 0, count)?;
-    self.scratch_ints_ref.length = count;
-    visitor.visit_with_ints_ref(&self.scratch_ints_ref)?;
+    let scratch = self.scratch_ints();
+    input.read_ints(&mut scratch.ints, 0, count)?;
+    scratch.length = count;
+    visitor.visit_with_ints_ref(scratch)?;
     Ok(())
   }
 }

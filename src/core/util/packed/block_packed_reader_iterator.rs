@@ -84,12 +84,7 @@ impl BlockPackedReaderIterator {
       MIN_BLOCK_SIZE,
       MAX_BLOCK_SIZE,
     )?;
-    let values = if value_count == 0 {
-      Vec::new()
-    } else {
-      vec![0; block_size]
-    };
-    let long_ref = LongsRef::from_slice(values, 0, 0);
+    let long_ref = LongsRef::from_slice(Vec::new(), 0, 0);
     Ok(Self {
       packed_ints_version,
       value_count,
@@ -108,9 +103,6 @@ impl BlockPackedReaderIterator {
   /// * `data_input` - The new input stream to read from.
   /// * `value_count` - The number of values to read from the input.
   pub fn reset(&mut self, value_count: usize) {
-    if value_count > 0 && self.values_ref.longs.is_empty() {
-      self.values_ref.longs = vec![0; self.block_size];
-    }
     self.value_count = value_count;
     self.off = self.block_size;
     self.ord = 0;
@@ -283,6 +275,9 @@ impl BlockPackedReaderIterator {
     };
     debug_assert!(min_equals_0 || min_value != 0);
 
+    if self.values_ref.longs.is_empty() {
+      self.values_ref.longs.resize(self.block_size, 0);
+    }
     if bits_per_value == 0 {
       self.values_ref.longs.fill(min_value);
     } else {

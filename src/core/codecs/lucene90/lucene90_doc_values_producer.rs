@@ -2811,6 +2811,7 @@ where
   term: BytesRef<Vec<u8>>,
   ord: i64,
   block_input: ByteArrayDataInput<Vec<u8>>,
+  block_buffer_capacity: usize,
   block_buffer_offset: usize,
   block_buffer_length: usize,
   current_compressed_block_start: Option<usize>,
@@ -2864,12 +2865,7 @@ where
     let buffer_size =
       (entry.max_block_length + entry.max_term_length + Self::LZ4_DECOMPRESSOR_PADDING) as usize;
 
-    let block_buffer = if entry.terms_dict_size == 0 {
-      Vec::new()
-    } else {
-      vec![0u8; buffer_size]
-    };
-    let block_input = ByteArrayDataInput::with_bytes(block_buffer);
+    let block_input = ByteArrayDataInput::with_bytes(Vec::new());
 
     let sub = Self {
       entry,
@@ -2881,6 +2877,7 @@ where
       term,
       ord: -1,
       block_input,
+      block_buffer_capacity: buffer_size,
       block_buffer_offset: 0,
       block_buffer_length: buffer_size,
       current_compressed_block_start: None,
@@ -3049,6 +3046,9 @@ where
         self.block_buffer_length = block_buffer_len as usize;
         // Decompress the remaining of current block, using the first
         // term as a dictionary
+        if self.block_input.bytes.is_empty() {
+          self.block_input.bytes.resize(self.block_buffer_capacity, 0);
+        }
         self.block_input.bytes.access_mut(|buffer_bytes| {
           self.term.bytes.access(|term_bytes| {
             buffer_bytes.copy_from(&term_bytes[..block_buffer_offset], 0);

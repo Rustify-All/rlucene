@@ -152,7 +152,7 @@ where
 
     let mut position_buffers = Vec::new();
     let mut offset_buffers = None;
-    let mut payload_bytes = Vec::new();
+    let payload_bytes = Vec::new();
 
     let mut success = false;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<_> {
@@ -201,10 +201,6 @@ where
           segment_info.get_id(),
           &state.segment_suffix,
         )?;
-
-        if state.field_infos.has_payloads() {
-          payload_bytes = vec![0; 128];
-        }
 
         if state.field_infos.has_offsets() {
           offset_buffers = Some(Box::new([[0; Lucene101PostingsFormat::BLOCK_SIZE]; 2]));
@@ -490,6 +486,9 @@ where
           self.position_buffers[Lucene101PostingsFormat::BLOCK_SIZE + idx] = 0;
         } else {
           self.position_buffers[Lucene101PostingsFormat::BLOCK_SIZE + idx] = p.length as i32;
+          if self.payload_bytes.capacity() == 0 {
+            self.payload_bytes.reserve_exact(128);
+          }
           if self.payload_byte_upto + p.length > self.payload_bytes.len() {
             ArrayUtil::grow_capacity(&mut self.payload_bytes, self.payload_byte_upto + p.length)?;
           }

@@ -38,8 +38,15 @@ pub struct ForDeltaUtil {
 impl ForDeltaUtil {
   pub(crate) fn new() -> Self {
     Self {
-      tmp: vec![0; ForUtil::BLOCK_SIZE].into_boxed_slice(),
+      tmp: Box::default(),
     }
+  }
+
+  fn scratch(&mut self) -> &mut [i32] {
+    if self.tmp.is_empty() {
+      self.tmp = vec![0; ForUtil::BLOCK_SIZE].into_boxed_slice();
+    }
+    &mut self.tmp
   }
 }
 
@@ -310,7 +317,7 @@ impl ForDeltaUtil {
         32
       };
 
-      ForUtil::encode_with_tmp(ints, bits_per_value, primitive_size, out, &mut self.tmp)?;
+      ForUtil::encode_with_tmp(ints, bits_per_value, primitive_size, out, self.scratch())?;
     }
 
     Ok(())
@@ -355,7 +362,7 @@ impl ForDeltaUtil {
         ForDeltaUtil::prefix_sum8(ints, base);
       },
       3 => {
-        ForUtil::decode3(pdu, &mut self.tmp, ints)?;
+        ForUtil::decode3(pdu, self.scratch(), ints)?;
         ForDeltaUtil::prefix_sum8(ints, base);
       },
       4 => {
@@ -363,15 +370,15 @@ impl ForDeltaUtil {
         ForDeltaUtil::prefix_sum16(ints, base);
       },
       5 => {
-        ForDeltaUtil::decode_5_to_16(pdu, &mut self.tmp, ints)?;
+        ForDeltaUtil::decode_5_to_16(pdu, self.scratch(), ints)?;
         ForDeltaUtil::prefix_sum16(ints, base);
       },
       6 => {
-        ForDeltaUtil::decode_6_to_16(pdu, &mut self.tmp, ints)?;
+        ForDeltaUtil::decode_6_to_16(pdu, self.scratch(), ints)?;
         ForDeltaUtil::prefix_sum16(ints, base);
       },
       7 => {
-        ForDeltaUtil::decode_7_to_16(pdu, &mut self.tmp, ints)?;
+        ForDeltaUtil::decode_7_to_16(pdu, self.scratch(), ints)?;
         ForDeltaUtil::prefix_sum16(ints, base);
       },
       8 => {
@@ -379,31 +386,31 @@ impl ForDeltaUtil {
         ForDeltaUtil::prefix_sum16(ints, base);
       },
       9 => {
-        ForUtil::decode9(pdu, &mut self.tmp, ints)?;
+        ForUtil::decode9(pdu, self.scratch(), ints)?;
         ForDeltaUtil::prefix_sum16(ints, base);
       },
       10 => {
-        ForUtil::decode10(pdu, &mut self.tmp, ints)?;
+        ForUtil::decode10(pdu, self.scratch(), ints)?;
         ForDeltaUtil::prefix_sum16(ints, base);
       },
       11 => {
-        ForDeltaUtil::decode_11_to_32(pdu, &mut self.tmp, ints)?;
+        ForDeltaUtil::decode_11_to_32(pdu, self.scratch(), ints)?;
         ForDeltaUtil::prefix_sum32(ints, base);
       },
       12 => {
-        ForDeltaUtil::decode_12_to_32(pdu, &mut self.tmp, ints)?;
+        ForDeltaUtil::decode_12_to_32(pdu, self.scratch(), ints)?;
         ForDeltaUtil::prefix_sum32(ints, base);
       },
       13 => {
-        ForDeltaUtil::decode_13_to_32(pdu, &mut self.tmp, ints)?;
+        ForDeltaUtil::decode_13_to_32(pdu, self.scratch(), ints)?;
         ForDeltaUtil::prefix_sum32(ints, base);
       },
       14 => {
-        ForDeltaUtil::decode_14_to_32(pdu, &mut self.tmp, ints)?;
+        ForDeltaUtil::decode_14_to_32(pdu, self.scratch(), ints)?;
         ForDeltaUtil::prefix_sum32(ints, base);
       },
       15 => {
-        ForDeltaUtil::decode_15_to_32(pdu, &mut self.tmp, ints)?;
+        ForDeltaUtil::decode_15_to_32(pdu, self.scratch(), ints)?;
         ForDeltaUtil::prefix_sum32(ints, base);
       },
       16 => {
@@ -411,7 +418,7 @@ impl ForDeltaUtil {
         ForDeltaUtil::prefix_sum32(ints, base);
       },
       _ => {
-        ForUtil::decode_slow(bits_per_value, pdu, &mut self.tmp, ints)?;
+        ForUtil::decode_slow(bits_per_value, pdu, self.scratch(), ints)?;
         ForDeltaUtil::prefix_sum32(ints, base);
       },
     }

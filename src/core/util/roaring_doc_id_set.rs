@@ -107,21 +107,14 @@ pub struct Builder {
 
 impl Builder {
   pub fn new(max_doc: usize) -> Builder {
-    let buffer: Vec<i16> = Vec::with_capacity(max_doc.min(MAX_ARRAY_LENGTH));
-    let sets_length = (max_doc + (1 << 16) - 1) >> 16;
-    let mut sets = Vec::with_capacity(sets_length);
-    // not want to impl Copy of DocIdSetEnum
-    for _i in 0..sets_length {
-      sets.push(None);
-    }
     Builder {
       max_doc,
-      sets,
+      sets: Vec::new(),
       cardinality: 0,
       last_doc_id: -1,
       current_block: None,
       current_block_cardinality: 0,
-      buffer,
+      buffer: Vec::new(),
       dense_buffer: FixedBitSet::new(0),
     }
   }
@@ -136,6 +129,13 @@ impl Builder {
     }
     let block = (doc_id >> 16) as usize;
     if Some(block) != self.current_block {
+      if self.current_block.is_none() {
+        let sets_length = (self.max_doc + (1 << 16) - 1) >> 16;
+        self.sets.resize_with(sets_length, || None);
+        self
+          .buffer
+          .reserve_exact(self.max_doc.min(MAX_ARRAY_LENGTH));
+      }
       self.flush(false)?;
       self.current_block = Some(block);
     }

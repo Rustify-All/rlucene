@@ -77,7 +77,7 @@ impl<I, F> OffHeapFloatVectorValues<I, F> {
     let inner = Inner {
       slice,
       last_ord: None,
-      value: vec![0.0; dimension].into_boxed_slice(),
+      value: Box::default(),
     };
     Self {
       dimension,
@@ -99,6 +99,9 @@ where
       .checked_mul(self.byte_size)
       .ok_or_else(|| LuceneError::illegal_state("seek overflow"))?;
     inner.slice.seek(pos)?;
+    if inner.value.is_empty() {
+      inner.value = vec![0.0; self.dimension].into_boxed_slice();
+    }
     let value = &mut inner.value;
     let len = value.len();
     inner.slice.read_floats(value, 0, len)?;

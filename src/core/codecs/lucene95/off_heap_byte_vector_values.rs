@@ -75,7 +75,7 @@ impl<I, F> OffHeapByteVectorValues<I, F> {
     let inner = Mutex::new(Inner {
       slice,
       last_ord: None,
-      binary_value: vec![0; byte_size].into_boxed_slice(),
+      binary_value: Box::default(),
     });
     Self {
       dimension,
@@ -97,6 +97,9 @@ where
       .checked_mul(self.byte_size)
       .ok_or_else(|| LuceneError::illegal_state("seek overflow"))?;
     inner.slice.seek(pos)?;
+    if inner.binary_value.is_empty() {
+      inner.binary_value = vec![0; self.byte_size].into_boxed_slice();
+    }
     inner
       .slice
       .read_bytes(&mut inner.binary_value, 0, self.byte_size)?;

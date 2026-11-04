@@ -31,8 +31,15 @@ pub struct ForUtil {
 impl ForUtil {
   pub(crate) fn new() -> Self {
     Self {
-      tmp: vec![0i32; Self::BLOCK_SIZE].into_boxed_slice(),
+      tmp: Box::default(),
     }
+  }
+
+  fn scratch(&mut self) -> &mut [i32] {
+    if self.tmp.is_empty() {
+      self.tmp = vec![0; Self::BLOCK_SIZE].into_boxed_slice();
+    }
+    &mut self.tmp
   }
   pub const BLOCK_SIZE: usize = 128;
   pub const BLOCK_SIZE_LOG2: usize = 7;
@@ -140,7 +147,7 @@ impl ForUtil {
     } else {
       32
     };
-    Self::encode_with_tmp(ints, bits_per_value, next_primitive, out, &mut self.tmp)
+    Self::encode_with_tmp(ints, bits_per_value, next_primitive, out, self.scratch())
   }
 
   pub(crate) fn encode_with_tmp<DO>(
@@ -724,7 +731,7 @@ impl ForUtil {
         Self::expand8(ints);
       },
       3 => {
-        Self::decode3(pdu, &mut self.tmp, ints)?;
+        Self::decode3(pdu, self.scratch(), ints)?;
         Self::expand8(ints);
       },
       4 => {
@@ -732,15 +739,15 @@ impl ForUtil {
         Self::expand8(ints);
       },
       5 => {
-        Self::decode5(pdu, &mut self.tmp, ints)?;
+        Self::decode5(pdu, self.scratch(), ints)?;
         Self::expand8(ints);
       },
       6 => {
-        Self::decode6(pdu, &mut self.tmp, ints)?;
+        Self::decode6(pdu, self.scratch(), ints)?;
         Self::expand8(ints);
       },
       7 => {
-        Self::decode7(pdu, &mut self.tmp, ints)?;
+        Self::decode7(pdu, self.scratch(), ints)?;
         Self::expand8(ints);
       },
       8 => {
@@ -748,31 +755,31 @@ impl ForUtil {
         Self::expand8(ints);
       },
       9 => {
-        Self::decode9(pdu, &mut self.tmp, ints)?;
+        Self::decode9(pdu, self.scratch(), ints)?;
         Self::expand16(ints);
       },
       10 => {
-        Self::decode10(pdu, &mut self.tmp, ints)?;
+        Self::decode10(pdu, self.scratch(), ints)?;
         Self::expand16(ints);
       },
       11 => {
-        Self::decode11(pdu, &mut self.tmp, ints)?;
+        Self::decode11(pdu, self.scratch(), ints)?;
         Self::expand16(ints);
       },
       12 => {
-        Self::decode12(pdu, &mut self.tmp, ints)?;
+        Self::decode12(pdu, self.scratch(), ints)?;
         Self::expand16(ints);
       },
       13 => {
-        Self::decode13(pdu, &mut self.tmp, ints)?;
+        Self::decode13(pdu, self.scratch(), ints)?;
         Self::expand16(ints);
       },
       14 => {
-        Self::decode14(pdu, &mut self.tmp, ints)?;
+        Self::decode14(pdu, self.scratch(), ints)?;
         Self::expand16(ints);
       },
       15 => {
-        Self::decode15(pdu, &mut self.tmp, ints)?;
+        Self::decode15(pdu, self.scratch(), ints)?;
         Self::expand16(ints);
       },
       16 => {
@@ -780,7 +787,7 @@ impl ForUtil {
         Self::expand16(ints);
       },
       _ => {
-        Self::decode_slow(bits_per_value, pdu, &mut self.tmp, ints)?;
+        Self::decode_slow(bits_per_value, pdu, self.scratch(), ints)?;
       },
     }
     Ok(())
