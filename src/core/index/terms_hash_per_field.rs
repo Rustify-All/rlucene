@@ -26,9 +26,10 @@ use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::int_block_pool::{
   INT_BLOCK_MASK, INT_BLOCK_SHIFT, INT_BLOCK_SIZE, IntBlockPool,
 };
+use crate::core::util::ram_usage_estimator::size_of_array_capacity;
 use crate::core::util::{
   BYTE_BLOCK_MASK, BYTE_BLOCK_SHIFT, BYTE_BLOCK_SIZE, ByteBlockPool, Counter, SharedCounter,
-  SliceCopyOps, size_of_slice,
+  SliceCopyOps,
 };
 
 /// This struct stores streams of information per term without knowing the size
@@ -101,7 +102,7 @@ impl<PA: PostingsArray> TermsHashPerField<PA> {
       .postings_array
       .as_ref()
       .ok_or_else(|| LuceneError::illegal_state("postings array is missing"))?
-      .get_address_offset()[term_id];
+      .get_address_offset()[term_id][1];
     let buffer_index = (stream_start_offset >> INT_BLOCK_SHIFT) as usize;
     let offset_in_address_buffer = stream_start_offset & INT_BLOCK_MASK;
     let addr;
@@ -113,7 +114,7 @@ impl<PA: PostingsArray> TermsHashPerField<PA> {
       .postings_array
       .as_ref()
       .ok_or_else(|| LuceneError::illegal_state("postings array is missing"))?
-      .get_byte_starts()[term_id]
+      .get_byte_starts()[term_id][2]
       + stream * ByteSlicePool::FIRST_LEVEL_SIZE;
     reader.init(init_offset as usize, addr as usize);
     Ok(())
@@ -357,7 +358,7 @@ impl<PA: PostingsArray> TermsHashPerField<PA> {
       .postings_array
       .as_ref()
       .ok_or_else(|| LuceneError::illegal_state("postings array is missing"))?
-      .get_address_offset()[term_id];
+      .get_address_offset()[term_id][1];
     self.term_stream_address_buffer_index = (int_start >> INT_BLOCK_SHIFT) as usize;
     self.stream_address_offset = int_start & INT_BLOCK_MASK;
     Ok(term_id)
@@ -480,7 +481,7 @@ impl<PA: PostingsArray> BytesStartArray for PostingsBytesStartArray<PA> {
     postings_array
       .get_text_starts()
       .get(index)
-      .copied()
+      .map(|row| row[0])
       .ok_or_else(|| {
         LuceneError::illegal_argument(format!("postings array index {index} is out of bounds"))
       })
@@ -508,7 +509,9 @@ impl<PA: PostingsArray> BytesStartArray for PostingsBytesStartArray<PA> {
 
   fn ram_bytes_used(&self) -> Result<i64> {
     match self.per_field.postings_array.as_ref() {
-      Some(postings_array) => Ok(size_of_slice(postings_array.get_text_starts())),
+      Some(postings_array) => Ok(size_of_array_capacity::<i32>(
+        postings_array.get_text_starts().len(),
+      )),
       None => Ok(0),
     }
   }

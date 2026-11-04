@@ -124,10 +124,10 @@ impl TermVectorsConsumerPerField {
     let mut pos_reader = ByteSliceReader::new(byte_pool);
     for &term_id in &term_ids[..num_postings] {
       let term_id = term_id as usize;
-      let freq = postings.freqs[term_id];
+      let freq = postings.term_data[term_id][0];
       let position = self
         .term_byte_pool
-        .fill_bytes_ref(postings.parent.text_starts[term_id], term_byte_pool);
+        .fill_bytes_ref(postings.parent.starts[term_id][0], term_byte_pool);
       let block = term_byte_pool.get_buffer(position.block_index);
       let flush_term = BytesRef {
         bytes: &block[position.offset..position.offset + position.length],
@@ -332,7 +332,7 @@ impl TermVectorsConsumerPerField {
 
       self.base.write_vint(
         1,
-        start_offset - postings.last_offsets[term_id],
+        start_offset - postings.term_data[term_id][1],
         int_pool,
         byte_pool,
       )?;
@@ -343,7 +343,7 @@ impl TermVectorsConsumerPerField {
     }
 
     if self.do_vector_positions {
-      let pos = field_state.position - postings.last_positions[term_id];
+      let pos = field_state.position - postings.term_data[term_id][2];
 
       if self.do_vector_payloads
         && let Some(payload) = attribute_source.get_payload()?
@@ -378,10 +378,10 @@ impl TermVectorsConsumerPerField {
       .postings_array_mut()
       .ok_or_else(|| LuceneError::illegal_state("postings_array not initialized"))?;
     if let Some(offset) = last_offset {
-      postings.last_offsets[term_id] = offset;
+      postings.term_data[term_id][1] = offset;
     }
     if let Some(pos) = last_position {
-      postings.last_positions[term_id] = pos;
+      postings.term_data[term_id][2] = pos;
     }
 
     Ok(())
@@ -441,9 +441,9 @@ impl TermsHashPerFieldBase for TermVectorsConsumerPerField {
       .base
       .postings_array_mut()
       .ok_or_else(|| LuceneError::illegal_state("postings_array not initialized"))?;
-    postings.freqs[term_id] = freq;
-    postings.last_offsets[term_id] = 0;
-    postings.last_positions[term_id] = 0;
+    postings.term_data[term_id][0] = freq;
+    postings.term_data[term_id][1] = 0;
+    postings.term_data[term_id][2] = 0;
 
     self.write_prox(term_id, field_state, attribute_source, int_pool, byte_pool)?;
     Ok(())
@@ -467,7 +467,7 @@ impl TermsHashPerFieldBase for TermVectorsConsumerPerField {
       .postings_array_mut()
       .ok_or_else(|| LuceneError::illegal_state("postings_array not initialized"))?;
 
-    postings.freqs[term_id] += freq;
+    postings.term_data[term_id][0] += freq;
     self.write_prox(term_id, state, attribute_source, int_pool, byte_pool)?;
 
     Ok(())
@@ -476,9 +476,8 @@ impl TermsHashPerFieldBase for TermVectorsConsumerPerField {
 
 pub(crate) struct TermVectorsPostingsArray {
   pub(crate) size: usize,
-  freqs: Vec<i32>,          // How many times this term occurred in the current doc
-  last_offsets: Vec<i32>,   // Last offset we saw
-  last_positions: Vec<i32>, // Last position where this term occurred
+  // Per-term [frequency, last offset, last position], without element padding.
+  term_data: Vec<[i32; 3]>,
   pub(crate) parent: ParallelPostingsArray,
 }
 
@@ -486,9 +485,7 @@ impl TermVectorsPostingsArray {
   pub fn new(size: usize) -> Self {
     TermVectorsPostingsArray {
       size,
-      freqs: vec![0; size],
-      last_offsets: vec![0; size],
-      last_positions: vec![0; size],
+      term_data: vec![[0; 3]; size],
       parent: ParallelPostingsArray::new(size),
     }
   }
@@ -501,9 +498,7 @@ impl PostingsArrayBase for TermVectorsPostingsArray {
   fn copy_to(&mut self, new_size: usize) -> Result<()> {
     self.parent.copy_to(new_size)?;
     self.size = new_size;
-    ArrayUtil::grow_exact(&mut self.freqs, new_size, || 0)?;
-    ArrayUtil::grow_exact(&mut self.last_offsets, new_size, || 0)?;
-    ArrayUtil::grow_exact(&mut self.last_positions, new_size, || 0)?;
+    ArrayUtil::grow_exact(&mut self.term_data, new_size, || [0; 3])?;
     Ok(())
   }
 }
@@ -515,22 +510,22 @@ impl PostingsArray for TermVectorsPostingsArray {
   fn get_size(&self) -> usize {
     self.size
   }
-  fn get_address_offset(&self) -> &[i32] {
-    self.parent.address_offset.as_slice()
+  fn get_address_offset(&self) -> &[[i32; 3]] {
+    self.parent.get_address_offset()
   }
   fn set_address_offset(&mut self, index: usize, value: i32) {
-    self.parent.address_offset[index] = value;
+    self.parent.set_address_offset(index, value);
   }
-  fn get_text_starts(&self) -> &[i32] {
-    self.parent.text_starts.as_slice()
+  fn get_text_starts(&self) -> &[[i32; 3]] {
+    self.parent.get_text_starts()
   }
   fn set_text_starts(&mut self, index: usize, value: i32) {
-    self.parent.text_starts[index] = value;
+    self.parent.set_text_starts(index, value);
   }
-  fn get_byte_starts(&self) -> &[i32] {
-    self.parent.byte_starts.as_slice()
+  fn get_byte_starts(&self) -> &[[i32; 3]] {
+    self.parent.get_byte_starts()
   }
   fn set_byte_starts(&mut self, index: usize, value: i32) {
-    self.parent.byte_starts[index] = value;
+    self.parent.set_byte_starts(index, value);
   }
 }

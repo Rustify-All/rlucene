@@ -61,14 +61,14 @@ pub struct Lucene101PostingsWriter<O> {
   pos_start_fp: i64,
   pay_start_fp: i64,
 
-  pub(crate) doc_delta_buffer: Vec<i32>,
-  pub(crate) freq_buffer: Vec<i32>,
+  // Fixed contiguous [document deltas, frequencies] encoding blocks.
+  pub(crate) doc_freq_buffers: Box<[[i32; Lucene101PostingsFormat::BLOCK_SIZE]; 2]>,
   doc_buffer_upto: usize,
 
-  pub(crate) pos_delta_buffer: Vec<i32>,
-  pub(crate) payload_length_buffer: Vec<i32>,
-  pub(crate) offset_start_delta_buffer: Vec<i32>,
-  pub(crate) offset_length_buffer: Vec<i32>,
+  // Fixed contiguous position deltas and, when enabled, payload lengths.
+  pub(crate) position_buffers: Vec<i32>,
+  // Both fixed offset blocks exist exactly when field metadata enables offsets.
+  pub(crate) offset_buffers: Option<Box<[[i32; Lucene101PostingsFormat::BLOCK_SIZE]; 2]>>,
   pos_buffer_upto: usize,
 
   payload_bytes: Vec<u8>,
@@ -150,10 +150,8 @@ where
     let mut pos_out: Option<O> = None;
     let mut pay_out: Option<O> = None;
 
-    let mut pos_delta_buffer = Vec::new();
-    let mut payload_length_buffer = Vec::new();
-    let mut offset_start_delta_buffer = Vec::new();
-    let mut offset_length_buffer = Vec::new();
+    let mut position_buffers = Vec::new();
+    let mut offset_buffers = None;
     let mut payload_bytes = Vec::new();
 
     let mut success = false;
@@ -183,7 +181,11 @@ where
       let pfor_util = PForUtil::new();
 
       if state.field_infos.has_prox() {
-        pos_delta_buffer = vec![0; Lucene101PostingsFormat::BLOCK_SIZE];
+        position_buffers = vec![
+          0;
+          Lucene101PostingsFormat::BLOCK_SIZE
+            * (1 + usize::from(state.field_infos.has_payloads()))
+        ];
         let pos_file = IndexFileNames::segment_file_name(
           &segment_info.name,
           &state.segment_suffix,
@@ -202,12 +204,10 @@ where
 
         if state.field_infos.has_payloads() {
           payload_bytes = vec![0; 128];
-          payload_length_buffer = vec![0; Lucene101PostingsFormat::BLOCK_SIZE];
         }
 
         if state.field_infos.has_offsets() {
-          offset_start_delta_buffer = vec![0; Lucene101PostingsFormat::BLOCK_SIZE];
-          offset_length_buffer = vec![0; Lucene101PostingsFormat::BLOCK_SIZE];
+          offset_buffers = Some(Box::new([[0; Lucene101PostingsFormat::BLOCK_SIZE]; 2]));
         }
 
         if state.field_infos.has_payloads() || state.field_infos.has_offsets() {
@@ -243,8 +243,7 @@ where
     }
     let (for_delta_util, pfor_util) = unwrap_caught_result!(result)?;
 
-    let doc_delta_buffer = vec![0; Lucene101PostingsFormat::BLOCK_SIZE];
-    let freq_buffer = vec![0; Lucene101PostingsFormat::BLOCK_SIZE];
+    let doc_freq_buffers = Box::new([[0; Lucene101PostingsFormat::BLOCK_SIZE]; 2]);
     let (meta_out, doc_out) = match (meta_out, doc_out) {
       (Some(meta_out), Some(doc_out)) => (meta_out, doc_out),
       (mut meta_out, mut doc_out) => {
@@ -270,13 +269,10 @@ where
       doc_start_fp: 0,
       pos_start_fp: 0,
       pay_start_fp: 0,
-      doc_delta_buffer,
-      freq_buffer,
+      doc_freq_buffers,
       doc_buffer_upto: 0,
-      pos_delta_buffer,
-      payload_length_buffer,
-      offset_start_delta_buffer,
-      offset_length_buffer,
+      position_buffers,
+      offset_buffers,
       pos_buffer_upto: 0,
       payload_bytes,
       payload_byte_upto: 0,
@@ -310,10 +306,11 @@ where
 
     if self.doc_buffer_upto < Lucene101PostingsFormat::BLOCK_SIZE {
       debug_assert!(finish_term);
+      let [doc_delta_buffer, freq_buffer] = self.doc_freq_buffers.as_mut();
       PostingsUtil::write_vint_block(
         &mut self.level0_output,
-        &mut self.doc_delta_buffer,
-        &self.freq_buffer,
+        doc_delta_buffer,
+        freq_buffer,
         self.doc_buffer_upto,
         options.write_freqs,
       )?;
@@ -362,11 +359,11 @@ where
       let mut num_skip_bytes = self.level0_output.size();
       self
         .for_delta_util
-        .encode_deltas(&mut self.doc_delta_buffer, &mut self.level0_output)?;
+        .encode_deltas(&mut self.doc_freq_buffers[0], &mut self.level0_output)?;
       if options.write_freqs {
         self
           .pfor_util
-          .encode(&mut self.freq_buffer, &mut self.level0_output)?;
+          .encode(&mut self.doc_freq_buffers[1], &mut self.level0_output)?;
       }
       // docID - lastBlockDocID is at least 128, so it can never fit a
       // single byte with a vint Even if we subtracted 128,
@@ -486,13 +483,13 @@ where
     }
 
     let idx = self.pos_buffer_upto;
-    self.pos_delta_buffer[idx] = position - self.last_position;
+    self.position_buffers[idx] = position - self.last_position;
     if !SIMPLE_POSITIONS && options.write_payloads {
       if let Some(p) = payload.as_ref() {
         if p.length == 0 {
-          self.payload_length_buffer[idx] = 0;
+          self.position_buffers[Lucene101PostingsFormat::BLOCK_SIZE + idx] = 0;
         } else {
-          self.payload_length_buffer[idx] = p.length as i32;
+          self.position_buffers[Lucene101PostingsFormat::BLOCK_SIZE + idx] = p.length as i32;
           if self.payload_byte_upto + p.length > self.payload_bytes.len() {
             ArrayUtil::grow_capacity(&mut self.payload_bytes, self.payload_byte_upto + p.length)?;
           }
@@ -503,15 +500,19 @@ where
           self.payload_byte_upto += p.length;
         }
       } else {
-        self.payload_length_buffer[idx] = 0;
+        self.position_buffers[Lucene101PostingsFormat::BLOCK_SIZE + idx] = 0;
       }
     }
 
     if !SIMPLE_POSITIONS && options.write_offsets {
       debug_assert!(start_offset >= self.last_start_offset);
       debug_assert!(end_offset >= start_offset);
-      self.offset_start_delta_buffer[idx] = start_offset - self.last_start_offset;
-      self.offset_length_buffer[idx] = end_offset - start_offset;
+      let offset_buffers = expect_invariant!(
+        self.offset_buffers.as_mut(),
+        "offset blocks initialized from field metadata",
+      );
+      offset_buffers[0][idx] = start_offset - self.last_start_offset;
+      offset_buffers[1][idx] = end_offset - start_offset;
       self.last_start_offset = start_offset;
     }
 
@@ -523,15 +524,19 @@ where
         .pos_out
         .as_mut()
         .ok_or_else(|| LuceneError::illegal_state("positions output is missing"))?;
-      self.pfor_util.encode(&mut self.pos_delta_buffer, po)?;
+      self.pfor_util.encode(
+        &mut self.position_buffers[..Lucene101PostingsFormat::BLOCK_SIZE],
+        po,
+      )?;
       if !SIMPLE_POSITIONS && options.write_payloads {
         let pay_out = self
           .pay_out
           .as_mut()
           .ok_or_else(|| LuceneError::illegal_state("payload output is missing"))?;
-        self
-          .pfor_util
-          .encode(&mut self.payload_length_buffer, pay_out)?;
+        self.pfor_util.encode(
+          &mut self.position_buffers[Lucene101PostingsFormat::BLOCK_SIZE..],
+          pay_out,
+        )?;
         pay_out.write_vint(self.payload_byte_upto as i32)?;
         pay_out.write_bytes_range(&self.payload_bytes, 0, self.payload_byte_upto)?;
         self.payload_byte_upto = 0;
@@ -541,12 +546,12 @@ where
           .pay_out
           .as_mut()
           .ok_or_else(|| LuceneError::illegal_state("payload output is missing"))?;
-        self
-          .pfor_util
-          .encode(&mut self.offset_start_delta_buffer, pay_out)?;
-        self
-          .pfor_util
-          .encode(&mut self.offset_length_buffer, pay_out)?;
+        let offset_buffers = expect_invariant!(
+          self.offset_buffers.as_mut(),
+          "offset blocks initialized from field metadata",
+        );
+        self.pfor_util.encode(&mut offset_buffers[0], pay_out)?;
+        self.pfor_util.encode(&mut offset_buffers[1], pay_out)?;
       }
       self.pos_buffer_upto = 0;
     }
@@ -732,7 +737,7 @@ where
     debug_assert_eq!(state.base.doc_freq, self.doc_count);
 
     let singleton_doc_id = if state.base.doc_freq == 1 {
-      self.doc_delta_buffer[0] - 1
+      self.doc_freq_buffers[0][0] - 1
     } else {
       self.flush_doc_block(true, options)?;
       -1
@@ -757,12 +762,12 @@ where
           .pos_out
           .as_mut()
           .ok_or_else(|| LuceneError::illegal_state("positions output is missing"))?;
-        for (i, &pos_delta) in self.pos_delta_buffer[..self.pos_buffer_upto]
+        for (i, &pos_delta) in self.position_buffers[..self.pos_buffer_upto]
           .iter()
           .enumerate()
         {
           if options.write_payloads {
-            let payload_length = self.payload_length_buffer[i];
+            let payload_length = self.position_buffers[Lucene101PostingsFormat::BLOCK_SIZE + i];
             if payload_length != last_payload_length {
               last_payload_length = payload_length;
               po_out.write_vint((pos_delta << 1) | 1)?;
@@ -783,8 +788,12 @@ where
             po_out.write_vint(pos_delta)?;
           }
           if options.write_offsets {
-            let delta = self.offset_start_delta_buffer[i];
-            let length = self.offset_length_buffer[i];
+            let offset_buffers = expect_invariant!(
+              self.offset_buffers.as_ref(),
+              "offset blocks initialized from field metadata",
+            );
+            let delta = offset_buffers[0][i];
+            let length = offset_buffers[1][i];
             if length == last_offset_length {
               po_out.write_vint(delta << 1)?;
             } else {
@@ -841,9 +850,9 @@ where
     }
 
     let idx = self.doc_buffer_upto;
-    self.doc_delta_buffer[idx] = doc_delta;
+    self.doc_freq_buffers[0][idx] = doc_delta;
     if options.write_freqs {
-      self.freq_buffer[idx] = term_doc_freq;
+      self.doc_freq_buffers[1][idx] = term_doc_freq;
     }
 
     self.doc_id = doc_id;

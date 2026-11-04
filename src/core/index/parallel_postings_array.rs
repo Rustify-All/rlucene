@@ -21,11 +21,8 @@ use crate::core::util::error::lucene_error::Result;
 
 pub(crate) struct ParallelPostingsArray {
   size: usize,
-  pub(crate) text_starts: Vec<i32>, /* maps term ID to the term's text start in the
-                                     * bytesHash  */
-  pub(crate) address_offset: Vec<i32>, // maps term ID to current stream address
-  pub(crate) byte_starts: Vec<i32>,    /* maps term ID to stream start offset in the
-                                        * byte pool  */
+  // Each record is [term text start, current stream address, byte-pool start].
+  pub(crate) starts: Vec<[i32; 3]>,
 }
 
 impl ParallelPostingsArray {
@@ -34,9 +31,7 @@ impl ParallelPostingsArray {
   pub(crate) fn new(size: usize) -> Self {
     Self {
       size,
-      text_starts: vec![0; size],
-      address_offset: vec![0; size],
-      byte_starts: vec![0; size],
+      starts: vec![[0; 3]; size],
     }
   }
 }
@@ -46,9 +41,7 @@ impl PostingsArrayBase for ParallelPostingsArray {
   }
   fn copy_to(&mut self, new_size: usize) -> Result<()> {
     self.size = new_size;
-    ArrayUtil::grow_exact(&mut self.text_starts, new_size, || 0)?;
-    ArrayUtil::grow_exact(&mut self.address_offset, new_size, || 0)?;
-    ArrayUtil::grow_exact(&mut self.byte_starts, new_size, || 0)?;
+    ArrayUtil::grow_exact(&mut self.starts, new_size, || [0; 3])?;
     Ok(())
   }
 }
@@ -60,23 +53,23 @@ impl PostingsArray for ParallelPostingsArray {
   fn get_size(&self) -> usize {
     self.size
   }
-  fn get_address_offset(&self) -> &[i32] {
-    self.address_offset.as_slice()
+  fn get_address_offset(&self) -> &[[i32; 3]] {
+    self.starts.as_slice()
   }
   fn set_address_offset(&mut self, index: usize, value: i32) {
-    self.address_offset[index] = value;
+    self.starts[index][1] = value;
   }
-  fn get_text_starts(&self) -> &[i32] {
-    self.text_starts.as_slice()
+  fn get_text_starts(&self) -> &[[i32; 3]] {
+    self.starts.as_slice()
   }
   fn set_text_starts(&mut self, index: usize, value: i32) {
-    self.text_starts[index] = value;
+    self.starts[index][0] = value;
   }
-  fn get_byte_starts(&self) -> &[i32] {
-    self.byte_starts.as_slice()
+  fn get_byte_starts(&self) -> &[[i32; 3]] {
+    self.starts.as_slice()
   }
   fn set_byte_starts(&mut self, index: usize, value: i32) {
-    self.byte_starts[index] = value;
+    self.starts[index][2] = value;
   }
 }
 
@@ -97,10 +90,10 @@ pub(crate) trait PostingsArray: PostingsArrayBase + Sized {
     self.copy_to(new_size)
   }
   fn get_size(&self) -> usize;
-  fn get_address_offset(&self) -> &[i32];
+  fn get_address_offset(&self) -> &[[i32; 3]];
   fn set_address_offset(&mut self, index: usize, value: i32);
-  fn get_text_starts(&self) -> &[i32];
+  fn get_text_starts(&self) -> &[[i32; 3]];
   fn set_text_starts(&mut self, index: usize, value: i32);
-  fn get_byte_starts(&self) -> &[i32];
+  fn get_byte_starts(&self) -> &[[i32; 3]];
   fn set_byte_starts(&mut self, index: usize, value: i32);
 }

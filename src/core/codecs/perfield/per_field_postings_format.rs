@@ -112,14 +112,13 @@ impl<B> HasIdentity for PerFieldPostingsFormat<B> {
 /// `state` is the custom segment-write state for this group of fields, with a
 /// segment suffix unique to this postings format.
 struct FieldsGroup<'a, 'fields, D> {
-  fields: Vec<&'fields String>,
+  fields: Box<[&'fields String]>,
   #[allow(dead_code)]
   suffix: i32,
   state: SegmentWriteState<'a, D>,
 }
 
-type FieldsGroupMapping<'a, 'b, 'fields, F, D> =
-  HashMap<&'b Identity, (&'b F, FieldsGroup<'a, 'fields, D>)>;
+type FieldsGroups<'a, 'b, 'fields, F, D> = Vec<(&'b F, FieldsGroup<'a, 'fields, D>)>;
 
 struct FieldsGroupBuilder<'a, 'fields, D> {
   fields: HashSet<&'fields String>,
@@ -141,10 +140,11 @@ impl<'a, 'fields, D> FieldsGroupBuilder<'a, 'fields, D> {
   }
 
   fn build(self) -> FieldsGroup<'a, 'fields, D> {
-    let mut fields: Vec<&'fields String> = self.fields.into_iter().collect();
+    let mut fields: Vec<&'fields String> = Vec::with_capacity(self.fields.len());
+    fields.extend(self.fields);
     fields.sort_unstable();
     FieldsGroup {
-      fields,
+      fields: fields.into_boxed_slice(),
       suffix: self.suffix,
       state: self.state,
     }
@@ -198,7 +198,7 @@ where
     base: &'b B,
     write_state: &SegmentWriteState<'a, D1>,
     indexed_field_names: &mut I,
-  ) -> Result<FieldsGroupMapping<'a, 'b, 'fields, B::Format, D1>>
+  ) -> Result<FieldsGroups<'a, 'b, 'fields, B::Format, D1>>
   where
     D1: Directory,
     I: IteratorExt<Item = &'fields String>,
@@ -278,11 +278,12 @@ where
       );
     }
 
-    let mut format_to_groups = HashMap::with_capacity(format_to_group_builders.len());
-    for (identity, (format, builder)) in format_to_group_builders {
-      format_to_groups.insert(identity, (format, builder.build()));
-    }
-    Ok(format_to_groups)
+    Ok(
+      format_to_group_builders
+        .into_values()
+        .map(|(format, builder)| (format, builder.build()))
+        .collect(),
+    )
   }
 }
 
@@ -309,7 +310,7 @@ where
     }?;
 
     // Write postings.
-    for (format, group) in groups.into_values() {
+    for (format, group) in groups {
       // Exposes only the fields from this group.
       let mut masked_fields = FilterFields::new(fields, &group.fields);
       let mut consumer = format.fields_consumer(&group.state, segment_info)?;
@@ -357,7 +358,7 @@ where
       Self::build_fields_group_mapping(base.as_ref(), write_state, &mut indexed_field_names)?;
 
     // Merge postings.
-    for (format, group) in groups.into_values() {
+    for (format, group) in groups {
       let mut consumer = format.fields_consumer(&group.state, segment_info)?;
       let merge_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let restricted = PerFieldMergeState::restrict_fields(merge_state, &group.fields)?;
@@ -494,21 +495,20 @@ where
           continue;
         }
         let field_name = &field_info.name;
-        let Some(format_name) = field_info.get_attribute(PER_FIELD_FORMAT_KEY) else {
+        let attributes = field_info.attributes();
+        let Some(format_name) = attributes.get(PER_FIELD_FORMAT_KEY) else {
           continue;
         };
-        let suffix = field_info
-          .get_attribute(PER_FIELD_SUFFIX_KEY)
-          .ok_or_else(|| {
-            LuceneError::illegal_state(format!(
-              "missing attribute: {PER_FIELD_SUFFIX_KEY} for field: {field_name}"
-            ))
-          })?;
-        let segment_suffix = get_suffix(&format_name, suffix);
+        let suffix = attributes.get(PER_FIELD_SUFFIX_KEY).ok_or_else(|| {
+          LuceneError::illegal_state(format!(
+            "missing attribute: {PER_FIELD_SUFFIX_KEY} for field: {field_name}"
+          ))
+        })?;
+        let segment_suffix = get_suffix(format_name, suffix);
         let producer = match formats.entry(segment_suffix) {
           Entry::Occupied(entry) => Arc::clone(entry.get()),
           Entry::Vacant(entry) => {
-            let format = PF::for_name(&format_name)?;
+            let format = PF::for_name(format_name)?;
             let state = SegmentReadState::copy_with_suffix(read_state, entry.key());
             let producer = Arc::new(format.fields_producer(&state, segment_info)?);
             Arc::clone(entry.insert(producer))

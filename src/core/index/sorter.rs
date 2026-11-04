@@ -93,7 +93,8 @@ impl Sorter {
     }
 
     // sort doc IDs
-    let mut docs: Vec<i32> = (0..max_doc).collect();
+    let mut docs = smallvec::SmallVec::<[i32; 8]>::with_capacity(doc_count);
+    docs.extend(0..max_doc);
     let mut sorter = DocValueSorter::new(&mut docs, comparator);
     // It can be common to sort a reader, add docs, sort it again, ... and in
     // that case timSort can save a lot of time
@@ -138,7 +139,6 @@ impl Sorter {
     LR: LeafReader,
   {
     let fields = self.sort.get_sort();
-    let mut comparators = Vec::with_capacity(fields.len());
 
     let meta_data = reader.get_metadata()?;
     let field_infos = reader.get_field_infos()?;
@@ -167,6 +167,7 @@ impl Sorter {
       )));
     }
 
+    let mut comparators = smallvec::SmallVec::<[_; 1]>::with_capacity(fields.len());
     for field in fields {
       let sorter = field.get_index_sorter()?.ok_or_else(|| {
         LuceneError::illegal_argument(format!("Cannot use sortfield {} to sort indexes", field))
@@ -182,20 +183,20 @@ impl Sorter {
       }
     }
 
-    Self::sort(reader.max_doc()?, comparators)
+    Self::sort(reader.max_doc()?, &comparators)
   }
 
-  pub(crate) fn sort<DC>(max_doc: i32, comparators: Vec<DC>) -> Result<Option<DocMapImpl>>
+  pub(crate) fn sort<DC>(max_doc: i32, comparators: &[DC]) -> Result<Option<DocMapImpl>>
   where
     DC: DocComparator,
   {
-    if let [comparator] = comparators.as_slice() {
+    if let [comparator] = comparators {
       return comparator.visit(SingleComparatorVisitor { max_doc });
     }
     let composite = {
       #[inline(never)]
       move |doc_id1: usize, doc_id2: usize| {
-        for cmp in &comparators {
+        for cmp in comparators {
           let comp = cmp.compare(doc_id1, doc_id2);
           if comp != 0 {
             return comp;

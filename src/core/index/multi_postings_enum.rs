@@ -26,7 +26,7 @@ use std::fmt::{Display, Formatter};
 pub struct MultiPostingsEnum<PE> {
   parent: Identity,
   pub(crate) sub_postings_enums: Box<[Option<PE>]>,
-  subs: Box<[EnumWithSlice]>,
+  subs: smallvec::SmallVec<[EnumWithSlice; 4]>,
   num_subs: usize,
   upto: Option<usize>,
   current: Option<usize>,
@@ -35,11 +35,7 @@ pub struct MultiPostingsEnum<PE> {
 }
 impl<PE> MultiPostingsEnum<PE> {
   pub fn new(parent: Identity, sub_reader_count: usize) -> Self {
-    let subs = if sub_reader_count == 0 {
-      Vec::new()
-    } else {
-      vec![EnumWithSlice::new(); sub_reader_count]
-    };
+    let subs = smallvec::smallvec![EnumWithSlice::new(); sub_reader_count];
     let mut sub_postings_enums = Vec::with_capacity(sub_reader_count);
     for _ in 0..sub_reader_count {
       sub_postings_enums.push(None);
@@ -47,7 +43,7 @@ impl<PE> MultiPostingsEnum<PE> {
     Self {
       parent,
       sub_postings_enums: sub_postings_enums.into_boxed_slice(),
-      subs: subs.into_boxed_slice(),
+      subs,
       num_subs: 0,
       upto: None,
       current: None,

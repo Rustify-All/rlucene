@@ -43,8 +43,8 @@ impl TermsHashPerFieldMock {
   ) -> crate::core::util::error::lucene_error::Result<()> {
     self.new_called.fetch_add(1, Ordering::SeqCst);
     let f = base.postings_array_mut().unwrap();
-    f.last_doc_ids[term_id] = doc_id;
-    f.last_doc_codes[term_id] = doc_id << 1;
+    f.last_docs[term_id][0] = doc_id;
+    f.last_docs[term_id][1] = doc_id << 1;
     match &mut f.term_freqs {
       Some(term_freqs) => {
         term_freqs[term_id] = 1;
@@ -66,22 +66,22 @@ impl TermsHashPerFieldMock {
     let mut v = Vec::new();
     let mut need_write = false;
     let postings = base.postings_array_mut().unwrap();
-    if doc_id != postings.last_doc_ids[term_id] {
+    if doc_id != postings.last_docs[term_id][0] {
       match &mut postings.term_freqs {
         Some(term_freqs) => {
           need_write = true;
           if 1 == term_freqs[term_id] {
-            v.push(postings.last_doc_codes[term_id] | 1);
+            v.push(postings.last_docs[term_id][1] | 1);
           } else {
-            v.push(postings.last_doc_codes[term_id]);
+            v.push(postings.last_docs[term_id][1]);
             v.push(term_freqs[term_id]);
           }
           term_freqs[term_id] = 1;
         },
         None => unreachable!(),
       }
-      postings.last_doc_codes[term_id] = (doc_id - postings.last_doc_ids[term_id]) << 1;
-      postings.last_doc_ids[term_id] = doc_id;
+      postings.last_docs[term_id][1] = (doc_id - postings.last_docs[term_id][0]) << 1;
+      postings.last_docs[term_id][0] = doc_id;
     } else {
       match &mut postings.term_freqs {
         Some(term_freqs) => {

@@ -271,7 +271,7 @@ impl<'data> BytesRefIterator for FreqProxTermsEnum<'data> {
       ));
     };
 
-    let text_start = p.parent.text_starts[term_id as usize];
+    let text_start = p.parent.starts[term_id as usize][0];
     let position = self.terms_pool.fill_bytes_ref(text_start, self.byte_pool);
     self.current_term_position = Some(position);
 
@@ -328,7 +328,7 @@ impl<'data> TermsEnum for FreqProxTermsEnum<'data> {
       let mid = (lo + hi) >> 1;
       let mid_index = mid as usize;
       let term_id = sorted_term_ids[mid_index];
-      let text_start = postings_array.parent.text_starts[term_id as usize];
+      let text_start = postings_array.parent.starts[term_id as usize][0];
 
       let position = self.terms_pool.fill_bytes_ref(text_start, self.byte_pool);
       let block = self.byte_pool.get_buffer(position.block_index);
@@ -363,7 +363,7 @@ impl<'data> TermsEnum for FreqProxTermsEnum<'data> {
       Ok(SeekStatus::End)
     } else {
       let term_id = sorted_term_ids[lo_index];
-      let text_start = postings_array.parent.text_starts[term_id as usize];
+      let text_start = postings_array.parent.starts[term_id as usize][0];
       let position = self.terms_pool.fill_bytes_ref(text_start, self.byte_pool);
       self.current_term_position = Some(position);
       debug_assert!(self.term()?.compare_to(text).to_int() > 0);
@@ -386,7 +386,7 @@ impl<'data> TermsEnum for FreqProxTermsEnum<'data> {
       ));
     };
 
-    let text_start = p.parent.text_starts[term_id as usize];
+    let text_start = p.parent.starts[term_id as usize][0];
     let position = self.terms_pool.fill_bytes_ref(text_start, self.byte_pool);
     self.current_term_position = Some(position);
 
@@ -571,7 +571,7 @@ impl<'data> DocIdSetIterator for FreqProxDocsEnum<'data> {
           let term_id = self
             .term_id
             .ok_or_else(|| LuceneError::illegal_state("postings enum has no current term"))?;
-          self.doc_id = p.last_doc_ids[term_id];
+          self.doc_id = p.last_docs[term_id][0];
           if self.read_term_freq {
             self.freq = p
               .term_freqs
@@ -594,7 +594,7 @@ impl<'data> DocIdSetIterator for FreqProxDocsEnum<'data> {
       }
       debug_assert!(matches!(
         self.terms.base.postings_array(),
-        Some(p) if self.term_id.is_some_and(|term_id| self.doc_id != p.last_doc_ids[term_id])
+        Some(p) if self.term_id.is_some_and(|term_id| self.doc_id != p.last_docs[term_id][0])
       ));
     }
 
@@ -735,7 +735,7 @@ impl<'data> DocIdSetIterator for FreqProxPostingsEnum<'data> {
 
           let p = postings_array;
 
-          self.doc_id = p.last_doc_ids[self.term_id];
+          self.doc_id = p.last_docs[self.term_id][0];
           self.freq = p
             .term_freqs
             .as_ref()
@@ -752,7 +752,7 @@ impl<'data> DocIdSetIterator for FreqProxPostingsEnum<'data> {
       }
       debug_assert!(matches!(
         self.terms.base.postings_array(),
-        Some(p) if self.doc_id != p.last_doc_ids[self.term_id]
+        Some(p) if self.doc_id != p.last_docs[self.term_id][0]
       ));
     }
 

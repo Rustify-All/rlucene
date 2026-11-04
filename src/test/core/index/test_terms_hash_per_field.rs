@@ -69,7 +69,7 @@ fn assert_doc_and_freq(
   let freq: i32;
   let eof = reader.eof();
   if eof {
-    doc_id = postings_array.last_doc_ids[term_id];
+    doc_id = postings_array.last_docs[term_id][0];
     match &postings_array.term_freqs {
       Some(term_freqs) => {
         freq = term_freqs[term_id];

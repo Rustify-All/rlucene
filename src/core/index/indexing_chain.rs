@@ -154,14 +154,14 @@ where
   doc_values_byte_pool: ByteBlockPool,
   stored_fields_consumer: StoredFieldsConsumer<D>,
   vector_values_consumer: VectorValuesConsumer<D>,
-  field_hash: Vec<Option<usize>>,
+  field_hash: smallvec::SmallVec<[Option<usize>; 2]>,
   hash_mask: usize,
   total_field_count: usize,
   next_field_gen: i64,
   // Holds fields seen in each document
-  fields: Vec<usize>,
+  fields: smallvec::SmallVec<[usize; 1]>,
   per_fields: Vec<PerField>,
-  doc_fields: Vec<usize>,
+  doc_fields: smallvec::SmallVec<[usize; 2]>,
   info_stream: InfoStreamMT,
   index_created_version_major: i32,
   has_hit_aborting_exception: bool,
@@ -247,13 +247,13 @@ where
       doc_values_byte_pool,
       stored_fields_consumer,
       vector_values_consumer,
-      field_hash: vec![None; 2],
+      field_hash: smallvec::smallvec![None; 2],
       hash_mask: 1,
       total_field_count: 0,
       next_field_gen: 0,
-      fields: Vec::with_capacity(1),
+      fields: smallvec::SmallVec::new(),
       per_fields: vec![],
-      doc_fields: Vec::with_capacity(2),
+      doc_fields: smallvec::SmallVec::new(),
       info_stream,
       index_created_version_major,
       has_hit_aborting_exception: false,
@@ -308,7 +308,7 @@ where
         self.index_created_version_major
       )));
     }
-    let mut comparators = Vec::with_capacity(index_sort.fields.len());
+    let mut comparators = smallvec::SmallVec::<[_; 1]>::with_capacity(index_sort.fields.len());
     for sort_field in &index_sort.fields {
       let sorter = sort_field.get_index_sorter()?.ok_or_else(|| {
         LuceneError::unsupported_operation(format!(
@@ -325,7 +325,7 @@ where
       comparators.push(v);
     }
     // returns None if the documents are already sorted
-    match Sorter::sort(max_doc, comparators)? {
+    match Sorter::sort(max_doc, &comparators)? {
       Some(doc_map) => Ok(Some(Arc::new(doc_map))),
       None => Ok(None),
     }
@@ -403,7 +403,12 @@ where
       )?;
     }
 
-    let mut fields_to_flush = Vec::with_capacity(self.field_hash.len());
+    let field_count = self
+      .per_fields
+      .iter()
+      .filter(|pf| pf.invert_state.is_some())
+      .count();
+    let mut fields_to_flush = Vec::with_capacity(field_count);
     for &idx in &self.field_hash {
       let mut fp_idx = idx;
       while let Some(index) = fp_idx {
@@ -743,7 +748,7 @@ where
     let new_hash_size = self.field_hash.len() * 2;
     debug_assert!(new_hash_size > self.field_hash.len());
 
-    let mut new_hash_array = vec![None; new_hash_size];
+    let mut new_hash_array = smallvec::smallvec![None; new_hash_size];
     let new_hash_mask = new_hash_size - 1;
     for &idx in &self.field_hash {
       let mut fp_idx = idx;
@@ -1180,7 +1185,8 @@ where
     }
     if self.doc_fields.len() == self.doc_fields.capacity() {
       let min_size = self.doc_fields.len() + 1;
-      ArrayUtil::grow_capacity(&mut self.doc_fields, min_size)?;
+      ArrayUtil::oversize(min_size, std::mem::size_of::<usize>())?;
+      self.doc_fields.reserve(min_size - self.doc_fields.len());
     }
     self.doc_fields.push(pf_idx);
     *doc_field_idx += 1;
@@ -1226,7 +1232,12 @@ where
       self.rehash();
     }
     if self.total_field_count > self.fields.capacity() {
-      ArrayUtil::grow_capacity(&mut self.fields, self.total_field_count)?;
+      ArrayUtil::oversize(self.total_field_count, std::mem::size_of::<usize>())?;
+      let capacity = self
+        .total_field_count
+        .max(self.fields.capacity() * 2)
+        .max(4);
+      self.fields.reserve_exact(capacity - self.fields.len());
     }
     Ok(index)
   }

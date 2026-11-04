@@ -169,14 +169,14 @@ where
       return Ok(());
     }
     // Gather all fields that saw any postings:
-    let mut all_fields = Vec::with_capacity(fields_to_flush.len());
-    for mut per_field in fields_to_flush {
+    let mut all_fields = fields_to_flush;
+    for per_field in &mut all_fields {
       if per_field.base.get_num_terms() > 0 {
         per_field.base.sort_terms(&byte_pool)?;
         debug_assert!(per_field.base.index_options != IndexOptions::None);
-        all_fields.push(per_field);
       }
     }
+    all_fields.retain(|per_field| per_field.base.get_num_terms() > 0);
     // Sort by field name
     CollectionUtil::intro_sort(&mut all_fields)?;
     let fields = FreqProxFields::new(all_fields, int_pool, byte_pool);

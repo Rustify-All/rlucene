@@ -320,7 +320,7 @@ impl FreqProxTermsWriterPerField {
         .base
         .postings_array()
         .ok_or_else(|| LuceneError::illegal_state("postings_array not initialized"))?
-        .get_text_starts()[term_id];
+        .get_text_starts()[term_id][0];
       next_per_field.add_with_text_start(
         text_start,
         doc_id,
@@ -373,7 +373,7 @@ impl FreqProxTermsWriterPerField {
         .base
         .postings_array()
         .ok_or_else(|| LuceneError::illegal_state("postings_array not initialized"))?
-        .get_text_starts()[term_id];
+        .get_text_starts()[term_id][0];
       next_per_field.add_with_text_start(
         text_start,
         doc_id,
@@ -423,14 +423,14 @@ impl TermsHashPerFieldBase for FreqProxTermsWriterPerField {
       .postings_array_mut()
       .ok_or_else(|| LuceneError::illegal_state("postings_array not initialized"))?;
 
-    postings.last_doc_ids[term_id] = doc_id;
+    postings.last_docs[term_id][0] = doc_id;
 
     if !self.has_freq {
       debug_assert!(postings.term_freqs.is_none());
-      postings.last_doc_codes[term_id] = doc_id;
+      postings.last_docs[term_id][1] = doc_id;
       field_state.max_term_frequency = field_state.max_term_frequency.max(1);
     } else {
-      postings.last_doc_codes[term_id] = doc_id << 1;
+      postings.last_docs[term_id][1] = doc_id << 1;
       postings
         .term_freqs
         .as_mut()
@@ -503,23 +503,23 @@ impl TermsHashPerFieldBase for FreqProxTermsWriterPerField {
         )));
       }
 
-      if doc_id != postings.last_doc_ids[term_id] {
-        debug_assert!(doc_id > postings.last_doc_ids[term_id]);
-        v[0] = Some(postings.last_doc_codes[term_id]);
-        postings.last_doc_codes[term_id] = doc_id - postings.last_doc_ids[term_id];
-        postings.last_doc_ids[term_id] = doc_id;
+      if doc_id != postings.last_docs[term_id][0] {
+        debug_assert!(doc_id > postings.last_docs[term_id][0]);
+        v[0] = Some(postings.last_docs[term_id][1]);
+        postings.last_docs[term_id][1] = doc_id - postings.last_docs[term_id][0];
+        postings.last_docs[term_id][0] = doc_id;
         field_state.unique_term_count += 1;
       }
       // Due to borrow conflict, we add later before handle prox/offset
       for x in v.into_iter().flatten() {
         self.base.write_vint(0, x, int_pool, byte_pool)?
       }
-    } else if doc_id != postings.last_doc_ids[term_id] {
+    } else if doc_id != postings.last_docs[term_id][0] {
       debug_assert!(
-        doc_id > postings.last_doc_ids[term_id],
+        doc_id > postings.last_docs[term_id][0],
         "docID = {}, postingsID = {}, termID = {}",
         doc_id,
-        postings.last_doc_ids[term_id],
+        postings.last_docs[term_id][0],
         term_id
       );
 
@@ -533,9 +533,9 @@ impl TermsHashPerFieldBase for FreqProxTermsWriterPerField {
       // Now that we know doc freq for previous doc,
       // write it & lastDocCode
       if freq == 1 {
-        v[0] = Some(postings.last_doc_codes[term_id] | 1);
+        v[0] = Some(postings.last_docs[term_id][1] | 1);
       } else {
-        v[0] = Some(postings.last_doc_codes[term_id]);
+        v[0] = Some(postings.last_docs[term_id][1]);
         v[1] = Some(freq);
       }
 
@@ -547,8 +547,8 @@ impl TermsHashPerFieldBase for FreqProxTermsWriterPerField {
 
       field_state.max_term_frequency = field_state.max_term_frequency.max(tf);
 
-      postings.last_doc_codes[term_id] = (doc_id - postings.last_doc_ids[term_id]) << 1;
-      postings.last_doc_ids[term_id] = doc_id;
+      postings.last_docs[term_id][1] = (doc_id - postings.last_docs[term_id][0]) << 1;
+      postings.last_docs[term_id][0] = doc_id;
 
       if self.has_prox && self.has_offsets {
         postings
@@ -646,10 +646,10 @@ pub(crate) struct FreqProxPostingsArray {
   pub(crate) size: usize,
   pub(crate) term_freqs: Option<Vec<i32>>, /* # times this term occurs in
                                             * the current doc  */
-  pub(crate) last_doc_ids: Vec<i32>, // Last docID where this term occurred
-  pub(crate) last_doc_codes: Vec<i32>, // Code for prior doc
+  // Per-term [last document ID, prior document code], without element padding.
+  pub(crate) last_docs: Vec<[i32; 2]>,
   pub(crate) last_positions: Option<Vec<i32>>, /* Last position where this term
-                                      * occurred  */
+                                                * occurred  */
   pub(crate) last_offsets: Option<Vec<i32>>, // Last endOffset where this term occurred
   pub(crate) parent: ParallelPostingsArray,
 }
@@ -674,8 +674,7 @@ impl FreqProxPostingsArray {
     FreqProxPostingsArray {
       size,
       term_freqs,
-      last_doc_ids: vec![0; size],
-      last_doc_codes: vec![0; size],
+      last_docs: vec![[0; 2]; size],
       last_positions,
       last_offsets,
       parent: ParallelPostingsArray::new(size),
@@ -703,8 +702,7 @@ impl PostingsArrayBase for FreqProxPostingsArray {
   fn copy_to(&mut self, new_size: usize) -> Result<()> {
     self.parent.copy_to(new_size)?;
     self.size = new_size;
-    ArrayUtil::grow_exact(&mut self.last_doc_ids, new_size, || 0)?;
-    ArrayUtil::grow_exact(&mut self.last_doc_codes, new_size, || 0)?;
+    ArrayUtil::grow_exact(&mut self.last_docs, new_size, || [0; 2])?;
     if let Some(last_positions) = self.last_positions.as_mut() {
       ArrayUtil::grow_exact(last_positions, new_size, || 0)?;
     }
@@ -729,22 +727,22 @@ impl PostingsArray for FreqProxPostingsArray {
   fn get_size(&self) -> usize {
     self.size
   }
-  fn get_address_offset(&self) -> &[i32] {
-    self.parent.address_offset.as_slice()
+  fn get_address_offset(&self) -> &[[i32; 3]] {
+    self.parent.get_address_offset()
   }
   fn set_address_offset(&mut self, index: usize, value: i32) {
-    self.parent.address_offset[index] = value;
+    self.parent.set_address_offset(index, value);
   }
-  fn get_text_starts(&self) -> &[i32] {
-    self.parent.text_starts.as_slice()
+  fn get_text_starts(&self) -> &[[i32; 3]] {
+    self.parent.get_text_starts()
   }
   fn set_text_starts(&mut self, index: usize, value: i32) {
-    self.parent.text_starts[index] = value;
+    self.parent.set_text_starts(index, value);
   }
-  fn get_byte_starts(&self) -> &[i32] {
-    self.parent.byte_starts.as_slice()
+  fn get_byte_starts(&self) -> &[[i32; 3]] {
+    self.parent.get_byte_starts()
   }
   fn set_byte_starts(&mut self, index: usize, value: i32) {
-    self.parent.byte_starts[index] = value;
+    self.parent.set_byte_starts(index, value);
   }
 }

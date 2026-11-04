@@ -54,7 +54,7 @@ where
   has_vectors: bool,
   num_vector_fields: usize,
   pub(crate) last_doc_id: i32,
-  per_fields_idxs: Vec<PerFieldMeta>,
+  per_fields_idxs: smallvec::SmallVec<[PerFieldMeta; 1]>,
   hook: TermVectorsConsumerHook<D>,
   pub(crate) base: TermsHash,
 }
@@ -208,7 +208,7 @@ where
   pub(crate) fn new(codec: Codecs, directory: D, hook: TermVectorsConsumerHook<D>) -> Self {
     let base = TermsHash::new(Arc::new(AtomicCounter::new()));
 
-    let per_fields = vec![PerFieldMeta::default(); 1];
+    let per_fields = smallvec::smallvec![PerFieldMeta::default(); 1];
 
     TermVectorsConsumer {
       directory,
@@ -317,7 +317,10 @@ where
   pub(crate) fn add_field_to_flush(&mut self, meta: PerFieldMeta) -> Result<()> {
     let num_vector_fields = self.num_vector_fields;
     if self.per_fields_idxs.len() == self.per_fields_idxs.capacity() {
-      ArrayUtil::grow_capacity(&mut self.per_fields_idxs, num_vector_fields + 1)?;
+      ArrayUtil::oversize(num_vector_fields + 1, std::mem::size_of::<PerFieldMeta>())?;
+      self
+        .per_fields_idxs
+        .reserve(num_vector_fields + 1 - self.per_fields_idxs.len());
     }
 
     self.per_fields_idxs.push(meta);
