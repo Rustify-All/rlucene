@@ -261,6 +261,39 @@ impl ForUtil {
         },
         _ => false,
       }
+    } else if bits_per_value == 9
+      && primitive_size == 16
+      && ints.len() >= num_ints
+      && tmp.len() >= num_ints_per_shift
+    {
+      use wide::{bytemuck::cast, u32x4};
+
+      const LEFT_SHIFTS: [u32x4; 2] = [u32x4::new([0, 5, 3, 1]), u32x4::new([0, 6, 4, 2])];
+      const RIGHT_SHIFTS: [u32x4; 2] = [u32x4::new([2, 4, 6, 8]), u32x4::new([1, 3, 5, 7])];
+      const LEFT_MASKS: [u32x4; 2] = [
+        u32x4::new([0, 0x0003_0003, 0x000f_000f, 0x003f_003f]),
+        u32x4::new([0, 0x0001_0001, 0x0007_0007, 0x001f_001f]),
+      ];
+      const RIGHT_MASKS: [u32x4; 2] = [
+        u32x4::new([0x007f_007f, 0x001f_001f, 0x0007_0007, 0x0001_0001]),
+        u32x4::new([0x007f_007f, 0x003f_003f, 0x000f_000f, 0x0003_0003]),
+      ];
+
+      let groups = ints[idx..num_ints].as_chunks::<7>().0;
+      let packed = tmp[..num_ints_per_shift].as_chunks_mut::<9>().0;
+      for (&[a, b, c, d, e, f, g], packed) in groups.iter().zip(packed) {
+        // Each 16-bit lane holds seven 9-bit inputs for nine 7-bit tails.
+        let left: [u32x4; 2] = [cast([0, a, b, c]), cast([0, d, e, f])];
+        let right: [u32x4; 2] = [cast([a, b, c, d]), cast([d, e, f, g])];
+        let (lanes, last) = packed.as_chunks_mut::<4>();
+        for (j, words) in lanes.iter_mut().enumerate() {
+          let tail = ((left[j] & LEFT_MASKS[j]) << LEFT_SHIFTS[j])
+            | ((right[j] >> RIGHT_SHIFTS[j]) & RIGHT_MASKS[j]);
+          *words = cast(cast::<_, u32x4>(*words) | tail);
+        }
+        last[0] |= g & Self::MASKS16[7];
+      }
+      true
     } else {
       false
     };
