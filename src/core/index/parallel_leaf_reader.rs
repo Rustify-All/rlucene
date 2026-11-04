@@ -315,7 +315,7 @@ where
       }
     }
 
-    let field_infos = Arc::new(builder.finish()?);
+    let field_infos = Arc::new(builder.finish_owned()?);
     let meta_data = LeafMetaData::new(created_version_major, min_version, index_sort, has_blocks)?;
     let index_base = IndexReaderBase::new();
 

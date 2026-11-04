@@ -47,7 +47,8 @@ where
   term: BytesRef<Vec<u8>>,
   bottom: f32,
   bottom_term: Option<BytesRef<Vec<u8>>>,
-  queued_bottom: Option<BytesRef<Vec<u8>>>,
+  queued_bottom: BytesRef<Vec<u8>>,
+  bottom_queued: bool,
   max_edits: usize,
 }
 impl<T> FuzzyTermsEnum<T>
@@ -139,7 +140,8 @@ where
       term,
       bottom,
       bottom_term,
-      queued_bottom: None,
+      queued_bottom: BytesRef::new(),
+      bottom_queued: false,
       max_edits,
     })
   }
@@ -242,8 +244,11 @@ where
     Self: 'a;
 
   fn next(&mut self) -> Result<Option<Self::Value<'_>>> {
-    if let Some(queued_bottom) = self.queued_bottom.take() {
-      self.bottom_changed(Some(&queued_bottom))?;
+    if std::mem::take(&mut self.bottom_queued) {
+      let queued_bottom = std::mem::take(&mut self.queued_bottom);
+      let result = self.bottom_changed(Some(&queued_bottom));
+      self.queued_bottom = queued_bottom;
+      result?;
     }
 
     let term = match self.actual_enum.next()? {
@@ -298,7 +303,11 @@ where
 
       // We must delay bottomChanged until the next next() call otherwise we mess up docFreq(),
       // etc., for the current term:
-      self.queued_bottom = Some(BytesRef::from_bytes(term_ref.as_bytes().to_vec()));
+      let bytes = term_ref.as_bytes();
+      self.queued_bottom.bytes.clear();
+      self.queued_bottom.bytes.extend_from_slice(bytes);
+      self.queued_bottom.length = bytes.len();
+      self.bottom_queued = true;
     }
 
     Ok(Some(term))

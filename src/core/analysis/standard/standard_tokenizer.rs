@@ -142,7 +142,7 @@ impl TokenStream for StandardTokenizer {
     // A caller may replace attributes between calls. Select for this call,
     // then keep the original character/token body concrete.
     macro_rules! increment_with_attributes {
-      ($attributes:expr) => {{
+      ($attributes:expr, $set_type:ident) => {{
         let att = $attributes;
         att.clear_attributes()?;
         self.skipped_positions = 0;
@@ -164,8 +164,8 @@ impl TokenStream for StandardTokenizer {
             let start = self.tokenizer_base.input.correct_offset(start);
             let end = self.tokenizer_base.input.correct_offset(end);
             att.set_offset(start, end)?;
-            att.set_type(
-              TOKEN_TYPES
+            att.$set_type(
+              *TOKEN_TYPES
                 .get(token_type as usize)
                 .ok_or_else(|| LuceneError::illegal_state("invalid token type"))?,
             )?;
@@ -177,11 +177,11 @@ impl TokenStream for StandardTokenizer {
       }};
     }
     match &mut self.tokenizer_base.token_stream_base.att {
-      Attributes::PackedToken(att) => increment_with_attributes!(att),
-      Attributes::BytesTerm(att) => increment_with_attributes!(att),
-      Attributes::BinaryTokenStream(att) => increment_with_attributes!(att),
+      Attributes::PackedToken(att) => increment_with_attributes!(att, set_static_type),
+      Attributes::BytesTerm(att) => increment_with_attributes!(att, set_type),
+      Attributes::BinaryTokenStream(att) => increment_with_attributes!(att, set_type),
       #[cfg(test)]
-      Attributes::RandomTokenStream(att) => increment_with_attributes!(att),
+      Attributes::RandomTokenStream(att) => increment_with_attributes!(att, set_type),
     }
   }
 

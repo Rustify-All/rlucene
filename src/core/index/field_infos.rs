@@ -572,7 +572,7 @@ where
     }
   }
 
-  Ok(Arc::new(builder.finish()?))
+  Ok(Arc::new(builder.finish_owned()?))
 }
 
 pub(crate) fn get_and_validate_parent_field<LR>(
@@ -1163,7 +1163,7 @@ impl Builder {
       };
       if !unchanged {
         for (k, v) in attributes.iter() {
-          cur_fi.put_attribute(k.clone(), v.clone());
+          cur_fi.put_borrowed_attribute(k, v);
         }
       }
       if fi.has_payloads() {
@@ -1187,5 +1187,9 @@ impl Builder {
   pub fn finish(&self) -> Result<FieldInfos> {
     self.finished.store(true, Relaxed);
     FieldInfos::new(self.by_name.values().cloned().collect())
+  }
+
+  pub(crate) fn finish_owned(self) -> Result<FieldInfos> {
+    FieldInfos::new(self.by_name.into_values().collect())
   }
 }

@@ -37,7 +37,7 @@ use crate::core::index::filtered_terms_enum::{
 use crate::core::index::merge_state::SharedDocMap;
 use crate::core::index::merge_state::{DocMap, MergeStateAccess};
 use crate::core::index::numeric_doc_values::NumericDocValues;
-use crate::core::index::ordinal_map::{OrdinalMap, SegmentToGlobalOrds};
+use crate::core::index::ordinal_map::OrdinalMap;
 use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::segment_write_state::SegmentWriteState;
 use crate::core::index::singleton_sorted_numeric_doc_values::SingletonSortedNumericDocValues;
@@ -1026,20 +1026,15 @@ where
 // 4. SortedDocValues
 struct SortedDocValuesSub<S, DM> {
   values: S,
-  map: SegmentToGlobalOrds,
   doc_map: SharedDocMap<DM>,
 }
 impl<S, DM> SortedDocValuesSub<S, DM>
 where
   S: DocIdSetIterator,
 {
-  fn new(doc_map: SharedDocMap<DM>, values: S, map: SegmentToGlobalOrds) -> Self {
+  fn new(doc_map: SharedDocMap<DM>, values: S) -> Self {
     debug_assert!(values.doc_id() == -1);
-    SortedDocValuesSub {
-      values,
-      map,
-      doc_map,
-    }
+    SortedDocValuesSub { values, doc_map }
   }
 }
 
@@ -1104,9 +1099,7 @@ where
       };
 
       let doc_map = self.merge_state.doc_map(i);
-      let map = self.map.get_global_ords(i).clone();
-
-      subs.push(Sub::new(SortedDocValuesSub::new(doc_map, values, map)));
+      subs.push(Sub::new(SortedDocValuesSub::new(doc_map, values)));
     }
 
     merge_sorted_values(subs, self.merge_state.needs_index_sort(), self.map.clone())
@@ -1201,7 +1194,10 @@ where
     let current_sub = &mut self.doc_id_merger.get_subs_mut()[current];
     let sub_ord = current_sub.sub.values.ord_value()?;
     debug_assert!(sub_ord != -1);
-    Ok(current_sub.sub.map.get(sub_ord as usize)? as i32)
+    let map = self
+      .map
+      .get_global_ords(current_sub.sub.doc_map.segment_index());
+    Ok(map.get(sub_ord as usize)? as i32)
   }
 
   fn lookup_ord(&mut self, ord: i32) -> Result<Self::OrdValue<'_>> {
@@ -1416,7 +1412,6 @@ where
 // 4. SortedSetDocValues
 struct SortedSetDocValuesSub<S, DM> {
   values: S,
-  map: SegmentToGlobalOrds,
   doc_map: SharedDocMap<DM>,
 }
 
@@ -1424,13 +1419,9 @@ impl<S, DM> SortedSetDocValuesSub<S, DM>
 where
   S: DocIdSetIterator,
 {
-  fn new(doc_map: SharedDocMap<DM>, values: S, map: SegmentToGlobalOrds) -> Self {
+  fn new(doc_map: SharedDocMap<DM>, values: S) -> Self {
     debug_assert!(values.doc_id() == -1);
-    Self {
-      values,
-      map,
-      doc_map,
-    }
+    Self { values, doc_map }
   }
 }
 
@@ -1533,7 +1524,10 @@ where
       .ok_or_else(|| LuceneError::illegal_state("current sorted-set sub is missing"))?;
     let current_sub = &mut self.doc_id_merger.get_subs_mut()[current];
     let sub_ord = current_sub.sub.values.next_ord()?;
-    current_sub.sub.map.get(sub_ord as usize)
+    let map = self
+      .map
+      .get_global_ords(current_sub.sub.doc_map.segment_index());
+    map.get(sub_ord as usize)
   }
 
   fn append_ords(&mut self, ords: &mut Vec<i64>, count: usize) -> Result<()> {
@@ -1545,10 +1539,10 @@ where
       .as_ref()
       .ok_or_else(|| LuceneError::illegal_state("current sorted-set sub is missing"))?;
     let current_sub = &mut self.doc_id_merger.get_subs_mut()[current];
-    current_sub
-      .sub
+    let map = self
       .map
-      .append_ords(&mut current_sub.sub.values, ords, count)
+      .get_global_ords(current_sub.sub.doc_map.segment_index());
+    map.append_ords(&mut current_sub.sub.values, ords, count)
   }
 
   fn lookup_ord(&mut self, ord: i64) -> Result<Self::OrdValue<'_>> {
@@ -1664,11 +1658,7 @@ where
       }
 
       let doc_map = self.merge_state.doc_map(i);
-      let seg_map = self.map.get_global_ords(i).clone();
-
-      subs.push(Sub::new(SortedSetDocValuesSub::new(
-        doc_map, values, seg_map,
-      )));
+      subs.push(Sub::new(SortedSetDocValuesSub::new(doc_map, values)));
       to_merge.push(values_for_merge);
     }
 
@@ -1679,11 +1669,7 @@ where
       let mut single_valued_subs = Vec::with_capacity(subs.len());
       for mut sub in subs {
         let single = sub.sub.values.get_sorted_doc_values()?;
-        single_valued_subs.push(Sub::new(SortedDocValuesSub::new(
-          sub.sub.doc_map,
-          single,
-          sub.sub.map,
-        )));
+        single_valued_subs.push(Sub::new(SortedDocValuesSub::new(sub.sub.doc_map, single)));
       }
 
       let dv = merge_sorted_values(

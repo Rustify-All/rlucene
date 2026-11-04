@@ -108,6 +108,22 @@ impl<'a> ByteSliceReader<'a> {
     Ok(size)
   }
 
+  fn consume_bytes(&mut self, mut len: usize, mut consume: impl FnMut(&[u8])) -> Result<()> {
+    while len > 0 {
+      let num_left = self.limit - self.upto;
+      if num_left < len {
+        consume(&self.buffer[self.upto..self.upto + num_left]);
+        len -= num_left;
+        self.next_slice()?;
+      } else {
+        consume(&self.buffer[self.upto..self.upto + len]);
+        self.upto += len;
+        break;
+      }
+    }
+    Ok(())
+  }
+
   pub(crate) fn next_slice(&mut self) -> Result<()> {
     let next_index = BitUtil::get_i32_le(self.buffer, self.limit).try_convert()?;
 
@@ -149,30 +165,24 @@ impl DataInput for ByteSliceReader<'_> {
   }
 
   fn get_bytes(&mut self, len: usize) -> Result<std::borrow::Cow<'_, [u8]>> {
-    let mut bytes = vec![0; len];
-    self.read_bytes(&mut bytes, 0, len)?;
+    if len == 0 {
+      return Ok(std::borrow::Cow::Borrowed(&[]));
+    }
+    if len <= self.limit - self.upto {
+      let start = self.upto;
+      self.upto += len;
+      return Ok(std::borrow::Cow::Borrowed(&self.buffer[start..self.upto]));
+    }
+    let mut bytes = Vec::with_capacity(len);
+    self.consume_bytes(len, |slice| bytes.extend_from_slice(slice))?;
     Ok(std::borrow::Cow::Owned(bytes))
   }
 
-  fn read_bytes(&mut self, b: &mut [u8], mut offset: usize, mut len: usize) -> Result<()> {
-    while len > 0 {
-      let num_left = self.limit - self.upto;
-      if num_left < len {
-        {
-          let buffer = self.buffer;
-          b.copy_from(&buffer[self.upto..self.upto + num_left], offset);
-        }
-        offset += num_left;
-        len -= num_left;
-        self.next_slice()?;
-      } else {
-        let buffer = self.buffer;
-        b.copy_from(&buffer[self.upto..(self.upto + len)], offset);
-        self.upto += len;
-        break;
-      }
-    }
-    Ok(())
+  fn read_bytes(&mut self, b: &mut [u8], mut offset: usize, len: usize) -> Result<()> {
+    self.consume_bytes(len, |slice| {
+      b.copy_from(slice, offset);
+      offset += slice.len();
+    })
   }
 
   fn read_group_vint(&mut self, dst: &mut [i32], offset: usize) -> Result<()> {

@@ -570,6 +570,10 @@ impl<DM> SharedDocMap<DM> {
     let _ = &directory[index];
     Self { directory, index }
   }
+
+  pub(crate) fn segment_index(&self) -> usize {
+    self.index
+  }
 }
 
 impl<DM> Clone for SharedDocMap<DM> {

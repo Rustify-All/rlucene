@@ -124,7 +124,7 @@ impl TypeAttribute for PackedTokenAttributeImpl {
   /// Set the lexical type.
   fn set_type(&mut self, type_: &str) {
     match &mut self.type_ {
-      Cow::Borrowed(_) if type_ == DEFAULT_TYPE => {},
+      Cow::Borrowed(value) if type_ == DEFAULT_TYPE => *value = DEFAULT_TYPE,
       Cow::Borrowed(_) => self.type_ = Cow::Owned(type_.to_owned()),
       Cow::Owned(value) => type_.clone_into(value),
     }
@@ -299,6 +299,16 @@ impl Display for PackedTokenAttributeImpl {
 }
 
 impl CharTermAttributeImplBase for PackedTokenAttributeImpl {}
+
+impl CharTermAttributeImpl<PackedTokenAttributeImpl> {
+  pub(crate) fn set_static_type(&mut self, type_: &'static str) -> Result<()> {
+    match &mut self.sub.type_ {
+      Cow::Borrowed(value) => *value = type_,
+      Cow::Owned(value) => type_.clone_into(value),
+    }
+    Ok(())
+  }
+}
 
 impl AttributeSource for CharTermAttributeImpl<PackedTokenAttributeImpl> {
   fn length(&self) -> Result<usize> {

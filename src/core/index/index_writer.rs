@@ -5194,7 +5194,7 @@ where
     let _ = merged_deletes_and_updates.get_del_count(sci);
 
     // field -> delGen -> dv field updates
-    let mut mapped_dv_updates = HashMap::new();
+    let mut mapped_dv_updates: HashMap<_, HashMap<_, _>> = HashMap::new();
     let mut any_dv_updates = false;
     debug_assert_eq!(source_segments.len(), doc_maps.len());
     for (i, info_id) in source_segments.iter().enumerate() {
@@ -5230,19 +5230,16 @@ where
       // and re-resolve against the newly merged segment:
       let merging_dv_updates = rld.get_merging_dv_updates();
       for (field, updates_list) in merging_dv_updates {
-        let mapped_field = match mapped_dv_updates.get_mut(&field) {
-          Some(mapped_field) => mapped_field,
-          None => mapped_dv_updates
-            .entry(field.clone())
-            .or_insert_with(HashMap::new),
-        };
+        #[cfg(debug_assertions)]
+        let field_name = field.clone();
+        let mapped_field = mapped_dv_updates.entry(field).or_default();
 
         for updates in updates_list {
           if self.buffered_updates_stream.still_running(updates.del_gen) {
             continue;
           }
-          // sanity check:
-          debug_assert_eq!(field, updates.field);
+          #[cfg(debug_assertions)]
+          debug_assert_eq!(field_name, updates.field);
           if let std::collections::hash_map::Entry::Vacant(e) = mapped_field.entry(updates.del_gen)
           {
             let v = match updates.type_ {

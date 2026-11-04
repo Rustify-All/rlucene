@@ -319,6 +319,18 @@ impl PrefixCodedTermsBuilder {
     let content = self.output.to_buffer_list_owner(false);
     PrefixCodedTerms::new(content.1, content.0, self.size)
   }
+
+  pub(crate) fn finish_arc(&mut self) -> PrefixCodedTermsArc {
+    let content_len = self.output.size();
+    let blocks = self.output.take_raw_blocks();
+    let empty = usize::from(blocks.len() == 0);
+    let content = std::iter::once_with(Vec::new)
+      .take(empty)
+      .chain(blocks)
+      .map(|bytes| Cursor::new(Arc::new(bytes)))
+      .collect();
+    PrefixCodedTerms::new(content, content_len, self.size)
+  }
 }
 /// An iterator over the list of terms stored in a [`PrefixCodedTerms`].
 pub type TermIteratorRef<'a> = TermIterator<&'a [u8]>;

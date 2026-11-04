@@ -100,8 +100,9 @@ where
         let mut doc = iter.next_doc()?;
         while doc != NO_MORE_DOCS {
           let ord: usize = iter.index()?.try_convert()?;
-          let vector_value = iter.with_vector_value(ord, |value| Ok(value.into_owned()))?;
-          self.add_value(doc, &vector_value, field_vectors_writer_idx)?;
+          iter.with_vector_value(ord, |value| {
+            self.add_value(doc, value.as_ref(), field_vectors_writer_idx)
+          })?;
           doc = iter.next_doc()?;
         }
       },
@@ -116,8 +117,9 @@ where
         let mut doc = iter.next_doc()?;
         while doc != NO_MORE_DOCS {
           let ord: usize = iter.index()?.try_convert()?;
-          let vector_value = iter.with_vector_value(ord, |value| Ok(value.into_owned()))?;
-          self.add_value(doc, &vector_value, field_vectors_writer_idx)?;
+          iter.with_vector_value(ord, |value| {
+            self.add_value(doc, value.as_ref(), field_vectors_writer_idx)
+          })?;
           doc = iter.next_doc()?;
         }
       },

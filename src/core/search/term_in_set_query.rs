@@ -47,7 +47,7 @@ use std::sync::LazyLock;
 
 // Only the immutable byte block is shared; iterator state and metadata stay local.
 static EMPTY_TERM_DATA: LazyLock<PrefixCodedTermsArc> =
-  LazyLock::new(|| PrefixCodedTermsBuilder::new().finish().into());
+  LazyLock::new(|| PrefixCodedTermsBuilder::new().finish_arc());
 
 #[derive(Clone)]
 pub struct TermInSetQuery {
@@ -134,7 +134,7 @@ impl TermInSetQuery {
       builder.add(field, &term)?;
       previous = Some(term);
     }
-    Ok(builder.finish().into())
+    Ok(builder.finish_arc())
   }
 
   pub fn get_terms_count(&self) -> i64 {

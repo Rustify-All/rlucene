@@ -220,7 +220,11 @@ where
     match self.secondary_dir.list_all() {
       Ok(mut secondary_files) => {
         secondary_files.retain(|file| !self.primary_extensions.contains(get_extension(file)));
-        files.extend(secondary_files);
+        if files.is_empty() {
+          files = secondary_files;
+        } else {
+          files.extend(secondary_files);
+        }
       },
       Err(err) if Self::is_no_such_file(&err) => {
         // Both directories returned a not-found I/O error.
