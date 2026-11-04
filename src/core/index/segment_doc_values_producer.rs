@@ -76,7 +76,7 @@ where
         *fi.get_doc_values_type() != DocValuesType::None && fi.get_doc_values_gen() == -1
       }));
     let mut dv_producers = Vec::with_capacity(num_dv_gens);
-    let mut producer_indices = HashMap::with_capacity(num_dv_gens);
+    let mut producer_indices = (num_dv_gens > 2).then(|| HashMap::with_capacity(num_dv_gens));
     let mut dv_gens = Vec::with_capacity(num_dv_gens);
 
     let mut base_producer_index = None;
@@ -140,9 +140,20 @@ where
 
   fn add_unique_producer(
     producers: &mut Vec<Arc<CodecDocValuesProducer<I>>>,
-    producer_indices: &mut HashMap<*const CodecDocValuesProducer<I>, usize>,
+    producer_indices: &mut Option<HashMap<*const CodecDocValuesProducer<I>, usize>>,
     producer: Arc<CodecDocValuesProducer<I>>,
   ) -> usize {
+    let Some(producer_indices) = producer_indices else {
+      if let Some(index) = producers
+        .iter()
+        .position(|existing| Arc::ptr_eq(existing, &producer))
+      {
+        return index;
+      }
+      let index = producers.len();
+      producers.push(producer);
+      return index;
+    };
     let identity = Arc::as_ptr(&producer);
     match producer_indices.entry(identity) {
       std::collections::hash_map::Entry::Occupied(entry) => *entry.get(),

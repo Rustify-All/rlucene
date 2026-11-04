@@ -208,12 +208,16 @@ pub struct Meta {
 }
 
 impl Meta {
-  pub fn new(num_values: i64, block_shift: i32) -> Self {
+  fn block_count(num_values: i64, block_shift: i32) -> usize {
     let mut num_blocks = (num_values as u64) >> (block_shift as u32);
     if (num_blocks << block_shift) < num_values as u64 {
       num_blocks += 1;
     }
-    let num_blocks_usize = num_blocks as usize;
+    num_blocks as usize
+  }
+
+  pub fn new(num_values: i64, block_shift: i32) -> Self {
+    let num_blocks_usize = Self::block_count(num_values, block_shift);
     Meta {
       block_shift,
       num_blocks: num_blocks_usize,
@@ -253,15 +257,23 @@ where
   II: IndexInput,
 {
   let mut all_values_zero = true;
-  let mut meta = Meta::new(num_values, block_shift);
-  for i in 0..meta.num_blocks {
+  let num_blocks = Meta::block_count(num_values, block_shift);
+  let mut meta = Meta {
+    block_shift,
+    num_blocks,
+    mins: Vec::with_capacity(num_blocks),
+    avgs: Vec::with_capacity(num_blocks),
+    offsets: Vec::with_capacity(num_blocks),
+    bpvs: Vec::with_capacity(num_blocks),
+  };
+  for _ in 0..num_blocks {
     let min = meta_in.read_long()?;
-    meta.mins[i] = min;
+    meta.mins.push(min);
     let avg_int = meta_in.read_int()?;
-    meta.avgs[i] = f32::from_bits(avg_int as u32);
-    meta.offsets[i] = meta_in.read_long()?.try_convert()?;
+    meta.avgs.push(f32::from_bits(avg_int as u32));
+    meta.offsets.push(meta_in.read_long()?.try_convert()?);
     let bpv = meta_in.read_byte()?;
-    meta.bpvs[i] = bpv;
+    meta.bpvs.push(bpv);
     all_values_zero = all_values_zero && (min == 0) && (avg_int == 0) && (bpv == 0);
   }
   if all_values_zero {

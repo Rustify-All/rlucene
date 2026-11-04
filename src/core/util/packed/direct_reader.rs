@@ -118,13 +118,12 @@ impl<R> LongValuesImpl<R> {
     num_values: usize,
     base_offset: usize,
   ) -> LongValuesImpl<R> {
-    let buffer = vec![-1; DirectReader::MERGE_BUFFER_SIZE];
     LongValuesImpl {
       slice,
       bits_per_value,
       num_values,
       base_offset,
-      buffer: buffer.into_boxed_slice(),
+      buffer: Box::default(),
       block_index: None,
     }
   }
@@ -143,6 +142,9 @@ where
         .as_ref()
         .ok_or_else(|| LuceneError::illegal_state("input is empty"))?,
     };
+    if self.buffer.is_empty() {
+      self.buffer = vec![-1; DirectReader::MERGE_BUFFER_SIZE].into_boxed_slice();
+    }
     let buffer = &mut self.buffer[..DirectReader::MERGE_BUFFER_SIZE];
     let bits_per_value_usize = self.bits_per_value as usize;
     if index + DirectReader::MERGE_BUFFER_SIZE >= self.num_values {

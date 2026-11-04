@@ -59,7 +59,7 @@ use crate::core::util::math_util::MathUtil;
 use crate::core::util::packed::direct_monotonic_writer::DirectMonotonicWriter;
 use crate::core::util::packed::direct_writer::{DirectWriter, unsigned_bits_required};
 use crate::core::util::{IOUtils, StringHelper, TryIntoInt};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 /// writer for [`Lucene90DocValuesFormat`].
@@ -324,7 +324,7 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
     let mut min_max = MinMaxTracker::new();
     let mut block_min_max = MinMaxTracker::new();
     let mut gcd = 0i64;
-    let mut unique_values = if !ords { Some(HashSet::new()) } else { None };
+    let mut unique_values = if !ords { Some(HashMap::new()) } else { None };
 
     let mut doc = values.next_doc()?;
     while doc != NO_MORE_DOCS {
@@ -352,9 +352,9 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
         }
 
         if !ords
-          && let Some(set) = unique_values.as_mut()
-          && set.insert(v)
-          && set.len() > 256
+          && let Some(map) = unique_values.as_mut()
+          && map.insert(v, 0).is_none()
+          && map.len() > 256
         {
           unique_values = None;
         }
@@ -419,7 +419,7 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
 
     let num_bits_per_value;
     let mut do_blocks = false;
-    let mut encode: Option<HashMap<i64, i64>> = None;
+    let mut encode: Option<HashMap<i64, u8>> = None;
 
     if min >= max {
       // meta[-1]: All values are 0
@@ -431,8 +431,8 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
           && unsigned_bits_required(set.len() as i64 - 1)
             < unsigned_bits_required(max.wrapping_sub(min) / gcd)
       });
-      if let Some(set) = unique_values {
-        let mut sorted: smallvec::SmallVec<[i64; 32]> = set.iter().copied().collect();
+      if let Some(mut map) = unique_values {
+        let mut sorted: smallvec::SmallVec<[i64; 32]> = map.keys().copied().collect();
         sorted.sort_unstable();
         debug_assert!(sorted.len() <= i32::MAX as usize);
         let set_len = sorted.len() as i32;
@@ -441,11 +441,10 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
         for v in &sorted {
           self.meta.write_long(*v)?;
         }
-        let mut value_to_ord = HashMap::with_capacity(sorted.len());
-        for (i, &value) in sorted.iter().enumerate() {
-          value_to_ord.insert(value, i as i64);
+        for (i, value) in sorted.into_iter().enumerate() {
+          map.insert(value, i as u8);
         }
-        encode = Some(value_to_ord);
+        encode = Some(map);
         min = 0;
         gcd = 1;
       } else {
@@ -508,7 +507,7 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
     num_bits_per_value: i32,
     min: i64,
     gcd: i64,
-    encode: Option<HashMap<i64, i64>>,
+    encode: Option<HashMap<i64, u8>>,
   ) -> Result<()>
   where
     T: SortedNumericDocValues,
@@ -517,7 +516,9 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
 
     match encode.as_ref() {
       Some(map) => {
-        Self::write_values_with_encoder(values, &mut writer, |v| *map.get(&v).unwrap_or(&0))?;
+        Self::write_values_with_encoder(values, &mut writer, |v| {
+          i64::from(*map.get(&v).unwrap_or(&0))
+        })?;
       },
       None => {
         Self::write_values_with_encoder(values, &mut writer, |v| v.wrapping_sub(min) / gcd)?;
