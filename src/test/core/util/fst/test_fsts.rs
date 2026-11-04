@@ -1144,8 +1144,7 @@ fn test_non_final_stop_node() -> Result<()> {
 
   // Add non-final stop node for 'b'
   {
-    let node = UnCompiledNode::new(0);
-    fst_compiler.frontier[1] = node;
+    fst_compiler.frontier.push(UnCompiledNode::new(0));
     root_node.add_arc(b'b' as i32, NodeEnum::UnCompiledNode)?;
     let fronze = CompiledNode {
       node: fst_compiler.add_node(1)?,
@@ -1155,8 +1154,7 @@ fn test_non_final_stop_node() -> Result<()> {
     root_node.arcs[1].output = Some(42);
     root_node.arcs[1].target = NodeEnum::CompiledNode(fronze);
   }
-  // index = 2;
-  fst_compiler.frontier[2] = root_node;
+  fst_compiler.frontier.push(root_node);
 
   // Finish FST
   // 2  =  root node
