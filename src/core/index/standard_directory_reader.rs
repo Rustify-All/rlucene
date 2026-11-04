@@ -46,7 +46,7 @@ use crate::core::util::{LATEST, MIN_SUPPORTED_MAJOR};
 use parking_lot::Mutex;
 use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Display, Formatter, Write};
 use std::sync::Arc;
 
 /// Default implementation of DirectoryReader.
@@ -470,7 +470,7 @@ where
     if let Some(segments_file) = self.segment_infos.get_segments_file_name() {
       buffer.push_str(&segments_file);
       buffer.push(':');
-      buffer.push_str(&self.segment_infos.get_version().to_string());
+      let _ = write!(buffer, "{}", self.segment_infos.get_version());
     }
     if self.writer.is_some() {
       buffer.push_str(":nrt");

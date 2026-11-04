@@ -382,7 +382,8 @@ impl TieredMergePolicy {
       let mut best_too_large = false;
       let mut best_merge_bytes = 0;
 
-      let mut candidate = Vec::new();
+      let mut candidate: smallvec::SmallVec<[SegmentCommitInfoMeta<'_, D>; 4]> =
+        smallvec::SmallVec::new();
       for start_idx in 0..sorted_eligible.len() {
         candidate.clear();
         candidate.reserve_exact(std::cmp::min(
@@ -1011,7 +1012,8 @@ where
 
     let mut index = starting_segment_count.checked_sub(1);
     let mut resulting_segments = starting_segment_count;
-    let mut candidate = Vec::with_capacity(starting_segment_count);
+    let mut candidate: smallvec::SmallVec<[SegmentCommitInfoMeta<'_, D>; 4]> =
+      smallvec::SmallVec::with_capacity(starting_segment_count);
 
     loop {
       candidate.clear();

@@ -501,7 +501,8 @@ where
     let merging_segments = merge_context.get_merging_segments(inner);
 
     let mut total_doc_count: i64 = 0;
-    let mut levels = Vec::with_capacity(num_segments);
+    let mut levels =
+      smallvec::SmallVec::<[SegmentInfoAndLevel<'_, D>; 4]>::with_capacity(num_segments);
 
     for i in 0..num_segments {
       let info = infos
@@ -540,7 +541,8 @@ where
     // precompute the max level on the right side.
     // arr size is numMergeableSegments + 1 to handle the case
     // when numMergeableSegments is 0.
-    let mut max_levels = vec![0.0; num_mergeable_segments + 1];
+    let mut max_levels: smallvec::SmallVec<[f32; 16]> =
+      smallvec::smallvec![0.0; num_mergeable_segments + 1];
     // -1 is definitely the minimum value, because ln(1) is 0.
     max_levels[num_mergeable_segments] = -1.0;
     for i in (0..num_mergeable_segments).rev() {

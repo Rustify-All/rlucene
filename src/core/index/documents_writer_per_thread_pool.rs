@@ -209,9 +209,11 @@ where
     );
     self.free_list.add_and_unlock(wrap_dwpt, ram_bytes_used)
   }
-  pub(crate) fn iterator(&self) -> Vec<Arc<DwptWrapper<D>>> {
+  pub(crate) fn iterator(&self) -> smallvec::SmallVec<[Arc<DwptWrapper<D>>; 4]> {
     let inner = self.inner.lock();
-    inner.dwpts.values().cloned().collect()
+    let mut snapshot = smallvec::SmallVec::with_capacity(inner.dwpts.len());
+    snapshot.extend(inner.dwpts.values().cloned());
+    snapshot
   }
 
   /// Filters all `DocumentsWriterPerThread`s that the given predicate applies to and that can be checked out of the pool via [`checkout`](Self::checkout).

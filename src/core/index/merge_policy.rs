@@ -393,7 +393,7 @@ where
   where
     MC: MergeContext<D>,
   {
-    let mut segments = Vec::with_capacity(infos.len());
+    let mut segments = smallvec::SmallVec::<[String; 2]>::with_capacity(infos.len());
     for info in infos {
       let del = merge_context.num_deleted_docs(info)? - info.get_del_count();
       segments.push(info.to_string_with_pending_del_count(del)?);

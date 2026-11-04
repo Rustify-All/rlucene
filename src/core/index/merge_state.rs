@@ -78,7 +78,7 @@ where
   /// Indicates if the index needs to be sorted
   pub(crate) needs_index_sort: bool,
   /// Max docs per reader
-  pub(crate) max_docs: Vec<i32>,
+  pub(crate) max_docs: smallvec::SmallVec<[i32; 4]>,
   /// [InfoStream] for debugging messages.
   pub(crate) info_stream: Arc<InfoStreamEnum>,
   /// Executor for intra-merge activity.
@@ -189,7 +189,7 @@ where
 
     let num_readers = readers.len();
 
-    let mut max_docs = Vec::with_capacity(num_readers);
+    let mut max_docs = smallvec::SmallVec::with_capacity(num_readers);
     let mut fields_producers = Vec::with_capacity(num_readers);
     let mut norms_producers = Vec::with_capacity(num_readers);
     let mut stored_fields_readers = Vec::with_capacity(num_readers);

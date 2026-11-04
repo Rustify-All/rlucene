@@ -150,8 +150,8 @@ where
   }
 
   fn to_string(&self) -> String {
-    let mut buffer = String::from("SoftDeletesDirectoryReaderWrapper(");
-    buffer.push_str(&self.in_.to_string());
+    let mut buffer = self.in_.to_string();
+    buffer.insert_str(0, "SoftDeletesDirectoryReaderWrapper(");
     buffer.push(')');
     buffer
   }

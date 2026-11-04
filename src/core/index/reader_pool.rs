@@ -318,11 +318,13 @@ where
     infos: &mut SegmentInfos<D>,
     global_field_number: &FieldNumbersLock,
   ) -> Result<bool> {
-    let copy: Vec<Arc<ReadersAndUpdates<D>>> = {
+    let copy: smallvec::SmallVec<[Arc<ReadersAndUpdates<D>>; 4]> = {
       let inner = self.inner.lock();
       // this needs to be protected by the reader pool lock otherwise we hit
       // concurrent-modification error
-      inner.reader_map.values().cloned().collect()
+      let mut copy = smallvec::SmallVec::with_capacity(inner.reader_map.len());
+      copy.extend(inner.reader_map.values().cloned());
+      copy
     };
 
     let mut any = false;

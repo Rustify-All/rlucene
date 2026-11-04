@@ -54,8 +54,8 @@ impl MultiSorter {
         },
       );
     }
-    let mut comparables = Vec::with_capacity(fields.len());
-    let mut reverse_muls = Vec::with_capacity(fields.len());
+    let mut comparables = smallvec::SmallVec::<[_; 2]>::with_capacity(fields.len());
+    let mut reverse_muls = smallvec::SmallVec::<[i8; 2]>::with_capacity(fields.len());
 
     for field in fields.iter() {
       let sorter = field.get_index_sorter()?.ok_or_else(|| {
@@ -67,6 +67,7 @@ impl MultiSorter {
       reverse_muls.push(if field.get_reverse() { -1 } else { 1 });
       comparables.push(new_providers);
     }
+    let comparables = comparables.as_mut_slice();
     Self::sort_with_providers::<CR, _, false>(readers, &reverse_muls, |reader, doc, values| {
       for (j, comps_per_field) in comparables.iter_mut().enumerate() {
         values[j] = comps_per_field[reader].get_as_comparable_long(doc)?;
@@ -283,7 +284,7 @@ pub(crate) struct LeafAndDocId<B> {
   reader_index: usize,
   live_docs: Option<B>,
   max_doc: i32,
-  values_as_comparable_longs: Box<[i64]>,
+  values_as_comparable_longs: smallvec::SmallVec<[i64; 1]>,
   doc_id: i32,
 }
 impl<B> LeafAndDocId<B> {
@@ -292,7 +293,7 @@ impl<B> LeafAndDocId<B> {
       reader_index,
       live_docs,
       max_doc,
-      values_as_comparable_longs: vec![0i64; num_comparables].into_boxed_slice(),
+      values_as_comparable_longs: smallvec::smallvec![0i64; num_comparables],
       doc_id: 0,
     }
   }
