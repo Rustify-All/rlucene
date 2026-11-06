@@ -357,7 +357,38 @@ impl ScalarQuantizer {
       while iterator.next_doc()? != NO_MORE_DOCS {
         let ord: usize = iterator.index()?.try_convert()?;
         let vector_value = float_vector_values.vector_value(ord)?;
-        for &value in vector_value.as_ref() {
+        let values = vector_value.as_ref();
+        if values.len() >= 8 {
+          use wide::{bytemuck::cast, i32x4};
+
+          const MAGNITUDE: i32x4 = i32x4::splat(i32::MAX);
+          const MINIMUM: i32x4 = i32x4::splat(i32::MIN);
+          let (groups, tail) = values.as_chunks::<4>();
+          let mut minimum = MAGNITUDE;
+          let mut maximum = MINIMUM;
+          for &group in groups {
+            let bits: i32x4 = cast(group);
+            // Ordered integer keys preserve float order, including -0.0 before +0.0.
+            let ordered = bits ^ ((bits >> 31) & MAGNITUDE);
+            minimum = minimum.min(ordered);
+            maximum = maximum.max(ordered);
+          }
+          let min_bits = minimum.reduce_min();
+          let max_bits = maximum.reduce_max();
+          let vector_min = f32::from_bits((min_bits ^ ((min_bits >> 31) & i32::MAX)) as u32);
+          let vector_max = f32::from_bits((max_bits ^ ((max_bits >> 31) & i32::MAX)) as u32);
+          // A NaN sorts outside the infinities. Preserve its scalar propagation below.
+          if !vector_min.is_nan() && !vector_max.is_nan() {
+            min = CoreHelper::min_f32(min, vector_min);
+            max = CoreHelper::max_f32(max, vector_max);
+            for &value in tail {
+              min = CoreHelper::min_f32(min, value);
+              max = CoreHelper::max_f32(max, value);
+            }
+            continue;
+          }
+        }
+        for &value in values {
           min = CoreHelper::min_f32(min, value);
           max = CoreHelper::max_f32(max, value);
         }
