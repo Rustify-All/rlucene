@@ -38,17 +38,22 @@ impl PForUtil {
   pub(crate) fn all_equal(arr: &[i32]) -> bool {
     if arr.len() >= ForUtil::BLOCK_SIZE {
       let expected = wide::i32x8::splat(arr[0]);
-      for chunk in arr[..ForUtil::BLOCK_SIZE].as_chunks::<8>().0 {
-        if !wide::i32x8::new([
-          chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6], chunk[7],
-        ])
+      if !wide::i32x8::new(arr[..8].as_chunks::<8>().0[0])
         .simd_eq(expected)
         .all()
-        {
+      {
+        return false;
+      }
+      let (groups, tail) = arr[8..ForUtil::BLOCK_SIZE].as_chunks::<16>();
+      let expected16 = wide::i32x16::splat(arr[0]);
+      for &chunk in groups {
+        if !wide::i32x16::new(chunk).simd_eq(expected16).all() {
           return false;
         }
       }
-      true
+      wide::i32x8::new(tail.as_chunks::<8>().0[0])
+        .simd_eq(expected)
+        .all()
     } else {
       for i in 1..ForUtil::BLOCK_SIZE {
         if arr[i] != arr[0] {
