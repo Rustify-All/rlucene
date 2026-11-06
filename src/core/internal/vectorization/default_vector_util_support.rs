@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 use crate::core::internal::vectorization::vector_util_support::VectorUtilSupport;
-use wide::{i16x8, i16x16, i16x32, i32x4, i32x8, i32x16, u8x16};
+use wide::{i8x16, i16x8, i16x16, i16x32, i32x4, i32x8, i32x16, u8x16};
 
 // Vector widths follow the compilation target; this is not runtime CPU dispatch.
 #[cfg(not(any(
@@ -214,33 +214,66 @@ impl DefaultVectorUtilSupport {
   }
 
   fn dot_product_body_128(a: &[u8], b: &[u8], limit: usize) -> i32 {
-    let mut sum = i32x4::splat(0);
-    for i in (0..limit).step_by(4) {
-      let a = &a[i..i + 8];
-      let b = &b[i..i + 8];
+    let mut sum = i32x16::splat(0);
+    let mut sum2 = i32x16::splat(0);
+    let vector_limit = limit & !15;
+    let block_limit = vector_limit & !31;
+    let (a_blocks, _) = a[..block_limit].as_chunks::<32>();
+    let (b_blocks, _) = b.as_chunks::<32>();
+    let mut i = 0;
+    for (a, b) in a_blocks.iter().zip(b_blocks) {
+      let va = wide::i8x32::new(a.map(|value| value as i8));
+      let vb = wide::i8x32::new(b.map(|value| value as i8));
+      let product = va.widening_mul(vb).to_array();
+      let (products, _) = product.as_chunks::<16>();
+      sum += i32x16::new(products[0].map(i32::from));
+      sum2 += i32x16::new(products[1].map(i32::from));
+      i += 32;
+    }
+    sum += sum2;
+    // Keep checked 16-byte accesses for the remainder and a short second input.
+    while i < vector_limit {
+      let a = &a[i..i + 16];
+      let b = &b[i..i + 16];
+      let va = i8x16::new(std::array::from_fn(|j| a[j] as i8));
+      let vb = i8x16::new(std::array::from_fn(|j| b[j] as i8));
+      let product = va.widening_mul(vb).to_array();
+      sum += i32x16::new(product.map(i32::from));
+      i += 16;
+    }
+    if vector_limit < limit {
+      let a = &a[vector_limit..vector_limit + 8];
+      let b = &b[vector_limit..vector_limit + 8];
       let va = i16x8::new(std::array::from_fn(|j| i16::from(a[j] as i8)));
       let vb = i16x8::new(std::array::from_fn(|j| i16::from(b[j] as i8)));
-      let product = (va * vb).to_array();
-      sum += i32x4::new(std::array::from_fn(|j| i32::from(product[j])));
+      sum += wide::bytemuck::cast::<[i32x8; 2], i32x16>([va.widening_mul(vb), i32x8::splat(0)]);
     }
     sum.reduce_add()
   }
 
   fn cosine_body_128(a: &[u8], b: &[u8], limit: usize) -> [f32; 3] {
-    let mut sum = i32x4::splat(0);
-    let mut norm1 = i32x4::splat(0);
-    let mut norm2 = i32x4::splat(0);
-    for i in (0..limit).step_by(4) {
-      let a = &a[i..i + 8];
-      let b = &b[i..i + 8];
+    let mut sum = i32x16::splat(0);
+    let mut norm1 = i32x16::splat(0);
+    let mut norm2 = i32x16::splat(0);
+    let vector_limit = limit & !15;
+    for i in (0..vector_limit).step_by(16) {
+      let a = &a[i..i + 16];
+      let b = &b[i..i + 16];
+      let va = i8x16::new(std::array::from_fn(|j| a[j] as i8));
+      let vb = i8x16::new(std::array::from_fn(|j| b[j] as i8));
+      sum += i32x16::new(va.widening_mul(vb).to_array().map(i32::from));
+      norm1 += i32x16::new(va.widening_mul(va).to_array().map(i32::from));
+      norm2 += i32x16::new(vb.widening_mul(vb).to_array().map(i32::from));
+    }
+    if vector_limit < limit {
+      // These eight values belong to the vector body, before Java float rounding.
+      let a = &a[vector_limit..vector_limit + 8];
+      let b = &b[vector_limit..vector_limit + 8];
       let va = i16x8::new(std::array::from_fn(|j| i16::from(a[j] as i8)));
       let vb = i16x8::new(std::array::from_fn(|j| i16::from(b[j] as i8)));
-      let product = (va * vb).to_array();
-      sum += i32x4::new(std::array::from_fn(|j| i32::from(product[j])));
-      let product = (va * va).to_array();
-      norm1 += i32x4::new(std::array::from_fn(|j| i32::from(product[j])));
-      let product = (vb * vb).to_array();
-      norm2 += i32x4::new(std::array::from_fn(|j| i32::from(product[j])));
+      sum += wide::bytemuck::cast::<[i32x8; 2], i32x16>([va.widening_mul(vb), i32x8::splat(0)]);
+      norm1 += wide::bytemuck::cast::<[i32x8; 2], i32x16>([va.widening_mul(va), i32x8::splat(0)]);
+      norm2 += wide::bytemuck::cast::<[i32x8; 2], i32x16>([vb.widening_mul(vb), i32x8::splat(0)]);
     }
     [
       sum.reduce_add() as f32,
@@ -326,24 +359,18 @@ impl DefaultVectorUtilSupport {
       let mut acc1 = i16x8::splat(0);
       let inner_limit = (limit - i).min(1024);
       let mut j = 0;
-      while j + 16 <= inner_limit {
-        // Keep the original sequence of 8-byte bounds checks before combining
-        // two adjacent groups into a full byte vector.
-        let packed0 = &packed[i + j..i + j + 8];
-        let lower0 = &unpacked[i + j + packed.len()..i + j + packed.len() + 8];
-        let upper0 = &unpacked[i + j..i + j + 8];
-        let packed1 = &packed[i + j + 8..i + j + 16];
-        let lower1 = &unpacked[i + j + packed.len() + 8..i + j + packed.len() + 16];
-        let upper1 = &unpacked[i + j + 8..i + j + 16];
-        let vb = u8x16::new(std::array::from_fn(|k| {
-          if k < 8 { packed0[k] } else { packed1[k - 8] }
-        }));
-        let va = u8x16::new(std::array::from_fn(|k| {
-          if k < 8 { lower0[k] } else { lower1[k - 8] }
-        }));
-        let vc = u8x16::new(std::array::from_fn(|k| {
-          if k < 8 { upper0[k] } else { upper1[k - 8] }
-        }));
+      let (packed_blocks, _) = packed[i..i + inner_limit].as_chunks::<16>();
+      let (lower_blocks, _) = unpacked
+        .get(i + packed.len()..)
+        .unwrap_or(&[])
+        .as_chunks::<16>();
+      let (upper_blocks, _) = unpacked.get(i..).unwrap_or(&[]).as_chunks::<16>();
+      for ((packed_block, lower_block), upper_block) in
+        packed_blocks.iter().zip(lower_blocks).zip(upper_blocks)
+      {
+        let vb = u8x16::new(*packed_block);
+        let va = u8x16::new(*lower_block);
+        let vc = u8x16::new(*upper_block);
         // Multiply bytes before zero-extending, including inputs outside the unsigned int4 range.
         let low_product = (vb & LOW_NIBBLE_MASK) * va;
         let high_product = (vb >> 4u32) * vc;
@@ -353,13 +380,14 @@ impl DefaultVectorUtilSupport {
         acc1 += i16x8::from_u8x16_high(high_product);
         j += 16;
       }
-      if j < inner_limit {
+      while j < inner_limit {
         let packed_block = &packed[i + j..i + j + 8];
         let lower = &unpacked[i + j + packed.len()..i + j + packed.len() + 8];
         let upper = &unpacked[i + j..i + j + 8];
         let vb = u8x16::from(packed_block);
         acc0 += i16x8::from_u8x16_low((vb & LOW_NIBBLE_MASK) * u8x16::from(lower));
         acc1 += i16x8::from_u8x16_low((vb >> 4u32) * u8x16::from(upper));
+        j += 8;
       }
       let a = acc0.to_array();
       let b = acc1.to_array();
@@ -435,18 +463,33 @@ impl DefaultVectorUtilSupport {
     for i in (0..limit).step_by(1024) {
       let mut acc0 = i16x8::splat(0);
       let mut acc1 = i16x8::splat(0);
+      let mut acc2 = i16x8::splat(0);
+      let mut acc3 = i16x8::splat(0);
       let inner_limit = (limit - i).min(1024);
-      for j in (0..inner_limit).step_by(16) {
+      let mut j = 0;
+      let (a_blocks, _) = a[i..i + inner_limit].as_chunks::<32>();
+      let (b_blocks, _) = b.get(i..).unwrap_or(&[]).as_chunks::<32>();
+      for (a_block, b_block) in a_blocks.iter().zip(b_blocks) {
+        let va = wide::u8x32::new(*a_block);
+        let vb = wide::u8x32::new(*b_block);
+        // Preserve byte multiplication's low eight bits before zero-extension.
+        let [first, second] = wide::bytemuck::cast::<wide::u8x32, [u8x16; 2]>(va * vb);
+        acc0 += i16x8::from_u8x16_low(first);
+        acc1 += i16x8::from_u8x16_high(first);
+        acc2 += i16x8::from_u8x16_low(second);
+        acc3 += i16x8::from_u8x16_high(second);
+        j += 32;
+      }
+      while j < inner_limit {
         let a = &a[i + j..i + j + 16];
         let b = &b[i + j..i + j + 16];
-        // Byte multiplication keeps the low 8 bits before zero-extension, including
-        // values outside the unsigned int4 range.
         let product = u8x16::from(a) * u8x16::from(b);
         acc0 += i16x8::from_u8x16_low(product);
         acc1 += i16x8::from_u8x16_high(product);
+        j += 16;
       }
-      let a = acc0.to_array();
-      let b = acc1.to_array();
+      let a = (acc0 + acc2).to_array();
+      let b = (acc1 + acc3).to_array();
       let int_acc0 = i32x4::new(std::array::from_fn(|j| i32::from(a[j])));
       let int_acc1 = i32x4::new(std::array::from_fn(|j| i32::from(a[j + 4])));
       let int_acc2 = i32x4::new(std::array::from_fn(|j| i32::from(b[j])));
@@ -470,20 +513,44 @@ impl DefaultVectorUtilSupport {
   }
 
   fn square_distance_body_128(a: &[u8], b: &[u8], limit: usize) -> i32 {
-    let mut acc1 = i32x4::splat(0);
-    let mut acc2 = i32x4::splat(0);
-    for i in (0..limit).step_by(8) {
-      let a = &a[i..i + 8];
-      let b = &b[i..i + 8];
+    let mut acc = i32x16::splat(0);
+    let mut acc2 = i32x16::splat(0);
+    let vector_limit = limit & !15;
+    let block_limit = vector_limit & !31;
+    let (a_blocks, _) = a[..block_limit].as_chunks::<32>();
+    let (b_blocks, _) = b.as_chunks::<32>();
+    let mut i = 0;
+    for (a, b) in a_blocks.iter().zip(b_blocks) {
+      let va = i16x32::new(a.map(|value| i16::from(value as i8)));
+      let vb = i16x32::new(b.map(|value| i16::from(value as i8)));
+      let diff = (va - vb).to_array();
+      let (diffs, _) = diff.as_chunks::<16>();
+      let first = i16x16::new(diffs[0]);
+      let second = i16x16::new(diffs[1]);
+      acc += first.widening_mul(first);
+      acc2 += second.widening_mul(second);
+      i += 32;
+    }
+    acc += acc2;
+    // Keep checked 16-byte accesses for the remainder and a short second input.
+    while i < vector_limit {
+      let a = &a[i..i + 16];
+      let b = &b[i..i + 16];
+      let va = i16x16::new(std::array::from_fn(|j| i16::from(a[j] as i8)));
+      let vb = i16x16::new(std::array::from_fn(|j| i16::from(b[j] as i8)));
+      let diff = va - vb;
+      acc += diff.widening_mul(diff);
+      i += 16;
+    }
+    if vector_limit < limit {
+      let a = &a[vector_limit..vector_limit + 8];
+      let b = &b[vector_limit..vector_limit + 8];
       let va = i16x8::new(std::array::from_fn(|j| i16::from(a[j] as i8)));
       let vb = i16x8::new(std::array::from_fn(|j| i16::from(b[j] as i8)));
-      let diff = (va - vb).to_array();
-      let diff1 = i32x4::new(std::array::from_fn(|j| i32::from(diff[j])));
-      let diff2 = i32x4::new(std::array::from_fn(|j| i32::from(diff[j + 4])));
-      acc1 += diff1 * diff1;
-      acc2 += diff2 * diff2;
+      let diff = va - vb;
+      acc += wide::bytemuck::cast::<[i32x8; 2], i32x16>([diff.widening_mul(diff), i32x8::splat(0)]);
     }
-    (acc1 + acc2).reduce_add()
+    acc.reduce_add()
   }
 
   /// Accepts borrowed array or mapped bytes.
@@ -499,7 +566,7 @@ impl DefaultVectorUtilSupport {
         i = a.len() / 8 * 8;
         res = res.wrapping_add(Self::dot_product_body_256(a, b, i));
       } else {
-        i = (a.len() - 8) / 8 * 8;
+        i = a.len() / 8 * 8;
         res = res.wrapping_add(Self::dot_product_body_128(a, b, i));
       }
     }
