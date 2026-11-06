@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 use crate::core::store::DataOutput;
+use crate::core::util::array_util::ArrayUtil;
 use crate::core::util::bit_util::BitUtil;
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::packed::PackedInts;
@@ -105,7 +106,38 @@ impl AbstractBlockPackedWriterBase for BlockPackedWriter {
           *value -= min_adjusted;
         }
       }
-      write_values(bits_required, out, blocks, values, *off)?;
+      // Term vectors pass full 64-value blocks through this writer.
+      if !cfg!(debug_assertions)
+        && matches!(bits_required, 8 | 16 | 32)
+        && *off == 64
+        && values.len() == *off
+      {
+        let block_size = values.len() * (bits_required as usize / 8);
+        ArrayUtil::grow_no_copy(blocks, block_size, || 0)?;
+        let output = blocks[..block_size].as_chunks_mut::<16>().0;
+        if bits_required == 8 {
+          use wide::{bytemuck::cast, i8x16, i16x8};
+
+          for (packed, group) in output.iter_mut().zip(values.as_chunks::<16>().0) {
+            let [first, second]: [[i64; 8]; 2] = cast(*group);
+            let first = i16x8::new(first.map(|value| value as i16));
+            let second = i16x8::new(second.map(|value| value as i16));
+            *packed = cast(i8x16::from_i16x16_truncate(cast([first, second])));
+          }
+        } else if bits_required == 16 {
+          for (packed, group) in output.iter_mut().zip(values.as_chunks::<8>().0) {
+            *packed = wide::bytemuck::cast(group.map(|value| (value as u16).to_be()));
+          }
+        } else {
+          for (packed, group) in output.iter_mut().zip(values.as_chunks::<4>().0) {
+            *packed = wide::bytemuck::cast(group.map(|value| (value as u32).to_be()));
+          }
+        }
+
+        out.write_bytes_with_len(blocks, block_size)?;
+      } else {
+        write_values(bits_required, out, blocks, values, *off)?;
+      }
     }
     *off = 0;
     Ok(())

@@ -556,10 +556,15 @@ where
 
     for doc in &self.pending_docs {
       for field in &doc.fields {
-        for &prefix_length in &field.term_lengths[..field.num_terms] {
+        let lengths = &field.term_lengths[..field.num_terms];
+        if lengths.len() >= 8 {
           self
             .writer
-            .add(prefix_length as i64, &mut self.vectors_stream)?;
+            .add_term_lengths(lengths, &mut self.vectors_stream)?;
+        } else {
+          for &length in lengths {
+            self.writer.add(length as i64, &mut self.vectors_stream)?;
+          }
         }
       }
     }
@@ -570,10 +575,15 @@ where
 
     for doc in &self.pending_docs {
       for field in &doc.fields {
-        for &suffix_length in &field.term_lengths[field.num_terms..] {
+        let lengths = &field.term_lengths[field.num_terms..];
+        if lengths.len() >= 8 {
           self
             .writer
-            .add(suffix_length as i64, &mut self.vectors_stream)?;
+            .add_term_lengths(lengths, &mut self.vectors_stream)?;
+        } else {
+          for &length in lengths {
+            self.writer.add(length as i64, &mut self.vectors_stream)?;
+          }
         }
       }
     }
@@ -585,10 +595,16 @@ where
 
     for doc in &self.pending_docs {
       for field in &doc.fields {
-        for &freq in &field.freqs {
+        if !cfg!(debug_assertions) && field.freqs.len() >= 8 {
           self
             .writer
-            .add((freq - 1) as i64, &mut self.vectors_stream)?;
+            .add_term_freqs(&field.freqs, &mut self.vectors_stream)?;
+        } else {
+          for &freq in &field.freqs {
+            self
+              .writer
+              .add((freq - 1) as i64, &mut self.vectors_stream)?;
+          }
         }
       }
     }
@@ -604,6 +620,15 @@ where
           let mut pos = 0;
           for i in 0..fd.num_terms {
             let freq = fd.freqs[i];
+            if !cfg!(debug_assertions) && freq >= 8 {
+              let end = pos + freq as usize;
+              self.writer.add_position_deltas(
+                &self.positions_buf[fd.pos_start + pos..fd.pos_start + end],
+                &mut self.vectors_stream,
+              )?;
+              pos = end;
+              continue;
+            }
             let mut previous_position = 0;
             for _ in 0..freq {
               let index = fd.pos_start + pos;
@@ -694,6 +719,17 @@ where
           let mut pos = 0;
           for i in 0..field.num_terms {
             let freq = field.freqs[i];
+            if !cfg!(debug_assertions) && has_positions && freq >= 8 {
+              let end = pos + freq as usize;
+              self.writer.add_start_offset_residuals(
+                &self.positions_buf[field.pos_start + pos..field.pos_start + end],
+                &self.offsets_buf[field.off_start + pos..field.off_start + end],
+                cpt,
+                &mut self.vectors_stream,
+              )?;
+              pos = end;
+              continue;
+            }
             let mut previous_pos = 0;
             let mut previous_off = 0;
             for _ in 0..freq {

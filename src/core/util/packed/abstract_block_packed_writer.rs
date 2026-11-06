@@ -18,6 +18,7 @@ use crate::core::store::DataOutput;
 use crate::core::util::array_util::ArrayUtil;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::packed::Format::Packed;
+use crate::core::util::packed::block_packed_writer::BlockPackedWriter;
 use crate::core::util::packed::{Encoder, FormatBehavior, PackedImpl, PackedInts};
 
 pub(crate) const MIN_BLOCK_SIZE: i32 = 64;
@@ -162,6 +163,142 @@ impl<D: AbstractBlockPackedWriterBase> AbstractBlockPackedWriter<D> {
     self.ord
   }
 }
+impl AbstractBlockPackedWriter<BlockPackedWriter> {
+  pub(crate) fn add_position_deltas<DO>(&mut self, positions: &[i32], out: &mut DO) -> Result<()>
+  where
+    DO: DataOutput,
+  {
+    if let Some(&first) = positions.first() {
+      self.add(i64::from(first), out)?;
+      let mut positions = positions;
+      while positions.len() > 1 {
+        if self.off == self.values.len() {
+          self
+            .sub_writer
+            .flush(out, &mut self.off, &mut self.values, &mut self.blocks)?;
+        }
+
+        let count = (positions.len() - 1).min(self.values.len() - self.off);
+        let end = self.off + count;
+        for (value, pair) in self.values[self.off..end]
+          .iter_mut()
+          .zip(positions[..=count].windows(2))
+        {
+          *value = i64::from(pair[1].wrapping_sub(pair[0]));
+        }
+        self.off = end;
+        self.ord += count;
+        positions = &positions[count..];
+      }
+    }
+    Ok(())
+  }
+
+  pub(crate) fn add_start_offset_residuals<DO>(
+    &mut self,
+    positions: &[i32],
+    offsets: &[[i32; 2]],
+    chars_per_term: f32,
+    out: &mut DO,
+  ) -> Result<()>
+  where
+    DO: DataOutput,
+  {
+    if let Some(&first_position) = positions.first() {
+      let predicted = (chars_per_term * first_position as f32) as i32;
+      self.add(i64::from(offsets[0][0].wrapping_sub(predicted)), out)?;
+
+      let mut positions = positions;
+      let mut offsets = offsets;
+      while positions.len() > 1 {
+        if self.off == self.values.len() {
+          self
+            .sub_writer
+            .flush(out, &mut self.off, &mut self.values, &mut self.blocks)?;
+        }
+
+        let count = (positions.len() - 1).min(self.values.len() - self.off);
+        let end = self.off + count;
+        for ((value, positions), offsets) in self.values[self.off..end]
+          .iter_mut()
+          .zip(positions[..=count].windows(2))
+          .zip(offsets[..=count].windows(2))
+        {
+          let position_delta = positions[1].wrapping_sub(positions[0]);
+          let predicted = (chars_per_term * position_delta as f32) as i32;
+          let offset_delta = offsets[1][0].wrapping_sub(offsets[0][0]);
+          *value = i64::from(offset_delta.wrapping_sub(predicted));
+        }
+        self.off = end;
+        self.ord += count;
+        positions = &positions[count..];
+        offsets = &offsets[count..];
+      }
+    }
+    Ok(())
+  }
+
+  pub(crate) fn add_term_freqs<DO>(&mut self, freqs: &[i32], out: &mut DO) -> Result<()>
+  where
+    DO: DataOutput,
+  {
+    if freqs.is_empty() {
+      return Ok(());
+    }
+    self.check_not_finished()?;
+
+    let mut freqs = freqs;
+    while !freqs.is_empty() {
+      if self.off == self.values.len() {
+        self
+          .sub_writer
+          .flush(out, &mut self.off, &mut self.values, &mut self.blocks)?;
+      }
+
+      let count = freqs.len().min(self.values.len() - self.off);
+      let (input, remaining) = freqs.split_at(count);
+      let end = self.off + count;
+      for (value, &freq) in self.values[self.off..end].iter_mut().zip(input) {
+        *value = i64::from(freq.wrapping_sub(1));
+      }
+      self.off = end;
+      self.ord += count;
+      freqs = remaining;
+    }
+    Ok(())
+  }
+
+  pub(crate) fn add_term_lengths<DO>(&mut self, lengths: &[usize], out: &mut DO) -> Result<()>
+  where
+    DO: DataOutput,
+  {
+    if lengths.is_empty() {
+      return Ok(());
+    }
+    self.check_not_finished()?;
+
+    let mut lengths = lengths;
+    while !lengths.is_empty() {
+      if self.off == self.values.len() {
+        self
+          .sub_writer
+          .flush(out, &mut self.off, &mut self.values, &mut self.blocks)?;
+      }
+
+      let count = lengths.len().min(self.values.len() - self.off);
+      let (input, remaining) = lengths.split_at(count);
+      let end = self.off + count;
+      for (value, &length) in self.values[self.off..end].iter_mut().zip(input) {
+        *value = length as i64;
+      }
+      self.off = end;
+      self.ord += count;
+      lengths = remaining;
+    }
+    Ok(())
+  }
+}
+
 /// Encodes and writes the current values to the output stream.
 ///
 /// # Arguments
@@ -171,6 +308,7 @@ impl<D: AbstractBlockPackedWriterBase> AbstractBlockPackedWriter<D> {
 /// # Errors
 ///
 /// Returns an error if writing to the output stream fails.
+#[inline(never)]
 pub(crate) fn write_values<DO>(
   bits_required: i32,
   out: &mut DO,
