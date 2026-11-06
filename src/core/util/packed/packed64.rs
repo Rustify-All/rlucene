@@ -355,9 +355,36 @@ impl Mutable for Packed64 {
     // Bulk set values using precomputed blocks
     let start_block = ((from_index as i64 * self.bits_per_value as i64) >> 6) as usize;
     let end_block = ((to_index as i64 * self.bits_per_value as i64) >> 6) as usize;
-    for block in start_block..end_block {
-      let block_value = n_aligned_values_blocks[block % n_aligned_blocks];
-      self.blocks[block] = block_value;
+    if (n_aligned_blocks == 1
+      || n_aligned_values_blocks
+        .iter()
+        .all(|&word| word == n_aligned_values_blocks[0]))
+      && let Some(blocks) = self.blocks.get_mut(start_block..end_block)
+    {
+      blocks.fill(n_aligned_values_blocks[0]);
+    } else if let Some(blocks) = self.blocks.get_mut(start_block..end_block) {
+      let offset = start_block % n_aligned_blocks;
+      let mut remaining = blocks;
+      if offset != 0 {
+        let length = remaining.len().min(n_aligned_blocks - offset);
+        remaining[..length].copy_from_slice(&n_aligned_values_blocks[offset..offset + length]);
+        remaining = &mut remaining[length..];
+      }
+      // Seed one period, then reuse the initialized prefix.
+      let len = remaining.len();
+      let seed = n_aligned_blocks.min(len);
+      remaining[..seed].copy_from_slice(&n_aligned_values_blocks[..seed]);
+      let mut filled = seed;
+      while filled < len {
+        let length = filled.min(len - filled);
+        remaining.copy_within(..length, filled);
+        filled += length;
+      }
+    } else {
+      for block in start_block..end_block {
+        let block_value = n_aligned_values_blocks[block % n_aligned_blocks];
+        self.blocks[block] = block_value;
+      }
     }
 
     // Fill the gap
