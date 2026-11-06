@@ -107,19 +107,44 @@ where
     };
 
     let mut min = i64::MAX;
-    for i in 0..size {
-      let expected = (avg_inc * (i as f32)) as i64;
-      self.buffer[i] = self.buffer[i].wrapping_sub(expected);
-      min = std::cmp::min(self.buffer[i], min);
+    if size < 4 {
+      for i in 0..size {
+        let expected = (avg_inc * (i as f32)) as i64;
+        self.buffer[i] = self.buffer[i].wrapping_sub(expected);
+        min = std::cmp::min(self.buffer[i], min);
+      }
+    } else {
+      use wide::{f32x4, i64x4};
+
+      // Block indices are at most 2^22, so adding four stays exact in f32.
+      let (groups, tail) = self.buffer.as_chunks_mut::<4>();
+      let mut indices = f32x4::new([0.0, 1.0, 2.0, 3.0]);
+      const STRIDE: f32x4 = f32x4::new([4.0; 4]);
+      let slope = f32x4::splat(avg_inc);
+      let mut minimum = i64x4::splat(i64::MAX);
+      for group in groups {
+        let expected = (slope * indices).to_array().map(|value| value as i64);
+        let residuals = i64x4::new(*group) - i64x4::new(expected);
+        *group = residuals.to_array();
+        minimum = minimum.min(residuals);
+        indices += STRIDE;
+      }
+      min = minimum.reduce_min();
+      if !tail.is_empty() {
+        for (value, expected) in tail.iter_mut().zip((slope * indices).to_array()) {
+          *value = value.wrapping_sub(expected as i64);
+          min = min.min(*value);
+        }
+      }
     }
 
     let mut max_delta = 0;
-    for i in 0..size {
-      self.buffer[i] = self.buffer[i].wrapping_sub(min);
+    for value in self.buffer.iter_mut() {
+      *value = value.wrapping_sub(min);
       // use | will change nothing when it comes to computing required
       // bits but has the benefit of working fine with
       // negative values too (in case of overflow)
-      max_delta |= self.buffer[i];
+      max_delta |= *value;
     }
 
     self.meta.write_long(min)?;
