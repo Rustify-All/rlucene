@@ -88,6 +88,11 @@ impl DocIdsWriter {
     let mut strictly_sorted = true;
     let mut min = doc_ids[0];
     let mut max = doc_ids[0];
+    if count == 1 {
+      out.write_byte(DocIdsWriter::CONTINUOUS_IDS as u8)?;
+      out.write_vint(doc_ids[start])?;
+      return Ok(());
+    }
     for i in 1..count {
       let last = doc_ids[start + i - 1];
       let current = doc_ids[start + i];
@@ -121,6 +126,18 @@ impl DocIdsWriter {
       let docs = &doc_ids[start..start + count];
       out.write_vint(min)?;
       let (first, second) = docs.split_at(count >> 1);
+      let (first, second) = if cfg!(debug_assertions) {
+        (first, second)
+      } else {
+        let (high_groups, high_tail) = first.as_chunks::<4>();
+        let (low_groups, low_tail) = second[..first.len()].as_chunks::<4>();
+        let base = wide::i32x4::splat(min);
+        for (&high, &low) in high_groups.iter().zip(low_groups) {
+          let packed = ((wide::i32x4::new(high) - base) << 16u32) | (wide::i32x4::new(low) - base);
+          out.write_ints(&packed.to_array())?;
+        }
+        (high_tail, low_tail)
+      };
       for (&high, &low) in first.iter().zip(second) {
         out.write_int((low - min) | ((high - min) << 16))?;
       }
@@ -166,8 +183,18 @@ impl DocIdsWriter {
       }
     } else {
       out.write_byte(DocIdsWriter::BPV_32 as u8)?;
-      for i in 0..count {
-        out.write_int(doc_ids[start + i])?;
+      if let Some(docs) = doc_ids.get(start..).and_then(|docs| docs.get(..count)) {
+        if docs.len() <= 32 {
+          out.write_ints(docs)?;
+        } else {
+          for chunk in docs.chunks(16) {
+            out.write_ints(chunk)?;
+          }
+        }
+      } else {
+        for i in 0..count {
+          out.write_int(doc_ids[start + i])?;
+        }
       }
     }
     Ok(())
