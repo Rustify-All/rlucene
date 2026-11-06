@@ -147,22 +147,43 @@ impl ScalarQuantizer {
 
   #[inline(never)]
   fn quantize_euclidean(&self, src: &[f32], dest: &mut [u8]) {
-    use wide::{bytemuck::cast, f32x4, i32x4};
+    use wide::{bytemuck::cast, f32x4, i8x16, i16x8, i32x4, u8x16};
 
-    let (src, tail) = src.as_chunks::<4>();
-    let (dest, dest_tail) = dest.as_chunks_mut::<4>();
     let min = f32x4::splat(self.min_quantile);
     let max = f32x4::splat(self.max_quantile);
     let scale = f32x4::splat(self.scale);
-    let half = f32x4::splat(0.5);
-    for (&values, output) in src.iter().zip(dest) {
+    let half = f32x4::HALF;
+    let quantize = |values: [f32; 4]| {
       let values = f32x4::new(values);
       let clipped = min.max(max.min(values));
       let scaled = (clipped - min) * scale;
       // Below one half, adding one half can round up to one in f32.
       let round_nonzero: i32x4 = cast(scaled.simd_ge(half) & values.simd_eq(values));
-      let rounded = (scaled + half).fast_trunc_int() & round_nonzero;
-      *output = rounded.to_array().map(|value| value as u8);
+      (scaled + half).fast_trunc_int() & round_nonzero
+    };
+    let (src, tail) = src.as_chunks::<16>();
+    let (dest, dest_tail) = dest.as_chunks_mut::<16>();
+    let mask = const { i16x8::splat(0xff) };
+    for (values, output) in src.iter().zip(dest) {
+      let (values, _) = values.as_chunks::<4>();
+      let first = quantize(values[0]);
+      let second = quantize(values[1]);
+      let third = quantize(values[2]);
+      let fourth = quantize(values[3]);
+      let low = i16x8::from_i32x8_truncate(cast([first, second]));
+      let high = i16x8::from_i32x8_truncate(cast([third, fourth]));
+      // Mask before unsigned narrowing to preserve Java's low-byte cast.
+      *output = cast(u8x16::narrow_i16x8(low & mask, high & mask));
+    }
+    let (src, tail) = tail.as_chunks::<4>();
+    let (dest, dest_tail) = dest_tail.as_chunks_mut::<4>();
+    for (&values, output) in src.iter().zip(dest) {
+      let rounded = quantize(values);
+      // Truncate to the low byte, matching Java's byte cast.
+      let shorts = i16x8::from_i32x8_truncate(cast([rounded, i32x4::splat(0)]));
+      let bytes = i8x16::from_i16x16_truncate(cast([shorts, i16x8::splat(0)]));
+      let bytes: [u8; 16] = cast(bytes);
+      output.copy_from_slice(&bytes[..4]);
     }
     for (i, &value) in tail.iter().enumerate() {
       self.quantize_float(value, Some(dest_tail), i);
