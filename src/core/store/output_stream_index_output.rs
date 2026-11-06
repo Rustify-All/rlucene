@@ -119,12 +119,19 @@ where
     {
       // Strict spare capacity keeps every write in the existing buffer. No inner
       // Write callback can observe different primitive accounting or CRC updates.
+      #[cfg(target_endian = "big")]
       let mut encoded = [0u8; 128];
       for chunk in values.chunks(32) {
-        for (value, bytes) in chunk.iter().zip(encoded.as_chunks_mut::<4>().0) {
-          *bytes = value.to_le_bytes();
-        }
-        os.write_bytes(&encoded[..chunk.len() * 4])?;
+        #[cfg(target_endian = "little")]
+        let bytes = wide::bytemuck::cast_slice(chunk);
+        #[cfg(target_endian = "big")]
+        let bytes = {
+          for (value, bytes) in chunk.iter().zip(encoded.as_chunks_mut::<4>().0) {
+            *bytes = value.to_le_bytes();
+          }
+          &encoded[..chunk.len() * 4]
+        };
+        os.write_bytes(bytes)?;
       }
       self.bytes_written = bytes_written;
       return Ok(());
