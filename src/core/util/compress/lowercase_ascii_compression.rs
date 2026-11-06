@@ -115,9 +115,22 @@ impl LowercaseAsciiCompression {
       previous_exception_index = 0;
       let mut num_exceptions2 = 0;
 
-      for i in 0..len {
-        let b = input[i] as i32;
-        if !Self::is_compressible(b) {
+      let (blocks, tail) = input.as_chunks::<16>();
+      const ONE: u8x16 = u8x16::splat(1);
+      const CLASS_MASK: u8x16 = u8x16::splat(0xA0);
+      const COMPRESSIBLE: u8x16 = u8x16::splat(0x20);
+      let block_masks = blocks.iter().map(|&block| {
+        let bad = ((u8x16::new(block) + ONE) & CLASS_MASK).simd_ne(COMPRESSIBLE);
+        if bad.any() { bad.to_bitmask() } else { 0 }
+      });
+      let tail_mask = tail.iter().enumerate().fold(0, |mask, (lane, &byte)| {
+        mask | (u32::from(!Self::is_compressible(byte as i32)) << lane)
+      });
+
+      for (block, mut mask) in block_masks.chain(std::iter::once(tail_mask)).enumerate() {
+        while mask != 0 {
+          let i = block * 16 + mask.trailing_zeros() as usize;
+          mask &= mask - 1;
           while i - previous_exception_index > 0xFF {
             // We record deltas between exceptions as bytes, so we need to create
             // "artificial" exceptions if the delta between two of them is greater
