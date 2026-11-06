@@ -277,9 +277,10 @@ where
         self.jump_table_entry_count - 1
       };
 
-      let jump_pos = in_range_block_index.try_convert()? * BitUtil::INT_BYTES * 2;
-      let index = jump_table.read_int(jump_pos)?;
-      let offset = jump_table.read_int(jump_pos + BitUtil::INT_BYTES)?;
+      let jump_pos = in_range_block_index.try_convert()? * BitUtil::LONG_BYTES;
+      let entry = jump_table.read_long(jump_pos)?;
+      let index = entry as i32;
+      let offset = (entry >> 32) as i32;
       // -1 to compensate for the always-added 1 in readBlockHeader
       self.next_block_index = index - 1;
       self.slice.seek(offset as usize)?;
@@ -1077,17 +1078,21 @@ where
 
   let mut total_cardinality = 0;
   let mut block_cardinality = 0;
-  let mut buffer = FixedBitSet::new(1 << 16);
   let jumps_len = ArrayUtil::oversize(1, BitUtil::INT_BYTES * 2)?;
   let mut jumps: smallvec::SmallVec<[i32; 4]> = smallvec::smallvec![0; jumps_len];
-  let mut prev_block = -1;
+  let mut prev_doc = -1;
   let mut jump_block_index = 0;
 
   let mut doc = it.next_doc()?;
+  let mut buffer = FixedBitSet::new(if doc == NO_MORE_DOCS {
+    0
+  } else {
+    BLOCK_SIZE as usize
+  });
+  let mut first_in_block = (doc & 0xFFFF) as usize;
   while doc != NO_MORE_DOCS {
-    let block = doc >> 16;
-
-    if prev_block != -1 && block != prev_block {
+    let prev_block = prev_doc >> 16;
+    if prev_block != -1 && doc >> 16 != prev_block {
       add_jumps(
         &mut jumps,
         out.get_file_pointer()? - origo,
@@ -1097,18 +1102,27 @@ where
       )?;
       jump_block_index = (prev_block + 1) as usize;
       buffer = flush(prev_block, buffer, block_cardinality, dense_rank_power, out)?;
-      buffer.clear()?;
+      // Only words between the first and last doc in this sorted block can be set.
+      let start = first_in_block & !63;
+      let end = ((prev_doc & 0xFFFF) as usize | 63) + 1;
+      if start == 0 && end == BLOCK_SIZE as usize {
+        buffer.clear()?;
+      } else {
+        buffer.clear_range(start, end)?;
+      }
+      first_in_block = (doc & 0xFFFF) as usize;
       total_cardinality += block_cardinality;
       block_cardinality = 0;
     }
 
     buffer.set((doc & 0xFFFF).try_convert()?)?;
     block_cardinality += 1;
-    prev_block = block;
+    prev_doc = doc;
 
     doc = it.next_doc()?;
   }
 
+  let mut prev_block = prev_doc >> 16;
   if block_cardinality > 0 {
     add_jumps(
       &mut jumps,
@@ -1118,8 +1132,7 @@ where
       (prev_block + 1) as usize,
     )?;
     total_cardinality += block_cardinality;
-    buffer = flush(prev_block, buffer, block_cardinality, dense_rank_power, out)?;
-    buffer.clear()?;
+    let _ = flush(prev_block, buffer, block_cardinality, dense_rank_power, out)?;
     prev_block += 1;
   }
 
@@ -1143,8 +1156,9 @@ where
     last_block + 1,
   )?;
 
-  buffer.set((NO_MORE_DOCS & 0xFFFF) as usize)?;
-  let _ = flush(NO_MORE_DOCS >> 16, buffer, 1, dense_rank_power, out)?;
+  out.write_short((NO_MORE_DOCS >> 16) as i16)?;
+  out.write_short(0)?; // One entry, encoded as cardinality minus one.
+  out.write_short((NO_MORE_DOCS & 0xFFFF) as i16)?;
 
   flush_block_jumps(&jumps, last_block + 1, out)
 }
@@ -1247,10 +1261,13 @@ where
         out.write_long(*word)?;
       }
     }
+  } else if cardinality > DENSE_BLOCK_LONGS as i32 && cardinality <= 2 * DENSE_BLOCK_LONGS as i32 {
+    write_sparse_simd(buffer.get_bits(), out)?;
   } else {
     let mut iter = BitSetIterator::new(buffer, cardinality as i64)?;
     let mut doc = iter.next_doc()?;
-    if cardinality <= DENSE_BLOCK_LONGS as i32 {
+    if cardinality <= 3 * DENSE_BLOCK_LONGS as i32 / 4 {
+      // Per-doc iteration is cheaper when most populated words contain one doc.
       while doc != NO_MORE_DOCS {
         out.write_short(doc as i16)?;
         doc = iter.next_doc()?;
@@ -1278,6 +1295,46 @@ where
   Ok(buffer)
 }
 
+#[inline]
+fn write_sparse_simd<O>(bits: &[i64], out: &mut O) -> Result<()>
+where
+  O: IndexOutput,
+{
+  for (group, &words) in bits.as_chunks::<4>().0.iter().enumerate() {
+    let mut nonempty = wide::i64x4::new(words)
+      .simd_ne(wide::i64x4::ZERO)
+      .to_bitmask();
+    if nonempty == 0b1111 {
+      // Every word is populated; walk the words directly in document order.
+      for (lane, &word) in words.iter().enumerate() {
+        let doc_base = (group * 4 + lane) * 64;
+        let mut word = word as u64;
+        loop {
+          let doc = doc_base + word.trailing_zeros() as usize;
+          out.write_short(doc as i16)?;
+          word &= word - 1;
+          if word == 0 {
+            break;
+          }
+        }
+      }
+      continue;
+    }
+    while nonempty != 0 {
+      let lane = nonempty.trailing_zeros() as usize;
+      nonempty &= nonempty - 1;
+      let doc_base = (group * 4 + lane) * 64;
+      let mut word = words[lane] as u64;
+      while word != 0 {
+        let doc = doc_base + word.trailing_zeros() as usize;
+        out.write_short(doc as i16)?;
+        word &= word - 1;
+      }
+    }
+  }
+  Ok(())
+}
+
 // Creates a DENSE rank-entry (the number of set bits up to a given point)
 // for the buffer. One rank entry for every `2^dense_rank_power`.
 // bits, with each rank entry using 2 bytes. Represented as bytes for
@@ -1300,10 +1357,30 @@ fn create_rank(buffer: &FixedBitSet, dense_rank_power: u8) -> ([u8; DENSE_BLOCK_
     {
       entry[0] = (bit_count >> 8) as u8;
       entry[1] = (bit_count & 0xFF) as u8;
-      bit_count += words
-        .iter()
-        .map(|word| word.count_ones() as i32)
-        .sum::<i32>();
+      let [a, b, c, d]: [[u8; 16]; 4] = wide::bytemuck::cast(*words);
+      let popcounts = |bytes: [u8; 16]| wide::u8x16::new(bytes.map(|byte| byte.count_ones() as u8));
+      // Each lane sums four byte counts, at most 32.
+      let counts = popcounts(a) + popcounts(b) + popcounts(c) + popcounts(d);
+      let totals = wide::u16x8::from_u8x16_low(counts) + wide::u16x8::from_u8x16_high(counts);
+      bit_count += i32::from(totals.reduce_add());
+    }
+  } else if bits.len() >= DENSE_BLOCK_LONGS {
+    let entries = rank[..rank_len].as_chunks_mut::<2>().0;
+    for (entry, words) in entries
+      .iter_mut()
+      .zip(bits[..DENSE_BLOCK_LONGS].chunks_exact(longs_per_rank))
+    {
+      *entry = (bit_count as u16).to_be_bytes();
+      // Keep each byte lane below 256 before widening and summing.
+      for group in words.as_chunks::<2>().0.chunks(16) {
+        let mut counts = wide::u8x16::ZERO;
+        for &pair in group {
+          let bytes: [u8; 16] = wide::bytemuck::cast(pair);
+          counts += wide::u8x16::new(bytes.map(|byte| byte.count_ones() as u8));
+        }
+        let totals = wide::u16x8::from_u8x16_low(counts) + wide::u16x8::from_u8x16_high(counts);
+        bit_count += i32::from(totals.reduce_add());
+      }
     }
   } else {
     for (word, b) in bits.iter().take(DENSE_BLOCK_LONGS).enumerate() {
@@ -1342,11 +1419,14 @@ fn add_jumps(
     }
     jumps.resize(required, 0);
   }
-  let offset = offset as i32;
-  for b in start_block..end_block {
-    let i = b * 2;
-    jumps[i] = index;
-    jumps[i + 1] = offset;
+  if start_block < end_block {
+    let entries = &mut jumps[start_block * 2..end_block * 2];
+    if entries.len() == 2 {
+      entries[0] = index;
+      entries[1] = offset as i32;
+    } else {
+      entries.as_chunks_mut::<2>().0.fill([index, offset as i32]);
+    }
   }
   Ok(())
 }
@@ -1363,9 +1443,9 @@ where
     block_count = 0;
   }
 
-  for i in 0..block_count {
-    out.write_int(jumps[i * 2])?;
-    out.write_int(jumps[i * 2 + 1])?;
+  // Keep batches small enough to use the buffered write path for long tables.
+  for entries in jumps[..block_count * 2].chunks(32) {
+    out.write_ints(entries)?;
   }
   // As there are at most 32k blocks, the count is a short
   // `jump_table_offset` will be at `last_pos - (block_count * LONG_BYTES)`.

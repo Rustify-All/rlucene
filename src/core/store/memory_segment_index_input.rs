@@ -744,14 +744,29 @@ impl MemorySegmentIndexInput {
     unsafe { (&*self.state.data_ptr()).current_slice() }
   }
   #[inline(always)]
-  fn read_small_multi<const N: usize>(&self, pos: usize) -> Result<[u8; N]> {
+  fn read_small_multi<const N: usize, const SPLIT_INT_PAIR: bool>(
+    &self,
+    pos: usize,
+  ) -> Result<[u8; N]> {
     let (index, offset) = self.coordinates(pos)?;
-    if let Some(bytes) = self
+    let tail = self
       .segment(index)
-      .and_then(|segment| segment.get(offset..))
-      .and_then(|bytes| bytes.first_chunk::<N>())
-    {
+      .and_then(|segment| segment.get(offset..));
+    if let Some(bytes) = tail.and_then(|bytes| bytes.first_chunk::<N>()) {
       return Ok(*bytes);
+    }
+    if SPLIT_INT_PAIR
+      && N == 8
+      && let Some(first) = tail.filter(|bytes| bytes.len() == 4)
+      && let Some(second) = self
+        .segment(index + 1)
+        .and_then(|bytes| bytes.first_chunk::<4>())
+    {
+      // Both integers fit in their own mapping. No shared cursor is needed.
+      let mut bytes = [0; N];
+      bytes[..4].copy_from_slice(first);
+      bytes[4..].copy_from_slice(second);
+      return Ok(bytes);
     }
     // A byte cannot span segments, and its absolute EOF leaves the cursor
     // unchanged. Wider reads retain the existing boundary fallback state.
@@ -1412,7 +1427,7 @@ impl RandomAccessInput for MemorySegmentIndexInput {
     if self.single_segment {
       return self.single_slice().get(pos).copied().ok_or_else(Self::eof);
     }
-    Ok(self.read_small_multi::<1>(pos)?[0])
+    Ok(self.read_small_multi::<1, false>(pos)?[0])
   }
   #[inline(always)]
   fn read_short(&self, pos: usize) -> Result<i16> {
@@ -1427,7 +1442,7 @@ impl RandomAccessInput for MemorySegmentIndexInput {
       }
       return Err(LuceneErrorKind::Eof(Self::scalar_eof()).into());
     }
-    Ok(i16::from_le_bytes(self.read_small_multi::<2>(pos)?))
+    Ok(i16::from_le_bytes(self.read_small_multi::<2, false>(pos)?))
   }
   #[inline(always)]
   fn read_int(&self, pos: usize) -> Result<i32> {
@@ -1442,7 +1457,7 @@ impl RandomAccessInput for MemorySegmentIndexInput {
       }
       return Err(LuceneErrorKind::Eof(Self::scalar_eof()).into());
     }
-    Ok(i32::from_le_bytes(self.read_small_multi::<4>(pos)?))
+    Ok(i32::from_le_bytes(self.read_small_multi::<4, false>(pos)?))
   }
   #[inline(always)]
   fn read_long(&self, pos: usize) -> Result<i64> {
@@ -1457,7 +1472,7 @@ impl RandomAccessInput for MemorySegmentIndexInput {
       }
       return Err(LuceneErrorKind::Eof(Self::scalar_eof()).into());
     }
-    Ok(i64::from_le_bytes(self.read_small_multi::<8>(pos)?))
+    Ok(i64::from_le_bytes(self.read_small_multi::<8, false>(pos)?))
   }
   #[inline(always)]
   fn read_bytes(&self, pos: usize, len: usize) -> Result<Cow<'_, [u8]>> {
@@ -1534,7 +1549,12 @@ impl RandomAccessInput for MemorySegmentRandomAccessInput {
   }
   #[inline]
   fn read_long(&self, pos: usize) -> Result<i64> {
-    RandomAccessInput::read_long(&self.input, pos)
+    if self.input.single_segment {
+      return RandomAccessInput::read_long(&self.input, pos);
+    }
+    Ok(i64::from_le_bytes(
+      self.input.read_small_multi::<8, true>(pos)?,
+    ))
   }
   #[inline(always)]
   fn read_bytes(&self, pos: usize, len: usize) -> Result<Cow<'_, [u8]>> {
