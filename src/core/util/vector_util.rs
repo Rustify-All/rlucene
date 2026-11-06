@@ -245,21 +245,17 @@ impl VectorUtil {
   /// # Errors
   ///
   /// returns [`LuceneErrorKind::IllegalArgument`] if any component of vector is not finite
+  #[inline]
   pub fn check_finite(v: &[f32]) -> Result<()> {
-    let (groups, tail) = v.as_chunks::<8>();
+    use wide::{bytemuck::cast, u32x16};
+
+    let (groups, tail) = v.as_chunks::<16>();
     for (g, group) in groups.iter().enumerate() {
-      if !(group[0].is_finite()
-        & group[1].is_finite()
-        & group[2].is_finite()
-        & group[3].is_finite()
-        & group[4].is_finite()
-        & group[5].is_finite()
-        & group[6].is_finite()
-        & group[7].is_finite())
-      {
+      let bits: u32x16 = cast(*group);
+      if (bits << 1_u32).reduce_max() >= 0xff00_0000_u32 {
         for (j, &value) in group.iter().enumerate() {
           if !value.is_finite() {
-            let i = g * 8 + j;
+            let i = g * 16 + j;
             return Err(LuceneError::illegal_argument(format!(
               "non-finite value at vector[{}]={}",
               i, value
@@ -270,7 +266,7 @@ impl VectorUtil {
     }
     for (j, &value) in tail.iter().enumerate() {
       if !value.is_finite() {
-        let i = groups.len() * 8 + j;
+        let i = groups.len() * 16 + j;
         return Err(LuceneError::illegal_argument(format!(
           "non-finite value at vector[{}]={}",
           i, value
