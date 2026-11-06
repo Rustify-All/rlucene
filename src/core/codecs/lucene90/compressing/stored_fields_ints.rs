@@ -120,6 +120,7 @@ impl StoredFieldsInts {
 
     Ok(())
   }
+  #[inline(never)]
   fn write_ints16<DO>(out: &mut DO, count: usize, values: &[i32], offset: usize) -> Result<()>
   where
     DO: DataOutput,
@@ -127,12 +128,14 @@ impl StoredFieldsInts {
     let mut k = 0;
     while count - k >= Self::BLOCK_SIZE {
       let step = offset + k;
-      for i in 0..32 {
-        let l = ((values[step + i] as i64) << 48)
-          | ((values[step + 32 + i] as i64) << 32)
-          | ((values[step + 64 + i] as i64) << 16)
-          | (values[step + 96 + i] as i64);
-        out.write_long(l)?;
+      let columns = values[step..step + Self::BLOCK_SIZE].as_chunks::<4>().0;
+      for i in 0..8 {
+        let row = |j: usize| wide::i32x4::new(columns[8 * j + i]);
+        let high = (row(0) << 16u32) | row(1);
+        let low = (row(2) << 16u32) | row(3);
+        for (high, low) in high.to_array().into_iter().zip(low.to_array()) {
+          out.write_long(((high as i64) << 32) | i64::from(low as u32))?;
+        }
       }
       k += Self::BLOCK_SIZE;
     }
