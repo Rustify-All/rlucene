@@ -262,12 +262,25 @@ impl Mutable for Packed64 {
       "not enough values in the source array"
     );
 
+    // At 64 bits each value occupies one complete block.
+    if self.bits_per_value == 64
+      && let Some(input) = arr.get(off..).and_then(|arr| arr.get(..len))
+      && let Some(output) = self
+        .blocks
+        .get_mut(index..)
+        .and_then(|blocks| blocks.get_mut(..len))
+    {
+      output.copy_from_slice(wide::bytemuck::cast_slice(input));
+      return Ok(len);
+    }
+
     let original_index = index;
     let encoder = of(Format::Packed(PackedImpl::new(0)), self.bits_per_value)?;
     let long_value_count = Encoder::long_value_count(encoder);
 
     // Go to the next block where the value does not span across two blocks
-    let offset_in_blocks = index % long_value_count;
+    // PACKED value groups always have a power-of-two length.
+    let offset_in_blocks = index & (long_value_count - 1);
     if offset_in_blocks != 0 {
       for _ in offset_in_blocks..long_value_count {
         if len == 0 {
