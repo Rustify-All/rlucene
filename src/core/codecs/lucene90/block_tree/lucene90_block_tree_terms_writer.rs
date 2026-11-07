@@ -758,7 +758,7 @@ where
   scratch_bytes: ByteBuffersDataOutput,
   scratch_ints_ref: IntsRefBuilder<Vec<i32>>,
   version: i32,
-  first_pending_term_bytes: Option<Arc<Vec<u8>>>,
+  first_pending_term_bytes: Option<Vec<u8>>,
   terms_out: &'a mut O,
   postings_writer: &'a mut PW,
 }
@@ -1232,7 +1232,12 @@ where
 
       self.push_term(&text)?;
 
-      let term = PendingTerm::new(text, state);
+      debug_assert!(text.offset == 0);
+      debug_assert!(text.length == text.bytes.len());
+      let term = OwnedPendingTerm {
+        term_bytes: text.bytes,
+        state,
+      };
 
       self.sum_doc_freq += doc_freq as i64;
       self.sum_total_term_freq += total_term_freq;
@@ -1400,9 +1405,15 @@ where
   }
 }
 
+// Pending keys have one owner; only the first and last keys are copied for metadata.
+struct OwnedPendingTerm<S> {
+  term_bytes: Vec<u8>,
+  state: S,
+}
+
 #[allow(clippy::large_enum_variant)] // Keep pending terms and blocks inline without per-block allocation.
 enum PendingEntryEnum<S> {
-  Term(PendingTerm<S>),
+  Term(OwnedPendingTerm<S>),
   Block(PendingBlock),
 }
 
