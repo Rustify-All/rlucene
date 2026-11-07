@@ -123,6 +123,7 @@ impl IntBlockPool {
       )),
     }
   }
+  #[inline]
   pub fn get_buffer_mut(&mut self, buffer_index: usize) -> &mut Vec<i32> {
     &mut self.buffers[buffer_index]
   }
