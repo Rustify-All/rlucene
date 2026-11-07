@@ -206,6 +206,7 @@ where
     self.sub.init(terms_out, state, segment_info)
   }
 
+  #[inline]
   fn write_term<N, PE, T>(
     &mut self,
     _term: &BytesRef<Vec<u8>>,

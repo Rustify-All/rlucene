@@ -569,11 +569,7 @@ where
 {
   fn byte_at(&mut self, i: usize, k: usize) -> Result<i32> {
     let start = self.bytes_start_array.get_value(self.compact[i] as usize)?;
-    let position = self.pool.fill_bytes_ref(start, self.byte_block_pool);
-    let block = self.byte_block_pool.get_buffer(position.block_index);
-    self.scratch_bytes.bytes = &block[position.offset..position.offset + position.length];
-    self.scratch_bytes.offset = 0;
-    self.scratch_bytes.length = position.length;
+    self.scratch_bytes = self.pool.borrow_bytes_ref(start, self.byte_block_pool);
     self.cmp.byte_at(&self.scratch_bytes, k)
   }
 
@@ -655,11 +651,7 @@ where
     i: usize,
   ) -> Result<()> {
     let start = self.bytes_start_array.get_value(self.compact[i] as usize)?;
-    let position = self.pool.fill_bytes_ref(start, self.byte_block_pool);
-    let block = self.byte_block_pool.get_buffer(position.block_index);
-    result.bytes = &block[position.offset..position.offset + position.length];
-    result.offset = 0;
-    result.length = position.length;
+    *result = self.pool.borrow_bytes_ref(start, self.byte_block_pool);
     Ok(())
   }
 

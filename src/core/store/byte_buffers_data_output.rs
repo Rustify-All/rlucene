@@ -564,6 +564,39 @@ impl DataOutput for ByteBuffersDataOutput {
     self.write_bytes_range(&value, 0, 4)
   }
 
+  #[inline(always)]
+  fn write_ints(&mut self, values: &[i32]) -> Result<()> {
+    if values.len() < 4 {
+      for &value in values {
+        self.write_int(value)?;
+      }
+      return Ok(());
+    }
+    let (chunks, remainder) = values.as_chunks::<4>();
+    for chunk in chunks {
+      if let Some(block) = self.blocks.get_mut(self.current_block_index)
+        && block.remain()? >= 16
+      {
+        let mut bytes = [0u8; 16];
+        for (encoded, value) in bytes.as_chunks_mut::<4>().0.iter_mut().zip(chunk) {
+          encoded.copy_from_slice(&value.to_le_bytes());
+        }
+        let position = block.position() as usize;
+        let end = position + bytes.len();
+        block.get_mut()[position..end].copy_from_slice(&bytes);
+        block.set_position(end as u64);
+      } else {
+        for &value in chunk {
+          self.write_int(value)?;
+        }
+      }
+    }
+    for &value in remainder {
+      self.write_int(value)?;
+    }
+    Ok(())
+  }
+
   fn write_short(&mut self, i: i16) -> Result<()> {
     let value = i.to_le_bytes();
     self.write_bytes_range(&value, 0, 2)

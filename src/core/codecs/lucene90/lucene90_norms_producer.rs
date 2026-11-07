@@ -712,6 +712,7 @@ impl<V: DenseNormsIteratorBase> DocIdSetIterator for DenseNormsIteratorView<'_, 
 }
 
 impl<V: DenseNormsIteratorBase> NumericDocValues for DenseNormsIteratorView<'_, V> {
+  #[inline(always)]
   fn long_value(&mut self) -> Result<i64> {
     self.values.long_value(*self.doc)
   }
@@ -736,6 +737,7 @@ impl<R> DenseNormsIteratorBase for DenseNormsIteratorBaseImpl1<R>
 where
   R: RandomAccessInput,
 {
+  #[inline(always)]
   fn long_value(&self, doc: i32) -> Result<i64> {
     Ok((self.slice.read_byte(doc.try_convert()?)? as i8) as i64)
   }

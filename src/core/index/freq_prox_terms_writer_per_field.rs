@@ -587,11 +587,13 @@ impl TermsHashPerFieldBase for FreqProxTermsWriterPerField {
         .term_freqs
         .as_mut()
         .ok_or_else(|| LuceneError::illegal_state("term_freqs not initialized"))?;
-      term_freqs[term_id] = term_freqs[term_id]
+      let term_freq = &mut term_freqs[term_id];
+      let freq = term_freq
         .checked_add(tf)
         .ok_or_else(|| LuceneError::illegal_state("term frequency overflow"))?;
+      *term_freq = freq;
 
-      field_state.max_term_frequency = field_state.max_term_frequency.max(term_freqs[term_id]);
+      field_state.max_term_frequency = field_state.max_term_frequency.max(freq);
 
       if self.has_prox {
         let delta = field_state.position

@@ -236,6 +236,23 @@ impl<PA: PostingsArray> TermsHashPerField<PA> {
         *stream_address += 1;
         return Ok(());
       }
+    } else if stream == 0 && (i as u32) < 0x4000 {
+      let upto = *stream_address;
+      let block_index = (upto >> BYTE_BLOCK_SHIFT) as usize;
+      debug_assert!(block_index <= byte_pool.buffer_upto()?);
+      let offset = (upto & BYTE_BLOCK_MASK) as usize;
+      let buffer = byte_pool.get_buffer_mut(block_index);
+      if offset < BYTE_BLOCK_MASK as usize
+        && let Some(bytes) = buffer.get_mut(offset..offset + 2)
+        && bytes[0] == 0
+        && bytes[1] == 0
+      {
+        bytes[0] = ((i & 0x7F) | 0x80) as u8;
+        *stream_address += 1;
+        bytes[1] = ((i as u32) >> 7) as u8;
+        *stream_address += 1;
+        return Ok(());
+      }
     }
     while (i & !0x7F) != 0 {
       self.write_byte(stream_address, ((i & 0x7F) | 0x80) as u8, byte_pool)?;

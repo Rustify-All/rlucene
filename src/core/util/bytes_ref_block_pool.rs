@@ -61,19 +61,40 @@ impl BytesRefBlockPool {
     let block = byte_block_pool.get_buffer(block_index);
     let pos = (start & BYTE_BLOCK_MASK) as usize;
 
-    let (length, offset) = if (block[pos] & 0x80) == 0 {
-      // Length is 1 byte
-      (block[pos] as usize, pos + 1)
-    } else {
-      // Length is 2 bytes
-      ((BitUtil::get_i16_be(block, pos) & 0x7FFF) as usize, pos + 2)
-    };
+    let (length, offset) = Self::length_and_offset(block, pos);
     BytesRefBlockPoolPosition {
       block_index,
       offset,
       length,
     }
   }
+  #[inline]
+  fn length_and_offset(block: &[u8], pos: usize) -> (usize, usize) {
+    if (block[pos] & 0x80) == 0 {
+      (block[pos] as usize, pos + 1)
+    } else {
+      ((BitUtil::get_i16_be(block, pos) & 0x7FFF) as usize, pos + 2)
+    }
+  }
+
+  /// Borrows a term with a single block lookup, validating its visible range.
+  #[inline]
+  pub(crate) fn borrow_bytes_ref<'a>(
+    &self,
+    start: i32,
+    byte_block_pool: &'a ByteBlockPool,
+  ) -> BytesRef<&'a [u8]> {
+    let block_index = (start >> BYTE_BLOCK_SHIFT) as usize;
+    let block = byte_block_pool.get_buffer(block_index);
+    let pos = (start & BYTE_BLOCK_MASK) as usize;
+    let (length, offset) = Self::length_and_offset(block, pos);
+    BytesRef {
+      bytes: &block[offset..offset + length],
+      offset: 0,
+      length,
+    }
+  }
+
   /// Add a term, returning the start position on the underlying
   /// [`ByteBlockPool`]. This can be used to read back the value using
   /// `fill_bytes_ref`.

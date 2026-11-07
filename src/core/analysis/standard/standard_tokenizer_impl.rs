@@ -62,7 +62,7 @@ fn zz_unpackcmap_blocks_top_with_offset(packed: &str, offset: usize, result: &mu
   }
   j
 }
-static ZZ_CMAP_BLOCKS: LazyLock<Vec<i32>> = LazyLock::new(zz_unpackcmap_blocks);
+static ZZ_CMAP_BLOCKS: LazyLock<Vec<u8>> = LazyLock::new(zz_unpackcmap_blocks);
 const ZZ_CMAP_BLOCKS_PACKED_0: &str = concat!(
   "\u{22}\0\u{1}\u{1}\u{1}\u{2}\u{3}\0\u{1}\u{3}\u{2}\0\u{1}\u{2}\u{1}\0\u{1}\u{4}\u{1}\0\u{1}\u{5}\u{1}\0\u{a}\u{6}\u{1}\u{7}",
   "\u{1}\u{4}\u{5}\0\u{1a}\u{8}\u{4}\0\u{1}\u{9}\u{1}\0\u{1a}\u{8}\u{2e}\0\u{1}\u{a}\u{1}\u{8}\u{2}\0\u{1}\u{b}\u{1}\u{a}\u{6}\0",
@@ -203,20 +203,23 @@ const ZZ_CMAP_BLOCKS_PACKED_0: &str = concat!(
   "\u{de}\u{14}\u{2}\0\u{182}\u{14}\u{e}\0\u{131}\u{14}\u{1f}\0\u{1e}\u{14}\u{e3}\0\u{1}\u{b}\u{1e}\0\u{5f}\u{1b}\u{1}\u{1c}\u{80}\0\u{f0}\u{b}",
   "\u{10}\0",
 );
-fn zz_unpackcmap_blocks() -> Vec<i32> {
+fn zz_unpackcmap_blocks() -> Vec<u8> {
   let mut result = vec![0; 35328];
   zz_unpackcmap_blocks_with_offset(ZZ_CMAP_BLOCKS_PACKED_0, 0, &mut result);
   result
 }
-fn zz_unpackcmap_blocks_with_offset(packed: &str, offset: usize, result: &mut [i32]) -> usize {
+fn zz_unpackcmap_blocks_with_offset(packed: &str, offset: usize, result: &mut [u8]) -> usize {
   let mut packed = packed.chars();
   let mut j = offset;
   while let Some(count) = packed.next() {
     let mut count = count as usize;
     let value = expect_invariant!(
-      packed.next(),
-      "packed tokenizer table has count/value pairs",
-    ) as i32;
+      u8::try_from(expect_invariant!(
+        packed.next(),
+        "packed tokenizer table has count/value pairs",
+      ) as u32),
+      "packed tokenizer character class fits in u8",
+    );
     while count > 0 {
       result[j] = value;
       j += 1;
@@ -284,7 +287,9 @@ fn zz_unpack_row_map_with_offset(packed: &str, _offset: usize, result: &mut [usi
   }
   j
 }
-static ZZ_TRANS: LazyLock<Vec<[i32; 29]>> = LazyLock::new(zz_unpack_trans);
+// Cover the u8 class domain so a valid class needs no column bounds check.
+const ZZ_TRANS_WIDTH: usize = u8::MAX as usize + 1;
+static ZZ_TRANS: LazyLock<Vec<[i32; ZZ_TRANS_WIDTH]>> = LazyLock::new(zz_unpack_trans);
 const ZZ_TRANS_PACKED_0: &str = concat!(
   "\u{2}\u{2}\u{1}\u{3}\u{3}\u{2}\u{1}\u{4}\u{1}\u{2}\u{1}\u{5}\u{1}\u{6}\u{1}\u{7}\u{1}\u{2}\u{1}\u{8}\u{1}\u{9}\u{2}\u{a}\u{1}\u{b}\u{1}\u{c}",
   "\u{1}\u{2}\u{1}\u{d}\u{1}\u{e}\u{1}\u{f}\u{1}\u{10}\u{2}\u{2}\u{1}\u{11}\u{1}\u{12}\u{2}\u{2}\u{28}\0\u{1}\u{13}\u{3}\0\u{1}\u{13}\u{1}\0",
@@ -343,14 +348,14 @@ const ZZ_TRANS_PACKED_0: &str = concat!(
   "\u{1}\u{1a}\u{1}\u{1b}\u{1}\u{1a}\u{1}\u{5}\u{1}\u{1c}\u{1}\u{2c}\u{1}\u{39}\u{1}\u{8}\u{1}\u{1b}\u{1}\0\u{1}\u{39}\u{1}\u{5}\u{1}\u{3b}\u{1}\u{39}",
   "\u{1}\u{2f}\u{3}\0\u{2}\u{5}\u{1}\0\u{3}\u{39}",
 );
-fn zz_unpack_trans() -> Vec<[i32; 29]> {
+fn zz_unpack_trans() -> Vec<[i32; ZZ_TRANS_WIDTH]> {
   let mut result = vec![0; 1537];
   zz_unpack_trans_with_offset(ZZ_TRANS_PACKED_0, 0, &mut result);
   ZZ_ROWMAP
     .iter()
     .map(|&offset| {
-      let mut row = [0; 29];
-      row.copy_from_slice(&result[offset..offset + 29]);
+      let mut row = [-1; ZZ_TRANS_WIDTH];
+      row[..29].copy_from_slice(&result[offset..offset + 29]);
       row
     })
     .collect()
@@ -506,13 +511,13 @@ impl StandardTokenizerImpl {
     }
   }
   /// Translates raw input code points to DFA table row
-  fn zz_cmap(input: i32, top: &[i32], blocks: &[i32]) -> usize {
+  fn zz_cmap(input: i32, top: &[i32], blocks: &[u8]) -> u8 {
     let input = input as usize;
     let offset = input & 255;
     if offset == input {
-      blocks[offset] as usize
+      blocks[offset]
     } else {
-      blocks[top[input >> 8] as usize | offset] as usize
+      blocks[top[input >> 8] as usize | offset]
     }
   }
   /// Refills the input buffer.
@@ -792,7 +797,8 @@ impl StandardTokenizerImpl {
           zz_input = self.zz_buffer[zz_current_pos_l] as i32;
           zz_current_pos_l += 1;
         }
-        let zz_next = zz_trans[zz_state][Self::zz_cmap(zz_input, zz_cmap_top, zz_cmap_blocks)];
+        let zz_next =
+          zz_trans[zz_state][Self::zz_cmap(zz_input, zz_cmap_top, zz_cmap_blocks) as usize];
         if zz_next == -1 {
           break zz_input;
         }

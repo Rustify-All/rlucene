@@ -429,7 +429,8 @@ impl<'data> TermsEnum for FreqProxTermsEnum<'data> {
     Err(LuceneError::unsupported_operation(""))
   }
 
-  type PostingsEnum = PostingsEnumEnum2<FreqProxPostingsEnum<'data>, FreqProxDocsEnum<'data>>;
+  type PostingsEnum =
+    PostingsEnumEnum2<Box<FreqProxPostingsEnum<'data>>, Box<FreqProxDocsEnum<'data>>>;
 
   fn postings_with_flags(
     &mut self,
@@ -458,7 +459,11 @@ impl<'data> TermsEnum for FreqProxTermsEnum<'data> {
 
       let mut pos_enum = match reuse {
         Some(PostingsEnumEnum2::A(p)) if std::ptr::eq(p.terms, self.terms) => p,
-        _ => FreqProxPostingsEnum::new(self.terms, self.int_pool, self.byte_pool),
+        _ => Box::new(FreqProxPostingsEnum::new(
+          self.terms,
+          self.int_pool,
+          self.byte_pool,
+        )),
       };
       pos_enum.reset(
         sorted_term_ids[self
@@ -475,7 +480,11 @@ impl<'data> TermsEnum for FreqProxTermsEnum<'data> {
     };
     let mut docs_enum = match reuse {
       Some(PostingsEnumEnum2::B(p)) if std::ptr::eq(p.terms, self.terms) => p,
-      _ => FreqProxDocsEnum::new(self.terms, self.int_pool, self.byte_pool),
+      _ => Box::new(FreqProxDocsEnum::new(
+        self.terms,
+        self.int_pool,
+        self.byte_pool,
+      )),
     };
     docs_enum.reset(
       sorted_term_ids[self
@@ -655,6 +664,14 @@ pub(crate) struct FreqProxPostingsEnum<'a> {
   payload: BytesRefBuilder<Vec<u8>>,
 }
 impl<'data> FreqProxPostingsEnum<'data> {
+  #[inline(never)]
+  fn skip_positions(&mut self) -> Result<()> {
+    while self.pos_left != 0 {
+      self.next_position()?;
+    }
+    Ok(())
+  }
+
   pub fn new(
     terms: &'data FreqProxTermsWriterPerField,
     int_pool: &'data IntBlockPool,
@@ -718,8 +735,8 @@ impl<'data> DocIdSetIterator for FreqProxPostingsEnum<'data> {
       self.doc_id = 0;
     }
 
-    while self.pos_left != 0 {
-      self.next_position()?;
+    if self.pos_left != 0 {
+      self.skip_positions()?;
     }
 
     if self.reader.eof() {
@@ -848,5 +865,51 @@ impl<'data> IteratorExt for FreqProxFieldIter<'data> {
 
   fn has_next(&self) -> Result<bool> {
     Ok(self.pos < self.fields.len())
+  }
+}
+
+impl PostingsEnum for Box<FreqProxPostingsEnum<'_>> {
+  fn freq(&mut self) -> Result<i32> {
+    (**self).freq()
+  }
+
+  #[inline]
+  fn next_position(&mut self) -> Result<i32> {
+    (**self).next_position()
+  }
+
+  fn start_offset(&self) -> Result<i32> {
+    (**self).start_offset()
+  }
+
+  fn end_offset(&self) -> Result<i32> {
+    (**self).end_offset()
+  }
+
+  fn get_payload(&self) -> Result<Option<BytesRefValueEnum<'_>>> {
+    (**self).get_payload()
+  }
+}
+
+impl PostingsEnum for Box<FreqProxDocsEnum<'_>> {
+  #[inline]
+  fn freq(&mut self) -> Result<i32> {
+    (**self).freq()
+  }
+
+  fn next_position(&mut self) -> Result<i32> {
+    (**self).next_position()
+  }
+
+  fn start_offset(&self) -> Result<i32> {
+    (**self).start_offset()
+  }
+
+  fn end_offset(&self) -> Result<i32> {
+    (**self).end_offset()
+  }
+
+  fn get_payload(&self) -> Result<Option<BytesRefValueEnum<'_>>> {
+    (**self).get_payload()
   }
 }
