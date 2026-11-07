@@ -354,6 +354,7 @@ impl ByteBlockPool {
     };
     (buffer_upto * self.allocator.get_block_size() as i32 + self.byte_upto) as i64
   }
+  #[inline]
   pub fn get_buffer_mut(&mut self, buffer_index: usize) -> &mut Vec<u8> {
     &mut self.buffers[buffer_index]
   }
