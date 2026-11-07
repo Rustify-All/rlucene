@@ -499,13 +499,13 @@ impl StandardTokenizerImpl {
     }
   }
   /// Translates raw input code points to DFA table row
-  fn zz_cmap(input: i32) -> usize {
+  fn zz_cmap(input: i32, top: &[i32], blocks: &[i32]) -> usize {
     let input = input as usize;
     let offset = input & 255;
     if offset == input {
-      ZZ_CMAP_BLOCKS[offset] as usize
+      blocks[offset] as usize
     } else {
-      ZZ_CMAP_BLOCKS[ZZ_CMAP_TOP[input >> 8] as usize | offset] as usize
+      blocks[top[input >> 8] as usize | offset] as usize
     }
   }
   /// Refills the input buffer.
@@ -746,6 +746,8 @@ impl StandardTokenizerImpl {
     let zz_trans = ZZ_TRANS.as_slice();
     let zz_row_map = ZZ_ROWMAP.as_slice();
     let zz_attr = ZZ_ATTRIBUTE.as_slice();
+    let zz_cmap_top = ZZ_CMAP_TOP.as_slice();
+    let zz_cmap_blocks = ZZ_CMAP_BLOCKS.as_slice();
     loop {
       let zz_marked_pos = self.zz_marked_pos;
       self.yychar += self.match_length_units;
@@ -783,7 +785,8 @@ impl StandardTokenizerImpl {
           zz_input = self.zz_buffer[zz_current_pos_l] as i32;
           zz_current_pos_l += 1;
         }
-        let zz_next = zz_trans[zz_row_map[zz_state] + Self::zz_cmap(zz_input)];
+        let zz_next =
+          zz_trans[zz_row_map[zz_state] + Self::zz_cmap(zz_input, zz_cmap_top, zz_cmap_blocks)];
         if zz_next == -1 {
           break zz_input;
         }
