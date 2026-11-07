@@ -343,8 +343,12 @@ pub trait BytesRefValue<'a>: Sized + Debug + Display {
   }
 
   /// Move owned storage, or copy a borrowed value when it must outlive the lookup.
+  #[inline]
   fn into_owned(self) -> BytesRef<Vec<u8>> {
-    self.into_value().into_cow().into_owned()
+    match self.into_value() {
+      BytesRefValueEnum::Buffer(value) => value.into_owned(),
+      BytesRefValueEnum::Slice(value) => BytesRef::from(value.as_bytes().to_vec()),
+    }
   }
 
   fn is_valid(&self) -> Result<bool> {
