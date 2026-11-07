@@ -506,8 +506,11 @@ impl DataOutput for ByteBuffersDataOutput {
 
   #[inline]
   fn write_vint(&mut self, i: i32) -> Result<()> {
-    let mut bytes = [0u8; 5];
     let mut value = i as u32;
+    if value < 0x80 {
+      return <Self as DataOutput>::write_byte(self, value as u8);
+    }
+    let mut bytes = [0u8; 5];
     let mut length = 0;
     while (value & !0x7F) != 0 {
       bytes[length] = ((value & 0x7F) | 0x80) as u8;
