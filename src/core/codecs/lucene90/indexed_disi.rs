@@ -936,6 +936,7 @@ where
     self.as_ref().length()
   }
 
+  #[inline]
   fn read_byte(&self, pos: usize) -> Result<u8> {
     self.as_ref().read_byte(pos)
   }
