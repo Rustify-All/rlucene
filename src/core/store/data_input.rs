@@ -167,6 +167,7 @@ pub trait DataInput: Display + DataInputExt {
   ///
   /// # See Also
   /// [`DataOutput::write_vint`](crate::core::store::data_output::DataOutput::write_vint)
+  #[inline]
   fn read_vint(&mut self) -> Result<i32> {
     let mut b = self.read_byte()? as i32;
     let mut i = b & 0x7F;
