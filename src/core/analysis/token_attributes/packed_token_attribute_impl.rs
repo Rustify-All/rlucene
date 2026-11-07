@@ -122,6 +122,7 @@ impl TypeAttribute for PackedTokenAttributeImpl {
     self.type_.as_ref()
   }
   /// Set the lexical type.
+  #[inline]
   fn set_type(&mut self, type_: &str) {
     match &mut self.type_ {
       Cow::Borrowed(value) if type_ == DEFAULT_TYPE => *value = DEFAULT_TYPE,
@@ -224,6 +225,7 @@ impl Clone for PackedTokenAttributeImpl {
 
 impl AttributeImpl for PackedTokenAttributeImpl {
   /// Resets the attributes
+  #[inline]
   fn clear(&mut self) {
     self.position_increment = 1;
     self.position_length = 1;
@@ -459,6 +461,7 @@ impl AttributeSource for CharTermAttributeImpl<PackedTokenAttributeImpl> {
     self.end()
   }
 
+  #[inline]
   fn clear_attributes(&mut self) -> Result<()> {
     self.clear();
     Ok(())
