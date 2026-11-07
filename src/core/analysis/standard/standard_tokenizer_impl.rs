@@ -284,7 +284,7 @@ fn zz_unpack_row_map_with_offset(packed: &str, _offset: usize, result: &mut [usi
   }
   j
 }
-static ZZ_TRANS: LazyLock<Vec<i32>> = LazyLock::new(zz_unpack_trans);
+static ZZ_TRANS: LazyLock<Vec<[i32; 29]>> = LazyLock::new(zz_unpack_trans);
 const ZZ_TRANS_PACKED_0: &str = concat!(
   "\u{2}\u{2}\u{1}\u{3}\u{3}\u{2}\u{1}\u{4}\u{1}\u{2}\u{1}\u{5}\u{1}\u{6}\u{1}\u{7}\u{1}\u{2}\u{1}\u{8}\u{1}\u{9}\u{2}\u{a}\u{1}\u{b}\u{1}\u{c}",
   "\u{1}\u{2}\u{1}\u{d}\u{1}\u{e}\u{1}\u{f}\u{1}\u{10}\u{2}\u{2}\u{1}\u{11}\u{1}\u{12}\u{2}\u{2}\u{28}\0\u{1}\u{13}\u{3}\0\u{1}\u{13}\u{1}\0",
@@ -343,10 +343,17 @@ const ZZ_TRANS_PACKED_0: &str = concat!(
   "\u{1}\u{1a}\u{1}\u{1b}\u{1}\u{1a}\u{1}\u{5}\u{1}\u{1c}\u{1}\u{2c}\u{1}\u{39}\u{1}\u{8}\u{1}\u{1b}\u{1}\0\u{1}\u{39}\u{1}\u{5}\u{1}\u{3b}\u{1}\u{39}",
   "\u{1}\u{2f}\u{3}\0\u{2}\u{5}\u{1}\0\u{3}\u{39}",
 );
-fn zz_unpack_trans() -> Vec<i32> {
+fn zz_unpack_trans() -> Vec<[i32; 29]> {
   let mut result = vec![0; 1537];
   zz_unpack_trans_with_offset(ZZ_TRANS_PACKED_0, 0, &mut result);
-  result
+  ZZ_ROWMAP
+    .iter()
+    .map(|&offset| {
+      let mut row = [0; 29];
+      row.copy_from_slice(&result[offset..offset + 29]);
+      row
+    })
+    .collect()
 }
 fn zz_unpack_trans_with_offset(packed: &str, offset: usize, result: &mut [i32]) -> usize {
   let mut packed = packed.chars();
@@ -744,7 +751,6 @@ impl StandardTokenizerImpl {
   /// Returns an error if any I/O error occurs.
   pub fn get_next_token(&mut self) -> Result<i32> {
     let zz_trans = ZZ_TRANS.as_slice();
-    let zz_row_map = ZZ_ROWMAP.as_slice();
     let zz_attr = ZZ_ATTRIBUTE.as_slice();
     let zz_cmap_top = ZZ_CMAP_TOP.as_slice();
     let zz_cmap_blocks = ZZ_CMAP_BLOCKS.as_slice();
@@ -785,8 +791,7 @@ impl StandardTokenizerImpl {
           zz_input = self.zz_buffer[zz_current_pos_l] as i32;
           zz_current_pos_l += 1;
         }
-        let zz_next =
-          zz_trans[zz_row_map[zz_state] + Self::zz_cmap(zz_input, zz_cmap_top, zz_cmap_blocks)];
+        let zz_next = zz_trans[zz_state][Self::zz_cmap(zz_input, zz_cmap_top, zz_cmap_blocks)];
         if zz_next == -1 {
           break zz_input;
         }
