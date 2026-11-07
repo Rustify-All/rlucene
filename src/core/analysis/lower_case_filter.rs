@@ -50,6 +50,7 @@ impl<TS> TokenStream for LowerCaseFilter<TS>
 where
   TS: TokenStream,
 {
+  #[inline(always)]
   fn increment_token(&mut self) -> Result<bool> {
     if self.token_filter_base.input.increment_token()? {
       // Select the current attributes after each successful input token.

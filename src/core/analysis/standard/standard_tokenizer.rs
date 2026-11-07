@@ -138,6 +138,7 @@ impl Closeable for StandardTokenizer {
 }
 
 impl TokenStream for StandardTokenizer {
+  #[inline(always)]
   fn increment_token(&mut self) -> Result<bool> {
     // A caller may replace attributes between calls. Select for this call,
     // then keep the original character/token body concrete.

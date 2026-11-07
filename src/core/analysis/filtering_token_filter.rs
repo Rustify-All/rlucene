@@ -69,6 +69,7 @@ where
   T: TokenStream,
   V: FilteringTokenFilterBase,
 {
+  #[inline(always)]
   fn increment_token(&mut self) -> Result<bool> {
     self.skipped_positions = 0;
     {
