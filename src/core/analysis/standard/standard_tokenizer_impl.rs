@@ -522,6 +522,7 @@ impl StandardTokenizerImpl {
   /// # Errors
   ///
   /// Returns an error if any I/O error occurs.
+  #[inline(never)]
   fn zz_refill(&mut self) -> Result<bool> {
     if self.zz_start_read > 0 {
       let mut consumed = self.zz_start_read;
