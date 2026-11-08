@@ -190,7 +190,7 @@ where
   {
     let bytes_used = Arc::new(AtomicCounter::new());
     let codec = index_writer_config.get_codec().clone();
-    let (stored_fields_consumer, term_vectors_writer) = if segment_info.get_index_sort().is_none() {
+    let (stored_fields_consumer, term_vectors_writer) = if segment_info.index_sort_ref().is_none() {
       (
         StoredFieldsConsumer::new(
           codec.clone(),
@@ -276,7 +276,7 @@ where
     D: Directory,
   {
     let index_created_version_major = self.index_created_version_major;
-    let Some(index_sort) = segment_info.get_index_sort() else {
+    let Some(index_sort) = segment_info.index_sort_ref() else {
       return Ok(None);
     };
 
@@ -406,7 +406,11 @@ where
     let field_count = self
       .per_fields
       .iter()
-      .filter(|pf| pf.invert_state.is_some())
+      .filter(|pf| {
+        pf.terms_hash_per_field
+          .as_ref()
+          .is_some_and(|field| field.base.get_num_terms() > 0)
+      })
       .count();
     let mut fields_to_flush = Vec::with_capacity(field_count);
     for &idx in &self.field_hash {
@@ -421,7 +425,9 @@ where
             .terms_hash_per_field
             .take()
             .ok_or_else(|| LuceneError::illegal_state("terms hash is missing"))?;
-          fields_to_flush.push(terms_hash);
+          if terms_hash.base.get_num_terms() > 0 {
+            fields_to_flush.push(terms_hash);
+          }
         }
         fp_idx = pf.next;
       }
@@ -571,14 +577,16 @@ where
   }
   // Finishes all doc values writers.
   pub(crate) fn finish_doc_values_writer(&mut self) -> Result<()> {
-    let pool = Arc::new(std::mem::take(&mut self.doc_values_byte_pool));
+    let mut bytes = std::mem::take(&mut self.doc_values_byte_pool);
+    let mut pool = None;
     let mut per_field_index;
     for i in 0..self.field_hash.len() {
       per_field_index = self.field_hash[i];
       while let Some(index) = per_field_index {
         let per_field = &mut self.per_fields[index];
         if let Some(ref mut writer) = per_field.doc_values_writer {
-          writer.finish(&pool)?;
+          let pool = pool.get_or_insert_with(|| Arc::new(std::mem::take(&mut bytes)));
+          writer.finish(pool)?;
         }
         per_field_index = per_field.next;
       }
@@ -1178,6 +1186,11 @@ where
 
       if pf.field_gen != field_gen {
         // first time we see this field in this document
+        if self.fields.len() == self.fields.capacity() {
+          let min_size = self.fields.len() + 1;
+          ArrayUtil::oversize(min_size, std::mem::size_of::<usize>())?;
+          self.fields.reserve(min_size - self.fields.len());
+        }
         self.fields.push(pf_idx);
         *field_count += 1;
         pf.field_gen = field_gen;
@@ -1237,14 +1250,6 @@ where
 
     if self.total_field_count >= (self.field_hash.len() >> 1) {
       self.rehash();
-    }
-    if self.total_field_count > self.fields.capacity() {
-      ArrayUtil::oversize(self.total_field_count, std::mem::size_of::<usize>())?;
-      let capacity = self
-        .total_field_count
-        .max(self.fields.capacity() * 2)
-        .max(4);
-      self.fields.reserve_exact(capacity - self.fields.len());
     }
     Ok(index)
   }
@@ -2091,7 +2096,7 @@ impl AllocatorI32 for IntBlockAllocator {
 pub(crate) struct FieldSchema {
   name: String,
   doc_id: i32,
-  attributes: HashMap<String, String>,
+  attributes: Arc<HashMap<String, String>>,
   omit_norms: bool,
   store_term_vector: bool,
   index_options: IndexOptions,
@@ -2111,7 +2116,7 @@ impl FieldSchema {
     FieldSchema {
       name: name.to_string(),
       doc_id: 0,
-      attributes: HashMap::new(),
+      attributes: Arc::clone(&crate::core::index::field_info::EMPTY_FIELD_ATTRIBUTES),
       omit_norms: false,
       store_term_vector: false,
       index_options: IndexOptions::None,
@@ -2144,11 +2149,18 @@ impl FieldSchema {
     Ok(())
   }
   pub(crate) fn update_attributes(&mut self, attrs: &HashMap<String, String>) {
+    if attrs
+      .iter()
+      .all(|(key, value)| self.attributes.get(key) == Some(value))
+    {
+      return;
+    }
+    let attributes = Arc::make_mut(&mut self.attributes);
     for (key, value) in attrs {
-      if let Some(current) = self.attributes.get_mut(key) {
+      if let Some(current) = attributes.get_mut(key) {
         current.clone_from(value);
       } else {
-        self.attributes.insert(key.clone(), value.clone());
+        attributes.insert(key.clone(), value.clone());
       }
     }
   }

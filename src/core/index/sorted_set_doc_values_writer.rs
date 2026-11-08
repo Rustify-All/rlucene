@@ -299,7 +299,7 @@ impl SortedSetDocValues for SortedSetDocValuesWriterDocIdSetIterator {
 /// Buffers pending byte slices per document, sorts them by `i32` ordinal, then writes them during
 /// segment flush.
 pub(crate) struct SortedSetDocValuesWriter {
-  hash: DirectBytesRefHash,
+  hash: Option<DirectBytesRefHash>,
   frozen_hash: Option<Arc<DirectBytesRefHash>>,
   pending: Builder,                // stream of all termIDs
   pending_counts: Option<Builder>, // termIDs per doc
@@ -337,7 +337,7 @@ impl SortedSetDocValuesWriter {
       });
     iw_bytes_used.add_and_get(bytes_used);
     Ok(Self {
-      hash,
+      hash: Some(hash),
       frozen_hash: None,
       pending,
       pending_counts: None,
@@ -413,7 +413,11 @@ impl SortedSetDocValuesWriter {
   }
 
   fn add_one_value(&mut self, value: &BytesRef<&[u8]>, pool: &mut ByteBlockPool) -> Result<()> {
-    let mut term_id = self.hash.add(value, pool)?;
+    let hash = self
+      .hash
+      .as_mut()
+      .ok_or_else(|| LuceneError::illegal_state("cannot add values after finishing"))?;
+    let mut term_id = hash.add(value, pool)?;
     if term_id < 0 {
       term_id = -term_id - 1;
     } else {
@@ -634,21 +638,24 @@ impl DocValuesWriter for SortedSetDocValuesWriter {
         self.final_ord_counts.is_none() && !self.is_sorted && self.final_ord_map.is_none()
       );
       self.finish_current_doc()?;
-      let value_count = self.hash.size();
+      let hash = self
+        .hash
+        .as_mut()
+        .ok_or_else(|| LuceneError::illegal_state("buffered value hash is missing"))?;
+      let value_count = hash.size();
       self.final_ords = Some(self.pending.build()?);
       self.final_ord_counts = match std::mem::take(&mut self.pending_counts) {
         Some(mut pc) => Some(pc.build()?),
         None => None,
       };
-      self.hash.sort(pool.as_ref())?;
+      hash.sort(pool.as_ref())?;
       self.is_sorted = true;
       let mut ord_map = vec![0; value_count];
       for ord in 0..value_count {
-        let index = self.hash.ids[ord] as usize;
+        let index = hash.ids[ord] as usize;
         ord_map[index] = ord as i32;
       }
-      let replacement = BytesRefHash::new()?;
-      self.frozen_hash = Some(Arc::new(std::mem::replace(&mut self.hash, replacement)));
+      self.frozen_hash = self.hash.take().map(Arc::new);
       self.final_ord_map = Some(Arc::new(ord_map));
     } else {
       debug_assert!(self.is_sorted);
@@ -776,6 +783,7 @@ pub(crate) struct BufferedSortedSetDocValues<D, V: Borrow<PackedLongValues> = Pa
   ord_counts_iter: PackedLongValuesIterator<V>,
   docs_with_field: D,
   current_doc: smallvec::SmallVec<[i32; 4]>,
+  max_count: usize,
   ord_count: usize,
   ord_upto: usize,
 }
@@ -834,6 +842,9 @@ where
       let count = self.ord_counts_iter.next_value()? as usize;
       debug_assert!(count > 0);
       self.ord_count = count;
+      if self.current_doc.is_empty() {
+        self.current_doc.resize(self.max_count, 0);
+      }
       for i in 0..count {
         let raw: i32 = self.ords_iter.next_value()?.try_convert()?;
         self.current_doc[i] = self.ord_map[raw as usize];

@@ -263,9 +263,9 @@ where
     self
       .hook
       .start_document(self.num_vector_fields.try_convert()?)?;
-    let mut idxs = std::mem::take(&mut self.per_fields_idxs);
-    for per_field_idx in idxs.drain(..).take(self.num_vector_fields) {
-      let v = &mut per_fields[per_field_idx.idx];
+    let fields_to_write = self.num_vector_fields.min(self.per_fields_idxs.len());
+    for i in 0..fields_to_write {
+      let v = &mut per_fields[self.per_fields_idxs[i].idx];
       let terms_hash_per_field = v
         .terms_hash_per_field
         .as_mut()
@@ -289,7 +289,6 @@ where
     int_pool.reset(false, false);
     byte_pool.reset(false, false);
     self.reset_fields();
-    self.per_fields_idxs = idxs;
     Ok(())
   }
   pub(crate) fn start_document(&mut self) -> Result<()> {

@@ -24,7 +24,7 @@ use crate::core::index::doc_values_field_updates::{
 use crate::core::index::field_term_iterator::FieldTermIterator;
 use crate::core::index::field_updates_buffer::FieldUpdatesBuffer;
 use crate::core::index::fields::Fields;
-use crate::core::index::index_reader::{Identity, IndexReader};
+use crate::core::index::index_reader::IndexReader;
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::numeric_doc_values_field_updates::{
   NumericDocValuesFieldUpdates, SingleValueNumericDocValuesFieldUpdates,
@@ -56,7 +56,6 @@ use parking_lot::{RawMutex, RawThreadId, ReentrantMutex};
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Display, Formatter};
-use std::hash::{Hash, Hasher};
 use std::sync::atomic::AtomicI64;
 use std::sync::{
   Arc,
@@ -91,7 +90,6 @@ pub(crate) struct FrozenBufferedUpdates {
   del_gen: i64,
   // SegmentInfo ID in SegmentCommitInfo
   pub(crate) private_segment: Option<Arc<str>>,
-  pub(crate) id: Identity,
 }
 
 impl FrozenBufferedUpdates {
@@ -123,20 +121,17 @@ impl FrozenBufferedUpdates {
       .saturating_add(size_of_array_capacity::<i32>(delete_queries.capacity()))
       .saturating_add(updates.field_updates_bytes_used.get()) as i32;
     if info_stream.is_enabled("BD") {
-      let private_segment_msg = match private_segment {
-        Some(ref v) => {
-          format!("; private segment {}", v)
-        },
-        None => "None".to_string(),
+      let (segment_prefix, segment) = match private_segment.as_deref() {
+        Some(id) => ("; private segment ", id),
+        None => ("", "None"),
       };
       info_stream.message(
         "BD",
         &format!(
-          "compressed {} to {} bytes ({:.2}%) for deletes/updates; private segment {}",
+          "compressed {} to {} bytes ({:.2}%) for deletes/updates; private segment {segment_prefix}{segment}",
           updates.ram_bytes_used()?,
           bytes_used,
           100.0 * bytes_used as f64 / updates.ram_bytes_used()? as f64,
-          private_segment_msg
         ),
       )?;
     }
@@ -157,7 +152,6 @@ impl FrozenBufferedUpdates {
       field_updates_count,
       del_gen: -1,
       private_segment,
-      id: Identity::new(),
     })
   }
   /// Tries to lock this buffered update instance
@@ -304,7 +298,7 @@ impl FrozenBufferedUpdates {
       let mut dv_updates = None;
 
       while let Some(buffered_update) = iterator.next_value()? {
-        let term_value = buffered_update.term_value.as_ref().ok_or_else(|| {
+        let term_value = buffered_update.term_value.ok_or_else(|| {
           LuceneError::illegal_state(format!(
             "buffered update for field [{}] has no term value",
             buffered_update.term_field
@@ -670,21 +664,6 @@ impl Display for FrozenBufferedUpdates {
     Ok(())
   }
 }
-impl PartialEq for FrozenBufferedUpdates {
-  fn eq(&self, other: &Self) -> bool {
-    self.id.eq(&other.id)
-  }
-}
-impl Eq for FrozenBufferedUpdates {}
-
-impl Hash for FrozenBufferedUpdates {
-  fn hash<H>(&self, state: &mut H)
-  where
-    H: Hasher,
-  {
-    self.id.hash(state);
-  }
-}
 /// This struct helps iterating a term dictionary and consuming all the docs for each term.
 /// It accepts a (field, value) tuple and returns a [`DocIdSetIterator`](DocIdSetIterator) if the field has an entry
 /// for the given value.  
@@ -882,14 +861,19 @@ impl IntConsumer for NumericDocValuesConsumer<'_> {
 
 struct BinaryDocValuesConsumer<'a> {
   update: &'a mut DocValuesFieldUpdatesEnum,
-  binary_value: Option<&'a BytesRef<Vec<u8>>>,
+  binary_value: Option<&'a std::borrow::Cow<'a, [u8]>>,
 }
 impl IntConsumer for BinaryDocValuesConsumer<'_> {
   fn accept(&mut self, doc: i32) -> Result<()> {
     let binary_value = self
       .binary_value
       .ok_or_else(|| LuceneError::illegal_state("binary doc values update has no value"))?;
-    self.update.add_byte_ref(doc, binary_value)
+    let value = BytesRef {
+      bytes: binary_value.as_ref(),
+      offset: 0,
+      length: binary_value.len(),
+    };
+    self.update.add_byte_ref(doc, &value)
   }
 }
 impl AsRef<FrozenBufferedUpdates> for FrozenBufferedUpdates {

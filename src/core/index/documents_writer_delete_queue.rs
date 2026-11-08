@@ -589,7 +589,8 @@ impl DeleteSlice {
     //tail in this slice are not equal then there will be at least one more
     //present node in the slice!
     {
-      let mut current = self.slice_head.clone();
+      let mut current = &self.slice_head;
+      let mut current_owner;
       loop {
         let next_node_guard = current.next.lock();
         debug_assert!(
@@ -602,13 +603,16 @@ impl DeleteSlice {
           )
         })?;
 
-        let next_node = next_node.clone();
-        drop(next_node_guard);
-        next_node.apply(del, doc_id_upto)?;
-        if Arc::ptr_eq(&next_node, &self.slice_tail) {
+        if Arc::ptr_eq(next_node, &self.slice_tail) {
+          drop(next_node_guard);
+          self.slice_tail.apply(del, doc_id_upto)?;
           break;
         }
-        current = next_node;
+        let next_node = Arc::clone(next_node);
+        drop(next_node_guard);
+        next_node.apply(del, doc_id_upto)?;
+        current_owner = next_node;
+        current = &current_owner;
       }
     }
     self.reset();
@@ -732,7 +736,7 @@ impl QueryNode {
 }
 impl NodeBase for QueryNode {
   fn apply(&self, buffered_deletes: &mut BufferedUpdates, doc_id_upto: i32) -> Result<()> {
-    buffered_deletes.add_query(self.item.clone(), doc_id_upto)
+    buffered_deletes.add_query(&self.item, doc_id_upto)
   }
 }
 impl Display for QueryNode {
@@ -755,7 +759,7 @@ impl QueryNodeArray {
 impl NodeBase for QueryNodeArray {
   fn apply(&self, buffered_deletes: &mut BufferedUpdates, doc_id_upto: i32) -> Result<()> {
     for query in &self.item {
-      buffered_deletes.add_query(query.clone(), doc_id_upto)?;
+      buffered_deletes.add_query(query, doc_id_upto)?;
     }
     Ok(())
   }

@@ -115,7 +115,7 @@ where
   files_to_delete: HashSet<String>,
   aborting_exception: OnceLock<CaughtResult>,
   pub(crate) state: Arc<State>,
-  parent_field: Option<String>,
+  parent_field: Option<Box<Fields>>,
 }
 
 pub(crate) struct State {
@@ -332,9 +332,9 @@ where
       aborted: AtomicBool::new(false),
     };
     let parent_field = if let Some(parent_field) = index_writer_config.get_parent_field() {
-      let field = NumericDocValuesField::new(parent_field, -1).into();
+      let field = ReservedField::new(NumericDocValuesField::new(parent_field, -1)).into();
       indexing_chain.mark_as_reserved(&field)?;
-      Some(parent_field.to_string())
+      Some(Box::new(field))
     } else {
       None
     };
@@ -428,11 +428,8 @@ where
         let mut docs_iter = docs.into_fallible_iter().peekable();
         while let Some(doc) = docs_iter.next() {
           let doc = doc?;
-          let mut reserved_parent_field: Option<Fields> = if let Some(parent) = &self.parent_field {
-            docs_iter
-              .peek()
-              .is_none()
-              .then(|| ReservedField::new(NumericDocValuesField::new(parent, -1)).into())
+          let use_parent_field = if self.parent_field.is_some() {
+            docs_iter.peek().is_none()
           } else {
             if self.segment_info.index_sort.is_some()
               && docs_iter.peek().is_some()
@@ -442,15 +439,17 @@ where
                 "a parent field must be set in order to use document blocks with index sorting; see IndexWriterConfig#setParentField",
               ));
             }
-            None
+            false
           };
 
           self.reserve_one_doc()?;
           let doc_id = self.state.num_docs_in_ram.fetch_add(1, Ordering::SeqCst);
           let process_result =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
-              let doc_fields = reserved_parent_field
-                .as_mut()
+              let doc_fields = self
+                .parent_field
+                .as_deref_mut()
+                .filter(|_| use_parent_field)
                 .into_iter()
                 .map(|field| Ok(IndexingField::Parent(field)))
                 .chain(
@@ -634,8 +633,8 @@ where
     // happens when an error is hit processing that
     // doc, eg if analyzer has some problem w/ the text):
     if self.num_deleted_doc_ids > 0 {
-      let mut live_docs = FixedBitSet::new(self.state.num_docs_in_ram.load(SeqCst) as usize);
-      live_docs.set_with_range(0, self.state.num_docs_in_ram.load(SeqCst) as usize);
+      let max_doc = self.state.num_docs_in_ram.load(SeqCst) as usize;
+      let mut live_docs = FixedBitSet::with_set_prefix(max_doc, max_doc);
 
       for i in 0..self.num_deleted_doc_ids {
         live_docs.clear_with_index(self.delete_doc_ids[i] as usize)?;
@@ -701,11 +700,8 @@ where
         let files = self.directory.take_created_files();
         self.segment_info.replace_files(files)?;
 
-        let dir = self.segment_info.dir.clone();
-        // Retain a file-only mirror before moving SegmentInfo into SegmentCommitInfo,
-        // so flushFailed can still find the files; the replacement dummy reports none.
-        let mut replacement_segment_info = SegmentInfo::dummy(dir, self.segment_info.name.clone());
-        replacement_segment_info.set_files(self.segment_info.files()?)?;
+        // Keep the original files available until the flush succeeds.
+        let replacement_segment_info = self.segment_info.flush_failure_mirror()?;
         let segment_info_per_commit = SegmentCommitInfo::new(
           std::mem::replace(&mut self.segment_info, replacement_segment_info),
           0,
@@ -772,21 +768,15 @@ where
           )?;
         }
 
-        let segment_deletes = if self.pending_updates.delete_queries.is_empty()
-          && self
+        let has_segment_updates = !self.pending_updates.delete_queries.is_empty()
+          || self
             .pending_updates
             .num_field_updates
             .load(Ordering::SeqCst)
-            == 0
-        {
+            != 0;
+        if !has_segment_updates {
           self.pending_updates.clear();
-          None
-        } else {
-          Some(std::mem::replace(
-            &mut self.pending_updates,
-            BufferedUpdates::new(),
-          ))
-        };
+        }
 
         if self.info_stream.is_enabled("DWPT") {
           let new_size_mb = segment_info_per_commit.size_in_bytes()? as f64 / 1024.0 / 1024.0;
@@ -806,11 +796,14 @@ where
           self.info_stream.clone(),
           segment_info_per_commit,
           flush_state.field_infos,
-          segment_deletes,
+          has_segment_updates.then_some(&mut self.pending_updates),
           flush_state.live_docs.take(),
           flush_state.del_count_on_flush,
           sort_map,
         )?;
+        if has_segment_updates {
+          self.pending_updates.clear();
+        }
         self.seal_flushed_segment(&mut fs, flush_notifications, index_writer_config)?;
 
         if self.info_stream.is_enabled("DWPT") {
@@ -875,8 +868,7 @@ where
     T2: DocMap,
   {
     let live_docs_len = live_docs.length();
-    let mut sorted_live_docs = FixedBitSet::new(live_docs_len);
-    sorted_live_docs.set_with_range(0, live_docs_len);
+    let mut sorted_live_docs = FixedBitSet::with_set_prefix(live_docs_len, live_docs_len);
 
     for i in 0..live_docs_len {
       if !live_docs.get(i)? {
@@ -1115,13 +1107,13 @@ where
     info_stream: InfoStreamMT,
     segment_info: SegmentCommitInfo<D>,
     field_infos: Arc<FieldInfos>,
-    mut segment_updates: Option<BufferedUpdates>,
+    segment_updates: Option<&mut BufferedUpdates>,
     live_docs: Option<Arc<FixedBitSet>>,
     del_count: i32,
     sort_map: Option<Arc<DocMapImpl>>,
   ) -> Result<Self> {
     let segment_updates = match segment_updates {
-      Some(ref mut upd) if upd.any() => Some(FrozenBufferedUpdates::new(
+      Some(upd) if upd.any() => Some(FrozenBufferedUpdates::new(
         info_stream,
         upd,
         Some(Arc::clone(&segment_info.info.id_key)),

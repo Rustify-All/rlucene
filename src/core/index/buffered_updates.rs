@@ -195,16 +195,19 @@ impl BufferedUpdates {
     }
     self.delete_terms.put(term, doc_id_upto)
   }
-  pub(crate) fn add_query(&mut self, query: Query, doc_id_upto: i32) -> Result<()> {
-    let old_size = size_of_hash_map(&self.delete_queries);
+  pub(crate) fn add_query(&mut self, query: &Query, doc_id_upto: i32) -> Result<()> {
     let query_ram_bytes_used = query.ram_bytes_used()?;
-    if self.delete_queries.insert(query, doc_id_upto).is_none() {
-      self.bytes_used.add_and_get(
-        size_of_hash_map(&self.delete_queries)
-          .saturating_sub(old_size)
-          .saturating_add(query_ram_bytes_used),
-      );
+    if let Some(limit) = self.delete_queries.get_mut(query) {
+      *limit = doc_id_upto;
+      return Ok(());
     }
+    let old_size = size_of_hash_map(&self.delete_queries);
+    self.delete_queries.insert(query.clone(), doc_id_upto);
+    self.bytes_used.add_and_get(
+      size_of_hash_map(&self.delete_queries)
+        .saturating_sub(old_size)
+        .saturating_add(query_ram_bytes_used),
+    );
     Ok(())
   }
   pub(crate) fn clear_delete_terms(&mut self) {

@@ -360,7 +360,7 @@ impl<V: Borrow<PackedLongValues>, M: Borrow<Vec<i32>>> SortedDocValues
 /// Buffers pending byte slices per document, sorts them by `i32` ordinal, then writes them during
 /// segment flush.
 pub(crate) struct SortedDocValuesWriter {
-  hash: DirectBytesRefHash,
+  hash: Option<DirectBytesRefHash>,
   frozen_hash: Option<Arc<DirectBytesRefHash>>,
   pending: Builder,
   docs_with_field: DocsWithFieldSet,
@@ -387,7 +387,7 @@ impl SortedDocValuesWriter {
     iw_bytes_used.add_and_get(bytes_used);
 
     Ok(Self {
-      hash,
+      hash: Some(hash),
       frozen_hash: None,
       pending,
       docs_with_field,
@@ -430,7 +430,11 @@ impl SortedDocValuesWriter {
   }
 
   fn add_one_value(&mut self, value: &BytesRef<&[u8]>, pool: &mut ByteBlockPool) -> Result<()> {
-    let mut term_id = self.hash.add(value, pool)?;
+    let hash = self
+      .hash
+      .as_mut()
+      .ok_or_else(|| LuceneError::illegal_state("cannot add values after finishing"))?;
+    let mut term_id = hash.add(value, pool)?;
     if term_id < 0 {
       term_id = -term_id - 1;
     } else {
@@ -583,21 +587,23 @@ impl DocValuesWriter for SortedDocValuesWriter {
     self.pool = Some(pool.clone());
     self.docs_with_field.finish();
     if !self.is_sorted {
-      let value_count = self.hash.size();
       self.update_bytes_used()?;
       debug_assert!(self.final_ord_map.is_none() && self.final_ords.is_none());
-
-      self.hash.sort(pool.as_ref())?;
+      let hash = self
+        .hash
+        .as_mut()
+        .ok_or_else(|| LuceneError::illegal_state("buffered value hash is missing"))?;
+      let value_count = hash.size();
+      hash.sort(pool.as_ref())?;
       self.is_sorted = true;
       let ords = self.pending.build()?;
 
       let mut ord_map = vec![0i32; value_count];
       for ord in 0..value_count {
-        let index = self.hash.ids[ord] as usize;
+        let index = hash.ids[ord] as usize;
         ord_map[index] = ord as i32;
       }
-      let replacement = BytesRefHash::new()?;
-      self.frozen_hash = Some(Arc::new(std::mem::replace(&mut self.hash, replacement)));
+      self.frozen_hash = self.hash.take().map(Arc::new);
       self.final_ords = Some(ords);
       self.final_ord_map = Some(Arc::new(ord_map));
     }

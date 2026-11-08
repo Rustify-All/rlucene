@@ -48,7 +48,7 @@ fn test_ram_bytes_used() -> Result<()> {
     };
     let value = format!("{}", random.random_range(0..100));
     let term = Term::new("id", BytesRef::from_string(&value));
-    bu.add_query(TermQuery::new(term).into(), doc_id_upto)?;
+    bu.add_query(&TermQuery::new(term).into(), doc_id_upto)?;
   }
 
   let terms = at_least(&mut random, 1);

@@ -71,12 +71,17 @@ impl<PA: PostingsArray> TermsHashPerField<PA> {
     bytes_used: SharedCounter,
     postings_array_wrapper: PostingsArrayWrapper<PA>,
     index_options: IndexOptions,
+    initialize_hash: bool,
   ) -> Result<Self> {
     debug_assert!(index_options != IndexOptions::None);
     let slice_pool = ByteSlicePool;
     let byte_starts = PostingsBytesStartArray::new(postings_array_wrapper, bytes_used);
 
-    let bytes_hash = BytesRefHash::from_bytes_start_array(HASH_INIT_SIZE, byte_starts)?;
+    let bytes_hash = if initialize_hash {
+      BytesRefHash::from_bytes_start_array(HASH_INIT_SIZE, byte_starts)?
+    } else {
+      BytesRefHash::without_storage(HASH_INIT_SIZE, byte_starts)
+    };
     Ok(TermsHashPerField {
       slice_pool,
       term_stream_address_buffer_index: 0,

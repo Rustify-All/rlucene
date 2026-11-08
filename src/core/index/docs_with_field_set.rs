@@ -70,8 +70,7 @@ impl DocsWithFieldSet {
       set.ensure_capacity(doc_index)?;
       set.set(doc_index)?;
     } else if doc_id != self.cardinality {
-      let mut set = FixedBitSet::new((doc_id + 1) as usize);
-      set.set_with_range(0, self.cardinality as usize);
+      let mut set = FixedBitSet::with_set_prefix((doc_id + 1) as usize, self.cardinality as usize);
       set.set(doc_index)?;
       self.set = Some(set);
     }

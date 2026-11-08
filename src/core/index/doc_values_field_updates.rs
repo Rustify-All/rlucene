@@ -141,7 +141,11 @@ where
     self.sub_update.add_value(doc, value, index)
   }
   /// The exclusive receiver covers both document and value updates.
-  pub(crate) fn add_byte_ref(&mut self, doc: i32, value: &BytesRef<Vec<u8>>) -> Result<()> {
+  pub(crate) fn add_byte_ref<B: ByteSource>(
+    &mut self,
+    doc: i32,
+    value: &BytesRef<B>,
+  ) -> Result<()> {
     let index = self.add(doc)?;
     self.sub_update.add_byte_ref(doc, value, index)
   }
@@ -979,42 +983,34 @@ impl DocValuesFieldIterator for MergedFieldIterator {
 pub(crate) fn merged_field_iterator(
   subs: Vec<DocValuesFieldIteratorEnum>,
 ) -> Result<Option<MergedFieldIterator>> {
+  let count = subs.len();
   if subs
     .iter()
     .all(|sub| matches!(sub, DocValuesFieldIteratorEnum::AbstractBinary(_)))
   {
-    let subs = subs
-      .into_iter()
-      .filter_map(|sub| match sub {
-        DocValuesFieldIteratorEnum::AbstractBinary(inner) => Some(inner),
-        _ => None,
-      })
-      .collect();
-    merged_iterator(subs).map(|merged| merged.map(MergedFieldIterator::Binary))
+    let subs = subs.into_iter().filter_map(|sub| match sub {
+      DocValuesFieldIteratorEnum::AbstractBinary(inner) => Some(inner),
+      _ => None,
+    });
+    merge_iterators(subs, count).map(|merged| merged.map(MergedFieldIterator::Binary))
   } else if subs
     .iter()
     .all(|sub| matches!(sub, DocValuesFieldIteratorEnum::AbstractNumeric(_)))
   {
-    let subs = subs
-      .into_iter()
-      .filter_map(|sub| match sub {
-        DocValuesFieldIteratorEnum::AbstractNumeric(inner) => Some(inner),
-        _ => None,
-      })
-      .collect();
-    merged_iterator(subs).map(|merged| merged.map(MergedFieldIterator::Numeric))
+    let subs = subs.into_iter().filter_map(|sub| match sub {
+      DocValuesFieldIteratorEnum::AbstractNumeric(inner) => Some(inner),
+      _ => None,
+    });
+    merge_iterators(subs, count).map(|merged| merged.map(MergedFieldIterator::Numeric))
   } else if subs
     .iter()
     .all(|sub| matches!(sub, DocValuesFieldIteratorEnum::SingleValue(_)))
   {
-    let subs = subs
-      .into_iter()
-      .filter_map(|sub| match sub {
-        DocValuesFieldIteratorEnum::SingleValue(inner) => Some(inner),
-        _ => None,
-      })
-      .collect();
-    merged_iterator(subs).map(|merged| merged.map(MergedFieldIterator::Single))
+    let subs = subs.into_iter().filter_map(|sub| match sub {
+      DocValuesFieldIteratorEnum::SingleValue(inner) => Some(inner),
+      _ => None,
+    });
+    merge_iterators(subs, count).map(|merged| merged.map(MergedFieldIterator::Single))
   } else {
     merged_iterator(subs).map(|merged| merged.map(MergedFieldIterator::Mixed))
   }
@@ -1467,14 +1463,17 @@ pub fn merged_iterator<T>(subs: Vec<T>) -> Result<Option<MergedIterator<T>>>
 where
   T: DocValuesFieldIterator,
 {
-  // Due to the characteristics of the Rust language, to reduce complexity,
-  // we add the element to the queue for processing even if there is only one
-  // element. if subs.len() == 1 {
-  //
-  // }
+  let count = subs.len();
+  merge_iterators(subs, count)
+}
 
+fn merge_iterators<T, I>(subs: I, count: usize) -> Result<Option<MergedIterator<T>>>
+where
+  T: DocValuesFieldIterator,
+  I: IntoIterator<Item = T>,
+{
   // Priority queue to sort iterators by doc_id and del_gen
-  let mut queue = PriorityQueue::new(subs.len(), IteratorPQCmp::new())?;
+  let mut queue = PriorityQueue::new(count, IteratorPQCmp::new())?;
 
   for mut sub in subs {
     if sub.next_doc()? != NO_MORE_DOCS {

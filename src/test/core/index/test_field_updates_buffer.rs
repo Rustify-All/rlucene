@@ -202,8 +202,8 @@ pub fn test_update_share_values_binary() -> Result<()> {
 
     if has_value {
       assert_eq!(
-        &BytesRef::from_string(""),
-        value.binary_value.as_ref().unwrap()
+        b"".as_slice(),
+        value.binary_value.as_ref().unwrap().as_ref()
       );
     } else {
       assert!(value.binary_value.is_none());
@@ -327,8 +327,13 @@ pub fn test_binary_random() -> Result<()> {
 
     if random_update.has_value {
       assert_eq!(
-        random_update.sub_update.get_binary().unwrap().get_value()?,
-        value.binary_value.as_ref().unwrap()
+        random_update
+          .sub_update
+          .get_binary()
+          .unwrap()
+          .get_value()?
+          .as_byte_slice(),
+        value.binary_value.as_ref().unwrap().as_ref()
       );
     } else {
       assert!(value.binary_value.is_none());

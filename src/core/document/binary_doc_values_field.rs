@@ -53,7 +53,7 @@ static TYPE: LazyLock<FieldType> = LazyLock::new(|| {
 ///
 /// See also [`BinaryDocValues`](crate::core::index::binary_doc_values::BinaryDocValues).
 pub struct BinaryDocValuesField {
-  parent_field: Field,
+  pub(crate) parent_field: Field,
 }
 impl BinaryDocValuesField {
   /// Create a new binary DocValues field.

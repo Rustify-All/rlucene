@@ -379,13 +379,13 @@ impl OrdinalMap {
     // ordDeltas is typically the bottleneck, so let's see what we can do to make it faster
     let mut segment_to_global_ords = Vec::with_capacity(sub_len);
     ram_bytes_used += size_of_vec(&segment_to_global_ords);
-    for i in 0..ord_deltas.len() {
-      let deltas = ord_deltas[i].build()?;
+    for (i, mut builder) in ord_deltas.into_iter().enumerate() {
       if ord_delta_bits[i] == 0 {
         // segment ords perfectly match global ordinals
         // likely in case of low cardinalities and large segments
         segment_to_global_ords.push(SegmentToGlobalOrds(None));
       } else {
+        let deltas = builder.build()?;
         let bits_required = if ord_delta_bits[i] < 0 {
           64
         } else {

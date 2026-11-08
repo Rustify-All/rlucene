@@ -85,6 +85,7 @@ impl FreqProxTermsWriterPerField {
       terms_hash.base.bytes_used.clone(),
       postings_array_wrapper,
       index_options,
+      true,
     )?;
     Ok(FreqProxTermsWriterPerField {
       field_info,

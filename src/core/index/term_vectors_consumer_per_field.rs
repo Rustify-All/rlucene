@@ -63,6 +63,7 @@ impl TermVectorsConsumerPerField {
       terms_hash.base.bytes_used.clone(),
       postings_array_wrapper,
       field_info.index_options,
+      field_info.has_term_vectors(),
     )?;
     Ok(Self {
       field_info,
@@ -235,13 +236,12 @@ impl TermVectorsConsumerPerField {
         self.base.reset(byte_pool);
       }
 
-      self.base.reinit_hash()?;
-
       self.has_payloads = false;
 
       self.do_vectors = field.field_type().store_term_vectors();
 
       if self.do_vectors {
+        self.base.reinit_hash()?;
         self.do_vector_positions = field.field_type().store_term_vector_positions();
         // Somewhat confusingly, unlike postings, you are
         // allowed to index TV offsets without TV positions:

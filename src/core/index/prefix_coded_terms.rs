@@ -33,7 +33,7 @@ use crate::core::util::access::{ByteSource, WritableVec};
 use crate::core::util::accountable::Accountable;
 use crate::core::util::bytes_ref_iterator::BytesRefIterator;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
-use crate::core::util::ram_usage_estimator::size_of_vec;
+use crate::core::util::ram_usage_estimator::{size_of_array_capacity, size_of_vec};
 
 /// Prefix codes term instances (prefixes are shared). This is expected to be
 /// faster to build than an FST and might also be more compact if there are no
@@ -213,7 +213,7 @@ where
 impl<B> Eq for PrefixCodedTerms<B> where B: ByteBuffersDataInputBlock + Clone {}
 impl Accountable for PrefixCodedTerms<Vec<u8>> {
   fn ram_bytes_used(&self) -> Result<i64> {
-    let mut size = size_of_vec(&self.content);
+    let mut size = self.block_slots_ram_bytes();
     for block in &self.content {
       size = size.saturating_add(size_of_vec(block.get_ref()));
     }
@@ -223,7 +223,7 @@ impl Accountable for PrefixCodedTerms<Vec<u8>> {
 
 impl Accountable for PrefixCodedTerms<Rc<Vec<u8>>> {
   fn ram_bytes_used(&self) -> Result<i64> {
-    let mut size = size_of_vec(&self.content);
+    let mut size = self.block_slots_ram_bytes();
     for block in &self.content {
       size = size
         .saturating_add(std::mem::size_of_val(block.get_ref().as_ref()) as i64)
@@ -235,7 +235,7 @@ impl Accountable for PrefixCodedTerms<Rc<Vec<u8>>> {
 
 impl Accountable for PrefixCodedTerms<Arc<Vec<u8>>> {
   fn ram_bytes_used(&self) -> Result<i64> {
-    let mut size = size_of_vec(&self.content);
+    let mut size = self.block_slots_ram_bytes();
     for block in &self.content {
       size = size
         .saturating_add(std::mem::size_of_val(block.get_ref().as_ref()) as i64)
@@ -297,10 +297,9 @@ impl PrefixCodedTermsBuilder {
       self.output.write_vint((prefix << 1) as i32)?;
     } else {
       // Field change
-      let field = field.into_owned();
       prefix = 0;
       self.output.write_vint(1)?;
-      self.output.write_string(&field)?;
+      self.output.write_string(field_name)?;
       new_field = Some(field);
     }
 
@@ -323,8 +322,10 @@ impl PrefixCodedTermsBuilder {
         .last_term_bytes
         .copy_bytes_from_vec(source, bytes.offset, bytes.length)?;
     }
-    if let Some(field) = new_field {
-      self.last_field = field;
+    match new_field {
+      Some(Cow::Borrowed(field)) => field.clone_into(&mut self.last_field),
+      Some(Cow::Owned(field)) => self.last_field = field,
+      None => {},
     }
     self.size += 1;
 
@@ -332,8 +333,14 @@ impl PrefixCodedTermsBuilder {
   }
   /// return finalized form.
   pub fn finish(&mut self) -> PrefixCodedTerms {
-    let content = self.output.to_buffer_list_owner(false);
-    PrefixCodedTerms::new(content.1, content.0, self.size)
+    let content_len = self.output.size();
+    let blocks = self.output.take_raw_blocks();
+    let content = std::iter::once_with(Vec::new)
+      .take(usize::from(blocks.len() == 0))
+      .chain(blocks)
+      .map(Cursor::new)
+      .collect();
+    PrefixCodedTerms::with_blocks(content, content_len, self.size)
   }
 
   pub(crate) fn finish_arc(&mut self) -> PrefixCodedTermsArc {
@@ -345,7 +352,7 @@ impl PrefixCodedTermsBuilder {
       .chain(blocks)
       .map(|bytes| Cursor::new(Arc::new(bytes)))
       .collect();
-    PrefixCodedTerms::new(content, content_len, self.size)
+    PrefixCodedTerms::with_blocks(content, content_len, self.size)
   }
 }
 /// An iterator over the list of terms stored in a [`PrefixCodedTerms`].

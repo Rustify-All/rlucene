@@ -62,7 +62,7 @@ pub(crate) struct FieldUpdatesBuffer {
   // since by definition we store them in order.
   term_values: BytesRefArray,
   term_sort_state: Option<SortState>,
-  // `None` when buffering numeric values.
+  // Present only after buffering a binary value.
   byte_values: Option<BytesRefArray>,
   docs_upto: smallvec::SmallVec<[i32; 1]>,
   // `None` when buffering binary values.
@@ -93,17 +93,13 @@ impl FieldUpdatesBuffer {
     bytes_used.add_and_get(Self::size_of_string(&term.field));
 
     let term_values = BytesRefArray::new(bytes_used.clone())?;
-    let byte_values = if is_numeric {
-      None
-    } else {
-      Some(BytesRefArray::new(bytes_used.clone())?)
-    };
+
     let mut buffer = FieldUpdatesBuffer {
       bytes_used,
       num_updates: 1,
       term_values,
       term_sort_state: None,
-      byte_values,
+      byte_values: None,
       docs_upto: smallvec::smallvec![doc_upto],
       numeric_values: if is_numeric {
         Some(smallvec::SmallVec::new())
@@ -165,11 +161,7 @@ impl FieldUpdatesBuffer {
     };
     let mut buffer = Self::new(bytes_used, initial_value, doc_upto, false)?;
     if has_values {
-      buffer
-        .byte_values
-        .as_mut()
-        .ok_or_else(|| LuceneError::illegal_state("byte_values is missing for binary updates"))?
-        .append(value)?;
+      buffer.append_binary_value(value)?;
     }
     Ok(buffer)
   }
@@ -280,8 +272,7 @@ impl FieldUpdatesBuffer {
             .add_and_get(bitset.ram_bytes_used()?.saturating_sub(old_size));
         }
       } else {
-        let mut new_bitset = FixedBitSet::new(ord + 1);
-        new_bitset.set_with_range(0, ord);
+        let new_bitset = FixedBitSet::with_set_prefix(ord + 1, ord);
         self.bytes_used.add_and_get(new_bitset.ram_bytes_used()?);
         self.has_values = Some(new_bitset);
       }
@@ -343,12 +334,20 @@ impl FieldUpdatesBuffer {
   ) -> Result<()> {
     debug_assert!(!self.is_numeric);
     let ord = self.append(term)?;
-    self
-      .byte_values
-      .as_mut()
-      .ok_or_else(|| LuceneError::illegal_state("byte_values is None"))?
-      .append(value)?;
+    self.append_binary_value(value)?;
     self.add(&term.field, doc_upto, ord, true)?;
+    Ok(())
+  }
+
+  fn append_binary_value(&mut self, value: &BytesRef<Vec<u8>>) -> Result<()> {
+    if self.is_numeric {
+      return Err(LuceneError::illegal_state("byte_values is None"));
+    }
+    let values = match &mut self.byte_values {
+      Some(values) => values,
+      slot => slot.insert(BytesRefArray::new(self.bytes_used.clone())?),
+    };
+    values.append(value)?;
     Ok(())
   }
 
@@ -421,7 +420,6 @@ impl FieldUpdatesBuffer {
     BufferedUpdateIterator::new(self)
   }
   pub(crate) fn is_numeric(&self) -> bool {
-    debug_assert!(self.is_numeric || self.byte_values.is_some());
     self.is_numeric
   }
   pub(crate) fn has_single_value(&self) -> bool {
@@ -475,17 +473,10 @@ impl<'a> BufferedUpdateIterator<'a> {
       .term_sort_state
       .as_ref()
       .map(|state| field_updates_buffer.term_values.iterator_with_state(state));
-    let byte_values_iterator = if field_updates_buffer.is_numeric {
-      None
-    } else {
-      Some(
-        field_updates_buffer
-          .byte_values
-          .as_ref()
-          .ok_or_else(|| LuceneError::illegal_state("byte_values is missing for binary updates"))?
-          .iterator(),
-      )
-    };
+    let byte_values_iterator = field_updates_buffer
+      .byte_values
+      .as_ref()
+      .map(BytesRefArray::iterator);
     let updates_with_value = if let Some(item) = &field_updates_buffer.has_values {
       UpdateBits::B(item)
     } else {
@@ -522,11 +513,10 @@ impl<'a> BufferedUpdateIterator<'a> {
   pub(crate) fn is_sorted_terms(&self) -> bool {
     self.field_updates_buffer.term_sort_state.is_some()
   }
-  /// Moves to the next BufferedUpdate or return None if all updates are
-  /// consumed. The returned instance is a shared instance and must be
-  /// fully consumed before the next call to this method. The returned borrow
-  /// prevents advancing the iterator while the update is still in use.
-  pub(crate) fn next_value(&mut self) -> Result<Option<&BufferedUpdate<'a>>> {
+  /// Returns the next update view, or None when all updates are consumed.
+  /// The view borrows the term and binary storage until it is consumed,
+  /// preventing the iterator from advancing while those bytes remain in use.
+  pub(crate) fn next_value(&mut self) -> Result<Option<BorrowedBufferedUpdate<'_>>> {
     if self.next_term()? {
       let idx = self.term_values_iterator.ord();
       let buffered_update = &mut self.buffered_update;
@@ -541,6 +531,7 @@ impl<'a> BufferedUpdateIterator<'a> {
       buffered_update.doc_upto = self.field_updates_buffer.docs_upto
         [FieldUpdatesBuffer::get_array_index(self.docs_upto_length, idx)];
 
+      let mut binary_value = None;
       if buffered_update.has_value {
         if self.field_updates_buffer.is_numeric {
           buffered_update.numeric_value = self
@@ -549,34 +540,40 @@ impl<'a> BufferedUpdateIterator<'a> {
             .as_ref()
             .ok_or_else(|| LuceneError::illegal_state("numeric_values is missing"))?
             [FieldUpdatesBuffer::get_array_index(self.numeric_values_length, idx)];
-          buffered_update.binary_value = None;
         } else {
           debug_assert!(self.numeric_values_length == 0);
-          match &mut self.byte_values_iterator {
-            Some(iterator) => match iterator.next()? {
-              Some((_, BytesRefValueEnum::Buffer(Cow::Owned(bytes_ref)))) => {
-                buffered_update.binary_value = Some(bytes_ref);
+          if let Some(iterator) = &mut self.byte_values_iterator {
+            binary_value = match iterator.next()? {
+              Some((_, BytesRefValueEnum::Buffer(Cow::Owned(mut value)))) => {
+                if value.offset != 0 {
+                  value
+                    .bytes
+                    .copy_within(value.offset..value.offset + value.length, 0);
+                }
+                value.bytes.truncate(value.length);
+                Some(Cow::Owned(value.bytes))
               },
-              Some((_, bytes_ref)) => {
-                buffered_update
-                  .binary_value
-                  .get_or_insert_with(BytesRef::default)
-                  .copy_from_slice(bytes_ref.as_bytes());
+              Some((_, BytesRefValueEnum::Buffer(Cow::Borrowed(value)))) => {
+                Some(Cow::Borrowed(value.as_byte_slice()))
               },
-              None => {
-                buffered_update.binary_value = None;
-              },
-            },
-            None => {
-              buffered_update.binary_value = None;
-            },
+              Some((_, BytesRefValueEnum::Slice(value))) => Some(Cow::Borrowed(
+                &value.bytes[value.offset..value.offset + value.length],
+              )),
+              None => None,
+            };
           }
         }
       } else {
-        buffered_update.binary_value = None;
         buffered_update.numeric_value = 0;
       }
-      Ok(Some(buffered_update))
+      Ok(Some(BorrowedBufferedUpdate {
+        doc_upto: buffered_update.doc_upto,
+        numeric_value: buffered_update.numeric_value,
+        binary_value,
+        has_value: buffered_update.has_value,
+        term_field: buffered_update.term_field,
+        term_value: buffered_update.term_value.as_ref(),
+      }))
     } else {
       Ok(None)
     }
@@ -646,6 +643,15 @@ pub struct BufferedUpdate<'a> {
   pub term_field: &'a str,
   /// The update terms value. This will never be None.
   pub term_value: Option<BytesRef<Vec<u8>>>,
+}
+
+pub(crate) struct BorrowedBufferedUpdate<'a> {
+  pub(crate) doc_upto: i32,
+  pub(crate) numeric_value: i64,
+  pub(crate) binary_value: Option<Cow<'a, [u8]>>,
+  pub(crate) has_value: bool,
+  pub(crate) term_field: &'a str,
+  pub(crate) term_value: Option<&'a BytesRef<Vec<u8>>>,
 }
 
 type UpdateBits<'a> = BitsEnum2<MatchAllBits, &'a FixedBitSet>;

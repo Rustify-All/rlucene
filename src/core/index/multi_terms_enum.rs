@@ -17,7 +17,7 @@
 use crate::core::codecs::block_term_state::TermStateEnum;
 use crate::core::index::base_terms_enum::BaseTermsEnumTermStateImpl;
 use crate::core::index::index_reader::Identity;
-use crate::core::index::multi_postings_enum::{EnumWithSlice, MultiPostingsEnum};
+use crate::core::index::multi_postings_enum::MultiPostingsEnum;
 use crate::core::index::reader_slice::ReaderSlice;
 use crate::core::index::slow_impacts_enum::SlowImpactsEnum;
 use crate::core::index::terms_enum::{EmptyTermsEnum, SeekStatus, TermsEnum};
@@ -38,7 +38,7 @@ pub struct MultiTermsEnum<TE> {
   /// Current subs that have at least one term for this field
   // Equal-length current-sub and top-sub index columns.
   sub_indices: Box<[usize]>,
-  sub_docs: Box<[EnumWithSlice]>,
+  sub_reader_count: usize,
   last_seek_exact: bool,
   has_last_seek: bool,
   last_seek_scratch: BytesRefBuilder<Vec<u8>>,
@@ -59,17 +59,16 @@ where
     let slices = slices.into_iter();
     let len = slices.len();
     let sub_indices = vec![0usize; len * 2];
-    let mut sub_docs = Vec::with_capacity(len);
     let mut all_terms_enum_with_slice = Vec::with_capacity(len);
     for (i, slice) in slices.enumerate() {
       all_terms_enum_with_slice.push(TermsEnumWithSlice::new(i, slice));
-      sub_docs.push(EnumWithSlice::with_slice(slice));
     }
+    let sub_reader_count = all_terms_enum_with_slice.len();
     let queue = TermMergeQueue::new(len, all_terms_enum_with_slice)?;
     Ok(Self {
       queue,
       sub_indices: sub_indices.into_boxed_slice(),
-      sub_docs: sub_docs.into_boxed_slice(),
+      sub_reader_count,
       last_seek_exact: false,
       has_last_seek: false,
       last_seek_scratch: BytesRefBuilder::new(),
@@ -87,7 +86,7 @@ where
     mut self,
     terms_enums_index: Vec<TermsEnumIndex<TE>>,
   ) -> Result<MultiTermsEnumType<TE>> {
-    debug_assert!(terms_enums_index.len() <= self.sub_docs.len());
+    debug_assert!(terms_enums_index.len() <= self.sub_reader_count);
 
     self.num_subs = 0;
     self.num_top = 0;
@@ -119,9 +118,9 @@ where
 
     self.num_top = self
       .queue
-      .fill_top(&mut self.sub_indices[self.sub_docs.len()..])?;
+      .fill_top(&mut self.sub_indices[self.sub_reader_count..])?;
 
-    let top0_idx = self.sub_indices[self.sub_docs.len()];
+    let top0_idx = self.sub_indices[self.sub_reader_count];
     let top0 = self.queue.entry(top0_idx);
     match top0.base.term() {
       Some(term) => self
@@ -278,7 +277,7 @@ where
       }
 
       if status {
-        self.sub_indices[self.sub_docs.len() + self.num_top] = entry_idx;
+        self.sub_indices[self.sub_reader_count + self.num_top] = entry_idx;
         self.num_top += 1;
 
         let cur = {
@@ -373,7 +372,7 @@ where
       }
 
       if status == SeekStatus::Found {
-        self.sub_indices[self.sub_docs.len() + self.num_top] = entry_idx;
+        self.sub_indices[self.sub_reader_count + self.num_top] = entry_idx;
         self.num_top += 1;
 
         let cur = {
@@ -446,7 +445,7 @@ where
   fn doc_freq(&mut self) -> Result<i32> {
     let mut sum: i32 = 0;
     for i in 0..(self.num_top) {
-      let idx = self.sub_indices[self.sub_docs.len() + i];
+      let idx = self.sub_indices[self.sub_reader_count + i];
       let entry = self.queue.entry_mut(idx);
       match entry.base.terms_enum {
         Some(ref mut terms_enum) => {
@@ -461,7 +460,7 @@ where
   fn total_term_freq(&mut self) -> Result<i64> {
     let mut sum: i64 = 0;
     for i in 0..(self.num_top) {
-      let idx = self.sub_indices[self.sub_docs.len() + i];
+      let idx = self.sub_indices[self.sub_reader_count + i];
       let entry = self.queue.entry_mut(idx);
       match entry.base.terms_enum {
         Some(ref mut terms_enum) => {
@@ -487,22 +486,22 @@ where
         if reuse.can_reuse(&self.parent) {
           reuse
         } else {
-          MultiPostingsEnum::new(self.parent.clone(), self.sub_docs.len())
+          MultiPostingsEnum::new(self.parent.clone(), self.sub_reader_count)
         }
       },
-      None => MultiPostingsEnum::new(self.parent.clone(), self.sub_docs.len()),
+      None => MultiPostingsEnum::new(self.parent.clone(), self.sub_reader_count),
     };
     let mut upto: usize = 0;
     let cmp = TopTermsEnumWithSliceCmp::new(self.queue.entries());
     ArrayUtil::do_tim_sort(
-      &mut self.sub_indices[self.sub_docs.len()..],
+      &mut self.sub_indices[self.sub_reader_count..],
       0,
       self.num_top,
       cmp,
     )?;
 
     for i in 0..(self.num_top) {
-      let entry_idx = self.sub_indices[self.sub_docs.len() + i];
+      let entry_idx = self.sub_indices[self.sub_reader_count + i];
       let entry = self.queue.entry_mut(entry_idx);
 
       let sub_index = entry.base.sub_index;
@@ -511,7 +510,7 @@ where
         "{} vs {}; {}",
         sub_index,
         docs_enum.sub_postings_enums.len(),
-        self.sub_docs.len()
+        self.sub_reader_count
       );
 
       let terms_enum = entry
@@ -522,11 +521,11 @@ where
       let sub_postings_enum =
         terms_enum.postings_with_flags(docs_enum.sub_postings_enums[sub_index].take(), flags)?;
       docs_enum.sub_postings_enums[sub_index] = Some(sub_postings_enum);
-      self.sub_docs[upto].postings_enum_idx = sub_index;
-      self.sub_docs[upto].slice = entry.sub_slice;
+      docs_enum.subs[upto].postings_enum_idx = sub_index;
+      docs_enum.subs[upto].slice = entry.sub_slice;
       upto += 1;
     }
-    docs_enum.reset(&self.sub_docs, upto);
+    docs_enum.reset(&[], upto);
     Ok(docs_enum)
   }
 

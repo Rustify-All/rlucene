@@ -69,7 +69,7 @@ impl TermStates {
       top_reader_context_identity: context.base().identity.clone(),
       doc_freq: 0,
       total_term_freq: 0,
-      states: states.into_boxed_slice(),
+      states,
       term,
     })
   }
@@ -377,7 +377,7 @@ where
   let mut per_reader_term_state = TermStates::with_term(None, context)?;
 
   let leaves = context.leaves()?;
-  let mut pending_term_lookups = Vec::with_capacity(leaves.len());
+  let mut pending_term_lookups = Vec::new();
 
   for ctx in leaves {
     let terms = ctx.reader().terms(term.field())?;
@@ -388,6 +388,9 @@ where
       Some(t) => {
         let mut terms_enum = t.iterator()?;
         if terms_enum.prepare_seek_exact(term.bytes())?.is_some() {
+          if pending_term_lookups.capacity() == 0 {
+            pending_term_lookups.reserve_exact(leaves.len());
+          }
           let ord = ctx.ord;
           if pending_term_lookups.len() <= ord {
             ArrayUtil::grow_with(&mut pending_term_lookups, ord + 1, || None)?;

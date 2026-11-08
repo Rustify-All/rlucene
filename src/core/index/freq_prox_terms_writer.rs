@@ -56,7 +56,7 @@ use crate::core::util::int_block_pool::IntBlockPool;
 use crate::core::util::lsb_radix_sorter::LSBRadixSorter;
 use crate::core::util::packed::PackedInts;
 use crate::core::util::{
-  ByteBlockPool, IOUtils, SharedCounter, SliceCopyOps, Sorter, TimSorter, TimSorterBase, ToInt,
+  ByteBlockPool, IOUtils, SharedCounter, Sorter, TimSorter, TimSorterBase, ToInt,
 };
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -107,9 +107,10 @@ where
 
             let max_doc = segment_info.max_doc()?;
             let live_docs = state.live_docs.get_or_insert_with(|| {
-              let mut bits = FixedBitSet::new(max_doc as usize);
-              bits.set_with_range(0, max_doc as usize);
-              Arc::new(bits)
+              Arc::new(FixedBitSet::with_set_prefix(
+                max_doc as usize,
+                max_doc as usize,
+              ))
             });
 
             let live_docs = Arc::get_mut(live_docs).ok_or_else(|| {
@@ -171,12 +172,9 @@ where
     // Gather all fields that saw any postings:
     let mut all_fields = fields_to_flush;
     for per_field in &mut all_fields {
-      if per_field.base.get_num_terms() > 0 {
-        per_field.base.sort_terms(&byte_pool)?;
-        debug_assert!(per_field.base.index_options != IndexOptions::None);
-      }
+      per_field.base.sort_terms(&byte_pool)?;
+      debug_assert!(per_field.base.index_options != IndexOptions::None);
     }
-    all_fields.retain(|per_field| per_field.base.get_num_terms() > 0);
     // Sort by field name
     CollectionUtil::intro_sort(&mut all_fields)?;
     let fields = FreqProxFields::new(all_fields, int_pool, byte_pool);
@@ -668,17 +666,13 @@ impl<P> SortingDocsEnum<P> {
       }
       if self.docs.len() == self.docs.capacity() {
         let min_size = self.docs.len() + 1;
-        ArrayUtil::grow_capacity(&mut self.docs, min_size)?;
+        ArrayUtil::oversize(min_size, size_of::<i32>())?;
+        self.docs.reserve(1);
       }
       self.docs.push(doc_map.old_to_new(doc)?);
     }
 
     self.upto = self.docs.len();
-    if self.docs.len() == self.docs.capacity() {
-      let min_size = self.docs.len() + 1;
-      ArrayUtil::grow_capacity(&mut self.docs, min_size)?;
-    }
-    self.docs.push(NO_MORE_DOCS);
 
     let max_doc = doc_map.size();
     let num_bits = PackedInts::bits_required(std::cmp::max(0, (max_doc - 1) as i64))? as usize;
@@ -705,13 +699,19 @@ where
   P: PostingsEnum,
 {
   fn doc_id(&self) -> i32 {
-    self.doc_it.map_or(-1, |doc_it| self.docs[doc_it])
+    self.doc_it.map_or(-1, |doc_it| {
+      if doc_it == self.docs.len() {
+        NO_MORE_DOCS
+      } else {
+        self.docs[doc_it]
+      }
+    })
   }
 
   fn next_doc(&mut self) -> Result<i32> {
     let doc_it = self.doc_it.map_or(0, |doc_it| doc_it + 1);
     self.doc_it = Some(doc_it);
-    Ok(self.docs[doc_it])
+    Ok(self.doc_id())
   }
 
   fn advance(&mut self, target: i32) -> Result<i32> {
@@ -804,13 +804,14 @@ impl TimSorterBase for DocOffsetSorter<'_> {
   }
 
   fn save(&mut self, i: usize, len: usize) -> Result<()> {
-    if self.tmp_docs.len() < len {
-      ArrayUtil::grow_no_copy(self.tmp_docs, len, || 0)?;
-      ArrayUtil::grow_no_copy(self.tmp_offsets, self.tmp_docs.len(), || 0)?;
-    }
-
-    self.tmp_docs.copy_from(&self.docs[i..i + len], 0);
-    self.tmp_offsets.copy_from(&self.offsets[i..i + len], 0);
+    ArrayUtil::grow_capacity(self.tmp_docs, len)?;
+    ArrayUtil::grow_capacity(self.tmp_offsets, len)?;
+    self.tmp_docs.clear();
+    self.tmp_offsets.clear();
+    self.tmp_docs.extend_from_slice(&self.docs[i..i + len]);
+    self
+      .tmp_offsets
+      .extend_from_slice(&self.offsets[i..i + len]);
     Ok(())
   }
 
