@@ -32,7 +32,6 @@ use crate::core::codecs::lucene99::lucene99_flat_vectors_format::{
   META_CODEC_NAME, META_EXTENSION, VECTOR_DATA_CODEC_NAME, VECTOR_DATA_EXTENSION, VERSION_CURRENT,
 };
 use crate::core::codecs::lucene99::lucene99_hnsw_vectors_writer::EncodedFieldWriter;
-use crate::core::index::IndexFileNames;
 use crate::core::index::byte_vector_values::ByteVectorValues;
 use crate::core::index::codec_reader::CodecReader;
 use crate::core::index::docs_with_field_set::DocsWithFieldSet;
@@ -84,29 +83,12 @@ where
   where
     D1: Directory<IndexOutput = O>,
   {
-    let meta_file_name =
-      IndexFileNames::segment_file_name(&segment_info.name, &state.segment_suffix, META_EXTENSION);
-
-    let vector_data_file_name = IndexFileNames::segment_file_name(
-      &segment_info.name,
-      &state.segment_suffix,
-      VECTOR_DATA_EXTENSION,
-    );
-
     let mut meta = None;
     let mut vector_data = None;
     let mut success = false;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
-      meta = Some(
-        state
-          .directory
-          .create_output(&meta_file_name, state.context)?,
-      );
-      vector_data = Some(
-        state
-          .directory
-          .create_output(&vector_data_file_name, state.context)?,
-      );
+      meta = Some(state.create_segment_output(&segment_info.name, META_EXTENSION)?);
+      vector_data = Some(state.create_segment_output(&segment_info.name, VECTOR_DATA_EXTENSION)?);
 
       CodecUtil::write_index_header(
         meta
@@ -279,6 +261,7 @@ where
 
     Ok(())
   }
+  #[allow(clippy::too_many_arguments)]
   fn write_sorting_field<DM>(
     meta: &mut O,
     vector_data: &mut O,
@@ -311,7 +294,7 @@ where
       field_data.get_docs_with_field_set(),
       sort_map,
       None,
-      Some(&mut ord_map),
+      Some(ord_map),
       Some(&mut new_docs_with_field),
     )?;
     new_docs_with_field.finish();
@@ -319,10 +302,10 @@ where
     // write vector values
     let vector_data_offset = match vectors {
       VectorSlices::Byte(vectors) => {
-        Self::write_sorted_byte_vectors(vector_data, &ord_map, vectors)?
+        Self::write_sorted_byte_vectors(vector_data, ord_map, vectors)?
       },
       VectorSlices::Float(vectors) => {
-        Self::write_sorted_float32_vectors(vector_data, field_data, &ord_map, vectors)?
+        Self::write_sorted_float32_vectors(vector_data, field_data, ord_map, vectors)?
       },
     };
     let vector_data_length = vector_data.get_file_pointer()? - vector_data_offset;
@@ -393,6 +376,7 @@ where
           max_doc,
           sort_map,
           None,
+          &mut ord_map,
         )?;
       } else {
         Self::write_field(
@@ -551,6 +535,7 @@ where
           max_doc,
           sm,
           Some(vectors),
+          &mut ord_map,
         )?;
       } else {
         Self::write_field(
@@ -1068,6 +1053,7 @@ where
   }
 }
 
+#[cfg(target_endian = "big")]
 use crate::core::codecs::knn_field_vectors_writer::write_float_vector;
 use crate::core::index::vector_buffer::{VectorBuffers, VectorElement, VectorSlices};
 

@@ -14,7 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use std::borrow::Cow;
 use std::convert::Infallible;
 use std::marker::PhantomData;
 use std::sync::Arc;
@@ -56,6 +55,7 @@ pub struct HnswGraphBuilder<
   graph_searcher: HnswGraphSearcher<BS, DEFAULT_SEARCHER>,
   entry_candidates: GraphBuilderKnnCollector,
   beam_candidates: GraphBuilderKnnCollector,
+  beam_entry_points: Vec<usize>,
   level_candidates: smallvec::SmallVec<[NeighborArray<false>; 1]>,
   selected_candidates: smallvec::SmallVec<[bool; 128]>,
   hnsw: Arc<OnHeapHnswGraph>,
@@ -190,6 +190,7 @@ where
       graph_searcher,
       entry_candidates: GraphBuilderKnnCollector::new(1)?,
       beam_candidates: GraphBuilderKnnCollector::new(beam_width)?,
+      beam_entry_points: Vec::new(),
       level_candidates: smallvec::SmallVec::new(),
       selected_candidates: smallvec::SmallVec::new(),
       info_stream: get_default_info_stream(),
@@ -730,17 +731,21 @@ impl HnswGraphBuilderDefaults {
       }
 
       // for levels <= nodeLevel search with topk = beamWidth, and add connections
-      let mut eps: Cow<'_, [usize]> = Cow::Borrowed(&eps);
       let candidates = &mut builder.beam_candidates;
       for i in (0..scratch_per_level.len()).rev() {
         let level = i + lowest_unset_level;
+        let entry_points = if i + 1 == scratch_per_level.len() {
+          eps.as_slice()
+        } else {
+          builder.beam_entry_points.as_slice()
+        };
         candidates.clear();
         if let Some(hnsw) = Arc::get_mut(&mut builder.hnsw) {
           builder.graph_searcher.search_level_with_collector(
             candidates,
             &scorer,
             level,
-            &eps,
+            entry_points,
             hnsw,
             &None::<Infallible>,
           )?;
@@ -749,18 +754,18 @@ impl HnswGraphBuilderDefaults {
             candidates,
             &scorer,
             level,
-            &eps,
+            entry_points,
             builder.hnsw.as_ref(),
             &None::<Infallible>,
           )?;
         }
-        eps = if i == 0 {
-          // This pass has no lower search level that consumes another entry-point snapshot.
-          candidates.trim_to_nearest_k_nodes()?;
-          Cow::Borrowed(&[])
-        } else {
-          Cow::Owned(candidates.pop_until_nearest_k_nodes()?)
-        };
+        candidates.trim_to_nearest_k_nodes()?;
+        if i != 0 {
+          builder.beam_entry_points.clear();
+          builder
+            .beam_entry_points
+            .extend(candidates.queue.iter_nodes());
+        }
         let scratch = &mut scratch_per_level[i];
         Self::pop_to_scratch(candidates, scratch)?;
       }

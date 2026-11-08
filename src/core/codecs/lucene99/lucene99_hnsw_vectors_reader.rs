@@ -22,7 +22,6 @@ use crate::core::codecs::lucene99::lucene99_hnsw_vectors_format::{
   META_CODEC_NAME, META_EXTENSION, VECTOR_INDEX_CODEC_NAME, VECTOR_INDEX_EXTENSION,
   VERSION_CURRENT, VERSION_START,
 };
-use crate::core::index::IndexFileNames;
 use crate::core::index::field_info::FieldInfo;
 use crate::core::index::field_infos::FieldInfos;
 use crate::core::index::segment_info::SegmentInfo;
@@ -149,9 +148,6 @@ where
     let mut fields = HashMap::new();
     let field_infos = &state.field_infos;
 
-    let meta_file_name =
-      IndexFileNames::segment_file_name(&segment_info.name, &state.segment_suffix, META_EXTENSION);
-
     let mut version_meta = -1;
 
     let mut meta = None;
@@ -159,7 +155,11 @@ where
     let mut meta_close_attempted = false;
     let mut success = false;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
-      meta = Some(state.directory.open_checksum_input(&meta_file_name)?);
+      meta = Some(
+        state.with_file_name(&segment_info.name, META_EXTENSION, |name| {
+          state.directory.open_checksum_input(name)
+        })?,
+      );
 
       let body_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
         let prior_result =
@@ -245,10 +245,9 @@ where
   where
     D1: Directory,
   {
-    let file_name =
-      IndexFileNames::segment_file_name(&segment_info.name, &state.segment_suffix, file_extension);
-
-    let mut input = state.directory.open_input(&file_name, context)?;
+    let mut input = state.with_file_name(&segment_info.name, file_extension, |name| {
+      state.directory.open_input(name, context)
+    })?;
 
     let mut success = false;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
@@ -793,7 +792,7 @@ where
   arc: usize,
   graph_level_node_offsets: DirectMonotonicReader<I::RandomAccessSlice>,
   graph_level_node_index_offsets: Arc<Vec<usize>>,
-  // Allocated to be M*2 to track the current neighbors being explored
+  neighbor_capacity: usize,
   current_neighbors_buffer: Box<[usize]>,
 }
 impl<I> OffHeapHnswGraph<I>
@@ -828,8 +827,6 @@ where
       addresses_data,
     )?;
 
-    let current_neighbors_buffer = vec![0usize; entry.m * 2];
-
     Ok(Self {
       data_in,
       nodes_by_level: Arc::clone(nodes_by_level),
@@ -841,7 +838,8 @@ where
       arc: 0,
       graph_level_node_offsets,
       graph_level_node_index_offsets: Arc::clone(&entry.graph_level_node_index_offsets),
-      current_neighbors_buffer: current_neighbors_buffer.into_boxed_slice(),
+      neighbor_capacity: entry.m * 2,
+      current_neighbors_buffer: Box::default(),
     })
   }
 }
@@ -871,12 +869,15 @@ where
     self.arc_count = self.data_in.read_vint()?.try_convert()?;
 
     debug_assert!(
-      self.arc_count <= self.current_neighbors_buffer.len(),
+      self.arc_count <= self.neighbor_capacity,
       "too many neighbors: {}",
       self.arc_count
     );
 
     if self.arc_count > 0 {
+      if self.current_neighbors_buffer.is_empty() {
+        self.current_neighbors_buffer = vec![0; self.neighbor_capacity].into_boxed_slice();
+      }
       self.current_neighbors_buffer[0] = self.data_in.read_vint()?.try_convert()?;
       for i in 1..self.arc_count {
         let delta = self.data_in.read_vint()?.try_convert()?;

@@ -125,12 +125,11 @@ impl<const MAX_HEAP: bool> NeighborQueue<MAX_HEAP> {
   }
 
   pub fn nodes(&self) -> Vec<usize> {
-    let size = self.size();
-    let mut nodes = Vec::with_capacity(size);
-    for i in 0..size {
-      nodes.push(self.decode_node_id(self.heap.get(i + 1)));
-    }
-    nodes
+    self.iter_nodes().collect()
+  }
+
+  pub(crate) fn iter_nodes(&self) -> impl ExactSizeIterator<Item = usize> + '_ {
+    (0..self.size()).map(|i| self.decode_node_id(self.heap.get(i + 1)))
   }
 
   /// Returns the top element's node id.

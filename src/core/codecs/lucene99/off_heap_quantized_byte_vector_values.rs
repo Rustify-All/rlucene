@@ -73,7 +73,7 @@ struct OffHeapQuantizedByteVectorValues<I, F> {
 struct Inner<I> {
   slice: I,
   last_ord: Option<usize>,
-  binary_value: Box<[u8]>,
+  binary_value: Arc<[u8]>,
   score_correction_constant: [f32; 1],
 }
 
@@ -96,7 +96,7 @@ impl<I, F> OffHeapQuantizedByteVectorValues<I, F> {
     let inner = Mutex::new(Inner {
       slice,
       last_ord: None,
-      binary_value: Box::default(),
+      binary_value: Arc::default(),
       score_correction_constant: [0.0],
     });
     Self {
@@ -117,25 +117,38 @@ impl<I, F> OffHeapQuantizedByteVectorValues<I, F>
 where
   I: IndexInput,
 {
-  fn read_value(&self, target_ord: usize, inner: &mut Inner<I>) -> Result<()> {
-    let pos = target_ord
-      .checked_mul(self.byte_size)
-      .ok_or_else(|| LuceneError::illegal_state("seek overflow"))?;
-    inner.slice.seek(pos)?;
-    if inner.binary_value.is_empty() {
-      inner.binary_value = vec![0; self.dimension].into_boxed_slice();
+  fn read_value<R, UseValue>(
+    &self,
+    target_ord: usize,
+    use_value: UseValue,
+  ) -> Result<R>
+  where
+    UseValue: FnOnce(&[u8]) -> Result<R>,
+  {
+    let mut guard = self.inner.lock();
+    let inner = &mut *guard;
+    if !matches!(inner.last_ord, Some(last_ord) if last_ord == target_ord) {
+      let pos = target_ord
+        .checked_mul(self.byte_size)
+        .ok_or_else(|| LuceneError::illegal_state("seek overflow"))?;
+      inner.slice.seek(pos)?;
+      if inner.binary_value.is_empty() {
+        inner.binary_value = std::iter::repeat_n(0u8, self.dimension).collect();
+      }
+      inner
+        .slice
+        .read_bytes(Arc::make_mut(&mut inner.binary_value), 0, self.num_bytes)?;
+      let mut score_correction_constant = [0.0];
+      inner
+        .slice
+        .read_floats(&mut score_correction_constant, 0, 1)?;
+      inner.score_correction_constant = score_correction_constant;
+      decompress_bytes(Arc::make_mut(&mut inner.binary_value), self.num_bytes)?;
+      inner.last_ord = Some(target_ord);
     }
-    inner
-      .slice
-      .read_bytes(&mut inner.binary_value, 0, self.num_bytes)?;
-    let mut score_correction_constant = [0.0];
-    inner
-      .slice
-      .read_floats(&mut score_correction_constant, 0, 1)?;
-    inner.score_correction_constant = score_correction_constant;
-    decompress_bytes(&mut inner.binary_value, self.num_bytes)?;
-    inner.last_ord = Some(target_ord);
-    Ok(())
+    let value = Arc::clone(&inner.binary_value);
+    drop(guard);
+    use_value(value.as_ref())
   }
 
   fn get_score_correction_constant(&self, target_ord: usize) -> Result<f32> {
@@ -222,12 +235,7 @@ where
     Self: 'v;
 
   fn vector_value(&self, target_ord: usize) -> Result<Self::VectorValue<'_>> {
-    let mut inner = self.inner.lock();
-    let same_ord = matches!(inner.last_ord, Some(last_ord) if last_ord == target_ord);
-    if !same_ord {
-      self.read_value(target_ord, &mut inner)?;
-    }
-    Ok(inner.binary_value.to_vec())
+    self.read_value(target_ord, |bytes| Ok(bytes.to_vec()))
   }
 
   type ByteVectorValues = DummyByteVectorValues;
@@ -428,6 +436,17 @@ where
 
   fn get_scalar_quantizer(&self) -> Result<ScalarQuantizer> {
     Ok(self.base.scalar_quantizer.clone())
+  }
+
+  fn with_quantized_value<R, UseValue>(
+    &self,
+    ord: usize,
+    use_value: UseValue,
+  ) -> Result<R>
+  where
+    UseValue: FnOnce(&[u8]) -> Result<R>,
+  {
+    self.base.read_value(ord, use_value)
   }
 
   fn get_score_correction_constant(&self, ord: usize) -> Result<f32> {
@@ -693,6 +712,17 @@ where
 
   fn get_scalar_quantizer(&self) -> Result<ScalarQuantizer> {
     Ok(self.base.scalar_quantizer.clone())
+  }
+
+  fn with_quantized_value<R, UseValue>(
+    &self,
+    ord: usize,
+    use_value: UseValue,
+  ) -> Result<R>
+  where
+    UseValue: FnOnce(&[u8]) -> Result<R>,
+  {
+    self.base.read_value(ord, use_value)
   }
 
   fn get_score_correction_constant(&self, ord: usize) -> Result<f32> {
@@ -1060,6 +1090,20 @@ where
     }
   }
 
+  fn with_quantized_value<R, UseValue>(
+    &self,
+    ord: usize,
+    use_value: UseValue,
+  ) -> Result<R>
+  where
+    UseValue: FnOnce(&[u8]) -> Result<R>,
+  {
+    match self {
+      Self::Dense(values) => values.with_quantized_value(ord, use_value),
+      Self::Sparse(values) => values.with_quantized_value(ord, use_value),
+    }
+  }
+
   fn get_score_correction_constant(&self, ord: usize) -> Result<f32> {
     match self {
       Self::Dense(values) => values.get_score_correction_constant(ord),
@@ -1246,6 +1290,21 @@ where
       Self::Empty(e) => e.get_scalar_quantizer(),
       Self::Dense(e) => e.get_scalar_quantizer(),
       Self::Sparse(e) => e.get_scalar_quantizer(),
+    }
+  }
+
+  fn with_quantized_value<R, UseValue>(
+    &self,
+    ord: usize,
+    use_value: UseValue,
+  ) -> Result<R>
+  where
+    UseValue: FnOnce(&[u8]) -> Result<R>,
+  {
+    match self {
+      Self::Empty(e) => e.with_quantized_value(ord, use_value),
+      Self::Dense(e) => e.with_quantized_value(ord, use_value),
+      Self::Sparse(e) => e.with_quantized_value(ord, use_value),
     }
   }
 

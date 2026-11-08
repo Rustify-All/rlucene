@@ -28,6 +28,18 @@ pub trait QuantizedByteVectorValues: ByteVectorValues + HasIndexSlice {
     Err(LuceneError::unsupported_operation(""))
   }
 
+  /// Lends the quantized bytes for the duration of a single operation.
+  fn with_quantized_value<R, UseValue>(
+    &self,
+    ord: usize,
+    use_value: UseValue,
+  ) -> Result<R>
+  where
+    UseValue: FnOnce(&[u8]) -> Result<R>,
+  {
+    use_value(self.vector_value(ord)?.as_ref())
+  }
+
   fn get_score_correction_constant(&self, ord: usize) -> Result<f32>;
 
   /// Return a `VectorScorer` for the given query vector.

@@ -104,6 +104,7 @@ impl HnswUtil {
         not_fully_connected.as_deref_mut(),
         max_conn,
         entry_point,
+        stack,
       )?;
       total += component.size;
     }
@@ -145,6 +146,7 @@ impl HnswUtil {
         not_fully_connected.as_deref_mut(),
         &mut connected_nodes,
         max_conn,
+        &mut stack,
       )?
     } else {
       let iter = hnsw.get_nodes_on_level(level + 1)?;
@@ -155,6 +157,7 @@ impl HnswUtil {
         not_fully_connected.as_deref_mut(),
         &mut connected_nodes,
         max_conn,
+        &mut stack,
       )?
     };
 
@@ -179,6 +182,7 @@ impl HnswUtil {
           not_fully_connected.as_deref_mut(),
           max_conn,
           next_clear,
+          &mut stack,
         )?;
         debug_assert!(component.size > 0);
         components.push(component);
@@ -198,6 +202,7 @@ impl HnswUtil {
           not_fully_connected.as_deref_mut(),
           max_conn,
           node,
+          &mut stack,
         )?;
         debug_assert!(component.size > 0);
         components.push(component);

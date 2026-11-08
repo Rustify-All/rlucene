@@ -427,9 +427,9 @@ where
   V: QuantizedByteVectorValues,
 {
   fn score(&self, node: usize) -> Result<f32> {
-    let node_vector = self.values.vector_value(node)?;
-    let square_distance =
-      VECTOR_UTIL.square_distance_u8(node_vector.as_ref(), &self.target_bytes)?;
+    let square_distance = self.values.with_quantized_value(node, |node_vector| {
+      VECTOR_UTIL.square_distance_u8(node_vector, &self.target_bytes)
+    })?;
     let adjusted_distance = square_distance as f32 * self.const_multiplier;
     Ok(1.0 / (1.0 + adjusted_distance))
   }
@@ -488,9 +488,14 @@ where
   V: QuantizedByteVectorValues,
 {
   fn score(&self, vector_ordinal: usize) -> Result<f32> {
-    let stored_vector = self.values.vector_value(vector_ordinal)?;
+    let dot_product = self
+      .values
+      .with_quantized_value(vector_ordinal, |stored_vector| {
+        Ok(VECTOR_UTIL.dot_product_u8(stored_vector, &self.target_bytes))
+      })?;
+    // Release the view before the independent correction lookup and retain its error priority.
     let vector_offset = self.values.get_score_correction_constant(vector_ordinal)?;
-    let dot_product = VECTOR_UTIL.dot_product_u8(stored_vector.as_ref(), &self.target_bytes)?;
+    let dot_product = dot_product?;
     debug_assert!(dot_product >= 0);
     let adjusted_distance =
       dot_product as f32 * self.const_multiplier + self.offset_correction + vector_offset;
@@ -619,9 +624,14 @@ where
   V: QuantizedByteVectorValues,
 {
   fn score(&self, vector_ordinal: usize) -> Result<f32> {
-    let stored_vector = self.values.vector_value(vector_ordinal)?;
+    let dot_product = self
+      .values
+      .with_quantized_value(vector_ordinal, |stored_vector| {
+        Ok(VECTOR_UTIL.int4_dot_product(stored_vector, &self.target_bytes))
+      })?;
+    // Release the view before the independent correction lookup and retain its error priority.
     let vector_offset = self.values.get_score_correction_constant(vector_ordinal)?;
-    let dot_product = VECTOR_UTIL.int4_dot_product(stored_vector.as_ref(), &self.target_bytes)?;
+    let dot_product = dot_product?;
     debug_assert!(dot_product >= 0);
     let adjusted_distance =
       dot_product as f32 * self.const_multiplier + self.offset_correction + vector_offset;

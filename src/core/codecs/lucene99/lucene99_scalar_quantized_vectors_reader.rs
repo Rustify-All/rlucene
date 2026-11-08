@@ -29,7 +29,6 @@ use crate::core::codecs::lucene99::lucene99_scalar_quantized_vectors_format::{
   VECTOR_DATA_EXTENSION, VERSION_ADD_BITS, VERSION_CURRENT, VERSION_START,
 };
 use crate::core::codecs::lucene99::off_heap_quantized_byte_vector_values::OffHeapQuantizedByteVectorValuesEnum;
-use crate::core::index::IndexFileNames;
 use crate::core::index::field_info::FieldInfo;
 use crate::core::index::field_infos::FieldInfos;
 use crate::core::index::float_vector_values::FloatVectorValues;
@@ -87,14 +86,16 @@ where
     let mut fields = HashMap::new();
 
     let mut version_meta = -1;
-    let meta_file_name =
-      IndexFileNames::segment_file_name(&segment_info.name, &state.segment_suffix, META_EXTENSION);
     let mut meta = None;
     let mut quantized_vector_data = None;
     let mut meta_close_attempted = false;
     let mut success = false;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
-      meta = Some(state.directory.open_checksum_input(&meta_file_name)?);
+      meta = Some(
+        state.with_file_name(&segment_info.name, META_EXTENSION, |name| {
+          state.directory.open_checksum_input(name)
+        })?,
+      );
       let body_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
         let prior_result =
           std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
@@ -253,9 +254,9 @@ where
   where
     D1: Directory<IndexInput = I>,
   {
-    let file_name =
-      IndexFileNames::segment_file_name(&segment_info.name, &state.segment_suffix, file_extension);
-    let mut input = state.directory.open_input(&file_name, context)?;
+    let mut input = state.with_file_name(&segment_info.name, file_extension, |name| {
+      state.directory.open_input(name, context)
+    })?;
     let mut success = false;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       let version_vector_data = CodecUtil::check_index_header(

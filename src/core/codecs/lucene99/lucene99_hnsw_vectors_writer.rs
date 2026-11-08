@@ -29,7 +29,6 @@ use crate::core::codecs::lucene99::lucene99_hnsw_vectors_format::{
   VECTOR_INDEX_EXTENSION, VERSION_CURRENT,
 };
 use crate::core::codecs::lucene99::lucene99_hnsw_vectors_reader::SIMILARITY_FUNCTIONS;
-use crate::core::index::IndexFileNames;
 use crate::core::index::byte_vector_values::{ByteVectorValuesImpl, from_bytes};
 use crate::core::index::codec_reader::CodecReader;
 use crate::core::index::docs_with_field_set::DocsWithFieldSet;
@@ -88,6 +87,7 @@ where
   finished: bool,
   info_stream: InfoStreamMT,
   fields: Vec<EncodedFieldWriter<F::FlatVectorsScorer>>,
+  merge_offsets: Vec<i32>,
 }
 pub type DefaultRandomVectorScorerSupplier<F> =
   FlatVectorsWriterSs<F, ByteVectorValuesImpl, FloatVectorValuesImpl>;
@@ -108,28 +108,12 @@ where
   where
     D1: Directory<IndexOutput = F::IndexOutput>,
   {
-    let meta_file_name =
-      IndexFileNames::segment_file_name(&segment_info.name, &state.segment_suffix, META_EXTENSION);
-
-    let index_data_file_name = IndexFileNames::segment_file_name(
-      &segment_info.name,
-      &state.segment_suffix,
-      VECTOR_INDEX_EXTENSION,
-    );
     let mut meta = None;
     let mut vector_index = None;
     let mut success = false;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
-      meta = Some(
-        state
-          .directory
-          .create_output(&meta_file_name, state.context)?,
-      );
-      vector_index = Some(
-        state
-          .directory
-          .create_output(&index_data_file_name, state.context)?,
-      );
+      meta = Some(state.create_segment_output(&segment_info.name, META_EXTENSION)?);
+      vector_index = Some(state.create_segment_output(&segment_info.name, VECTOR_INDEX_EXTENSION)?);
       CodecUtil::write_index_header(
         meta
           .as_mut()
@@ -186,9 +170,10 @@ where
       finished: false,
       info_stream: state.info_stream.clone(),
       fields: Vec::new(),
+      merge_offsets: Vec::new(),
     })
   }
-  fn write_field(&mut self, field_data: usize) -> Result<()> {
+  fn write_field(&mut self, field_data: usize, offsets: &mut Vec<i32>) -> Result<()> {
     let field_data = self
       .fields
       .get_mut(field_data)
@@ -201,7 +186,7 @@ where
       .cardinality();
     let (field_info, mut graph) =
       field_data.get_graph_and_field_info(flat_field_vectors_writers)?;
-    let graph_level_node_offsets = Self::write_graph(&mut self.vector_index, graph.as_deref_mut())?;
+    Self::write_graph(&mut self.vector_index, graph.as_deref_mut(), offsets)?;
 
     let vector_index_length = self.vector_index.get_file_pointer()? - vector_index_offset;
     Self::write_meta(
@@ -237,7 +222,9 @@ where
       .get_docs_with_field_set(flat_field_vectors_writers)?
       .cardinality() as usize;
 
-    let mut ordinal_maps = vec![0; cardinality * 2];
+    ordinal_maps.clear();
+    ordinal_maps.reserve_exact(cardinality * 2);
+    ordinal_maps.resize(cardinality * 2, 0);
     let (old_ord_map, ord_map) = ordinal_maps.split_at_mut(cardinality);
 
     map_old_ord_to_new_ord(
@@ -255,14 +242,12 @@ where
       .cardinality();
     let (field_info, graph) = field_data.get_graph_and_field_info(flat_field_vectors_writers)?;
 
-    let mut graph_level_node_offsets = Vec::new();
-
     let mut mock_graph = Self::reconstruct_and_write_graph(
       &mut self.vector_index,
       graph,
       ord_map,
       old_ord_map,
-      &mut graph_level_node_offsets,
+      offsets,
     )?;
 
     let vector_index_length = self.vector_index.get_file_pointer()? - vector_index_offset;
@@ -280,7 +265,7 @@ where
       vector_index_length.try_convert()?,
       count,
       graph_view.as_mut(),
-      &graph_level_node_offsets,
+      offsets,
     )?;
 
     Ok(())
@@ -393,7 +378,7 @@ where
     Ok(())
   }
 
-  /// Writes `graph` in compressed form and returns non-cumulative node offsets.
+  /// Writes `graph` in compressed form and records non-cumulative node offsets.
   ///
   /// # Errors
   ///
@@ -401,14 +386,15 @@ where
   fn write_graph(
     vector_index: &mut F::IndexOutput,
     graph: Option<&mut OnHeapHnswGraph>,
-  ) -> Result<Vec<i32>> {
+    offsets: &mut Vec<i32>,
+  ) -> Result<()> {
     let Some(graph) = graph else {
-      return Ok(Vec::new());
+      return Ok(());
     };
 
     let count_on_level0 = graph.size();
     let num_levels = graph.num_levels()?;
-    let mut offsets = Vec::with_capacity(count_on_level0 + *graph.non_zero_level_size.get_mut());
+    offsets.reserve_exact(count_on_level0 + *graph.non_zero_level_size.get_mut());
 
     for level in 0..num_levels {
       let nodes = graph.get_nodes_on_level(level)?;
@@ -435,7 +421,7 @@ where
       }
     }
 
-    Ok(offsets)
+    Ok(())
   }
   #[allow(clippy::too_many_arguments)]
   fn write_meta<H>(
@@ -491,7 +477,6 @@ where
       }
     }
 
-    drop(nol);
     let start = vector_index.get_file_pointer()?;
     meta.write_long(start as i64)?;
 
@@ -661,6 +646,7 @@ where
         CloseableRandomVectorScorerSupplierEnum2::A(supplier) => Self::merge_with_supplier(
           &mut self.vector_index,
           &mut self.meta,
+          &mut self.merge_offsets,
           self.m,
           self.beam_width,
           self.merge_exec.as_ref(),
@@ -673,6 +659,7 @@ where
         CloseableRandomVectorScorerSupplierEnum2::B(supplier) => Self::merge_with_supplier(
           &mut self.vector_index,
           &mut self.meta,
+          &mut self.merge_offsets,
           self.m,
           self.beam_width,
           self.merge_exec.as_ref(),
@@ -1143,6 +1130,7 @@ impl<F: FlatVectorsWriter> Lucene99HnswVectorsWriter<F> {
   fn merge_with_supplier<D1, D2, CR, S>(
     vector_index: &mut F::IndexOutput,
     meta: &mut F::IndexOutput,
+    vector_index_node_offsets: &mut Vec<i32>,
     m: usize,
     beam_width: usize,
     merge_exec: Option<&Arc<TaskExecutor>>,
@@ -1162,7 +1150,7 @@ impl<F: FlatVectorsWriter> Lucene99HnswVectorsWriter<F> {
       let vector_index_offset = vector_index.get_file_pointer()?;
 
       let mut graph = None;
-      let mut vector_index_node_offsets = Vec::new();
+      vector_index_node_offsets.clear();
 
       if scorer_supplier.total_vector_count()? > 0 {
         let mut merger = Self::create_graph_merger(
@@ -1203,7 +1191,7 @@ impl<F: FlatVectorsWriter> Lucene99HnswVectorsWriter<F> {
         };
 
         graph = Some(merged_graph);
-        vector_index_node_offsets = Self::write_graph(vector_index, graph.as_mut())?;
+        Self::write_graph(vector_index, graph.as_mut(), vector_index_node_offsets)?;
       }
 
       let vector_index_length = vector_index.get_file_pointer()? - vector_index_offset;
@@ -1216,7 +1204,7 @@ impl<F: FlatVectorsWriter> Lucene99HnswVectorsWriter<F> {
         vector_index_length.try_convert()?,
         scorer_supplier.total_vector_count()?,
         graph.as_mut(),
-        &vector_index_node_offsets,
+        vector_index_node_offsets,
       )?;
       success = true;
       Ok(())

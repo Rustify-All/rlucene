@@ -29,7 +29,6 @@ use crate::core::codecs::lucene99::lucene99_flat_vectors_format::{
 use crate::core::codecs::lucene99::lucene99_hnsw_vectors_reader::{
   read_similarity_function, read_vector_encoding,
 };
-use crate::core::index::IndexFileNames;
 use crate::core::index::dummy::dummy_byte_vector_values::DummyByteVectorValues;
 use crate::core::index::field_info::FieldInfo;
 use crate::core::index::field_infos::FieldInfos;
@@ -100,10 +99,9 @@ where
   where
     D1: Directory,
   {
-    let meta_file_name =
-      IndexFileNames::segment_file_name(&segment_info.name, &state.segment_suffix, META_EXTENSION);
-
-    let mut meta = state.directory.open_checksum_input(&meta_file_name)?;
+    let mut meta = state.with_file_name(&segment_info.name, META_EXTENSION, |name| {
+      state.directory.open_checksum_input(name)
+    })?;
     let mut version_meta = -1;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       let prior_result =
@@ -141,9 +139,9 @@ where
   where
     D1: Directory<IndexInput = I>,
   {
-    let file_name =
-      IndexFileNames::segment_file_name(&segment_info.name, &state.segment_suffix, file_extension);
-    let mut input = state.directory.open_input(&file_name, context)?;
+    let mut input = state.with_file_name(&segment_info.name, file_extension, |name| {
+      state.directory.open_input(name, context)
+    })?;
     let mut success = false;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       let version_vector_data = CodecUtil::check_index_header(
