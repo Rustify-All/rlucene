@@ -650,7 +650,7 @@ where
     let mut te = field_terms.iterator()?;
     let mut total_match_cost: f32 = 0.0;
 
-    let mut postings_freqs = Vec::with_capacity(self.query.terms.len());
+    let mut postings_freqs = Vec::new();
 
     for i in 0..self.query.terms.len() {
       let t = &self.query.terms[i];
@@ -696,6 +696,9 @@ where
         ImpactsEnumEnum2::B(SlowImpactsEnum::new(postings))
       };
 
+      if postings_freqs.is_empty() {
+        postings_freqs.reserve_exact(self.query.terms.len());
+      }
       postings_freqs.push(PostingsAndFreq::new(
         impacts_enum,
         self.query.positions[i] as i32,

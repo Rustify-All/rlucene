@@ -118,7 +118,7 @@ where
   }
   fn with_builder<B>(terms: T, term: BytesRef<Vec<u8>>, automaton_builder: B) -> Result<Self>
   where
-    B: FnOnce() -> Result<FuzzyAutomatonBuilder>,
+    B: FnOnce() -> Result<FuzzyAutomatonBuilder<'static>>,
   {
     let mut attrs = FuzzyTermsEnumAttributeSource::new();
     attrs.automaton_att.init(automaton_builder)?;
@@ -472,7 +472,7 @@ pub trait AutomatonAttribute: Attribute {
 
   fn init<B>(&mut self, builder: B) -> Result<()>
   where
-    B: FnOnce() -> Result<FuzzyAutomatonBuilder>;
+    B: FnOnce() -> Result<FuzzyAutomatonBuilder<'static>>;
 }
 
 pub struct AutomatonAttributeImpl {
@@ -501,7 +501,7 @@ impl AutomatonAttribute for AutomatonAttributeImpl {
 
   fn init<B>(&mut self, builder: B) -> Result<()>
   where
-    B: FnOnce() -> Result<FuzzyAutomatonBuilder>,
+    B: FnOnce() -> Result<FuzzyAutomatonBuilder<'static>>,
   {
     let v = builder()?;
     self.term_length = v.get_term_length();

@@ -26,7 +26,7 @@ use crate::core::util::fixed_bit_set::FixedBitSet;
 /// [`BitSetIterator`](crate::core::util::bit_set_iterator::BitSetIterator) but has a
 /// doc base in order to avoid storing previous 0s.
 pub struct DocBaseBitSetIterator {
-  bits: FixedBitSet,
+  pub(super) bits: FixedBitSet,
   length: i32,
   cost: i64,
   doc_base: usize,

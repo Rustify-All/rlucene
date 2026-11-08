@@ -36,7 +36,7 @@ use std::hash::{Hash, Hasher};
 #[derive(Default, Debug)]
 pub struct FixedBitSet {
   // `i64` words holding the bits.
-  bits: Vec<i64>,
+  pub(super) bits: Vec<i64>,
   // The number of bits in use
   num_bits: usize,
   // The exact number of words needed to hold `num_bits` (`<= bits.len()`).
@@ -149,6 +149,20 @@ impl FixedBitSet {
     let exact_size = bits.len();
     Self::from_validated_parts(bits, num_bits, exact_size)
   }
+  pub(crate) fn with_set_prefix(num_bits: usize, prefix: usize) -> Self {
+    assert!(prefix <= num_bits);
+    let num_words = Self::bits2words(num_bits);
+    let full_words = prefix / 64;
+    let mut bits = Vec::with_capacity(num_words);
+    bits.resize(full_words, -1);
+    let remaining = prefix % 64;
+    if remaining != 0 {
+      bits.push(((1u64 << remaining) - 1) as i64);
+    }
+    bits.resize(num_words, 0);
+    Self::from_validated_parts(bits, num_bits, num_words)
+  }
+
   /// Creates a new [`FixedBitSet`] using the provided bits as the
   /// backing store. The `stored_bits` array must be large enough to
   /// accommodate the `num_bits` specified, but may be larger. In that
@@ -572,6 +586,10 @@ impl Bits for FixedBitSet {
     self.num_bits
   }
 
+  fn fixed_bit_set(&self) -> Option<&FixedBitSet> {
+    Some(self)
+  }
+
   fn copy_of(&self) -> Result<FixedBitSet> {
     Ok(self.clone())
   }
@@ -820,6 +838,10 @@ impl Bits for FixedBit {
 
   fn length(&self) -> usize {
     self.fix_bit_set.length()
+  }
+
+  fn fixed_bit_set(&self) -> Option<&FixedBitSet> {
+    Some(&self.fix_bit_set)
   }
 
   fn copy_of(&self) -> Result<FixedBitSet> {

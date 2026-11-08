@@ -40,6 +40,11 @@ pub trait Bits: HasIdentity {
   /// Returns the number of bits in this set
   fn length(&self) -> usize;
 
+  /// Returns the backing fixed bit set when it represents this view exactly.
+  fn fixed_bit_set(&self) -> Option<&FixedBitSet> {
+    None
+  }
+
   /// Make a copy of the given bits.
   fn copy_of(&self) -> Result<FixedBitSet> {
     let length = self.length();
@@ -211,6 +216,10 @@ where
     (**self).length()
   }
 
+  fn fixed_bit_set(&self) -> Option<&FixedBitSet> {
+    (**self).fixed_bit_set()
+  }
+
   fn copy_of(&self) -> Result<FixedBitSet> {
     (**self).copy_of()
   }
@@ -229,6 +238,10 @@ where
 
   fn length(&self) -> usize {
     <T as Bits>::length(*self)
+  }
+
+  fn fixed_bit_set(&self) -> Option<&FixedBitSet> {
+    <T as Bits>::fixed_bit_set(*self)
   }
 
   fn copy_of(&self) -> Result<FixedBitSet> {

@@ -46,7 +46,7 @@ impl DisjunctionScoreBlockBoundaryPropagator {
       CoreHelper::compare_f32(a.max_score, b.max_score).then_with(|| a.iter_cost.cmp(&b.iter_cost))
     });
     Ok(Self {
-      cost: cost.into_boxed_slice(),
+      cost,
       lead_index: 0,
     })
   }

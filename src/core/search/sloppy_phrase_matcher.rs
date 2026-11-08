@@ -452,7 +452,7 @@ where
 
     if self.has_rpts {
       // needed with repetitions
-      self.rpt_stack = vec![0usize; self.num_postings].into_boxed_slice();
+      self.rpt_stack.resize(self.num_postings, 0);
 
       let rgs = self.gather_rpt_groups(&rpt_terms)?;
       self.sort_rpt_groups(rgs);

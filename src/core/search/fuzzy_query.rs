@@ -206,12 +206,14 @@ impl FuzzyQuery {
   }
   /// Returns the compiled automata used to match terms
   pub fn get_automata(&self) -> Result<CompiledAutomaton> {
-    Self::get_fuzzy_automaton(
-      self.term.text()?.into_owned(),
+    let text = self.term.text()?;
+    FuzzyAutomatonBuilder::from_term(
+      || text,
       self.max_edits,
       self.prefix_length,
       self.transpositions,
-    )
+    )?
+    .build_max_edit_automaton()
   }
   /// Returns the [`CompiledAutomaton`] internally used by [`FuzzyQuery`] to match terms. This is a
   /// very low-level method and may no longer exist in case the implementation of fuzzy-matching

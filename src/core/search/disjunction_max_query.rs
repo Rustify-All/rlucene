@@ -386,9 +386,12 @@ where
   where
     IndexSearcher<IRC, SIM>: Sync,
   {
-    let mut matches = Vec::with_capacity(self.weights.len());
+    let mut matches = Vec::new();
     for weight in &self.weights {
       if let Some(weight_matches) = weight.matches(context, doc, searcher)? {
+        if matches.is_empty() {
+          matches.reserve_exact(self.weights.len());
+        }
         matches.push(weight_matches);
       }
     }
@@ -407,20 +410,22 @@ where
     let mut matched = false;
     let mut max = 0.0f64;
     let mut other_sum = 0.0f64;
-    let mut subs_on_match = Vec::with_capacity(self.weights.len());
-    let mut subs_on_no_match = Vec::new();
+    let mut subs = Vec::with_capacity(self.weights.len());
 
     for wt in &self.weights {
       let e = wt.explain(context, doc, searcher)?;
       if e.is_match() {
-        matched = true;
+        if !matched {
+          subs.clear();
+          matched = true;
+        }
         let score = e.get_value().to_f64().ok_or_else(|| {
           LuceneError::illegal_state(format!(
             "Explanation value is not a number: {:?}",
             e.get_value()
           ))
         })?;
-        subs_on_match.push(e);
+        subs.push(e);
         if score >= max {
           other_sum += max;
           max = score;
@@ -428,7 +433,7 @@ where
           other_sum += score;
         }
       } else if !matched {
-        subs_on_no_match.push(e);
+        subs.push(e);
       }
     }
 
@@ -442,12 +447,9 @@ where
           self.tie_breaker_multiplier
         ))
       };
-      Ok(Explanation::match_(score, desc, subs_on_match))
+      Ok(Explanation::match_(score, desc, subs))
     } else {
-      Ok(Explanation::no_match(
-        "No matching clause",
-        subs_on_no_match,
-      ))
+      Ok(Explanation::no_match("No matching clause", subs))
     }
   }
 

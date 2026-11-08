@@ -117,29 +117,38 @@ where
       min_cost = min_cost.min(iterator.cost()?);
     }
 
-    let mut ordinary = Vec::with_capacity(iterators.len());
-    let mut bit_sets = Vec::new();
-    let input_count = iterators.len();
-    let mut iterator_locations = Vec::new();
-    for iterator in iterators {
+    let mut first_bit_set = None;
+    for (index, iterator) in iterators.iter().enumerate() {
       if iterator.is_bit_iter() && iterator.cost()? > min_cost {
-        if bit_sets.is_empty() {
-          iterator_locations.reserve(input_count);
-          iterator_locations.extend((0..ordinary.len()).map(IteratorLocation::Lead));
-        }
+        first_bit_set = Some(index);
+        break;
+      }
+    }
+    let Some(first_bit_set) = first_bit_set else {
+      return Ok(ConjunctionDISIEnum::A(Self::new(iterators)?));
+    };
+
+    let input_count = iterators.len();
+    let mut remaining = iterators.into_iter();
+    let mut ordinary = Vec::with_capacity(input_count);
+    ordinary.extend(remaining.by_ref().take(first_bit_set));
+    let first = remaining
+      .next()
+      .ok_or_else(|| LuceneError::illegal_state("First bit set iterator is missing"))?;
+    let mut bit_sets = vec![first];
+    let mut iterator_locations = Vec::with_capacity(input_count);
+    iterator_locations.extend((0..first_bit_set).map(IteratorLocation::Lead));
+    iterator_locations.push(IteratorLocation::BitSet(0));
+    for iterator in remaining {
+      if iterator.is_bit_iter() && iterator.cost()? > min_cost {
         iterator_locations.push(IteratorLocation::BitSet(bit_sets.len()));
         bit_sets.push(iterator);
       } else {
-        if !bit_sets.is_empty() {
-          iterator_locations.push(IteratorLocation::Lead(ordinary.len()));
-        }
+        iterator_locations.push(IteratorLocation::Lead(ordinary.len()));
         ordinary.push(iterator);
       }
     }
 
-    if bit_sets.is_empty() {
-      return Ok(ConjunctionDISIEnum::A(Self::new(ordinary)?));
-    }
     let lead = if ordinary.len() == 1 {
       DocIdSetIteratorEnum2::A(ordinary.remove(0))
     } else {

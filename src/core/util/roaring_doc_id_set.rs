@@ -132,9 +132,6 @@ impl Builder {
       if self.current_block.is_none() {
         let sets_length = (self.max_doc + (1 << 16) - 1) >> 16;
         self.sets.resize_with(sets_length, || None);
-        self
-          .buffer
-          .reserve_exact(self.max_doc.min(MAX_ARRAY_LENGTH));
       }
       self.flush(false)?;
       self.current_block = Some(block);

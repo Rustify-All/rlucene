@@ -502,7 +502,7 @@ where
       impact_len
     };
     let mut pq = PriorityQueue::new(queue_size, SubIteratorCmp)?;
-    pq.add_all(sub_iterators)?;
+    pq.add_all_exact(sub_iterators.into_iter())?;
 
     let mut merged_impacts: Vec<Impact> = Vec::new();
 

@@ -179,7 +179,7 @@ where
   where
     IndexSearcher<IRC, SIM>: Sync,
   {
-    let mut matches = Vec::with_capacity(self.weighted_clauses.len());
+    let mut matches = Vec::new();
     let mut should_match_count = 0;
     for weighted_clause in &self.weighted_clauses {
       let clause = &self.query.clauses()[weighted_clause.clause_index];

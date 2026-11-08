@@ -448,6 +448,9 @@ where
     let inner_window_min = top.doc;
     let inner_window_max =
       (max as i64).min(inner_window_min as i64 + INNER_WINDOW_SIZE as i64) as i32;
+    if self.window_scores.is_empty() {
+      self.window_scores = vec![0.0; INNER_WINDOW_SIZE as usize].into_boxed_slice();
+    }
     // Collect matches of essential clauses into a bitset
     loop {
       let mut doc = top.doc;

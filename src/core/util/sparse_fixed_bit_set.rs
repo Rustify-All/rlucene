@@ -323,14 +323,12 @@ impl SparseFixedBitSet {
         new_o as u32,
         (new_index & (1_u64.wrapping_shl(bit_index as u32).wrapping_sub(1))).count_ones()
       );
-      let current_bits = old_bits.as_ref().unwrap_or(&new_bits);
       let merged_bits =
-        long_bits(current_index, current_bits, bit_index) | long_bits(index, bits, bit_index);
+        long_bits(current_index, new_bits, bit_index) | long_bits(index, bits, bit_index);
       new_bits[new_o] = merged_bits;
       i += 1 + new_index.wrapping_shl((i + 1) as u32).leading_zeros() as usize;
     }
     self.indices[i4096] = new_index;
-    self.bits[i4096] = new_bits;
     self.non_zero_long_count += non_zero_long_count - (current_index & index).count_ones() as usize;
   }
   /// [`or`](Self::or) implementation that works best when `it` is dense.

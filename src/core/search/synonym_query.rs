@@ -223,9 +223,16 @@ impl QueryBase for SynonymQuery {
       if data.terms.len() <= index_searcher::get_max_clause_count() {
         builder.clauses.reserve_exact(data.terms.len());
       }
-      for term in data.terms {
+      let mut field = data.field;
+      let last = data.terms.len().saturating_sub(1);
+      for (i, term) in data.terms.into_iter().enumerate() {
+        let term_field = if i == last {
+          std::mem::take(&mut field)
+        } else {
+          field.clone()
+        };
         builder.add(
-          TermQuery::new(Term::new(data.field.clone(), term.term)),
+          TermQuery::new(Term::new(term_field, term.term)),
           Occur::Should,
         )?;
       }

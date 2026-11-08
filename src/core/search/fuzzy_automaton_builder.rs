@@ -17,19 +17,20 @@
 use crate::core::util::automation::compiled_automaton::CompiledAutomaton;
 use crate::core::util::automation::levenshtein_automata::LevenshteinAutomata;
 use crate::core::util::error::lucene_error::{LuceneError, LuceneErrorKind, Result};
+use std::borrow::Cow;
 
 /// Builds a set of [`CompiledAutomaton`] for fuzzy matching on a given term,
 /// with specified maximum edit distance, fixed prefix and whether or not to
 /// allow transpositions.
-pub(crate) struct FuzzyAutomatonBuilder {
-  term: String,
+pub(crate) struct FuzzyAutomatonBuilder<'a> {
+  term: Cow<'a, str>,
   max_edits: usize,
   lev_builder: LevenshteinAutomata,
   prefix_end: usize,
   term_length: usize,
 }
 
-impl FuzzyAutomatonBuilder {
+impl FuzzyAutomatonBuilder<'static> {
   pub(crate) fn new<T>(
     term: T,
     max_edits: i32,
@@ -39,6 +40,22 @@ impl FuzzyAutomatonBuilder {
   where
     T: Into<String>,
   {
+    Self::from_term(
+      || Cow::Owned(term.into()),
+      max_edits,
+      prefix_length,
+      transpositions,
+    )
+  }
+}
+
+impl<'a> FuzzyAutomatonBuilder<'a> {
+  pub(crate) fn from_term(
+    term: impl FnOnce() -> Cow<'a, str>,
+    max_edits: i32,
+    prefix_length: usize,
+    transpositions: bool,
+  ) -> Result<Self> {
     if !(0..=LevenshteinAutomata::MAXIMUM_SUPPORTED_DISTANCE).contains(&max_edits) {
       return Err(LuceneError::illegal_argument(format!(
         "max edits must be 0..{}, inclusive; got: {}",
@@ -47,7 +64,7 @@ impl FuzzyAutomatonBuilder {
       )));
     }
 
-    let term = term.into();
+    let term = term();
     let mut chars = term.chars();
     let prefix_length = chars.by_ref().take(prefix_length).count();
     let prefix_end = term.len() - chars.as_str().len();
@@ -91,7 +108,7 @@ impl FuzzyAutomatonBuilder {
     match CompiledAutomaton::new(automaton, true, false) {
       Ok(compiled) => Ok(compiled),
       Err(err) if matches!(err.kind(), LuceneErrorKind::TooComplexToDeterminize(_)) => {
-        let mut fuzzy_error = LuceneError::fuzzy_terms(self.term.clone());
+        let mut fuzzy_error = LuceneError::fuzzy_terms(self.term.as_ref().to_owned());
         fuzzy_error.add_suppressed(err);
         Err(fuzzy_error)
       },
