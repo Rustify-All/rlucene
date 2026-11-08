@@ -43,12 +43,29 @@ impl LSBRadixSorter {
       histogram[b] += 1;
     }
   }
+  #[inline(never)]
   fn sum_histogram(histogram: &mut [usize; 256]) {
-    let mut accum = 0;
-    for h in histogram.iter_mut() {
-      let count = *h;
-      *h = accum;
-      accum += count;
+    use wide::u64x4;
+
+    let mut accum = 0u64;
+    for chunk in histogram.chunks_exact_mut(4) {
+      let values = u64x4::new([
+        chunk[0] as u64,
+        chunk[1] as u64,
+        chunk[2] as u64,
+        chunk[3] as u64,
+      ]);
+      let lanes = values.to_array();
+      let pairs = values + u64x4::new([0, lanes[0], lanes[1], lanes[2]]);
+      let lanes = pairs.to_array();
+      let inclusive = pairs + u64x4::new([0, 0, lanes[0], lanes[1]]);
+      let lanes = inclusive.to_array();
+      let exclusive = u64x4::new([0, lanes[0], lanes[1], lanes[2]]) + u64x4::splat(accum);
+      let sums = exclusive.to_array();
+      for (h, value) in chunk.iter_mut().zip(sums) {
+        *h = value as usize;
+      }
+      accum += lanes[3];
     }
   }
   fn reorder(
