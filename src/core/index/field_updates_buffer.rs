@@ -635,8 +635,6 @@ pub struct BufferedUpdate<'a> {
   pub doc_upto: i32,
   /// a numeric value or 0 if this buffer holds binary updates.
   pub numeric_value: i64,
-  /// a binary value or None if this buffer holds numeric updates.
-  pub binary_value: Option<BytesRef<Vec<u8>>>,
   /// true if this update has a value.
   pub has_value: bool,
   /// The update terms field. This will never be None.

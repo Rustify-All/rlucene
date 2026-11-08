@@ -23,7 +23,9 @@ use crate::core::codecs::dummy::dummy_numeric_doc_values::DummyNumericDocValues;
 use crate::core::codecs::dummy::dummy_sorted_doc_values::DummySortedDocValues;
 use crate::core::codecs::dummy::dummy_sorted_numeric_doc_values::DummySortedNumericDocValues;
 use crate::core::codecs::dummy::dummy_sorted_set_doc_values::DummySortedSetDocValues;
-use crate::core::codecs::indexed_disi::{DEFAULT_DENSE_RANK_POWER, write_bitset_with_dense_rank_power};
+use crate::core::codecs::indexed_disi::{
+  DEFAULT_DENSE_RANK_POWER, write_bitset_with_dense_rank_power,
+};
 use crate::core::codecs::lucene90_doc_values_format::Lucene90DocValuesFormat;
 use crate::core::index::binary_doc_values::BinaryDocValues;
 use crate::core::index::doc_values::DocValues;

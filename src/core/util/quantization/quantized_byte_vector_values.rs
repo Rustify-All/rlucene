@@ -29,11 +29,7 @@ pub trait QuantizedByteVectorValues: ByteVectorValues + HasIndexSlice {
   }
 
   /// Lends the quantized bytes for the duration of a single operation.
-  fn with_quantized_value<R, UseValue>(
-    &self,
-    ord: usize,
-    use_value: UseValue,
-  ) -> Result<R>
+  fn with_quantized_value<R, UseValue>(&self, ord: usize, use_value: UseValue) -> Result<R>
   where
     UseValue: FnOnce(&[u8]) -> Result<R>,
   {

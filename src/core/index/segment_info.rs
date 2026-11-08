@@ -311,7 +311,9 @@ impl<D> SegmentInfo<D> {
   pub(crate) fn set_imported_files(&mut self, files: &HashSet<String>) -> Result<()> {
     self.set_files = Some(Arc::clone(&EMPTY_SEGMENT_FILES));
     self.check_file_names(files)?;
-    let renamed = self.set_files.insert(Arc::new(HashSet::with_capacity(files.len())));
+    let renamed = self
+      .set_files
+      .insert(Arc::new(HashSet::with_capacity(files.len())));
     let renamed = Arc::make_mut(renamed);
     for file in files {
       renamed.insert(renamed_segment_file(&self.name, file));

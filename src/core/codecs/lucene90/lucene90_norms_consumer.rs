@@ -16,7 +16,9 @@
  */
 use crate::core::codecs::CodecUtil;
 
-use crate::core::codecs::indexed_disi::{DEFAULT_DENSE_RANK_POWER, write_bitset_with_dense_rank_power};
+use crate::core::codecs::indexed_disi::{
+  DEFAULT_DENSE_RANK_POWER, write_bitset_with_dense_rank_power,
+};
 use crate::core::codecs::lucene90_norms_format::Lucene90NormsFormat;
 use crate::core::codecs::norms_consumer::NormsConsumer;
 use crate::core::codecs::norms_producer::NormsProducer;

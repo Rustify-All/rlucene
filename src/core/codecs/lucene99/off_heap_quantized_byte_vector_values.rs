@@ -117,11 +117,7 @@ impl<I, F> OffHeapQuantizedByteVectorValues<I, F>
 where
   I: IndexInput,
 {
-  fn read_value<R, UseValue>(
-    &self,
-    target_ord: usize,
-    use_value: UseValue,
-  ) -> Result<R>
+  fn read_value<R, UseValue>(&self, target_ord: usize, use_value: UseValue) -> Result<R>
   where
     UseValue: FnOnce(&[u8]) -> Result<R>,
   {
@@ -438,11 +434,7 @@ where
     Ok(self.base.scalar_quantizer.clone())
   }
 
-  fn with_quantized_value<R, UseValue>(
-    &self,
-    ord: usize,
-    use_value: UseValue,
-  ) -> Result<R>
+  fn with_quantized_value<R, UseValue>(&self, ord: usize, use_value: UseValue) -> Result<R>
   where
     UseValue: FnOnce(&[u8]) -> Result<R>,
   {
@@ -714,11 +706,7 @@ where
     Ok(self.base.scalar_quantizer.clone())
   }
 
-  fn with_quantized_value<R, UseValue>(
-    &self,
-    ord: usize,
-    use_value: UseValue,
-  ) -> Result<R>
+  fn with_quantized_value<R, UseValue>(&self, ord: usize, use_value: UseValue) -> Result<R>
   where
     UseValue: FnOnce(&[u8]) -> Result<R>,
   {
@@ -1090,11 +1078,7 @@ where
     }
   }
 
-  fn with_quantized_value<R, UseValue>(
-    &self,
-    ord: usize,
-    use_value: UseValue,
-  ) -> Result<R>
+  fn with_quantized_value<R, UseValue>(&self, ord: usize, use_value: UseValue) -> Result<R>
   where
     UseValue: FnOnce(&[u8]) -> Result<R>,
   {
@@ -1293,11 +1277,7 @@ where
     }
   }
 
-  fn with_quantized_value<R, UseValue>(
-    &self,
-    ord: usize,
-    use_value: UseValue,
-  ) -> Result<R>
+  fn with_quantized_value<R, UseValue>(&self, ord: usize, use_value: UseValue) -> Result<R>
   where
     UseValue: FnOnce(&[u8]) -> Result<R>,
   {

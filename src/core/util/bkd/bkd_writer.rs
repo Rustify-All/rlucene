@@ -117,6 +117,7 @@ impl<D, const N: usize> BKDWriter<D, N>
 where
   D: Directory,
 {
+  #[cfg(test)]
   pub fn new_with_bytes(
     max_doc: i32,
     temp_dir: D,

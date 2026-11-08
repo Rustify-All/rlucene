@@ -1621,11 +1621,7 @@ where
     }
   }
 
-  fn with_quantized_value<R, UseValue>(
-    &self,
-    ord: usize,
-    use_value: UseValue,
-  ) -> Result<R>
+  fn with_quantized_value<R, UseValue>(&self, ord: usize, use_value: UseValue) -> Result<R>
   where
     UseValue: FnOnce(&[u8]) -> Result<R>,
   {
@@ -1878,11 +1874,7 @@ where
   V: QuantizedByteVectorValues,
   LiveBits: Bits,
 {
-  fn with_quantized_value<R, UseValue>(
-    &self,
-    _ord: usize,
-    use_value: UseValue,
-  ) -> Result<R>
+  fn with_quantized_value<R, UseValue>(&self, _ord: usize, use_value: UseValue) -> Result<R>
   where
     UseValue: FnOnce(&[u8]) -> Result<R>,
   {
@@ -2139,11 +2131,7 @@ impl<FVV> QuantizedByteVectorValues for QuantizedFloatVectorValues<FVV>
 where
   FVV: FloatVectorValues,
 {
-  fn with_quantized_value<R, UseValue>(
-    &self,
-    ord: usize,
-    use_value: UseValue,
-  ) -> Result<R>
+  fn with_quantized_value<R, UseValue>(&self, ord: usize, use_value: UseValue) -> Result<R>
   where
     UseValue: FnOnce(&[u8]) -> Result<R>,
   {
@@ -2293,11 +2281,7 @@ where
     Ok(self.scalar_quantizer.clone())
   }
 
-  fn with_quantized_value<R, UseValue>(
-    &self,
-    ord: usize,
-    use_value: UseValue,
-  ) -> Result<R>
+  fn with_quantized_value<R, UseValue>(&self, ord: usize, use_value: UseValue) -> Result<R>
   where
     UseValue: FnOnce(&[u8]) -> Result<R>,
   {
