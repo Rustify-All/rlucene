@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::Arc;
@@ -27,9 +28,8 @@ use crate::core::codecs::{Codec, CodecUtil};
 use crate::core::index::IndexFileNames;
 use crate::core::index::index_commit::IndexCommit;
 
-use crate::core::index::codec_reader::CodecReader;
+use crate::core::index::index_file_names::base36;
 use crate::core::index::index_writer::get_actual_max_docs;
-use crate::core::index::merge_policy::OneMerge;
 use crate::core::index::segment_commit_info::SegmentCommitInfo;
 use crate::core::store::check_sum_index_input::ChecksumIndexInput;
 use crate::core::store::directory::Directory;
@@ -44,7 +44,6 @@ use crate::core::util::{
 use crate::test_framework::core::util::failure_context::{
   ExecutionMethod, ExecutionOwner, ExecutionScope,
 };
-use num_bigint::BigInt;
 use std::io::{Error, ErrorKind, Write};
 
 static INFO_STREAM: Mutex<Option<OutputEnum>> = Mutex::new(None);
@@ -365,7 +364,7 @@ impl<D> SegmentInfos<D> {
       let id_len = id.len();
       debug_assert!(id_len <= i32::MAX as usize);
       input.read_bytes(&mut id, 0, id_len)?;
-      CodecUtil::check_index_header_suffix(input, &BigInt::from(generation).to_str_radix(36))?;
+      CodecUtil::check_index_header_suffix(input, base36(generation, &mut [0; 14]))?;
 
       let lucene_version =
         Version::from_bits(input.read_vint()?, input.read_vint()?, input.read_vint()?)?;
@@ -450,9 +449,13 @@ impl<D> SegmentInfos<D> {
     }
 
     let mut total_docs = 0i64;
+    let mut seg_name = String::new();
 
     for _ in 0..num_segments {
-      let seg_name = input.read_string()?.into_owned();
+      match input.read_string()? {
+        Cow::Borrowed(name) => name.clone_into(&mut seg_name),
+        Cow::Owned(name) => seg_name = name,
+      }
       let mut segment_id = [0u8; StringHelper::ID_LENGTH];
       let segment_id_len = segment_id.len();
       debug_assert!(segment_id_len <= i32::MAX as usize);
@@ -523,7 +526,7 @@ impl<D> SegmentInfos<D> {
         dv_gen,
         sci_id,
       );
-      si_per_commit.set_field_infos_files(input.read_set_of_strings()?);
+      si_per_commit.set_owned_field_infos_files(input.read_set_of_strings()?);
       let num_dv_fields = CodecUtil::read_be_int(input)?;
       let dv_update_files = if num_dv_fields == 0 {
         HashMap::new()
@@ -685,13 +688,14 @@ impl<D> SegmentInfos<D> {
   where
     IO: IndexOutput,
   {
-    let v = BigInt::from(self.generation).to_str_radix(36);
+    let mut generation_digits = [0; 14];
+    let v = base36(self.generation, &mut generation_digits);
     CodecUtil::write_index_header(
       out,
       "segments",
       VERSION_CURRENT,
       &StringHelper::random_id(),
-      &v,
+      v,
     )?;
     out.write_vint(LATEST.major)?;
     out.write_vint(LATEST.minor)?;
@@ -703,7 +707,7 @@ impl<D> SegmentInfos<D> {
     CodecUtil::write_be_int(out, self.segments.len().try_convert()?)?;
 
     if self.size() > 0 {
-      let mut min_segment_version: Option<Version> = None;
+      let mut min_segment_version: Option<&Version> = None;
       // We do a separate loop up front so we can write the
       // minSegmentVersion before any SegmentInfo; this makes
       // it cleaner to return IndexFormatTooOldExc at read time:
@@ -714,15 +718,12 @@ impl<D> SegmentInfos<D> {
             si_per_commit.info.name
           ))
         })?;
-        if min_segment_version
-          .as_ref()
-          .is_none_or(|min_version| !segment_version.on_or_after(min_version))
-        {
-          min_segment_version = Some(segment_version.clone());
+        if min_segment_version.is_none_or(|min_version| !segment_version.on_or_after(min_version)) {
+          min_segment_version = Some(segment_version);
         }
       }
 
-      let min_version = min_segment_version.as_ref().ok_or_else(|| {
+      let min_version = min_segment_version.ok_or_else(|| {
         LuceneError::illegal_state("cannot determine minimum segment Lucene version")
       })?;
       out.write_vint(min_version.major)?;
@@ -931,12 +932,28 @@ impl<D> SegmentInfos<D> {
       let segment_commit_info = self
         .info(i)
         .ok_or_else(|| LuceneError::illegal_state("segment was None"))?;
-      let segment_files = segment_commit_info.files()?;
-      files.reserve(segment_files.len());
-      files.extend(segment_files);
+      segment_commit_info.append_files_to(&mut files)?;
     }
     Ok(files)
   }
+  pub(crate) fn files_for_read(
+    &self,
+    include_segments_file: bool,
+  ) -> Result<Cow<'_, HashSet<String>>> {
+    if !include_segments_file && let [info] = self.segments.as_slice() {
+      info.files_for_read()
+    } else {
+      self.files(include_segments_file).map(Cow::Owned)
+    }
+  }
+
+  pub(crate) fn files_to_sync(&self) -> Result<Vec<String>> {
+    Ok(match self.files_for_read(false)? {
+      Cow::Borrowed(files) => files.iter().cloned().collect(),
+      Cow::Owned(files) => files.into_iter().collect(),
+    })
+  }
+
   /// Returns the committed `segments_N` filename.
   pub fn finish_commit<D2>(&mut self, directory: &D2) -> Result<String>
   where
@@ -1061,18 +1078,14 @@ impl<D> SegmentInfos<D> {
     Ok(())
   }
   /// Applies all changes caused by committing a merge to this [`SegmentInfos`](crate::core::index::segment_infos::SegmentInfos)
-  pub(crate) fn apply_merge_changes<CR>(
+  pub(crate) fn apply_merge_changes(
     &mut self,
-    merge: &mut OneMerge<D, CR>,
+    source_ids: &[Arc<str>],
+    merge_info: &mut Option<SegmentCommitInfo<D>>,
     drop_segment: bool,
-  ) -> Result<()>
-  where
-    D: Directory,
-    CR: CodecReader,
-  {
+  ) -> Result<()> {
     if self.index_created_version_major >= 7
-      && merge
-        .info
+      && merge_info
         .as_ref()
         .and_then(|sci| sci.info.get_min_version())
         .is_none()
@@ -1081,49 +1094,51 @@ impl<D> SegmentInfos<D> {
         "All segments must record the minVersion for indices created on or after Lucene 7",
       ));
     }
-    let source_ids = &merge.stat.segments;
-    let merged_away = (source_ids.len() > 1).then(|| {
+    let merged_away = (source_ids.len() > 4).then(|| {
       source_ids
         .iter()
         .map(AsRef::as_ref)
         .collect::<HashSet<&str>>()
     });
 
-    let mut inserted = false;
-    let mut new_segments: Vec<SegmentCommitInfo<D>> = Vec::with_capacity(self.segments.len());
-
-    for info in self.segments.drain(..) {
+    let mut kept = 0;
+    let mut insertion_index = None;
+    let removed = self.segments.extract_if(.., |info| {
       let info_id = info.info.get_id_key();
       let is_source = match &merged_away {
         Some(ids) => ids.contains(info_id),
-        None => source_ids.first().is_some_and(|id| id.as_ref() == info_id),
+        None => source_ids.iter().any(|id| id.as_ref() == info_id),
       };
       if is_source {
-        self
-          .dropped_segment_commit_infos
-          .insert(Arc::clone(&info.info.id_key), info);
-        if !inserted && !drop_segment {
-          let merged_info = merge
-            .info
-            .take()
-            .ok_or_else(|| LuceneError::illegal_state("merge output segment info is missing"))?;
-          new_segments.push(merged_info);
-          inserted = true;
-        }
+        insertion_index.get_or_insert(kept);
       } else {
-        new_segments.push(info);
+        kept += 1;
+      }
+      is_source
+    });
+
+    let mut output = None;
+    for info in removed {
+      self
+        .dropped_segment_commit_infos
+        .insert(Arc::clone(&info.info.id_key), info);
+      if !drop_segment && output.is_none() {
+        output = merge_info.take();
+        if output.is_none() {
+          break;
+        }
       }
     }
 
-    if !inserted && !drop_segment {
-      let merged_info = merge
-        .info
-        .take()
-        .ok_or_else(|| LuceneError::illegal_state("merge output segment info is missing"))?;
-      new_segments.insert(0, merged_info);
+    if !drop_segment {
+      let Some(output) = output.or_else(|| merge_info.take()) else {
+        self.segments.clear();
+        return Err(LuceneError::illegal_state(
+          "merge output segment info is missing",
+        ));
+      };
+      self.segments.insert(insertion_index.unwrap_or(0), output);
     }
-
-    self.segments = new_segments;
 
     Ok(())
   }
@@ -1136,10 +1151,20 @@ impl<D> SegmentInfos<D> {
     Ok(list)
   }
 
-  pub fn rollback_segment_infos(&mut self, infos: Vec<SegmentCommitInfo<D>>) -> Result<()> {
+  pub fn rollback_segment_infos(&mut self, mut infos: Vec<SegmentCommitInfo<D>>) -> Result<()> {
     self.clear();
-    debug_assert!(self.segments.is_empty());
-    self.add_all(infos)
+    if self.index_created_version_major >= 7
+      && let Some(index) = infos
+        .iter()
+        .position(|info| info.info.min_version.is_none())
+    {
+      let error = Self::missing_min_version(&infos[index]);
+      infos.truncate(index);
+      self.segments = infos;
+      return Err(error);
+    }
+    self.segments = infos;
+    Ok(())
   }
   pub fn iter_mut(&mut self) -> &mut [SegmentCommitInfo<D>] {
     self.segments.as_mut_slice()
@@ -1158,13 +1183,17 @@ impl<D> SegmentInfos<D> {
   /// Appends the provided [`SegmentCommitInfo`] to the `segments` list.
   pub fn add(&mut self, si: SegmentCommitInfo<D>) -> Result<()> {
     if self.index_created_version_major >= 7 && si.info.min_version.is_none() {
-      return Err(LuceneError::illegal_argument(format!(
-        "All segments must record the minVersion for indices created on or after Lucene 7, but minVersion is missing for segment: {si}"
-      )));
+      return Err(Self::missing_min_version(&si));
     }
     let _id = si.info.get_id_key();
     self.segments.push(si);
     Ok(())
+  }
+
+  fn missing_min_version(info: &SegmentCommitInfo<D>) -> LuceneError {
+    LuceneError::illegal_argument(format!(
+      "All segments must record the minVersion for indices created on or after Lucene 7, but minVersion is missing for segment: {info}"
+    ))
   }
 
   /// Appends the provided [`SegmentCommitInfo`]s.
@@ -1274,11 +1303,7 @@ impl<D> fmt::Display for SegmentInfos<D> {
       if i > 0 {
         write!(f, " ")?;
       }
-      write!(
-        f,
-        "{}",
-        segment_commit_info.to_string_with_pending_del_count(0)?
-      )?
+      write!(f, "{segment_commit_info}")?
     }
     Ok(())
   }

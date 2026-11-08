@@ -122,7 +122,7 @@ where
     file_name: &str,
   ) -> Result<&'a mut RefCount> {
     if !ref_counts.contains_key(file_name) {
-      ref_counts.insert(file_name.to_string(), RefCount::new(file_name));
+      ref_counts.insert(file_name.to_string(), RefCount::for_file(file_name));
     }
     ref_counts.get_mut(file_name).ok_or_else(|| {
       LuceneError::illegal_state(format!(
@@ -135,14 +135,14 @@ where
     if !self.ref_counts.contains_key(file_name) {
       self
         .ref_counts
-        .insert(file_name.to_string(), RefCount::new(file_name));
+        .insert(file_name.to_string(), RefCount::for_file(file_name));
     }
   }
   pub(crate) fn init_ref_count_owned(&mut self, file_name: String) {
     self
       .ref_counts
       .entry(file_name)
-      .or_insert_with_key(|name| RefCount::new(name.as_str()));
+      .or_insert_with_key(|name| RefCount::for_file(name.as_str()));
   }
 
   /// Get ref count for a provided file. If the file is not yet recorded, returns 0
@@ -209,6 +209,28 @@ where
     }
 
     self.delete_files(to_delete)
+  }
+
+  pub(crate) fn delete_owned_files_if_no_ref<S: AsRef<str>>(
+    &self,
+    mut files: HashSet<S>,
+  ) -> Result<()> {
+    let mut failure = Ok(());
+    files.retain(|file_name| {
+      let file_name = file_name.as_ref();
+      if failure.is_err() || self.exists(file_name) {
+        return false;
+      }
+      if let Some(messenger) = &self.messenger {
+        failure = messenger.accept_formatted(
+          MsgType::File,
+          format_args!("will delete new file \"{file_name}\""),
+        );
+      }
+      failure.is_ok()
+    });
+    failure?;
+    self.delete_files(&files)
   }
 
   pub fn force_delete(&mut self, file_name: &str) -> Result<()> {
@@ -297,6 +319,18 @@ pub struct RefCount {
   count: usize,
 }
 impl RefCount {
+  fn for_file(file_name: &str) -> Self {
+    #[cfg(debug_assertions)]
+    {
+      Self::new(file_name)
+    }
+    #[cfg(not(debug_assertions))]
+    {
+      let _ = file_name;
+      Self { count: 0 }
+    }
+  }
+
   pub fn new<T>(file_name: T) -> Self
   where
     T: Into<String>,

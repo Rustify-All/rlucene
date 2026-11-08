@@ -75,7 +75,7 @@ where
   commits: Vec<Arc<CommitPoint<D>>>,
 
   /// Holds files we had incref'd from the previous non-commit checkpoint.
-  last_files: HashSet<String>,
+  last_files: Option<CheckpointFiles>,
 
   /// Commits that the IndexDeletionPolicy have decided to delete.
   commits_to_delete: Arc<AtomicBool>,
@@ -133,7 +133,7 @@ where
 
     let mut index_file_deleter = Self {
       commits,
-      last_files: HashSet::new(),
+      last_files: None,
       commits_to_delete: Arc::new(AtomicBool::new(false)),
       info_stream,
       directory_orig: directory_orig.clone(),
@@ -275,7 +275,7 @@ where
     }
     index_file_deleter
       .file_deleter
-      .delete_files_if_no_ref(&unrefed)?;
+      .delete_owned_files_if_no_ref(unrefed)?;
     // Finally, give policy a chance to remove things on
     // startup:
     policy.on_init(&index_file_deleter.commits)?;
@@ -408,7 +408,7 @@ where
       }
     }
 
-    self.file_deleter.delete_files_if_no_ref(&to_delete)
+    self.file_deleter.delete_owned_files_if_no_ref(to_delete)
   }
   fn assert_commits_are_not_deleted(&self, commits: &[Arc<CommitPoint<D>>]) -> bool {
     for commit in commits {
@@ -491,13 +491,19 @@ where
       // Decref files for commits that were deleted by the policy:
       self.delete_commits()?;
     } else {
-      let new_files = segment_infos.files(false)?;
-      self.inc_ref_files(new_files.iter())?;
+      let new_files = if let [info] = segment_infos.iter()
+        && info.has_only_base_files()
+      {
+        CheckpointFiles::Shared(Arc::clone(info.info.files_snapshot()?))
+      } else {
+        CheckpointFiles::Owned(segment_infos.files(false)?)
+      };
+      self.inc_ref_files(new_files.as_set().iter())?;
       // DecRef old files from the last checkpoint, if any:
-      let files = std::mem::take(&mut self.last_files);
-      self.dec_ref(files.iter())?;
-      drop(files);
-      self.last_files = new_files;
+      let old_files = self.last_files.take();
+      self.dec_ref(old_files.iter().flat_map(|files| files.as_set().iter()))?;
+      drop(old_files);
+      self.last_files = Some(new_files);
     }
 
     {
@@ -516,11 +522,8 @@ where
     segment_infos: &SegmentInfos<D>,
     is_commit: bool,
   ) -> Result<()> {
-    for file_name in segment_infos.files(is_commit)? {
-      self.file_deleter.inc_ref_single(&file_name)?;
-    }
-
-    Ok(())
+    let files = segment_infos.files_for_read(is_commit)?;
+    self.inc_ref_files(files.iter())
   }
 
   pub fn inc_ref_files<I>(&mut self, files: I) -> Result<()>
@@ -542,7 +545,7 @@ where
     self.file_deleter.dec_ref(files)
   }
   pub(crate) fn dec_ref_from_segment(&mut self, segment_infos: &SegmentInfos<D>) -> Result<()> {
-    let files = segment_infos.files(false)?;
+    let files = segment_infos.files_for_read(false)?;
     self.dec_ref(files.iter())
   }
   pub fn exists(&self, file_name: &str) -> bool {
@@ -556,14 +559,29 @@ where
     self.file_deleter.delete_files_if_no_ref(files)
   }
 }
+pub(crate) enum CheckpointFiles {
+  Shared(Arc<HashSet<String>>),
+  Owned(HashSet<String>),
+}
+
+impl CheckpointFiles {
+  pub(crate) fn as_set(&self) -> &HashSet<String> {
+    match self {
+      Self::Shared(files) => files,
+      Self::Owned(files) => files,
+    }
+  }
+}
+
 impl<D> Closeable for IndexFileDeleter<D>
 where
   D: Directory,
 {
   fn close(&mut self) -> Result<()> {
-    if !self.last_files.is_empty() {
-      let files = std::mem::take(&mut self.last_files);
-      self.dec_ref(files.iter())?;
+    if let Some(files) = self.last_files.take()
+      && !files.as_set().is_empty()
+    {
+      self.dec_ref(files.as_set().iter())?;
     }
     Ok(())
   }

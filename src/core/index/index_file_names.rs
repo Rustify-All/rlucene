@@ -15,7 +15,35 @@
  * limitations under the License.
  */
 use crate::core::util::error::lucene_error::Result;
-use num_bigint::BigInt;
+
+pub(crate) fn base36(value: i64, digits: &mut [u8; 14]) -> &str {
+  format_radix(value.unsigned_abs(), value < 0, 36, digits)
+}
+
+pub(crate) fn decimal_suffix(value: i32, digits: &mut [u8; 14]) -> &str {
+  format_radix(u64::from(value.unsigned_abs()), value < 0, 10, digits)
+}
+
+fn format_radix(mut magnitude: u64, negative: bool, radix: u64, digits: &mut [u8; 14]) -> &str {
+  const ALPHABET: &[u8; 36] = b"0123456789abcdefghijklmnopqrstuvwxyz";
+  let mut start = digits.len();
+  loop {
+    start -= 1;
+    digits[start] = ALPHABET[(magnitude % radix) as usize];
+    magnitude /= radix;
+    if magnitude == 0 {
+      break;
+    }
+  }
+  if negative {
+    start -= 1;
+    digits[start] = b'-';
+  }
+  expect_invariant!(
+    std::str::from_utf8(&digits[start..]),
+    "integer digits are ASCII"
+  )
+}
 
 /// This struct contains useful constants representing filenames and extensions
 /// used by Lucene, as well as convenience methods for querying whether a file
@@ -58,11 +86,12 @@ impl IndexFileNames {
       Option::from(IndexFileNames::segment_file_name(base, "", ext))
     } else {
       // base-36
-      let gen_str = BigInt::from(gen_).to_str_radix(36);
-      let mut res = String::with_capacity(base.len() + 6 + ext.len());
+      let mut digits = [0; 14];
+      let gen_str = base36(gen_, &mut digits);
+      let mut res = String::with_capacity(base.len() + gen_str.len() + ext.len() + 2);
       res.push_str(base);
       res.push('_');
-      res.push_str(&gen_str);
+      res.push_str(gen_str);
 
       if !ext.is_empty() {
         res.push('.');

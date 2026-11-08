@@ -483,13 +483,7 @@ impl TieredMergePolicy {
 
         let score = self.score(&candidate, hit_too_large, &seg_infos_sizes)?;
         if self.verbose(merge_context) {
-          let mut candidate_segments = Vec::with_capacity(candidate.len());
-          for meta in &candidate {
-            let info = meta.seg_info;
-            let del = merge_context.num_deleted_docs(info)? - info.get_del_count();
-            candidate_segments.push(info.to_string_with_pending_del_count(del)?);
-          }
-          let candidate_string = candidate_segments.join(" ");
+          let candidate_string = Self::format_merge_segments(&candidate, merge_context)?;
           self.message(
             &format!(
               "  maybe={} score={} {} tooLarge={} size={:.3} MB",
@@ -508,17 +502,16 @@ impl TieredMergePolicy {
           .is_none_or(|best_score| score.score() < best_score.score())
           && (!hit_too_large || !max_merge_is_running)
         {
-          candidate = best.replace(candidate).unwrap_or_default();
+          std::mem::swap(&mut candidate, &mut best);
           best_score = Some(score);
           best_too_large = hit_too_large;
           best_merge_bytes = bytes_this_merge;
         }
       }
 
-      let best = match best {
-        Some(b) => b,
-        None => return Ok(spec),
-      };
+      if best_score.is_none() {
+        return Ok(spec);
+      }
       // The mergeType == FORCE_MERGE_DELETES behaves as the code does currently and can create a
       // large number of
       // concurrent big merges. If we make findForcedDeletesMerges behave as findForcedMerges and
@@ -532,13 +525,7 @@ impl TieredMergePolicy {
         spec_ref.add(merge);
 
         if self.verbose(merge_context) {
-          let mut best_segments = Vec::with_capacity(best.len());
-          for meta in &best {
-            let info = meta.seg_info;
-            let del = merge_context.num_deleted_docs(info)? - info.get_del_count();
-            best_segments.push(info.to_string_with_pending_del_count(del)?);
-          }
-          let best_string = best_segments.join(" ");
+          let best_string = Self::format_merge_segments(&best, merge_context)?;
           let best_score = best_score
             .as_ref()
             .ok_or_else(|| LuceneError::illegal_state("selected merge has no score"))?;
@@ -557,10 +544,30 @@ impl TieredMergePolicy {
       }
       // whether we're going to return this list in the spec of not, we need to remove it from
       // consideration on the next loop.
-      for s in best {
+      for s in &best {
         to_be_merged.insert(s.seg_info.info.get_id_key());
       }
     }
+  }
+
+  fn format_merge_segments<D, MC>(
+    segments: &[SegmentCommitInfoMeta<'_, D>],
+    merge_context: &MC,
+  ) -> Result<String>
+  where
+    D: Directory,
+    MC: MergeContext<D>,
+  {
+    let mut formatted = String::new();
+    for (i, meta) in segments.iter().enumerate() {
+      let info = meta.seg_info;
+      let del = merge_context.num_deleted_docs(info)? - info.get_del_count();
+      if i != 0 {
+        formatted.push(' ');
+      }
+      formatted.push_str(&info.to_string_with_pending_del_count(del)?);
+    }
+    Ok(formatted)
   }
 
   /// Expert: scores one merge; implementations may provide custom behavior.
@@ -984,11 +991,16 @@ where
     }
 
     if self.verbose(merge_context) {
-      let mut eligible = Vec::with_capacity(sorted_size_and_docs.len());
-      for seg in &sorted_size_and_docs {
-        eligible.push(seg.seg_info.info.name.as_ref());
-      }
-      self.message(&format!("eligible={:?}", eligible), merge_context)?;
+      let eligible = std::fmt::from_fn(|f| {
+        f.debug_list()
+          .entries(
+            sorted_size_and_docs
+              .iter()
+              .map(|seg| seg.seg_info.info.name.as_ref()),
+          )
+          .finish()
+      });
+      self.message(&format!("eligible={eligible}"), merge_context)?;
     }
     let starting_segment_count = sorted_size_and_docs.len();
     if force_merge_running {
@@ -1061,16 +1073,8 @@ where
       {
         let merge = OneMerge::from_meta(candidate.as_ref())?;
         if self.verbose(merge_context) {
-          let mut candidate_segments = Vec::with_capacity(candidate.len());
-          for meta in &candidate {
-            let info = meta.seg_info;
-            let del = merge_context.num_deleted_docs(info)? - info.get_del_count();
-            candidate_segments.push(info.to_string_with_pending_del_count(del)?);
-          }
-          self.message(
-            &format!("add merge={}", candidate_segments.join(" ")),
-            merge_context,
-          )?;
+          let candidate_string = Self::format_merge_segments(&candidate, merge_context)?;
+          self.message(&format!("add merge={candidate_string}"), merge_context)?;
         }
 
         let spec_ref = spec.get_or_insert_with(DefaultMergeSpecification::new);
@@ -1130,11 +1134,16 @@ where
     });
 
     if self.verbose(merge_context) {
-      let mut eligible = Vec::with_capacity(sorted_infos.len());
-      for seg in &sorted_infos {
-        eligible.push(seg.seg_info.info.name.as_ref());
-      }
-      self.message(&format!("eligible={:?}", eligible), merge_context)?;
+      let eligible = std::fmt::from_fn(|f| {
+        f.debug_list()
+          .entries(
+            sorted_infos
+              .iter()
+              .map(|seg| seg.seg_info.info.name.as_ref()),
+          )
+          .finish()
+      });
+      self.message(&format!("eligible={eligible}"), merge_context)?;
     }
     self.do_find_merges(
       sorted_infos,

@@ -20,7 +20,7 @@ use crate::core::index::buffered_updates_stream::{
 };
 use crate::core::index::documents_writer::{DocumentsWriter, FlushNotifications};
 use crate::core::index::frozen_buffered_updates::FrozenBufferedUpdates;
-use crate::core::index::index_file_deleter::IndexFileDeleter;
+use crate::core::index::index_file_deleter::{CheckpointFiles, IndexFileDeleter};
 use crate::core::index::indexable_field_type::IndexableFieldType;
 use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
 use crate::core::index::merge_policy::{
@@ -28,7 +28,7 @@ use crate::core::index::merge_policy::{
 };
 use crate::core::index::merge_scheduler::{MergeScheduler, MergeSource};
 use crate::core::index::merge_state::{DocMap, DocMapEnum2};
-use crate::core::index::segment_info::{SegmentInfo, named_for_this_segment};
+use crate::core::index::segment_info::{SegmentInfo, renamed_segment_file};
 use crate::core::index::segment_infos::{SegmentInfos, get_last_commit_segments_file_name};
 use crate::core::search::index_searcher::get_default_similarity;
 use crate::core::search::similarities_impl::similarities::Similarity;
@@ -1656,7 +1656,7 @@ where
     let mut dv_updates = Vec::with_capacity(updates.size_hint().0);
 
     for mut f in updates {
-      let name = f.name().to_string();
+      let name = f.name();
       let field_type = f.field_type();
       let dv_type = *field_type.doc_values_type();
       if dv_type == DocValuesType::None {
@@ -1671,9 +1671,9 @@ where
       self
         .global_field_number_map
         .lock()
-        .verify_or_create_dv_only_field(&name, &dv_type, false)?;
+        .verify_or_create_dv_only_field(name, &dv_type, false)?;
 
-      if self.config.get_index_sort_fields().contains(&name) {
+      if self.config.get_index_sort_fields().contains(name) {
         return Err(LuceneError::illegal_argument(format!(
           "cannot update docvalues field involved in the index sort, field={}, sort={}",
           name,
@@ -1684,7 +1684,7 @@ where
         )));
       }
 
-      let update = match dv_type {
+      let sub_update = match dv_type {
         DocValuesType::Numeric => {
           let value = match f.numeric_value()? {
             Some(Number::I64(value)) => Some(value),
@@ -1696,25 +1696,11 @@ where
             },
             None => None,
           };
-          let sub_update = DocValuesUpdateEnum::Numeric(NumericDocValuesUpdate::new(value));
-          DocValuesUpdate::new_with_optional_term(
-            DocValuesType::Numeric,
-            term.clone(),
-            name,
-            MAX_INT,
-            sub_update,
-          )
+          DocValuesUpdateEnum::Numeric(NumericDocValuesUpdate::new(value))
         },
         DocValuesType::Binary => {
           let bytes = f.take_binary_value()?;
-          let sub_update = DocValuesUpdateEnum::Binary(BinaryDocValuesUpdate::new(bytes));
-          DocValuesUpdate::new_with_optional_term(
-            DocValuesType::Binary,
-            term.clone(),
-            name,
-            MAX_INT,
-            sub_update,
-          )
+          DocValuesUpdateEnum::Binary(BinaryDocValuesUpdate::new(bytes))
         },
         _ => {
           return Err(LuceneError::illegal_argument(format!(
@@ -1724,7 +1710,26 @@ where
         },
       };
 
-      dv_updates.push(update);
+      let name = match f {
+        Fields::NumericDocValues(field) => field.parent_field.name,
+        Fields::BinaryDocValues(field) => field.parent_field.name,
+        field => field.name().to_owned(),
+      };
+      let update_term = if dv_updates.is_empty() {
+        None
+      } else {
+        term.clone()
+      };
+      dv_updates.push(DocValuesUpdate::new_with_optional_term(
+        dv_type,
+        update_term,
+        name,
+        MAX_INT,
+        sub_update,
+      ));
+    }
+    if let Some(first) = dv_updates.first_mut() {
+      first.term = term;
     }
     Ok(dv_updates)
   }
@@ -1858,7 +1863,7 @@ where
             LuceneError::illegal_state(format!("segment info with id={} not found", sci_id))
           })?;
           rld.get_reader_for_merge(&context, sci, |reader| {
-            deleter.inc_ref_files(reader.reader.get_segment_info().files()?)
+            deleter.inc_ref_files(reader.reader.get_segment_info().files_for_read()?.iter())
           })?
         };
 
@@ -2155,7 +2160,7 @@ where
               .info
               .as_ref()
               .ok_or_else(|| LuceneError::illegal_state("merge segment info is missing"))?
-              .files()?;
+              .files_for_read()?;
             self.delete_new_files(files.iter(), None)?;
           }
           Ok(())
@@ -2187,7 +2192,7 @@ where
               .info
               .as_ref()
               .ok_or_else(|| LuceneError::illegal_state("merge segment info is missing"))?
-              .files()?;
+              .files_for_read()?;
             self.delete_new_files(files.iter(), Some(&inner))?;
             return Ok(0);
           }
@@ -2240,7 +2245,7 @@ where
 
         if !success2 {
           // Safe: these files must exist
-          let files = sci.files()?;
+          let files = sci.files_for_read()?;
           self.delete_new_files(files.iter(), None)?;
         }
         unwrap_caught_result!(write_res)?;
@@ -2309,7 +2314,7 @@ where
     }
   }
 
-  pub(crate) fn new_segment_name(&self, inner: Option<&mut Inner<D>>) -> String {
+  pub(crate) fn new_segment_name(&self, inner: Option<&mut Inner<D>>) -> Arc<str> {
     let inner = match inner {
       Some(i) => i,
       None => &mut *self.inner.lock(),
@@ -2324,8 +2329,14 @@ where
 
     let counter = inner.segment_infos.counter;
     inner.segment_infos.counter += 1;
-    let s = BigInt::from(counter).to_str_radix(36);
-    format!("_{}", s)
+    let mut digits = [0; 14];
+    let suffix = base36(counter, &mut digits).as_bytes();
+    let mut name = [b'_'; 15];
+    name[1..1 + suffix.len()].copy_from_slice(suffix);
+    Arc::from(expect_invariant!(
+      std::str::from_utf8(&name[..1 + suffix.len()]),
+      "segment names are ASCII"
+    ))
   }
   /// Forces the merge policy to merge segments until there are `<= max_num_segments`.
   /// The actual merges to be executed are determined by the [`MergePolicy`].
@@ -2430,14 +2441,14 @@ where
 
       match spec {
         Some(spec) => {
-          let mut merge_stats = if do_wait {
-            Vec::with_capacity(spec.merges.len())
-          } else {
-            Vec::new()
-          };
+          let merge_count = spec.merges.len();
+          let mut merge_stats = Vec::new();
           for merge in spec.merges {
             match self.register_merge(merge, &mut inner)? {
               RegisterMergeResult::Registered(merge_stat) if do_wait => {
+                if merge_stats.is_empty() {
+                  merge_stats.reserve_exact(merge_count);
+                }
                 merge_stats.push(merge_stat);
               },
               _ => {},
@@ -2785,11 +2796,15 @@ where
 
     match spec_opt {
       Some(spec) => {
-        let mut registered_merges = Vec::with_capacity(spec.merges.len());
-        let mut rejected_merges = Vec::with_capacity(spec.merges.len());
+        let merge_count = spec.merges.len();
+        let mut registered_merges = Vec::new();
+        let mut rejected_merges = Vec::new();
         for m in spec.merges.into_iter() {
           match self.register_merge(m, inner)? {
             RegisterMergeResult::Registered(merge_stat) => {
+              if registered_merges.is_empty() {
+                registered_merges.reserve_exact(merge_count);
+              }
               registered_merges.push(merge_stat);
             },
             RegisterMergeResult::Rejected(merge) => {
@@ -3338,7 +3353,7 @@ where
     &self,
     packet: FrozenBufferedUpdates,
     inner: Option<&Inner<D>>,
-  ) -> Result<(i64, Arc<FrozenBufferedUpdates>)> {
+  ) -> Result<(i64, Option<Arc<FrozenBufferedUpdates>>)> {
     let _guard = match inner {
       Some(i) => i,
       None => &self.inner.lock(),
@@ -3347,11 +3362,9 @@ where
     let (next_gen, packet) = self.buffered_updates_stream.push(packet)?;
     // Do this as an event so it applies higher in the stack when we are not holding
     // DocumentsWriterFlushQueue.purgeLock:
-    self
-      .event_queue
-      .add(Event::ApplyUpdatesPacket(packet.clone()))?;
-    // Retain the published packet for callers that log it after publication.
-    Ok((next_gen, packet))
+    let for_log = inner.is_none().then(|| Arc::clone(&packet));
+    self.event_queue.add(Event::ApplyUpdatesPacket(packet))?;
+    Ok((next_gen, for_log))
   }
   /// Atomically adds the segment private delete packet and publishes the flushed segments SegmentInfo to the index writer.
   fn publish_flushed_segment(
@@ -3486,17 +3499,25 @@ where
   where
     SD: Directory,
   {
-    let check_duplicates = dirs.len() > 1;
-    let mut seen_dir_ids = HashSet::with_capacity(if check_duplicates { dirs.len() } else { 0 });
+    let mut small_seen = [None; 4];
+    let mut seen_dir_ids =
+      (dirs.len() > small_seen.len()).then(|| HashSet::with_capacity(dirs.len()));
     let self_dir_id = self.directory_orig.identity();
-    for dir in dirs {
+    for (index, dir) in dirs.iter().enumerate() {
       let dir_id = dir.identity();
       if dir_id == self_dir_id {
         return Err(LuceneError::illegal_argument(
           "Cannot add directory to itself",
         ));
       }
-      if check_duplicates && !seen_dir_ids.insert(dir_id) {
+      let duplicate = if let Some(seen) = &mut seen_dir_ids {
+        !seen.insert(dir_id)
+      } else {
+        let duplicate = small_seen[..index].contains(&Some(dir_id));
+        small_seen[index] = Some(dir_id);
+        duplicate
+      };
+      if duplicate {
         return Err(LuceneError::illegal_argument(format!(
           "Directory {} appears more than once",
           dir
@@ -3590,17 +3611,15 @@ where
               info.info.name
             );
 
-            let segment_index_sort = info.info.get_index_sort();
+            let segment_index_sort = info.info.index_sort_ref();
             if let Some(index_sort) = index_sort
               && segment_index_sort
-                .as_ref()
                 .map(|sort| !is_congruent_sort(index_sort, sort))
                 .unwrap_or(true)
             {
               return Err(LuceneError::illegal_argument(format!(
                 "cannot change index sort from {} to {}",
                 segment_index_sort
-                  .as_ref()
                   .map(ToString::to_string)
                   .unwrap_or_else(|| "null".to_string()),
                 index_sort
@@ -3625,7 +3644,7 @@ where
             for fi in fis.iter() {
               self.global_field_number_map.lock().add_or_get(fi)?;
             }
-            infos.push(self.copy_segment_as_is(info, &new_seg_name, &context)?);
+            infos.push(self.copy_segment_as_is(info, new_seg_name, &context)?);
           }
         }
         success = true;
@@ -3634,7 +3653,7 @@ where
 
       if !success {
         for sipc in &infos {
-          self.delete_new_files(sipc.files()?.iter(), None)?;
+          self.delete_new_files(sipc.files_for_read()?.iter(), None)?;
         }
       }
       unwrap_caught_result!(copy_result)?;
@@ -3652,7 +3671,7 @@ where
           }));
         if !success {
           for sipc in &infos {
-            self.delete_new_files(sipc.files()?.iter(), Some(&inner))?;
+            self.delete_new_files(sipc.files_for_read()?.iter(), Some(&inner))?;
           }
         }
         let seq_no = unwrap_caught_result!(publish_result)?;
@@ -3828,7 +3847,7 @@ where
           if !matches!(&run_result, Ok(Ok(()))) {
             for merge in &merges {
               if let Some(merge_info) = merge.info.as_ref() {
-                self.delete_new_files(merge_info.files()?.iter(), None)?;
+                self.delete_new_files(merge_info.files_for_read()?.iter(), None)?;
               }
             }
           }
@@ -3862,17 +3881,21 @@ where
       if !merge_success {
         for merge in &merges {
           if let Some(merge_info) = merge.info.as_ref() {
-            self.delete_new_files(merge_info.files()?.iter(), None)?;
+            self.delete_new_files(merge_info.files_for_read()?.iter(), None)?;
           }
         }
       }
 
       if merge_success {
-        let mut infos = Vec::with_capacity(merges.len());
+        let merge_count = merges.len();
+        let mut infos = Vec::new();
         let mut total_docs = 0_i64;
         for merge in &mut merges {
           total_docs += i64::from(merge.total_max_doc);
           if let Some(merge_info) = merge.info.take() {
+            if infos.is_empty() {
+              infos.reserve_exact(merge_count);
+            }
             infos.push(merge_info);
           }
         }
@@ -3890,7 +3913,7 @@ where
               }));
             if !register_segment_success {
               for sipc in &infos {
-                self.delete_new_files(sipc.files()?.iter(), Some(&inner))?;
+                self.delete_new_files(sipc.files_for_read()?.iter(), Some(&inner))?;
               }
             }
             unwrap_caught_result!(register_segment_result)?;
@@ -4119,7 +4142,7 @@ where
     set_diagnostics_impl(
       Arc::get_mut(&mut sci.info).ok_or_else(|| LuceneError::illegal_state("Arc not unique"))?,
       SOURCE_ADDINDEXES_READERS,
-      None,
+      [],
     );
 
     let use_compound_file = {
@@ -4176,7 +4199,7 @@ where
   fn copy_segment_as_is<SD>(
     &self,
     info: &SegmentCommitInfo<SD>,
-    seg_name: &str,
+    seg_name: Arc<str>,
     context: &IOContext,
   ) -> Result<SegmentCommitInfo<D>>
   where
@@ -4197,7 +4220,7 @@ where
       info.info.get_index_sort(),
     )?;
 
-    new_info.set_files(info.info.files()?)?;
+    new_info.set_imported_files(info.info.files()?)?;
 
     let mut new_info_per_commit = SegmentCommitInfo::new(
       new_info,
@@ -4208,34 +4231,47 @@ where
       info.get_doc_values_gen(),
       info.get_id().copied(),
     );
-    new_info_per_commit.set_field_infos_files(info.get_field_infos_files());
+    new_info_per_commit.set_imported_field_infos_files(info.get_field_infos_files());
     new_info_per_commit.set_doc_values_updates_files(std::borrow::Cow::Borrowed(
       info.get_doc_values_updates_files(),
     ));
-    let files = info.files()?;
-    let mut copied_files = HashSet::with_capacity(files.len());
-    let mut success = false;
+    let seg_name = new_info_per_commit.info.name.as_ref();
+    let files = info.files_for_read()?;
+    let mut new_filename = seg_name.to_owned();
+    let mut copied_count = 0;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
-      for file in files {
-        let new_filename = named_for_this_segment(seg_name, &file);
+      for file in files.iter() {
+        new_filename.truncate(seg_name.len());
+        new_filename.push_str(IndexFileNames::strip_segment_name(file));
         self
           .directory
-          .copy_from(info.info.dir.as_ref(), &file, &new_filename, context)?;
-        copied_files.insert(new_filename);
+          .copy_from(info.info.dir.as_ref(), file, &new_filename, context)?;
+        copied_count += 1;
       }
-      success = true;
       Ok(())
     }));
-    if !success {
+    if !matches!(&result, Ok(Ok(()))) {
+      let copied_files: HashSet<_> = files
+        .iter()
+        .take(copied_count)
+        .map(|file| renamed_segment_file(seg_name, file))
+        .collect();
       self.delete_new_files(copied_files.iter(), None)?;
     }
     unwrap_caught_result!(result)?;
-    debug_assert_eq!(
-      copied_files,
-      new_info_per_commit.files()?,
-      "copiedFiles={copied_files:?} vs newInfoPerCommit.files()={:?}",
-      new_info_per_commit.files()?
-    );
+    #[cfg(debug_assertions)]
+    {
+      let copied_files: HashSet<_> = files
+        .iter()
+        .map(|file| renamed_segment_file(seg_name, file))
+        .collect();
+      debug_assert_eq!(
+        copied_files,
+        new_info_per_commit.files()?,
+        "copiedFiles={copied_files:?} vs newInfoPerCommit.files()={:?}",
+        new_info_per_commit.files()?
+      );
+    }
 
     Ok(new_info_per_commit)
   }
@@ -4394,7 +4430,7 @@ where
                 // we are trying to sync all referenced files, a
                 // merge completes which would otherwise have
                 // removed the files we are now syncing.
-                let files = commit_infos.lock().files(false)?;
+                let files = commit_infos.lock().files_to_sync()?;
                 inner.deleter.inc_ref_files(files.iter())?;
 
                 if max_commit_merge_wait_millis > 0 {
@@ -4440,8 +4476,12 @@ where
 
     if let Some(ref point_in_time_merges) = point_in_time_merges {
       let event_listener = self.config.get_index_writer_event_listener();
-      let merge_states = point_in_time_merges.merge_states();
-      event_listener.begin_merge_on_full_flush(&merge_states);
+      let combined_states = (!point_in_time_merges.rejected_merges.is_empty())
+        .then(|| point_in_time_merges.merge_states());
+      let merge_states = combined_states
+        .as_deref()
+        .unwrap_or(&point_in_time_merges.registered_merges);
+      event_listener.begin_merge_on_full_flush(merge_states);
 
       {
         let merge_source = self.new_merge_source()?;
@@ -4457,7 +4497,7 @@ where
           .info_stream
           .message("IW", "done waiting for merges during commit")?;
       }
-      event_listener.end_merge_on_full_flush(&merge_states);
+      event_listener.end_merge_on_full_flush(merge_states);
 
       {
         // we need to do this under lock since merge_finished above is also called under the IW lock
@@ -4472,9 +4512,9 @@ where
     let to_commit = to_commit.ok_or_else(|| LuceneError::illegal_state("toCommit is none"))?;
     let files = match protected_files {
       Some(files) => files,
-      None => to_commit.lock().files(false)?,
+      None => to_commit.lock().files_to_sync()?,
     };
-    *commit_lock.files_to_commit.borrow_mut() = Some(Arc::new(files.into_iter().collect()));
+    *commit_lock.files_to_commit.borrow_mut() = Some(Arc::new(files));
     let mut ret = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<i64> {
       if any_changes {
         self.maybe_merge.store(true, Ordering::SeqCst);
@@ -4560,7 +4600,7 @@ where
             // segment after it's done.
             rld.set_is_merging();
             rld.get_reader_for_merge(&context, sci, |reader| {
-              deleter.inc_ref_files(reader.reader.get_segment_info().files()?)
+              deleter.inc_ref_files(reader.reader.get_segment_info().files_for_read()?.iter())
             })
           })
         })?;
@@ -5230,14 +5270,18 @@ where
       // and re-resolve against the newly merged segment:
       let merging_dv_updates = rld.get_merging_dv_updates();
       for (field, updates_list) in merging_dv_updates {
+        let mut completed = updates_list
+          .into_iter()
+          .filter(|updates| !self.buffered_updates_stream.still_running(updates.del_gen))
+          .peekable();
+        if completed.peek().is_none() {
+          continue;
+        }
         #[cfg(debug_assertions)]
         let field_name = field.clone();
         let mapped_field = mapped_dv_updates.entry(field).or_default();
 
-        for updates in updates_list {
-          if self.buffered_updates_stream.still_running(updates.del_gen) {
-            continue;
-          }
+        for updates in completed {
           #[cfg(debug_assertions)]
           debug_assert_eq!(field_name, updates.field);
           if let std::collections::hash_map::Entry::Vacant(e) = mapped_field.entry(updates.del_gen)
@@ -5420,7 +5464,7 @@ where
           .reader_pool
           .drop(info.info.get_id_key(), &mut inner.segment_infos)?;
         // Safe: these files must exist
-        self.delete_new_files(info.files()?.iter(), Some(&inner))?;
+        self.delete_new_files(info.files_for_read()?.iter(), Some(&inner))?;
       } else {
         return Err(LuceneError::illegal_state("merge info is none"));
       }
@@ -5513,7 +5557,7 @@ where
       .clone();
     inner
       .segment_infos
-      .apply_merge_changes(merge, drop_segment)?;
+      .apply_merge_changes(&merge.stat.segments, &mut merge.info, drop_segment)?;
 
     // Now deduct the deleted docs that we just reclaimed from this
     // merge:
@@ -5545,7 +5589,7 @@ where
         .reader_pool
         .drop(merge_info_id, &mut inner.segment_infos)?;
       // Safe: these files must exist
-      self.delete_new_files(merge_sci.files()?.iter(), Some(&inner))?;
+      self.delete_new_files(merge_sci.files_for_read()?.iter(), Some(&inner))?;
     }
 
     {
@@ -5926,18 +5970,17 @@ where
       self.config.get_index_sort().cloned(),
     )?;
 
-    let mut details = HashMap::new();
-    details.reserve(2);
-    details.insert(
-      "mergeMaxNumSegments".to_string(),
-      merge.stat.max_num_segments().to_string(),
-    );
-    details.insert(
-      "mergeFactor".to_string(),
-      merge.stat.segments.len().to_string(),
-    );
-
-    set_diagnostics_impl(&mut si, SOURCE_MERGE, Some(details));
+    let details = [
+      (
+        "mergeMaxNumSegments".to_string(),
+        merge.stat.max_num_segments().to_string(),
+      ),
+      (
+        "mergeFactor".to_string(),
+        merge.stat.segments.len().to_string(),
+      ),
+    ];
+    set_diagnostics_impl(&mut si, SOURCE_MERGE, details);
 
     let sci = SegmentCommitInfo::new(si, 0, 0, -1, -1, -1, Some(StringHelper::random_id()));
     merge.set_merge_info(sci);
@@ -6012,7 +6055,9 @@ where
             },
           }
         }
-        inner.deleter.dec_ref(&sr.get_segment_info().files()?)?;
+        inner
+          .deleter
+          .dec_ref(sr.get_segment_info().files_for_read()?.iter())?;
         Ok(())
       };
       merge.close(inner, !suppress_error, dropper_segment, c)?;
@@ -6094,9 +6139,9 @@ where
     to_sync: &SegmentInfos<D>,
     deleter: &IndexFileDeleter<D>,
   ) -> Result<bool> {
-    let files = to_sync.files(false)?;
+    let files = to_sync.files_for_read(false)?;
 
-    for file_name in &files {
+    for file_name in files.iter() {
       // If this trips it means we are missing a call to
       // .checkpoint somewhere, because by the time we
       // are called, deleter should know about every
@@ -6459,6 +6504,8 @@ where
           {
             let (_, buffered_updates) = self.publish_frozen_updates(buffered_updates, None)?;
             if self.info_stream.is_enabled("IW") {
+              let buffered_updates = buffered_updates
+                .ok_or_else(|| LuceneError::illegal_state("published updates are missing"))?;
               self.info_stream.message(
                 "IW",
                 &format!("flush: push buffered updates: {buffered_updates}"),
@@ -6760,11 +6807,13 @@ where
     // resolving against the newly merged segment(s).  Eventually no merge finishes while we were
     // running and we are done.
     loop {
-      let message_prefix = if iter == 0 {
-        String::new()
-      } else {
-        format!("iter {iter} ")
-      };
+      let message_prefix = std::fmt::from_fn(|f| {
+        if iter == 0 {
+          Ok(())
+        } else {
+          write!(f, "iter {iter} ")
+        }
+      });
 
       let iter_start = Instant::now();
       let merge_gen_start = self.merge_finished_gen.load(Ordering::SeqCst);
@@ -6785,9 +6834,21 @@ where
             let info = inner.segment_infos.index_of_live(info_id).ok_or_else(|| {
               LuceneError::illegal_state(format!("{} not in IndexWriter's segment_infos", info_id))
             })?;
-            info.files()?
+            if info.has_only_base_files() {
+              CheckpointFiles::Shared(Arc::clone(info.info.files_snapshot()?))
+            } else {
+              CheckpointFiles::Owned(info.files()?)
+            }
           },
-          InfoFrom::All => inner.segment_infos.files(false)?,
+          InfoFrom::All => {
+            if let [info] = inner.segment_infos.iter()
+              && info.has_only_base_files()
+            {
+              CheckpointFiles::Shared(Arc::clone(info.info.files_snapshot()?))
+            } else {
+              CheckpointFiles::Owned(inner.segment_infos.files(false)?)
+            }
+          },
         };
         let v = match v {
           InfoFrom::None => return Err(LuceneError::unreachable("")),
@@ -6830,7 +6891,7 @@ where
         total_segment_count += seg_states.len();
         // Important, else IFD may try to delete our files while we are still using them,
         // if e.g. a merge finishes on some of the segments we are resolving on:
-        inner.deleter.inc_ref_files(&del_files)?;
+        inner.deleter.inc_ref_files(del_files.as_set().iter())?;
       }
 
       let mut success = false;
@@ -6967,13 +7028,13 @@ where
     &self,
     seg_states: &mut [SegmentState<D>],
     success: bool,
-    del_files: HashSet<String>,
+    del_files: CheckpointFiles,
     inner: &mut Inner<D>, // we hold lock
   ) -> Result<()> {
     let close_res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
       self.close_segment_states(seg_states, success, inner)
     }));
-    inner.deleter.dec_ref(del_files.iter())?;
+    inner.deleter.dec_ref(del_files.as_set().iter())?;
     let result = unwrap_caught_result!(close_res)?;
 
     if result.any_deletes() {
@@ -7130,7 +7191,7 @@ where
       Some(_) => 1,
       None => inner.segment_infos.size(),
     };
-    let mut seg_states = Vec::with_capacity(expected_segments);
+    let mut seg_states = Vec::new();
     already_seen.reserve(expected_segments.saturating_sub(already_seen.len()));
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
@@ -7144,6 +7205,9 @@ where
                 .get_pooled_instance(info, true)?
                 .ok_or_else(|| LuceneError::illegal_state("should not None"))?;
               let seg_state = SegmentState::new(rld, info)?;
+              if seg_states.is_empty() {
+                seg_states.reserve_exact(expected_segments);
+              }
               seg_states.push(seg_state);
               already_seen.insert(Arc::clone(&info.info.id_key));
             }
@@ -7158,7 +7222,7 @@ where
               .get_pooled_instance(info, true)?
               .ok_or_else(|| LuceneError::illegal_state("should not None"))?;
             let seg_state = SegmentState::new(rld, info)?;
-            seg_states.push(seg_state);
+            seg_states = vec![seg_state];
             already_seen.insert(Arc::clone(&info.info.id_key));
           }
         },
@@ -7549,15 +7613,11 @@ where
   where
     D: 'static,
   {
-    let merged_reader_count = {
-      let merged_readers = merged_readers.lock();
-      if merged_readers.is_empty() {
-        return Ok(None);
-      }
-      merged_readers.len()
-    };
+    if merged_readers.lock().is_empty() {
+      return Ok(None);
+    }
     let opening_segment_infos = Some(&*opening_segment_infos.lock());
-    let mut files = Vec::with_capacity(merged_reader_count);
+    let mut files = Vec::new();
     let mut reader_function =
       MergedNRTReaderFunction::new(merged_readers, opened_read_only_clones, &mut files);
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -8135,7 +8195,10 @@ where
     _inner: &mut Inner<D>,
   ) -> Result<DefaultLeafReader<D>> {
     if let Some(remove) = self.merged_readers.lock().remove(&sci.info.name) {
-      self.files.extend(remove.get_segment_info().files()?);
+      match remove.get_segment_info().files_for_read()? {
+        std::borrow::Cow::Borrowed(files) => self.files.extend(files.iter().cloned()),
+        std::borrow::Cow::Owned(files) => self.files.extend(files),
+      }
       return Ok(remove);
     }
 
@@ -8361,6 +8424,7 @@ use crate::core::index::filter_codec_reader::{
   CodecReaderImpl, FilterCodecReaderBits, wrap_live_docs,
 };
 use crate::core::index::index_commit::IndexCommit;
+use crate::core::index::index_file_names::base36;
 use crate::core::index::index_reader::{IndexReader, IndexReaderContextType};
 use crate::core::index::index_reader_context::IndexReaderContext;
 use crate::core::index::index_writer_config::{DISABLE_AUTO_FLUSH, IndexWriterConfig, OpenMode};
@@ -8419,7 +8483,6 @@ use crate::core::util::{
 #[cfg(test)]
 use crate::test_framework::core::internal::index_writer_access::IndexWriterAccess;
 use crossbeam::queue::SegQueue;
-use num_bigint::BigInt;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::{Display, Formatter, Write};
 use std::sync::atomic::Ordering::SeqCst;
@@ -8480,15 +8543,14 @@ pub(crate) fn set_max_docs(max_docs: i32) -> Result<()> {
 }
 /// Convenience overload: no extra details.
 pub(crate) fn set_diagnostics<D>(info: &mut SegmentInfo<D>, source: &str) {
-  set_diagnostics_impl(info, source, None)
+  set_diagnostics_impl(info, source, [])
 }
-fn set_diagnostics_impl<D>(
+fn set_diagnostics_impl<D, const N: usize>(
   info: &mut SegmentInfo<D>,
   source: &str,
-  details: Option<HashMap<String, String>>,
+  details: [(String, String); N],
 ) {
-  let detail_count = details.as_ref().map_or(0, |details| details.len());
-  let mut diagnostics = HashMap::with_capacity(6 + detail_count);
+  let mut diagnostics = HashMap::with_capacity(6 + N);
   diagnostics.insert("source".to_string(), source.to_string());
   diagnostics.insert("lucene.version".to_string(), LATEST.to_string());
   diagnostics.insert("os".to_string(), Constants::os_name());
@@ -8498,11 +8560,7 @@ fn set_diagnostics_impl<D>(
     "timestamp".to_string(),
     chrono::Utc::now().timestamp_millis().to_string(),
   );
-  if let Some(details) = details {
-    for (k, v) in details {
-      diagnostics.insert(k, v);
-    }
-  }
+  diagnostics.extend(details);
   info.set_diagnostics(diagnostics);
 }
 /// Returns `true` if `index_sort` is a prefix of `other_sort`.
@@ -8533,11 +8591,12 @@ where
 
   if si.has_field_updates() {
     // there are updates, we read latest (always outside CFS)
-    let segment_suffix = BigInt::from(si.get_field_infos_gen()).to_str_radix(36);
+    let mut suffix_buffer = [0; 14];
+    let segment_suffix = base36(si.get_field_infos_gen(), &mut suffix_buffer);
     reader.read(
       si.info.dir.as_ref(),
       &si.info,
-      &segment_suffix,
+      segment_suffix,
       &IOContext::read_once_io_context()?,
     )
   } else if si.info.get_use_compound_file() {
@@ -9265,7 +9324,7 @@ where
       .insert(sci.info.name.clone(), apply);
     // We need to incRef the files of the opened SegmentReader otherwise it's possible that another
     // merge removes the segment before we pass it on to the StandardDirectoryReader.
-    inner.deleter.inc_ref_files(sci.files()?)?;
+    inner.deleter.inc_ref_files(sci.files_for_read()?.iter())?;
     Ok(())
   }
 }
@@ -9372,38 +9431,55 @@ where
         .ok_or_else(|| LuceneError::illegal_state("point-in-time merge origInfo is none"))?;
 
       if self.trigger == MergeTrigger::Commit {
-        inner.deleter.inc_ref_files(orig_info.files()?)?;
+        inner
+          .deleter
+          .inc_ref_files(orig_info.files_for_read()?.iter())?;
       }
 
-      let mut merged_segment_ids = HashSet::with_capacity(stat.segments.len());
-      merged_segment_ids.extend(stat.segments.iter().map(|id| id.as_ref()));
+      let merged_segment_ids = (stat.segments.len() > 4).then(|| {
+        stat
+          .segments
+          .iter()
+          .map(AsRef::as_ref)
+          .collect::<HashSet<&str>>()
+      });
       let mut to_commit_merged_away_segments = Vec::with_capacity(stat.segments.len());
       {
         let mut merging_segment_infos = self.merging_segment_infos.lock();
         for sci in merging_segment_infos.iter() {
-          if merged_segment_ids.contains(sci.info.get_id_key()) {
+          let info_id = sci.info.get_id_key();
+          let is_source = match &merged_segment_ids {
+            Some(ids) => ids.contains(info_id),
+            None => stat.segments.iter().any(|id| id.as_ref() == info_id),
+          };
+          if is_source {
             to_commit_merged_away_segments.push(SegmentDocAndID::new(
               sci.info.id_key.clone(),
               sci.info.max_doc()?,
             ));
             if self.trigger == MergeTrigger::Commit {
-              let files = sci.files()?;
+              let files = sci.files_for_read()?;
               inner.deleter.dec_ref(files.iter())?;
             }
           }
         }
 
-        let mut applicable_merge = OneMerge::<D, CR>::new(to_commit_merged_away_segments)?;
-        applicable_merge.info = Some(orig_info);
-        let merged_info = applicable_merge
-          .info
-          .as_ref()
-          .ok_or_else(|| LuceneError::illegal_state("point-in-time merge output info is none"))?;
-        let segment_counter =
-          i64::from_str_radix(merged_info.info.name.trim_start_matches('_'), 36)?;
+        if to_commit_merged_away_segments.is_empty() {
+          return Err(LuceneError::illegal_state(
+            "segments must include at least one segment",
+          ));
+        }
+        let mut source_ids = Vec::with_capacity(to_commit_merged_away_segments.len());
+        let mut total_max_doc = 0i32;
+        for segment in to_commit_merged_away_segments {
+          source_ids.push(segment.seg_id);
+          total_max_doc += segment.max_doc;
+        }
+        let _ = total_max_doc;
+        let segment_counter = i64::from_str_radix(orig_info.info.name.trim_start_matches('_'), 36)?;
         merging_segment_infos.counter =
           std::cmp::max(merging_segment_infos.counter, segment_counter + 1);
-        merging_segment_infos.apply_merge_changes(&mut applicable_merge, false)?;
+        merging_segment_infos.apply_merge_changes(&source_ids, &mut Some(orig_info), false)?;
       }
     }
 

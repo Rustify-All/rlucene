@@ -221,14 +221,20 @@ impl<T> LogMergePolicy<T> {
         {
           // there is more than 1 segment to the right of
           // this one, or a mergeable single segment.
-          let meta = Self::get_meta(start_idx + 1, last as usize, segments)?;
-          spec.add(OneMerge::new(meta)?);
+          spec.add(OneMerge::try_from_segments(Self::segment_metadata(
+            start_idx + 1,
+            last as usize,
+            segments,
+          ))?);
         }
         last = start;
       } else if last - start == self.merge_factor as i32 {
         // mergeFactor eligible segments were found, add them as a merge.
-        let meta = Self::get_meta(start_idx, last as usize, segments)?;
-        spec.add(OneMerge::new(meta)?);
+        spec.add(OneMerge::try_from_segments(Self::segment_metadata(
+          start_idx,
+          last as usize,
+          segments,
+        ))?);
         last = start;
       }
       start -= 1;
@@ -245,8 +251,11 @@ impl<T> LogMergePolicy<T> {
         !self.has_merged(infos, info, merge_context)?
       })
     {
-      let meta = Self::get_meta(start as usize, last as usize, segments)?;
-      spec.add(OneMerge::new(meta)?);
+      spec.add(OneMerge::try_from_segments(Self::segment_metadata(
+        start as usize,
+        last as usize,
+        segments,
+      ))?);
     }
 
     if spec.merges.is_empty() {
@@ -277,8 +286,9 @@ impl<T> LogMergePolicy<T> {
     // mergeFactor) to potentially be run concurrently:
     while last + 1 >= self.merge_factor + max_num_segments {
       let start = last - self.merge_factor;
-      let meta = Self::get_meta(start, last, segments)?;
-      spec.add(OneMerge::new(meta)?);
+      spec.add(OneMerge::try_from_segments(Self::segment_metadata(
+        start, last, segments,
+      ))?);
       last -= self.merge_factor;
     }
 
@@ -294,8 +304,9 @@ impl<T> LogMergePolicy<T> {
             .ok_or_else(|| LuceneError::illegal_state("segment missing?"))?;
           !self.has_merged(infos, info, merge_context)?
         } {
-          let meta = Self::get_meta(0, last, segments)?;
-          spec.add(OneMerge::new(meta)?);
+          spec.add(OneMerge::try_from_segments(Self::segment_metadata(
+            0, last, segments,
+          ))?);
         }
       } else if last > max_num_segments {
         // Take care to pick a partial merge that is
@@ -346,8 +357,9 @@ impl<T> LogMergePolicy<T> {
 
         let start = best_start;
         let end = best_start + final_merge_size;
-        let meta = Self::get_meta(start, end, segments)?;
-        spec.add(OneMerge::new(meta)?);
+        spec.add(OneMerge::try_from_segments(Self::segment_metadata(
+          start, end, segments,
+        ))?);
       }
     }
 
@@ -379,15 +391,25 @@ impl<T> LogMergePolicy<T> {
     end: usize,
     sci: &[SegmentCommitInfo<D>],
   ) -> Result<Vec<SegmentDocAndID>> {
-    let segments = sci.iter().take(end).skip(start);
+    let segments = Self::segment_metadata(start, end, sci);
     let mut meta = Vec::with_capacity(segments.len());
-    for seg in segments {
-      meta.push(SegmentDocAndID::new(
-        seg.info.id_key.clone(),
-        seg.info.max_doc()?,
-      ));
+    for segment in segments {
+      meta.push(segment?);
     }
     Ok(meta)
+  }
+
+  fn segment_metadata<D>(
+    start: usize,
+    end: usize,
+    segments: &[SegmentCommitInfo<D>],
+  ) -> impl ExactSizeIterator<Item = Result<SegmentDocAndID>> + '_ {
+    segments.iter().take(end).skip(start).map(|segment| {
+      Ok(SegmentDocAndID::new(
+        segment.info.id_key.clone(),
+        segment.info.max_doc()?,
+      ))
+    })
   }
 }
 /// Return the number of documents in the provided [`SegmentCommitInfo`], pro-rated by
@@ -629,19 +651,15 @@ where
         } else {
           let v = spec.get_or_insert_with(MergeSpecification::new);
 
-          let selected_levels = levels.iter().take(end).skip(start);
-          let mut meta = Vec::with_capacity(selected_levels.len());
-          for level in selected_levels {
+          let meta = levels.iter().take(end).skip(start).map(|level| {
             let info = level.info;
-            let idx = info.info.get_id_key();
-            debug_assert!(infos.contains(idx));
-            meta.push(SegmentDocAndID::new(
+            debug_assert!(infos.contains(info.info.get_id_key()));
+            Ok(SegmentDocAndID::new(
               info.info.id_key.clone(),
               info.info.max_doc()?,
-            ));
-          }
-
-          v.add(OneMerge::new(meta)?);
+            ))
+          });
+          v.add(OneMerge::try_from_segments(meta)?);
         }
 
         start = end;
@@ -775,8 +793,9 @@ where
           Some(first) => {
             if i == first + merge_factor {
               // We've seen mergeFactor segments in a row with deletions, so force a merge now:
-              let meta = Self::get_meta(first, i, segments)?;
-              spec.add(OneMerge::new(meta)?);
+              spec.add(OneMerge::try_from_segments(Self::segment_metadata(
+                first, i, segments,
+              ))?);
               first_segment_with_deletions = Some(i);
             }
           },
@@ -785,8 +804,9 @@ where
         // End of a sequence of segments with deletions, so,
         // merge those past segments even if it's fewer than
         // mergeFactor segments
-        let meta = Self::get_meta(first, i, segments)?;
-        spec.add(OneMerge::new(meta)?);
+        spec.add(OneMerge::try_from_segments(Self::segment_metadata(
+          first, i, segments,
+        ))?);
         first_segment_with_deletions = None;
       }
 
@@ -794,8 +814,11 @@ where
     }
 
     if let Some(first) = first_segment_with_deletions {
-      let meta = Self::get_meta(first, num_segments, segments)?;
-      spec.add(OneMerge::new(meta)?);
+      spec.add(OneMerge::try_from_segments(Self::segment_metadata(
+        first,
+        num_segments,
+        segments,
+      ))?);
     }
 
     Ok(Some(spec))

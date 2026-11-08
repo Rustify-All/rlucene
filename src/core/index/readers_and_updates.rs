@@ -58,7 +58,7 @@ use crate::core::util::accountable::Accountable;
 use crate::core::util::close::{Closeable, CloseableRef};
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::function::Function;
-use crate::core::util::info_stream::{InfoStream, InfoStreamEnum};
+use crate::core::util::info_stream::{InfoStream, NO_OUTPUT_INFO_STREAM};
 #[cfg(test)]
 use crate::test_framework::core::util::failure_context::{
   ExecutionMethod, ExecutionOwner, ExecutionScope,
@@ -467,7 +467,8 @@ where
       }
 
       let next_doc_values_gen = info.get_next_doc_values_gen();
-      let segment_suffix = num_bigint::BigInt::from(next_doc_values_gen).to_str_radix(36);
+      let segment_suffix =
+        crate::core::index::index_file_names::base36(next_doc_values_gen, &mut [0; 14]).to_owned();
       let updates_context = IOContext::with_flush(FlushInfo::new(info.info.max_doc()?, bytes))?;
 
       let field_info = infos
@@ -480,7 +481,7 @@ where
       let tracking_dir = TrackingDirectoryWrapper::new(&dir);
 
       let state = SegmentWriteState::with_suffix(
-        Arc::new(InfoStreamEnum::default()),
+        Arc::clone(&NO_OUTPUT_INFO_STREAM),
         &tracking_dir,
         field_infos,
         &updates_context,
@@ -492,7 +493,7 @@ where
 
         let write_result =
           std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
-            let update_supplier = FunctionImpl::new(field_info, updates_to_apply);
+            let update_supplier = FunctionImpl::new(field_info, &updates_to_apply);
 
             inner.pending_deletes.on_doc_values_update(
               field_info,
@@ -532,7 +533,9 @@ where
     D1: Directory,
   {
     let next_field_infos_gen = info.get_next_field_infos_gen();
-    let segment_suffix = num_bigint::BigInt::from(next_field_infos_gen).to_str_radix(36);
+    let mut suffix_digits = [0; 14];
+    let segment_suffix =
+      crate::core::index::index_file_names::base36(next_field_infos_gen, &mut suffix_digits);
     // we write approximately that many bytes (based on Lucene46DVF):
     // HEADER + FOOTER: 40
     // 90 bytes per-field (over estimating long name and attributes map)
@@ -545,7 +548,7 @@ where
     infos_format.write(
       &tracking_dir,
       &info.info,
-      &segment_suffix,
+      segment_suffix,
       field_infos,
       &infos_context,
     )?;
@@ -611,14 +614,14 @@ where
         // the reader's infos and write them to a new fieldInfos_gen file.
         let mut max_field_number: i32 = -1;
         let reader_field_infos = reader.get_field_infos()?;
-        let mut by_name = HashMap::with_capacity(reader_field_infos.size());
+        let mut updated_infos = Vec::with_capacity(reader_field_infos.size());
 
         for fi in reader_field_infos.iter() {
           // cannot use builder.add(fi) because it does not preserve
           // the local field number. Field numbers can be different from
           // the global ones if the segment was created externally (and added to
           // this index with `IndexWriter::add_indexes(Directory)`.)
-          by_name.insert(fi.name.as_str(), clone_field_info(fi, fi.number)?);
+          updated_infos.push(Arc::new(clone_field_info(fi, fi.number)?));
           max_field_number = max_field_number.max(fi.number);
         }
 
@@ -626,7 +629,7 @@ where
         for updates in inner.pending_dv_updates.values() {
           if let Some(update) = updates.first() {
             let field = &update.field;
-            if let Some(fi) = by_name.get(field.as_str()) {
+            if let Some(fi) = reader_field_infos.field_info_by_name(field)? {
               // the field already exists in this segment
               debug_assert_eq!(*fi.get_doc_values_type(), update.type_);
             } else {
@@ -639,7 +642,7 @@ where
               )?;
               if let Some(fi) = fi {
                 max_field_number += 1;
-                by_name.insert(field.as_str(), fi);
+                updated_infos.push(Arc::new(fi));
               } else {
                 debug_assert!(false);
               }
@@ -647,7 +650,7 @@ where
           }
         }
 
-        field_infos = FieldInfos::new(by_name.into_values().map(Arc::new).collect())?;
+        field_infos = FieldInfos::new(updated_infos)?;
 
         let dv_format = codec.doc_values_format();
 
@@ -718,7 +721,7 @@ where
     let field_infos_files = field_infos_files
       .take()
       .ok_or_else(|| LuceneError::illegal_state("field infos files were not written"))?;
-    info.set_field_infos_files(field_infos_files);
+    info.set_owned_field_infos_files(field_infos_files);
     // update the doc-values updates files. the files map each field to its set
     // of files, hence we copy from the existing map all fields w/ updates that
     // were not updated in this session, and add new mappings for fields that
@@ -1441,7 +1444,7 @@ impl FunctionImpl<'_> {
     }
 
     let mut subs = Vec::with_capacity(self.updates_to_apply.len());
-    for v in &self.updates_to_apply {
+    for v in self.updates_to_apply {
       subs.push(v.iterator()?)
     }
     Ok(subs)

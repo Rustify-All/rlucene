@@ -22,6 +22,7 @@ use crate::core::index::doc_values_field_updates::{
 use crate::core::index::doc_values_type::DocValuesType;
 use crate::core::index::field_info::FieldInfo;
 use crate::core::index::field_infos::FieldInfos;
+use crate::core::index::index_file_names::base36;
 use crate::core::index::pending_deletes::{DocBits, PendingDeletes, PendingDeletesBase};
 use crate::core::index::segment_commit_info::SegmentCommitInfo;
 use crate::core::index::segment_reader::{DefaultLeafReader, SegmentReader};
@@ -33,7 +34,6 @@ use crate::core::util::close::CloseableRef;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::fixed_bit_set::FixedBitSet;
 use crate::core::util::io_utils::IOUtils;
-use num_bigint::BigInt;
 use std::sync::Arc;
 
 pub(crate) struct PendingSoftDeletes {
@@ -343,11 +343,12 @@ where
       )
     }
   } else {
-    let segment_suffix = BigInt::from(info.get_field_infos_gen()).to_str_radix(36);
+    let mut digits = [0; 14];
+    let segment_suffix = base36(info.get_field_infos_gen(), &mut digits);
     codec.field_infos_format().read(
       seg_info.dir.as_ref(),
       seg_info,
-      &segment_suffix,
+      segment_suffix,
       &IOContext::read_once_io_context()?,
     )
   }

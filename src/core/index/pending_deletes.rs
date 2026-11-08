@@ -70,6 +70,13 @@ impl Bits for LiveDocsState {
     }
   }
 
+  fn fixed_bit_set(&self) -> Option<&FixedBitSet> {
+    match self {
+      Self::ReadOnly(bits) => bits.fixed_bit_set(),
+      Self::Writable(bits) => Some(bits),
+    }
+  }
+
   fn copy_of(&self) -> Result<FixedBitSet> {
     match self {
       Self::ReadOnly(bits) => bits.copy_of(),
@@ -144,9 +151,7 @@ impl PendingDeletes {
       Some(LiveDocsState::Writable(_)) => None,
       None => {
         let max_doc = self.max_doc as usize;
-        let mut bits = FixedBitSet::new(max_doc);
-        bits.set_with_range(0, max_doc);
-        Some(bits)
+        Some(FixedBitSet::with_set_prefix(max_doc, max_doc))
       },
     };
     if let Some(writable_live_docs) = writable_live_docs {

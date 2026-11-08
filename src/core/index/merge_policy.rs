@@ -2093,7 +2093,13 @@ where
     I: IntoIterator<Item = SegmentDocAndID>,
     I::IntoIter: ExactSizeIterator,
   {
-    let segments = segments.into_iter();
+    Self::try_from_segments(segments.into_iter().map(Ok))
+  }
+
+  pub(crate) fn try_from_segments<I>(segments: I) -> Result<Self>
+  where
+    I: ExactSizeIterator<Item = Result<SegmentDocAndID>>,
+  {
     if segments.len() == 0 {
       return Err(LuceneError::illegal_state(
         "segments must include at least one segment",
@@ -2103,7 +2109,8 @@ where
     let mut total_max_doc = 0;
     #[cfg(test)]
     let mut original_segments = Vec::with_capacity(segments.len());
-    for s in segments {
+    for segment in segments {
+      let s = segment?;
       #[cfg(test)]
       original_segments.push(s.clone());
       v.push(s.seg_id);

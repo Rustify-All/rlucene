@@ -26,7 +26,7 @@ use crate::core::util::long_values::LongValues;
 use crate::core::util::packed::PackedInts;
 use crate::core::util::packed::packed_long_values::PackedLongValues;
 use crate::core::util::sorter::Sorter as ASorter;
-use crate::core::util::{LUCENE_10_0_0, SliceCopyOps, TimSorter, TimSorterBase, ToInt, TryIntoInt};
+use crate::core::util::{LUCENE_10_0_0, TimSorter, TimSorterBase, ToInt, TryIntoInt};
 use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 use std::sync::Arc;
@@ -295,11 +295,10 @@ where
 {
   pub fn new(docs: &'a mut [i32], comparator: F) -> TimSorter<DocValueSorter<'a, F>> {
     let max_temp_slots = docs.len() / 64;
-    let tmp = vec![0i32; max_temp_slots];
     let sub = DocValueSorter {
       docs,
       comparator,
-      tmp,
+      tmp: Vec::new(),
       pivot_index: 0,
     };
     TimSorter::new(max_temp_slots, sub)
@@ -315,7 +314,11 @@ where
   }
 
   fn save(&mut self, i: usize, len: usize) -> Result<()> {
-    self.tmp.copy_from(&self.docs[i..(i + len)], 0);
+    if self.tmp.capacity() == 0 {
+      self.tmp.reserve_exact(self.docs.len() / 64);
+    }
+    self.tmp.clear();
+    self.tmp.extend_from_slice(&self.docs[i..i + len]);
     Ok(())
   }
 

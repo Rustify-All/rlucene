@@ -99,15 +99,15 @@ where
 
     let field_infos_builder = Builder::new(field_numbers);
 
-    let mut min_version = Some(LATEST.clone());
+    let mut min_version = Some(&*LATEST);
     for reader in readers {
       let leaf_min_version = reader.get_metadata()?.get_min_version();
       match leaf_min_version {
         Some(v) => {
-          if let Some(cur) = &min_version
+          if let Some(cur) = min_version
             && cur.on_or_after(v)
           {
-            min_version = Some(v.clone());
+            min_version = Some(v);
           }
         },
         None => {
@@ -121,10 +121,10 @@ where
       merge_state.segment_info.min_version.is_none(),
       "The min version should be set by SegmentMerger for merged segments"
     );
-    merge_state.segment_info.min_version = min_version;
+    merge_state.segment_info.min_version = min_version.cloned();
 
     if merge_state.info_stream.is_enabled("SM")
-      && let Some(sort) = merge_state.segment_info.get_index_sort()
+      && let Some(sort) = merge_state.segment_info.index_sort_ref()
     {
       merge_state
         .info_stream

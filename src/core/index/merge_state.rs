@@ -470,6 +470,12 @@ where
   }
 }
 
+impl<B: Bits> DocMap for &MergeStateDocMapImpl<B> {
+  fn get(&self, doc_id: i32) -> Result<i32> {
+    DocMap::get(*self, doc_id)
+  }
+}
+
 // Remap docIDs around deletions
 fn build_deletion_doc_maps<CR>(readers: &[CR]) -> Result<Vec<MergeStateDocMap<CR>>>
 where
@@ -505,7 +511,7 @@ fn verify_index_sort<CR, D>(readers: &[CR], segment_info: &SegmentInfo<D>) -> Re
 where
   CR: CodecReader,
 {
-  let index_sort = match segment_info.get_index_sort() {
+  let index_sort = match segment_info.index_sort_ref() {
     Some(sort) => sort,
     None => return Ok(()),
   };
@@ -514,7 +520,7 @@ where
     let segment_sort = leaf.get_metadata()?.get_sort();
     if !segment_sort
       .as_ref()
-      .map(|s| is_congruent_sort(&index_sort, s))
+      .map(|s| is_congruent_sort(index_sort, s))
       .unwrap_or(false)
     {
       return Err(LuceneError::illegal_argument(format!(

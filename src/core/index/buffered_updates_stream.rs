@@ -15,7 +15,6 @@
  * limitations under the License.
  */
 use crate::core::index::frozen_buffered_updates::FrozenBufferedUpdates;
-use crate::core::index::index_reader::Identity;
 use crate::core::index::index_writer::IndexWriter;
 use crate::core::index::readers_and_updates;
 use crate::core::index::readers_and_updates::ReadersAndUpdates;
@@ -49,7 +48,8 @@ pub(crate) struct BufferedUpdatesStream {
   finished_segments: FinishedSegments,
 }
 pub(crate) struct BufferedUpdatesStreamInner {
-  updates: HashMap<Identity, Arc<FrozenBufferedUpdates>>,
+  // The owning Arc keeps the packet address live until the entry is removed.
+  updates: HashMap<usize, Arc<FrozenBufferedUpdates>>,
   // Starts at 1 so that SegmentInfos that have never had
   // deletes applied (whose bufferedDelGen defaults to 0)
   // will be correct:
@@ -86,20 +86,17 @@ impl BufferedUpdatesStream {
     let bytes_used = packet.bytes_used;
     let del_gen = packet.del_gen();
     let v = Arc::new(packet);
-    inner.updates.insert(v.id.clone(), v.clone());
+    inner.updates.insert(Arc::as_ptr(&v).addr(), Arc::clone(&v));
     self
       .bytes_used
       .fetch_add(bytes_used as i64, Ordering::SeqCst);
     {
       if self.finished_segments.info_stream.is_enabled("BD") {
-        let packet_msg = v.to_string();
         let count = inner.updates.len();
         let used_mb = self.bytes_used.load(Ordering::SeqCst) as f64 / 1024.0 / 1024.0;
         self.finished_segments.info_stream.message(
           "BD",
-          &format!(
-            "push new packet ({packet_msg}), packetCount={count}, bytesUsed={used_mb:.3} MB"
-          ),
+          &format!("push new packet ({v}), packetCount={count}, bytesUsed={used_mb:.3} MB"),
         )?;
       }
     }
@@ -133,7 +130,7 @@ impl BufferedUpdatesStream {
   {
     let wait_for = {
       let inner = self.inner.lock();
-      inner.updates.values().cloned().collect::<Vec<_>>()
+      inner.updates.values().cloned().collect()
     };
     self.wait_apply(wait_for, writer)
   }
@@ -153,7 +150,7 @@ impl BufferedUpdatesStream {
     packet.applied.store(true, Ordering::SeqCst);
 
     let mut inner = self.inner.lock();
-    inner.updates.remove(&packet.id);
+    inner.updates.remove(&std::ptr::from_ref(packet).addr());
 
     let bytes = packet.bytes_used as i64;
     self.bytes_used.fetch_sub(bytes, Ordering::SeqCst);
@@ -248,21 +245,22 @@ impl BufferedUpdatesStream {
       )?;
     }
 
-    let mut pending = Vec::new();
+    let mut pending_count = 0;
     let mut total_del_count: i64 = 0;
-    for packet in &wait_for {
+    for index in 0..wait_for.len() {
+      let packet = &wait_for[index];
       // Frozen packets are now resolved, concurrently, by the indexing threads that
       // create them, by adding a DocumentsWriter.ResolveUpdatesEvent to the events queue,
       // but if we get here and the packet is not yet resolved, we resolve it now ourselves:
-      if !writer.try_apply(packet)? {
-        total_del_count += packet.total_del_count.load(Ordering::SeqCst);
-        // if somebody else is currently applying it - move on to the next one and force apply below
-        pending.push(packet);
-      } else {
-        total_del_count += packet.total_del_count.load(Ordering::SeqCst);
+      let applied = writer.try_apply(packet)?;
+      total_del_count += packet.total_del_count.load(Ordering::SeqCst);
+      if !applied {
+        // A preceding completed packet can fill the current slot.
+        wait_for.swap(pending_count, index);
+        pending_count += 1;
       }
     }
-    for packet in pending {
+    for packet in &wait_for[..pending_count] {
       // now block on all the packets that were concurrently applied to ensure they are due before
       // we continue.
       writer.force_apply(packet)?;
