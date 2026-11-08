@@ -232,7 +232,7 @@ impl Lucene99SegmentInfoFormat {
     }
     output.write_map_of_strings(si.get_attributes()?)?;
 
-    if let Some(index_sort) = si.get_index_sort() {
+    if let Some(index_sort) = si.index_sort_ref() {
       let sort_fields = index_sort.get_sort();
       let num_sort_fields = sort_fields.len();
       output.write_vint(num_sort_fields as i32)?;
@@ -265,8 +265,9 @@ impl SegmentInfoFormat for Lucene99SegmentInfoFormat {
   where
     D: Directory,
   {
-    let file_name = IndexFileNames::segment_file_name(segment, "", SI_EXTENSION);
-    let mut input = dir.open_checksum_input(&file_name)?;
+    let mut input = IndexFileNames::with_segment_file_name(segment, "", SI_EXTENSION, |name| {
+      dir.open_checksum_input(name)
+    })?;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
       || -> Result<SegmentInfo<D>> {
         let prior_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(

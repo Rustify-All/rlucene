@@ -58,6 +58,20 @@ impl<'a, D> SegmentReadState<'a, D> {
     }
   }
 
+  pub(crate) fn with_file_name<R>(
+    &self,
+    segment_name: &str,
+    extension: &str,
+    use_name: impl FnOnce(&str) -> R,
+  ) -> R {
+    crate::core::index::IndexFileNames::with_segment_file_name(
+      segment_name,
+      &self.segment_suffix,
+      extension,
+      use_name,
+    )
+  }
+
   /// Creates a copy of an existing SegmentReadState with a different segment
   /// suffix.
   pub fn copy_with_suffix(other: &SegmentReadState<'a, D>, segment_suffix: &'a str) -> Self {

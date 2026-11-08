@@ -222,7 +222,10 @@ where
     };
     let suffix = writer_and_suffix.suffix;
 
-    field.put_attribute(PER_FIELD_SUFFIX_KEY.to_string(), suffix.to_string());
+    field.put_borrowed_attribute(
+      PER_FIELD_SUFFIX_KEY,
+      crate::core::index::index_file_names::decimal_suffix(suffix, &mut [0; 14]),
+    );
     Ok((identity, segment_suffix, &mut writer_and_suffix.writer))
   }
 }

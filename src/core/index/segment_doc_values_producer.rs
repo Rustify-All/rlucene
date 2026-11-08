@@ -109,7 +109,7 @@ where
         } else {
           debug_assert!(!dv_gens.contains(&doc_values_gen));
           // otherwise, producer sees only the one fieldinfo it wrote
-          let field_infos = Arc::new(FieldInfos::new(vec![fi.clone()])?);
+          let field_infos = FieldInfos::new(vec![fi.clone()])?;
           let dvp = seg_doc_values.get_doc_values_producer(doc_values_gen, si, dir, field_infos)?;
           dv_gens.push(doc_values_gen);
           let producer_index =

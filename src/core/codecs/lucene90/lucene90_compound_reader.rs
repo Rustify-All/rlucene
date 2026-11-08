@@ -65,22 +65,26 @@ where
     D: Directory<IndexInput = I>,
   {
     let segment_name = &si.name;
-    let data_file_name =
-      IndexFileNames::segment_file_name(segment_name, "", Lucene90CompoundFormat::DATA_EXTENSION);
-    let entries_file_name = IndexFileNames::segment_file_name(
+    let (version, entries) = IndexFileNames::with_segment_file_name(
       segment_name,
       "",
       Lucene90CompoundFormat::ENTRIES_EXTENSION,
-    );
+      |name| Self::read_entries(si.get_id(), directory, name),
+    )?;
 
-    let (version, entries) = Self::read_entries(si.get_id(), directory, &entries_file_name)?;
-
-    let mut handle = directory.open_input(
-      &data_file_name,
-      &IO_CONTEXT_DEFAULT
-        .as_ref()
-        .map_err(Clone::clone)?
-        .with_read_advice_self(ReadAdvice::Normal)?,
+    let mut handle = IndexFileNames::with_segment_file_name(
+      segment_name,
+      "",
+      Lucene90CompoundFormat::DATA_EXTENSION,
+      |name| {
+        directory.open_input(
+          name,
+          &IO_CONTEXT_DEFAULT
+            .as_ref()
+            .map_err(Clone::clone)?
+            .with_read_advice_self(ReadAdvice::Normal)?,
+        )
+      },
     )?;
 
     let expected_length = entries

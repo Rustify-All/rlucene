@@ -304,12 +304,14 @@ where
 
     // updates always outside of CFS
     let fis_format = si.info.get_codec()?.field_infos_format();
-    let segment_suffix = num_bigint::BigInt::from(si.get_field_infos_gen()).to_str_radix(36);
+    let mut digits = [0; 14];
+    let segment_suffix =
+      crate::core::index::index_file_names::base36(si.get_field_infos_gen(), &mut digits);
 
     let infos = fis_format.read(
       si.info.dir.as_ref(),
       &si.info,
-      &segment_suffix,
+      segment_suffix,
       &IOContext::read_once_io_context()?,
     )?;
 

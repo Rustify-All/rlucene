@@ -63,7 +63,7 @@ where
 {
   field_infos: Arc<FieldInfos>,
   parallel_reader_indices: Box<[usize]>,
-  stored_fields_reader_indices: Box<[usize]>,
+  stored_fields_reader_indices: Option<Box<[usize]>>,
   complete_reader_set: Vec<R>,
   close_sub_readers: bool,
   max_doc: i32,
@@ -203,9 +203,9 @@ where
             });
           indices.push(reader_index);
         }
-        indices
+        Some(indices.into_boxed_slice())
       },
-      None => parallel_reader_indices.clone(),
+      None => None,
     };
 
     // Check compatibility.
@@ -293,7 +293,7 @@ where
       created_version_major = LATEST.major;
     }
 
-    let mut min_version = Some((*LATEST).clone());
+    let mut min_version = Some(&*LATEST);
     let mut has_blocks = false;
     for reader_index in &parallel_reader_indices {
       let reader = &complete_reader_set[*reader_index];
@@ -305,18 +305,21 @@ where
           break;
         },
         Some(leaf_version)
-          if min_version
-            .as_ref()
-            .is_some_and(|version| version.on_or_after(leaf_version)) =>
+          if min_version.is_some_and(|version| version.on_or_after(leaf_version)) =>
         {
-          min_version = Some(leaf_version.clone());
+          min_version = Some(leaf_version);
         },
         Some(_) => {},
       }
     }
 
     let field_infos = Arc::new(builder.finish_owned()?);
-    let meta_data = LeafMetaData::new(created_version_major, min_version, index_sort, has_blocks)?;
+    let meta_data = LeafMetaData::new(
+      created_version_major,
+      min_version.cloned(),
+      index_sort,
+      has_blocks,
+    )?;
     let index_base = IndexReaderBase::new();
 
     // Do this finally so errors above do not affect ref counts.
@@ -330,7 +333,7 @@ where
     Ok(Self {
       field_infos,
       parallel_reader_indices: parallel_reader_indices.into_boxed_slice(),
-      stored_fields_reader_indices: stored_fields_reader_indices.into_boxed_slice(),
+      stored_fields_reader_indices,
       complete_reader_set,
       close_sub_readers,
       max_doc,
@@ -343,6 +346,13 @@ where
       index_base,
       hook,
     })
+  }
+
+  fn stored_fields_reader_indices(&self) -> &[usize] {
+    self
+      .stored_fields_reader_indices
+      .as_deref()
+      .unwrap_or(&self.parallel_reader_indices)
   }
 }
 
@@ -568,8 +578,9 @@ where
 
   fn stored_fields(&self) -> Result<Self::StoredFields> {
     self.ensure_open()?;
-    let mut fields = Vec::with_capacity(self.stored_fields_reader_indices.len());
-    for reader_index in &self.stored_fields_reader_indices {
+    let indices = self.stored_fields_reader_indices();
+    let mut fields = Vec::with_capacity(indices.len());
+    for reader_index in indices {
       fields.push(self.complete_reader_set[*reader_index].stored_fields()?);
     }
     Ok(ParallelStoredFields { fields })
@@ -611,9 +622,10 @@ where
   type ReaderCacheHelper = R::ReaderCacheHelper;
 
   fn get_reader_cache_helper(&self) -> Result<Option<Self::ReaderCacheHelper>> {
+    let stored_fields_reader_indices = self.stored_fields_reader_indices();
     if self.parallel_reader_indices.len() == 1
-      && self.stored_fields_reader_indices.len() == 1
-      && self.parallel_reader_indices[0] == self.stored_fields_reader_indices[0]
+      && stored_fields_reader_indices.len() == 1
+      && self.parallel_reader_indices[0] == stored_fields_reader_indices[0]
     {
       self.complete_reader_set[self.parallel_reader_indices[0]].get_reader_cache_helper()
     } else {
@@ -656,9 +668,10 @@ where
     // Parallel reader instances can be short-lived, which would make caching
     // trappy, so do not cache on them unless they wrap a single reader, in
     // which case delegate.
+    let stored_fields_reader_indices = self.stored_fields_reader_indices();
     if self.parallel_reader_indices.len() == 1
-      && self.stored_fields_reader_indices.len() == 1
-      && self.parallel_reader_indices[0] == self.stored_fields_reader_indices[0]
+      && stored_fields_reader_indices.len() == 1
+      && self.parallel_reader_indices[0] == stored_fields_reader_indices[0]
     {
       self.complete_reader_set[self.parallel_reader_indices[0]].get_core_cache_helper()
     } else {

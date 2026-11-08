@@ -750,12 +750,12 @@ where
           "Cannot combine leaf readers created with different major versions",
         ));
       }
-      match (&min_version, reader_meta.get_min_version()) {
-        (None, reader_min_version) => min_version = reader_min_version.clone(),
+      match (min_version, reader_meta.get_min_version()) {
+        (None, reader_min_version) => min_version = reader_min_version.as_ref(),
         (Some(current_min_version), Some(reader_min_version))
           if current_min_version.on_or_after(reader_min_version) =>
         {
-          min_version = Some(reader_min_version.clone());
+          min_version = Some(reader_min_version);
         },
         (Some(_), None) => {
           return Err(LuceneError::illegal_state(
@@ -767,7 +767,7 @@ where
       has_blocks |= reader_meta.get_has_blocks();
     }
 
-    let meta = LeafMetaData::new(major_version, min_version, None, has_blocks)?;
+    let meta = LeafMetaData::new(major_version, min_version.cloned(), None, has_blocks)?;
 
     let multi_reader: MultiReader<CR> = MultiReader::new_shared(codec_readers.clone())?;
     let field_infos = get_merged_field_infos(&multi_reader)?;

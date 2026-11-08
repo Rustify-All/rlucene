@@ -65,6 +65,9 @@ pub struct FieldInfo {
   // True if any document indexed term vectors
   store_term_vector: AtomicBool,
 }
+pub(crate) static EMPTY_FIELD_ATTRIBUTES: std::sync::LazyLock<Arc<HashMap<String, String>>> =
+  std::sync::LazyLock::new(Arc::default);
+
 impl FieldInfo {
   /// Creates a new instance. Attribute snapshots may be shared until either instance
   /// changes an attribute, when the map is copied on write.

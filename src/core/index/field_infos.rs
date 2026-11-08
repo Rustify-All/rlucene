@@ -137,7 +137,7 @@ impl FieldInfosDefaults {
   }
 
   fn size(in_: &FieldInfos) -> usize {
-    in_.by_name.len()
+    in_.values.len()
   }
 
   fn values(in_: &FieldInfos) -> &[Arc<FieldInfo>] {
@@ -148,7 +148,24 @@ impl FieldInfosDefaults {
     in_: &'a FieldInfos,
     field_name: &str,
   ) -> Result<Option<&'a Arc<FieldInfo>>> {
-    Ok(in_.by_name.get(field_name))
+    Ok(
+      in_
+        .by_name
+        .get(field_name)
+        .or_else(|| match in_.values.as_ref() {
+          [info] if info.name == field_name => Some(info),
+          [first, second] => {
+            if first.name == field_name {
+              Some(first)
+            } else if second.name == field_name {
+              Some(second)
+            } else {
+              None
+            }
+          },
+          _ => None,
+        }),
+    )
   }
 
   fn field_info_by_number(in_: &FieldInfos, field_number: i32) -> Result<Option<&Arc<FieldInfo>>> {
@@ -161,7 +178,19 @@ impl FieldInfosDefaults {
       Some(by_number) => by_number
         .get(field_number as usize)
         .and_then(|&index| in_.values.get(index)),
-      None => in_.values.get(field_number as usize),
+      None => match in_.values.as_ref() {
+        [info] => (info.number == field_number).then_some(info),
+        [first, second] => {
+          if first.number == field_number {
+            Some(first)
+          } else if second.number == field_number {
+            Some(second)
+          } else {
+            None
+          }
+        },
+        values => values.get(field_number as usize),
+      },
     })
   }
 }
@@ -305,11 +334,17 @@ impl FieldInfos {
     let mut soft_deletes_field: Option<Arc<FieldInfo>> = None;
     let mut parent_field: Option<Arc<FieldInfo>> = None;
 
-    let mut by_name = CollectionUtil::new_hashmap(infos.len());
+    let build_pair_names = infos.len() == 2;
+    let build_names = infos.len() > 2;
+    let mut by_name = if build_names {
+      CollectionUtil::new_hashmap(infos.len())
+    } else {
+      HashMap::new()
+    };
     let mut max_field_number = -1;
     let mut field_number_strictly_ascending = true;
 
-    for info in &infos {
+    for (index, info) in infos.iter().enumerate() {
       let field_number = info.number;
       if field_number < 0 {
         return Err(LuceneError::illegal_argument(format!(
@@ -322,10 +357,17 @@ impl FieldInfos {
       } else {
         field_number_strictly_ascending = false;
       }
-      if let Some(previous) = by_name.insert(info.name.clone(), info.clone()) {
+      if build_names && let Some(previous) = by_name.insert(info.name.clone(), info.clone()) {
         return Err(LuceneError::illegal_argument(format!(
           "duplicate field names: {} and {} have: {}",
           previous.number, info.number, info.name
+        )));
+      }
+
+      if build_pair_names && index == 1 && infos[0].name == info.name {
+        return Err(LuceneError::illegal_argument(format!(
+          "duplicate field names: {} and {} have: {}",
+          infos[0].number, info.number, info.name
         )));
       }
 
@@ -416,8 +458,13 @@ impl FieldInfos {
         }
         // Occupied slots appear in the same field-number order as the sorted values.
         let mut indices = 0..infos.len();
-        let to_index =
-          |slot: Option<Arc<FieldInfo>>| slot.and_then(|_| indices.next()).unwrap_or(usize::MAX);
+        let to_index = |slot| {
+          if slot == usize::MAX {
+            usize::MAX
+          } else {
+            indices.next().unwrap_or(usize::MAX)
+          }
+        };
         infos.shrink_to_fit();
         values = infos;
         by_number = Some(if indexed_slots.spilled() {
@@ -619,7 +666,7 @@ where
   let reader = reader.get_context()?;
   let leaves = reader.leaves()?;
 
-  let mut fields = HashSet::with_capacity(leaves.len());
+  let mut fields = HashSet::new();
 
   for leaf in leaves {
     let field_infos = leaf.reader().get_field_infos()?;

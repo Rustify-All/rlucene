@@ -62,8 +62,11 @@ pub struct SegmentInfo<D> {
   has_blocks: bool,
   /// The SegmentCommitInfo wraps a SegmentInfo inside an Rc,
   /// but sometimes we need to modify the set_files of the SegmentInfo contained within the SegmentCommitInfo,
-  set_files: Option<HashSet<String>>,
+  set_files: Option<Arc<HashSet<String>>>,
 }
+
+static EMPTY_SEGMENT_FILES: std::sync::LazyLock<Arc<HashSet<String>>> =
+  std::sync::LazyLock::new(Arc::default);
 
 // padding using
 #[cfg(test)]
@@ -147,7 +150,9 @@ impl<D> SegmentInfo<D> {
     };
 
     #[cfg(not(test))]
-    let id_key = StringHelper::id_to_string(Some(&StringHelper::random_id()));
+    let mut id_digits = [0; 25];
+    #[cfg(not(test))]
+    let id_key = StringHelper::format_id(&StringHelper::random_id(), &mut id_digits);
     Ok(SegmentInfo {
       dir,
       version,
@@ -272,6 +277,9 @@ impl<D> SegmentInfo<D> {
 
   /// Returns all files referenced by this SegmentInfo
   pub fn files(&self) -> Result<&HashSet<String>> {
+    self.files_snapshot().map(Arc::as_ref)
+  }
+  pub(crate) fn files_snapshot(&self) -> Result<&Arc<HashSet<String>>> {
     match self.set_files {
       Some(ref files) => Ok(files),
       None => Err(LuceneError::illegal_state(format!(
@@ -280,9 +288,10 @@ impl<D> SegmentInfo<D> {
       ))),
     }
   }
+
   pub fn take_files(&mut self) -> Result<HashSet<String>> {
     match self.set_files.take() {
-      Some(files) => Ok(files),
+      Some(files) => Ok(Arc::unwrap_or_clone(files)),
       None => Err(LuceneError::illegal_state(format!(
         "files were not set; segment={} maxDoc={}",
         self.name, self.max_doc
@@ -296,14 +305,25 @@ impl<D> SegmentInfo<D> {
     I: IntoIterator<Item = S>,
     S: AsRef<str> + Into<String>,
   {
-    self.set_files = Some(HashSet::new());
+    self.set_files = Some(Arc::clone(&EMPTY_SEGMENT_FILES));
     self.add_files(files)
   }
-  /// Replaces the files written for this segment and returns the previous set, if any.
-  pub(crate) fn replace_files(&mut self, files: HashSet<String>) -> Result<HashSet<String>> {
-    let previous = self.set_files.replace(HashSet::new()).unwrap_or_default();
+  pub(crate) fn set_imported_files(&mut self, files: &HashSet<String>) -> Result<()> {
+    self.set_files = Some(Arc::clone(&EMPTY_SEGMENT_FILES));
+    self.check_file_names(files)?;
+    let renamed = self.set_files.insert(Arc::new(HashSet::with_capacity(files.len())));
+    let renamed = Arc::make_mut(renamed);
+    for file in files {
+      renamed.insert(renamed_segment_file(&self.name, file));
+    }
+    Ok(())
+  }
+
+  /// Replaces the files written for this segment.
+  pub(crate) fn replace_files(&mut self, files: HashSet<String>) -> Result<()> {
+    self.set_files = Some(Arc::clone(&EMPTY_SEGMENT_FILES));
     self.check_file_names(&files)?;
-    self.set_files = Some(
+    self.set_files = Some(Arc::new(
       if files
         .iter()
         .all(|file| IndexFileNames::parse_segment_name(file) == self.name.as_ref())
@@ -315,8 +335,8 @@ impl<D> SegmentInfo<D> {
           .map(|file| named_for_this_segment(&self.name, file))
           .collect()
       },
-    );
-    Ok(previous)
+    ));
+    Ok(())
   }
   /// Converts this segment information into a formatted string with deletions
   /// count.
@@ -338,47 +358,41 @@ impl<D> SegmentInfo<D> {
   ///   the `timestamp` field in descending order (optional, omitted for
   ///   unsorted segments).
   pub fn to_string(&self, del_count: i32) -> std::result::Result<String, std::fmt::Error> {
-    let mut s = String::new();
-    s.push_str(&self.name);
+    let mut description = String::new();
+    self.write_description(&mut description, del_count)?;
+    Ok(description)
+  }
 
-    // 处理 version 字段
-    s.push('(');
+  pub(crate) fn write_description(
+    &self,
+    output: &mut impl Write,
+    del_count: i32,
+  ) -> std::fmt::Result {
+    output.write_str(&self.name)?;
+    output.write_char('(')?;
     if let Some(version) = &self.version {
-      write!(s, "{version}")?;
+      write!(output, "{version}")?;
     } else {
-      s.push('?');
+      output.write_char('?')?;
     }
-    s.push(')');
+    output.write_char(')')?;
 
     let cfs = if self.is_compound_file { 'c' } else { 'C' };
-    s.push(':');
-    s.push(cfs);
-
-    write!(s, "{}", self.max_doc)?;
+    write!(output, ":{cfs}{}", self.max_doc)?;
 
     if del_count != 0 {
-      s.push('/');
-      write!(s, "{del_count}")?;
+      write!(output, "/{del_count}")?;
     }
-
     if let Some(index_sort) = &self.index_sort {
-      s.push_str(":[indexSort=");
-      write!(s, "{index_sort}")?;
-      s.push(']');
+      write!(output, ":[indexSort={index_sort}]")?;
     }
-
     if !self.diagnostics.is_empty() {
-      s.push_str(":[diagnostics=");
-      write!(s, "{:?}", self.diagnostics)?;
-      s.push(']');
+      write!(output, ":[diagnostics={:?}]", self.diagnostics)?;
     }
-
     if !self.attributes.is_empty() {
-      s.push_str(":[attributes=");
-      write!(s, "{:?}", self.attributes)?;
-      s.push(']');
+      write!(output, ":[attributes={:?}]", self.attributes)?;
     }
-    Ok(s)
+    Ok(())
   }
   /// Returns the version of the code which wrote the segment.
   pub fn get_version_ref(&self) -> Option<&Version> {
@@ -433,7 +447,7 @@ impl<D> SegmentInfo<D> {
     self.check_file_names(std::iter::once(&file))?;
     match self.set_files {
       Some(ref mut set_files) => {
-        set_files.insert(named_for_this_segment(&self.name, file));
+        Arc::make_mut(set_files).insert(named_for_this_segment(&self.name, file));
       },
       None => return Err(LuceneError::illegal_state("set_files was not initialized")),
     }
@@ -503,10 +517,22 @@ impl<D> SegmentInfo<D> {
     self.index_sort.as_ref().cloned()
   }
 
+  pub(crate) fn index_sort_ref(&self) -> Option<&Sort> {
+    self.index_sort.as_deref()
+  }
+
+  /// Shares the file snapshot already validated and normalized by the flush path.
+  /// The sole caller invokes this immediately after a successful `replace_files`.
+  pub(crate) fn flush_failure_mirror(&self) -> Result<Self> {
+    let mut mirror = Self::dummy(Arc::clone(&self.dir), Arc::clone(&self.name));
+    mirror.set_files = Some(Arc::clone(self.files_snapshot()?));
+    Ok(mirror)
+  }
+
   // padding using
   pub(crate) fn dummy(dir: Arc<D>, name: Arc<str>) -> Self {
     let id = [0u8; StringHelper::ID_LENGTH];
-    let id_str = "0";
+    static DUMMY_ID: std::sync::LazyLock<Arc<str>> = std::sync::LazyLock::new(|| Arc::from("0"));
     SegmentInfo {
       name,
       max_doc: 0,
@@ -514,8 +540,8 @@ impl<D> SegmentInfo<D> {
       is_compound_file: false,
       id,
       #[cfg(test)]
-      id_str: id_str.to_string(),
-      id_key: Arc::from(id_str),
+      id_str: DUMMY_ID.to_string(),
+      id_key: Arc::clone(&DUMMY_ID),
       diagnostics: HashMap::new(),
       attributes: HashMap::new(),
       codec: None,
@@ -545,7 +571,7 @@ impl<D> Hash for SegmentInfo<D> {
 }
 impl<D> Display for SegmentInfo<D> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "{}", self.to_string(0)?)
+    self.write_description(f, 0)
   }
 }
 #[cfg(test)]
@@ -572,6 +598,15 @@ impl<D> Clone for SegmentInfo<D> {
 }
 
 use crate::core::index::{CODEC_FILE_PATTERN, IndexFileNames};
+
+pub(crate) fn renamed_segment_file(name: &str, file: &str) -> String {
+  let suffix = IndexFileNames::strip_segment_name(file);
+  if file.len() == name.len() + suffix.len() && file.starts_with(name) {
+    file.to_owned()
+  } else {
+    [name, suffix].concat()
+  }
+}
 
 /// Strips any segment name from the file and renames it with this segment.
 /// This is because "segment names" can change, e.g., by addIndexes(Dir).

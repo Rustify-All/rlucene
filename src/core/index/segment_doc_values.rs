@@ -23,13 +23,13 @@ use crate::core::index::segment_commit_info::SegmentCommitInfo;
 use crate::core::index::segment_read_state::SegmentReadState;
 use crate::core::store::IO_CONTEXT_DEFAULT;
 
+use crate::core::index::index_file_names::base36;
 use crate::core::store::directory::Directory;
 use crate::core::store::index_input::IndexInput;
 use crate::core::util::IOUtils;
 use crate::core::util::close::CloseableRef;
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::ref_count::RefCount;
-use num_bigint::BigInt;
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -75,14 +75,14 @@ where
       Some(d) => CompoundDirectoryEnum::A(d),
       None => CompoundDirectoryEnum::B(si.info.dir.as_ref()),
     };
-    let mut segment_suffix = "".to_string();
-
-    if gen_ != -1 {
+    let mut suffix_buffer = [0; 14];
+    let segment_suffix = if gen_ == -1 {
+      ""
+    } else {
       // gen'd files are written outside CFS, so use SegInfo directory
       dv_dir = CompoundDirectoryEnum::B(si.info.dir.as_ref());
-      let v = BigInt::from(gen_).to_str_radix(36);
-      segment_suffix = v;
-    }
+      base36(gen_, &mut suffix_buffer)
+    };
 
     let io_context = IO_CONTEXT_DEFAULT.as_ref().map_err(Clone::clone)?;
     // set SegmentReadState to list only the fields that are relevant to that gen
@@ -95,16 +95,17 @@ where
     )))
   }
   /// Returns the [`DocValuesProducer`](crate::core::codecs::doc_values_producer::DocValuesProducer) for the given generation.
-  pub(crate) fn get_doc_values_producer<D, D1>(
+  pub(crate) fn get_doc_values_producer<D, D1, F>(
     &self,
     gen_: i64,
     si: &SegmentCommitInfo<D>,
     dir: Option<&D1>,
-    infos: Arc<FieldInfos>,
+    infos: F,
   ) -> Result<Arc<CodecDocValuesProducer<I>>>
   where
     D: Directory<IndexInput = I>,
     D1: Directory<IndexInput = I>,
+    F: Into<Arc<FieldInfos>>,
   {
     let mut inner = self.inner.lock();
 
@@ -114,7 +115,7 @@ where
         Ok(entry.get().get().clone())
       },
       Entry::Vacant(entry) => {
-        let dvp = self.new_doc_values_producer(si, dir, gen_, infos)?;
+        let dvp = self.new_doc_values_producer(si, dir, gen_, infos.into())?;
         let v = dvp.get().clone();
         entry.insert(dvp);
         Ok(v)

@@ -22,6 +22,7 @@ use crate::core::codecs::perfield::per_field_merge_state::{
   FilterFieldsIterator, PerFieldMergeState,
 };
 use crate::core::codecs::postings_format::PostingsFormat;
+use crate::core::index::field_info::FieldInfo;
 use crate::core::index::fields::Fields;
 use crate::core::index::index_options::IndexOptions;
 use crate::core::index::index_reader::Identity;
@@ -36,9 +37,8 @@ use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::iterator::IteratorExt;
 use crate::core::util::merged_iterator::MergedIterator;
 use crate::core::util::{HasIdentity, IOUtils};
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
@@ -112,7 +112,7 @@ impl<B> HasIdentity for PerFieldPostingsFormat<B> {
 /// `state` is the custom segment-write state for this group of fields, with a
 /// segment suffix unique to this postings format.
 struct FieldsGroup<'a, 'fields, D> {
-  fields: Box<[&'fields String]>,
+  fields: Vec<&'fields String>,
   #[allow(dead_code)]
   suffix: i32,
   state: SegmentWriteState<'a, D>,
@@ -121,7 +121,7 @@ struct FieldsGroup<'a, 'fields, D> {
 type FieldsGroups<'a, 'b, 'fields, F, D> = Vec<(&'b F, FieldsGroup<'a, 'fields, D>)>;
 
 struct FieldsGroupBuilder<'a, 'fields, D> {
-  fields: HashSet<&'fields String>,
+  fields: Vec<&'fields String>,
   suffix: i32,
   state: SegmentWriteState<'a, D>,
 }
@@ -129,22 +129,21 @@ struct FieldsGroupBuilder<'a, 'fields, D> {
 impl<'a, 'fields, D> FieldsGroupBuilder<'a, 'fields, D> {
   fn new(suffix: i32, state: SegmentWriteState<'a, D>) -> Self {
     Self {
-      fields: HashSet::new(),
+      fields: Vec::new(),
       suffix,
       state,
     }
   }
 
   fn add_field(&mut self, field: &'fields String) {
-    self.fields.insert(field);
+    self.fields.push(field);
   }
 
-  fn build(self) -> FieldsGroup<'a, 'fields, D> {
-    let mut fields: Vec<&'fields String> = Vec::with_capacity(self.fields.len());
-    fields.extend(self.fields);
-    fields.sort_unstable();
+  fn build(mut self) -> FieldsGroup<'a, 'fields, D> {
+    self.fields.sort_unstable();
+    self.fields.dedup();
     FieldsGroup {
-      fields: fields.into_boxed_slice(),
+      fields: self.fields,
       suffix: self.suffix,
       state: self.state,
     }
@@ -272,9 +271,9 @@ where
 
       group_builder.add_field(field);
       field_info.put_borrowed_attribute(PER_FIELD_FORMAT_KEY, format_name);
-      field_info.put_attribute(
-        PER_FIELD_SUFFIX_KEY.to_string(),
-        group_builder.suffix.to_string(),
+      field_info.put_borrowed_attribute(
+        PER_FIELD_SUFFIX_KEY,
+        crate::core::index::index_file_names::decimal_suffix(group_builder.suffix, &mut [0; 14]),
       );
     }
 
@@ -396,7 +395,7 @@ where
 }
 
 pub struct FieldsReader<FP> {
-  fields: BTreeMap<String, Arc<FP>>,
+  fields: Vec<(Arc<FieldInfo>, Arc<FP>)>,
   formats: HashMap<String, Arc<FP>>,
   segment: Arc<str>,
 }
@@ -411,7 +410,7 @@ where
     T: FieldsProducer,
     F: FnMut(FP) -> T,
   {
-    let field_formats: HashMap<String, *const FP> = self
+    let field_formats: Vec<(Arc<FieldInfo>, *const FP)> = self
       .fields
       .into_iter()
       .map(|(field, producer)| (field, Arc::as_ptr(&producer)))
@@ -429,13 +428,17 @@ where
       old_to_new.insert(old_ptr, Arc::clone(&producer));
       formats.insert(segment_suffix, producer);
     }
-    let mut fields = BTreeMap::new();
+    let mut fields = Vec::with_capacity(field_formats.len());
     for (field, old_ptr) in field_formats {
       let producer = old_to_new.get(&old_ptr).ok_or_else(|| {
-        LuceneError::illegal_state(format!("missing postings producer for field: {field}"))
+        LuceneError::illegal_state(format!(
+          "missing postings producer for field: {}",
+          field.name
+        ))
       })?;
-      fields.insert(field, Arc::clone(producer));
+      fields.push((field, Arc::clone(producer)));
     }
+    fields.sort_unstable_by(|(left, _), (right, _)| left.name.cmp(&right.name));
     Ok(FieldsReader {
       fields,
       formats,
@@ -445,9 +448,8 @@ where
 
   // Clone for merge.
   fn from_other(other: &Self) -> Result<Self> {
-    let mut fields = BTreeMap::new();
+    let mut fields = Vec::with_capacity(other.fields.len());
     let mut formats = HashMap::with_capacity(other.formats.len());
-    let mut old_to_new = HashMap::with_capacity(other.formats.len());
     // First clone all formats.
     for (segment_suffix, format) in &other.formats {
       let values = match format.as_ref().get_merge_instance()? {
@@ -457,17 +459,29 @@ where
       formats.insert(segment_suffix.clone(), values);
     }
 
-    // The format map owns every merge instance before the temporary lookup borrows it.
-    for (segment_suffix, format) in &other.formats {
-      old_to_new.insert(Arc::as_ptr(format), &formats[segment_suffix]);
+    let single = if other.formats.len() == 1 {
+      other.formats.values().next().zip(formats.values().next())
+    } else {
+      None
+    };
+    let mut old_to_new = HashMap::new();
+    if single.is_none() {
+      old_to_new.reserve(other.formats.len());
+      for (segment_suffix, format) in &other.formats {
+        old_to_new.insert(Arc::as_ptr(format), &formats[segment_suffix]);
+      }
     }
 
     // Then rebuild fields.
     for (field, format) in &other.fields {
-      let producer = old_to_new.get(&Arc::as_ptr(format)).ok_or_else(|| {
-        LuceneError::illegal_state(format!("missing merge instance for field: {field}"))
+      let producer = match single {
+        Some((old, new)) => Arc::ptr_eq(old, format).then_some(new),
+        None => old_to_new.get(&Arc::as_ptr(format)).copied(),
+      };
+      let producer = producer.ok_or_else(|| {
+        LuceneError::illegal_state(format!("missing merge instance for field: {}", field.name))
       })?;
-      fields.insert(field.clone(), Arc::clone(producer));
+      fields.push((Arc::clone(field), Arc::clone(producer)));
     }
 
     Ok(Self {
@@ -485,7 +499,7 @@ where
     PF: PostingsFormat<FieldsProducer<D1::IndexInput> = FP>,
     D1: Directory,
   {
-    let mut fields = BTreeMap::new();
+    let mut fields = Vec::new();
     let mut formats: HashMap<String, Arc<FP>> = HashMap::new();
 
     let mut success = false;
@@ -514,7 +528,7 @@ where
             Arc::clone(entry.insert(producer))
           },
         };
-        fields.insert(field_name.clone(), producer);
+        fields.push((Arc::clone(field_info), producer));
       }
       success = true;
       Ok(())
@@ -524,12 +538,29 @@ where
       IOUtils::close_while_handling_exception_with(formats.values(), |format| format.close());
     }
     unwrap_caught_result!(result)?;
+    fields.sort_unstable_by(|(left, _), (right, _)| left.name.cmp(&right.name));
 
     Ok(Self {
       fields,
       formats,
       segment: segment_info.name.clone(),
     })
+  }
+}
+
+pub struct FieldsReaderIterator<'a, FP> {
+  fields: std::slice::Iter<'a, (Arc<FieldInfo>, Arc<FP>)>,
+}
+
+impl<'a, FP> IteratorExt for FieldsReaderIterator<'a, FP> {
+  type Item = &'a String;
+
+  fn next(&mut self) -> Result<Option<Self::Item>> {
+    Ok(Iterator::next(&mut self.fields).map(|(info, _)| &info.name))
+  }
+
+  fn has_next(&self) -> Result<bool> {
+    Ok(!self.fields.as_slice().is_empty())
   }
 }
 
@@ -549,20 +580,25 @@ where
   FP: FieldsProducer,
 {
   type FieldIter<'a>
-    = std::collections::btree_map::Keys<'a, String, Arc<FP>>
+    = FieldsReaderIterator<'a, FP>
   where
     Self: 'a;
 
   fn iterator(&self) -> Result<Self::FieldIter<'_>> {
-    Ok(self.fields.keys())
+    Ok(FieldsReaderIterator {
+      fields: self.fields.iter(),
+    })
   }
 
   type Terms = FP::Terms;
 
   fn terms(&self, field: &str) -> Result<Option<Self::Terms>> {
-    match self.fields.get(field) {
-      Some(fields_producer) => fields_producer.terms(field),
-      None => Ok(None),
+    match self
+      .fields
+      .binary_search_by(|(info, _)| info.name.as_str().cmp(field))
+    {
+      Ok(index) => self.fields[index].1.terms(field),
+      Err(_) => Ok(None),
     }
   }
 

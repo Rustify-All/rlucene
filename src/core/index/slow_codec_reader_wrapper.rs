@@ -42,7 +42,7 @@ use crate::core::util::clone::TryClone;
 use crate::core::util::close::CloseableRef;
 use crate::core::util::dummy::dummy_hnsw_graph::DummyHnswGraph;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
-use crate::core::util::iterator::{VecIter, VecIteratorExt};
+use crate::core::util::iterator::IteratorExt;
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 
@@ -666,26 +666,43 @@ where
   LR: LeafReader,
 {
   let field_infos = reader.get_field_infos()?;
+  if !field_infos.has_postings() {
+    return Ok(FieldsProducerImpl::new(reader, Vec::new()));
+  }
   let mut indexed_fields = Vec::with_capacity(field_infos.size());
 
   for field_info in field_infos.iter() {
     if *field_info.get_index_options() != IndexOptions::None {
-      indexed_fields.push(field_info.name.clone());
+      indexed_fields.push(Arc::clone(field_info));
     }
   }
 
-  indexed_fields.sort_unstable();
+  indexed_fields.sort_unstable_by(|a, b| a.name.cmp(&b.name));
 
   Ok(FieldsProducerImpl::new(reader, indexed_fields))
 }
 
+pub struct FieldNamesIterator<'a>(std::slice::Iter<'a, Arc<FieldInfo>>);
+
+impl<'a> IteratorExt for FieldNamesIterator<'a> {
+  type Item = &'a String;
+
+  fn next(&mut self) -> Result<Option<Self::Item>> {
+    Ok(self.0.next().map(|field| &field.name))
+  }
+
+  fn has_next(&self) -> Result<bool> {
+    Ok(!self.0.as_slice().is_empty())
+  }
+}
+
 pub struct FieldsProducerImpl<LR> {
   reader: LR,
-  indexed_fields: Vec<String>,
+  indexed_fields: Vec<Arc<FieldInfo>>,
 }
 
 impl<LR> FieldsProducerImpl<LR> {
-  fn new(reader: LR, indexed_fields: Vec<String>) -> Self {
+  fn new(reader: LR, indexed_fields: Vec<Arc<FieldInfo>>) -> Self {
     Self {
       reader,
       indexed_fields,
@@ -700,12 +717,12 @@ where
   LR: LeafReader,
 {
   type FieldIter<'a>
-    = VecIter<'a, String>
+    = FieldNamesIterator<'a>
   where
     LR: 'a;
 
   fn iterator(&self) -> Result<Self::FieldIter<'_>> {
-    Ok(self.indexed_fields.iter_ext())
+    Ok(FieldNamesIterator(self.indexed_fields.iter()))
   }
 
   type Terms = <LR as LeafReader>::Terms;

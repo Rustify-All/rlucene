@@ -16,6 +16,8 @@
  */
 use crate::core::index::field_infos::FieldInfos;
 use crate::core::store::IOContext;
+use crate::core::store::directory::Directory;
+use crate::core::util::error::lucene_error::Result;
 use crate::core::util::fixed_bit_set::FixedBitSet;
 use crate::core::util::info_stream::InfoStreamMT;
 use std::sync::Arc;
@@ -90,6 +92,22 @@ impl<'a, D> SegmentWriteState<'a, D> {
       soft_del_count_on_flush: 0,
       live_docs: None,
     }
+  }
+
+  pub(crate) fn create_segment_output(
+    &self,
+    segment_name: &str,
+    extension: &str,
+  ) -> Result<D::IndexOutput>
+  where
+    D: Directory,
+  {
+    crate::core::index::IndexFileNames::with_segment_file_name(
+      segment_name,
+      &self.segment_suffix,
+      extension,
+      |name| self.directory.create_output(name, self.context),
+    )
   }
 
   /// Create a shallow copy of SegmentWriteState with a new segment suffix.

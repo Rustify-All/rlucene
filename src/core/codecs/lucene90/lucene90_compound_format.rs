@@ -165,13 +165,19 @@ impl CompoundFormat for Lucene90CompoundFormat {
   where
     D2: Directory,
   {
-    let data_file =
-      IndexFileNames::segment_file_name(&si.name, "", Lucene90CompoundFormat::DATA_EXTENSION);
-    let entries_file =
-      IndexFileNames::segment_file_name(&si.name, "", Lucene90CompoundFormat::ENTRIES_EXTENSION);
-    let mut data = dir.create_output(&data_file, context)?;
+    let mut data = IndexFileNames::with_segment_file_name(
+      &si.name,
+      "",
+      Lucene90CompoundFormat::DATA_EXTENSION,
+      |name| dir.create_output(name, context),
+    )?;
     let mut entries = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-      dir.create_output(&entries_file, context)
+      IndexFileNames::with_segment_file_name(
+        &si.name,
+        "",
+        Lucene90CompoundFormat::ENTRIES_EXTENSION,
+        |name| dir.create_output(name, context),
+      )
     })) {
       Ok(Ok(entries_output)) => entries_output,
       entries_result => {

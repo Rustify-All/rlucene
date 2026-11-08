@@ -16,7 +16,7 @@
  */
 use crate::core::codecs::codec::Codec;
 use crate::core::codecs::live_docs_format::LiveDocsFormat;
-use crate::core::index::segment_info::{SegmentInfo, named_for_this_segment};
+use crate::core::index::segment_info::{SegmentInfo, named_for_this_segment, renamed_segment_file};
 use crate::core::store::directory::Directory;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::{StringHelper, TryIntoInt};
@@ -56,9 +56,9 @@ pub struct SegmentCommitInfo<D> {
   /// attempt to write.
   next_write_doc_values_gen: i64,
   /// Track the per-field DocValues update files.
-  dv_updates_files: HashMap<i32, HashSet<String>>,
+  dv_updates_files: Option<Arc<HashMap<i32, HashSet<String>>>>,
   /// Track the FieldInfos update files.
-  field_infos_files: HashSet<String>,
+  field_infos_files: Option<Arc<HashSet<String>>>,
   /// Size of the segment in bytes (-1 of unknown).
   size_in_bytes: AtomicI64,
   /// Used in memory by IndexWriter to track buffered deletes. Not persisted
@@ -114,20 +114,26 @@ impl<D> SegmentCommitInfo<D> {
         doc_values_gen.wrapping_add(1)
       },
       id,
-      dv_updates_files: HashMap::new(),
-      field_infos_files: HashSet::new(),
+      dv_updates_files: None,
+      field_infos_files: None,
       size_in_bytes: AtomicI64::new(-1),
       buffered_deletes_gen: -1,
     }
   }
   /// Returns a reference to the per-field DocValues updates files.
   pub fn get_doc_values_updates_files(&self) -> &HashMap<i32, HashSet<String>> {
-    &self.dv_updates_files
+    static EMPTY: std::sync::LazyLock<HashMap<i32, HashSet<String>>> =
+      std::sync::LazyLock::new(HashMap::new);
+    self.dv_updates_files.as_deref().unwrap_or(&EMPTY)
   }
 
   /// Removes and returns the per-field DocValues updates files.
   pub(crate) fn take_doc_values_updates_files(&mut self) -> HashMap<i32, HashSet<String>> {
-    std::mem::take(&mut self.dv_updates_files)
+    self
+      .dv_updates_files
+      .take()
+      .map(Arc::unwrap_or_clone)
+      .unwrap_or_default()
   }
 
   /// Sets the DocValues updates file names, per field number. Borrowed maps
@@ -136,33 +142,72 @@ impl<D> SegmentCommitInfo<D> {
     &mut self,
     dv_updates_files: Cow<'a, HashMap<i32, HashSet<String>>>,
   ) {
-    self.dv_updates_files.clear();
+    let old_files = self.dv_updates_files.take();
     match dv_updates_files {
       Cow::Borrowed(files) => {
-        self.dv_updates_files.reserve(files.len());
+        if files.is_empty() {
+          return;
+        }
+        let mut renamed = old_files.and_then(Arc::into_inner).unwrap_or_default();
+        renamed.clear();
+        renamed.reserve(files.len());
+        let renamed = self.dv_updates_files.insert(Arc::new(renamed));
+        let renamed = Arc::make_mut(renamed);
         for (key, file_set) in files {
           let mut renamed_set = HashSet::with_capacity(file_set.len());
           for file in file_set {
-            renamed_set.insert(named_for_this_segment(&self.info.name, file));
+            renamed_set.insert(renamed_segment_file(&self.info.name, file));
           }
-          self.dv_updates_files.insert(*key, renamed_set);
+          renamed.insert(*key, renamed_set);
         }
       },
       Cow::Owned(mut files) => {
         for file_set in files.values_mut() {
+          if file_set.iter().all(|file| {
+            let suffix = crate::core::index::IndexFileNames::strip_segment_name(file);
+            file.len() == self.info.name.len() + suffix.len()
+              && file.starts_with(self.info.name.as_ref())
+          }) {
+            continue;
+          }
           let previous_files = std::mem::replace(file_set, HashSet::with_capacity(file_set.len()));
           for file in previous_files {
             file_set.insert(named_for_this_segment(&self.info.name, file));
           }
         }
-        self.dv_updates_files = files;
+        self.dv_updates_files = (!files.is_empty()).then(|| Arc::new(files));
       },
     }
   }
+  pub(crate) fn set_imported_field_infos_files(&mut self, source: &HashSet<String>) {
+    self.set_field_infos_files(std::iter::empty::<String>());
+    if source.is_empty() {
+      return;
+    }
+    let files = self.field_infos_files.get_or_insert_with(Arc::default);
+    let files = Arc::make_mut(files);
+    files.reserve(source.len());
+    for file in source {
+      files.insert(renamed_segment_file(&self.info.name, file));
+    }
+  }
+
+  pub(crate) fn set_owned_field_infos_files(&mut self, files: HashSet<String>) {
+    if files.iter().all(|file| {
+      let suffix = crate::core::index::IndexFileNames::strip_segment_name(file);
+      file.len() == self.info.name.len() + suffix.len() && file.starts_with(self.info.name.as_ref())
+    }) {
+      self.field_infos_files = (!files.is_empty()).then(|| Arc::new(files));
+    } else {
+      self.set_field_infos_files(files);
+    }
+  }
+
   /// Returns a reference to the FieldInfos file names.
   /// Returns the [`FieldInfos`](crate::core::index::field_infos::FieldInfos) file names.
   pub fn get_field_infos_files(&self) -> &HashSet<String> {
-    &self.field_infos_files
+    static EMPTY: std::sync::LazyLock<HashSet<String>> = std::sync::LazyLock::new(HashSet::new);
+    self.field_infos_files.as_deref().unwrap_or(&EMPTY)
   }
 
   /// Sets the FieldInfos file names.
@@ -172,11 +217,16 @@ impl<D> SegmentCommitInfo<D> {
     I: IntoIterator<Item = S>,
     S: AsRef<str> + Into<String>,
   {
-    self.field_infos_files.clear();
+    if let Some(current) = &mut self.field_infos_files {
+      if let Some(set) = Arc::get_mut(current) {
+        set.clear();
+      } else {
+        self.field_infos_files = None;
+      }
+    }
     for file in field_infos_files {
-      self
-        .field_infos_files
-        .insert(named_for_this_segment(&self.info.name, file));
+      let files = self.field_infos_files.get_or_insert_with(Arc::default);
+      Arc::make_mut(files).insert(named_for_this_segment(&self.info.name, file));
     }
   }
 
@@ -261,14 +311,7 @@ impl<D> SegmentCommitInfo<D> {
       return Ok(current_size);
     }
     let mut sum = 0;
-    let files = if !self.has_deletions()
-      && self.field_infos_files.is_empty()
-      && self.dv_updates_files.is_empty()
-    {
-      Cow::Borrowed(self.info.files()?)
-    } else {
-      Cow::Owned(self.files()?)
-    };
+    let files = self.files_for_read()?;
     for file_name in files.iter() {
       sum += self.info.dir.file_length(file_name)?;
     }
@@ -277,31 +320,58 @@ impl<D> SegmentCommitInfo<D> {
 
     Ok(v)
   }
-  /// Returns all files in use by this segment.
-  pub fn files(&self) -> Result<HashSet<String>> {
-    // Start from the wrapped info's files (deep copy):
-    let update_file_count = self
-      .dv_updates_files
-      .values()
-      .map(HashSet::len)
-      .sum::<usize>();
+  pub(crate) fn has_only_base_files(&self) -> bool {
+    !self.has_deletions()
+      && self.get_field_infos_files().is_empty()
+      && self
+        .dv_updates_files
+        .as_ref()
+        .is_none_or(|files| files.is_empty())
+  }
+
+  pub(crate) fn files_for_read(&self) -> Result<Cow<'_, HashSet<String>>> {
+    if self.has_only_base_files() {
+      Ok(Cow::Borrowed(self.info.files()?))
+    } else {
+      Ok(Cow::Owned(self.files()?))
+    }
+  }
+
+  pub(crate) fn append_files_to(&self, files: &mut HashSet<String>) -> Result<()> {
     let info_files = self.info.files()?;
-    let mut files =
-      HashSet::with_capacity(info_files.len() + update_file_count + self.field_infos_files.len());
+    files.reserve(info_files.len() + self.update_file_count() + usize::from(self.has_deletions()));
     files.extend(info_files.iter().cloned());
     if self.has_deletions() {
-      // debug_assert!(self.info.codec.is_some());
       self
         .info
         .get_codec()?
         .live_docs_format()
-        .files(self, &mut files)?;
+        .files(self, files)?;
     }
-    for update_files in self.dv_updates_files.values() {
+    self.append_update_files(files);
+    Ok(())
+  }
+
+  fn update_file_count(&self) -> usize {
+    self
+      .get_doc_values_updates_files()
+      .values()
+      .map(HashSet::len)
+      .sum::<usize>()
+      + self.get_field_infos_files().len()
+  }
+
+  fn append_update_files(&self, files: &mut HashSet<String>) {
+    for update_files in self.get_doc_values_updates_files().values() {
       files.extend(update_files.iter().cloned());
     }
-    // must separately add fieldInfos files
-    files.extend(self.field_infos_files.iter().cloned());
+    files.extend(self.get_field_infos_files().iter().cloned());
+  }
+
+  /// Returns all files in use by this segment.
+  pub fn files(&self) -> Result<HashSet<String>> {
+    let mut files = HashSet::new();
+    self.append_files_to(&mut files)?;
     Ok(files)
   }
 
@@ -411,24 +481,36 @@ impl<D> SegmentCommitInfo<D> {
     &self,
     pending_del_count: i32,
   ) -> std::result::Result<String, std::fmt::Error> {
-    let mut s = SegmentInfo::to_string(&self.info, self.del_count + pending_del_count)?;
+    let mut description = String::new();
+    self.write_description(&mut description, pending_del_count)?;
+    Ok(description)
+  }
+
+  fn write_description(&self, output: &mut impl Write, pending_del_count: i32) -> std::fmt::Result {
+    self
+      .info
+      .write_description(output, self.del_count + pending_del_count)?;
 
     if self.del_gen != -1 {
-      write!(s, ":delGen={}", self.del_gen)?;
+      write!(output, ":delGen={}", self.del_gen)?;
     }
     if self.field_infos_gen != -1 {
-      write!(s, ":fieldInfosGen={}", self.field_infos_gen)?;
+      write!(output, ":fieldInfosGen={}", self.field_infos_gen)?;
     }
     if self.doc_values_gen != -1 {
-      write!(s, ":dvGen={}", self.doc_values_gen)?;
+      write!(output, ":dvGen={}", self.doc_values_gen)?;
     }
     if self.soft_del_count > 0 {
-      write!(s, " :softDel={}", self.soft_del_count)?;
+      write!(output, " :softDel={}", self.soft_del_count)?;
     }
     if self.id.is_some() {
-      write!(s, " :id={}", StringHelper::id_to_string(self.id.as_ref()))?;
+      write!(
+        output,
+        " :id={}",
+        StringHelper::id_to_string(self.id.as_ref())
+      )?;
     }
-    Ok(s)
+    Ok(())
   }
   /// Returns the number of deleted documents in the segment.
   /// If `include_soft_deletes` is `true`, it includes soft-deleted documents.
@@ -476,7 +558,7 @@ pub fn validate_soft_del_count(del_count: i32, max_doc: i32, soft_del_count: i32
 /// Implement `Display` for [`SegmentCommitInfo`].
 impl<D> std::fmt::Display for SegmentCommitInfo<D> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "{}", self.to_string_with_pending_del_count(0)?)
+    self.write_description(f, 0)
   }
 }
 impl<D> Clone for SegmentCommitInfo<D> {
@@ -495,10 +577,7 @@ impl<D> Clone for SegmentCommitInfo<D> {
     other.next_write_field_infos_gen = self.next_write_field_infos_gen;
     other.next_write_doc_values_gen = self.next_write_doc_values_gen;
 
-    other.dv_updates_files.reserve(self.dv_updates_files.len());
-    for (key, value) in &self.dv_updates_files {
-      other.dv_updates_files.insert(*key, value.clone());
-    }
+    other.dv_updates_files = self.dv_updates_files.clone();
 
     other.field_infos_files = self.field_infos_files.clone();
 

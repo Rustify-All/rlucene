@@ -167,14 +167,11 @@ where
   {
     let base = &self.base;
     let mut loaded_format = None;
-    if field.get_doc_values_gen() != -1 {
-      let mut format_name = None;
-      if !ignore_current_format {
-        format_name = field.get_attribute(PER_FIELD_FORMAT_KEY);
-      }
-      // This means the field never existed in that segment, yet is applied updates.
-      if let Some(format_name) = format_name {
-        loaded_format = Some(B::Format::for_name(&format_name)?);
+    if field.get_doc_values_gen() != -1 && !ignore_current_format {
+      let attributes = field.attributes();
+      // This can be a new field receiving its first update in the segment.
+      if let Some(format_name) = attributes.get(PER_FIELD_FORMAT_KEY) {
+        loaded_format = Some(B::Format::for_name(format_name)?);
       }
     }
     let format = match loaded_format.as_ref() {
@@ -191,11 +188,9 @@ where
       None => {
         // First time we are seeing this format; create a new instance.
 
-        if field.get_doc_values_gen() != -1 {
-          let mut suffix_attribute = None;
-          if !ignore_current_format {
-            suffix_attribute = field.get_attribute(PER_FIELD_SUFFIX_KEY);
-          }
+        if field.get_doc_values_gen() != -1 && !ignore_current_format {
+          let attributes = field.attributes();
+          let suffix_attribute = attributes.get(PER_FIELD_SUFFIX_KEY);
           // Even when dvGen is != -1, it can still be a new field that never
           // existed in the segment and therefore doesn't have the recorded
           // attributes yet.
@@ -256,7 +251,10 @@ where
     let suffix = suffix.ok_or_else(|| {
       LuceneError::illegal_state(format!("missing suffix for field: {}", field.name))
     })?;
-    field.put_attribute(PER_FIELD_SUFFIX_KEY.to_string(), suffix.to_string());
+    field.put_borrowed_attribute(
+      PER_FIELD_SUFFIX_KEY,
+      crate::core::index::index_file_names::decimal_suffix(suffix, &mut [0; 14]),
+    );
     let consumer = self.formats.get_mut(&identity).ok_or_else(|| {
       LuceneError::illegal_state(format!(
         "missing doc values consumer for field: {}",
@@ -471,7 +469,6 @@ where
   fn from_other(other: &Self) -> Result<Self> {
     let mut fields = HashMap::with_capacity(other.fields.len());
     let mut formats = HashMap::with_capacity(other.formats.len());
-    let mut old_to_new = HashMap::with_capacity(other.formats.len());
     // First clone all formats.
     for (segment_suffix, format) in &other.formats {
       let values = match format.as_ref().get_merge_instance()? {
@@ -481,14 +478,25 @@ where
       formats.insert(segment_suffix.clone(), values);
     }
 
-    // The format map owns every merge instance before the temporary lookup borrows it.
-    for (segment_suffix, format) in &other.formats {
-      old_to_new.insert(Arc::as_ptr(format), &formats[segment_suffix]);
+    let single = if other.formats.len() == 1 {
+      other.formats.values().next().zip(formats.values().next())
+    } else {
+      None
+    };
+    let mut old_to_new = HashMap::new();
+    if single.is_none() {
+      old_to_new.reserve(other.formats.len());
+      for (segment_suffix, format) in &other.formats {
+        old_to_new.insert(Arc::as_ptr(format), &formats[segment_suffix]);
+      }
     }
 
-    // Then rebuild fields.
     for (field_number, format) in &other.fields {
-      let producer = old_to_new.get(&Arc::as_ptr(format)).ok_or_else(|| {
+      let producer = match single {
+        Some((old, new)) => Arc::ptr_eq(old, format).then_some(new),
+        None => old_to_new.get(&Arc::as_ptr(format)).copied(),
+      };
+      let producer = producer.ok_or_else(|| {
         LuceneError::illegal_state(format!(
           "missing merge instance for field number: {field_number}"
         ))

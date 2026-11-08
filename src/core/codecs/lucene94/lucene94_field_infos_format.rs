@@ -260,9 +260,12 @@ impl FieldInfosFormat for Lucene94FieldInfosFormat {
   where
     D2: Directory,
   {
-    let file_name =
-      IndexFileNames::segment_file_name(&segment_info.name, segment_suffix, Self::EXTENSION);
-    let mut input = directory.open_checksum_input(&file_name)?;
+    let mut input = IndexFileNames::with_segment_file_name(
+      &segment_info.name,
+      segment_suffix,
+      Self::EXTENSION,
+      |name| directory.open_checksum_input(name),
+    )?;
     let mut infos = None;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
       || -> Result<FieldInfos> {
@@ -280,6 +283,8 @@ impl FieldInfosFormat for Lucene94FieldInfosFormat {
 
             let size = input.read_vint()?;
             let mut field_infos = Vec::with_capacity(size as usize);
+            let mut last_attributes =
+              Arc::clone(&crate::core::index::field_info::EMPTY_FIELD_ATTRIBUTES);
 
             for _ in 0..size {
               let name = input.read_string()?.into_owned();
@@ -328,6 +333,16 @@ impl FieldInfosFormat for Lucene94FieldInfosFormat {
               };
               let dv_gen = input.read_long()?;
               let attributes = input.read_map_of_strings()?;
+              let attributes = if attributes.is_empty() {
+                Arc::clone(&crate::core::index::field_info::EMPTY_FIELD_ATTRIBUTES)
+              } else if last_attributes.as_ref() == &attributes {
+                Arc::clone(&last_attributes)
+              } else {
+                Arc::new(attributes)
+              };
+              if !Arc::ptr_eq(&last_attributes, &attributes) {
+                last_attributes = Arc::clone(&attributes);
+              }
               let point_data_dimension_count = input.read_vint()?.try_convert()?;
               let (point_index_dimension_count, point_num_bytes) =
                 if point_data_dimension_count != 0 {
@@ -410,9 +425,12 @@ impl FieldInfosFormat for Lucene94FieldInfosFormat {
   where
     D2: Directory,
   {
-    let file_name =
-      IndexFileNames::segment_file_name(&segment_info.name, segment_suffix, Self::EXTENSION);
-    let mut output = directory.create_output(&file_name, io_context)?;
+    let mut output = IndexFileNames::with_segment_file_name(
+      &segment_info.name,
+      segment_suffix,
+      Self::EXTENSION,
+      |name| directory.create_output(name, io_context),
+    )?;
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       CodecUtil::write_index_header(
