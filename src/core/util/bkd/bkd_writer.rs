@@ -125,6 +125,24 @@ where
     max_mb_sort_in_heap: f64,
     total_point_count: i64,
   ) -> Result<Self> {
+    Self::new_with_shared_prefix(
+      max_doc,
+      temp_dir,
+      Arc::from(temp_file_name_prefix),
+      config,
+      max_mb_sort_in_heap,
+      total_point_count,
+    )
+  }
+
+  pub(crate) fn new_with_shared_prefix(
+    max_doc: i32,
+    temp_dir: D,
+    temp_file_name_prefix: Arc<str>,
+    config: BKDConfig,
+    max_mb_sort_in_heap: f64,
+    total_point_count: i64,
+  ) -> Result<Self> {
     Self::verify_params(max_mb_sort_in_heap, total_point_count)?;
 
     let bytes_per_dim = config.bytes_per_dim;
@@ -164,7 +182,7 @@ where
       equals_predicate,
       common_prefix_comparator,
       temp_dir,
-      temp_file_name_prefix: Arc::from(temp_file_name_prefix),
+      temp_file_name_prefix,
       max_mb_sort_in_heap,
       scratch_diff,
       scratch,
@@ -466,7 +484,7 @@ where
       &mut split_packed_values,
       &mut split_dimension_values,
       &mut leaf_block_fps,
-      &mut vec![0; self.config.max_points_in_leaf_node],
+      spare_doc_ids,
     )?;
 
     debug_assert!(
@@ -735,7 +753,7 @@ where
         &mut split_packed_values,
         &mut split_dimension_values,
         &mut leaf_block_fps,
-        &mut vec![0; self.config.max_points_in_leaf_node],
+        spare_doc_ids,
       )?;
 
       debug_assert!(
@@ -751,8 +769,7 @@ where
       Ok(())
     }));
     if !success {
-      let created_files = self.temp_dir.get_created_files();
-      IOUtils::delete_files_ignoring_exceptions(&self.temp_dir, &created_files);
+      self.temp_dir.delete_created_files_ignoring_errors();
     }
     unwrap_caught_result!(result)?;
 
@@ -1315,35 +1332,40 @@ where
     DO: DataOutput,
     T: PackedValues,
   {
+    let mut min = BytesRefBuilder::<Vec<u8>>::new();
+    let mut max = BytesRefBuilder::<Vec<u8>>::new();
     for dim in 0..self.config.num_index_dims {
       let common_prefix_length = self.common_prefix_lengths[dim];
       let suffix_length = self.config.bytes_per_dim - common_prefix_length;
 
       if suffix_length > 0 {
-        let (min, max) = self.compute_min_max(
+        Self::compute_min_max(
+          &mut min,
+          &mut max,
           count,
           packed_values,
           dim * self.config.bytes_per_dim + common_prefix_length,
           suffix_length,
         )?;
 
+        let min = min.get_bytes_ref();
+        let max = max.get_bytes_ref();
         out.write_bytes_range(&min.bytes, min.offset, min.length)?;
         out.write_bytes_range(&max.bytes, max.offset, max.length)?;
       }
     }
     Ok(())
   }
-  /// Return an array that contains the min and max values for the [offset,
-  ///
-  /// `offset..offset + length` interval of the given [`BytesRef`] values.
-  #[allow(clippy::type_complexity)]
+  /// Fill minimum and maximum values for the `offset..offset + length`
+  /// interval of the given [`BytesRef`] values.
   fn compute_min_max<T>(
-    &self,
+    min: &mut BytesRefBuilder<Vec<u8>>,
+    max: &mut BytesRefBuilder<Vec<u8>>,
     count: usize,
     packed_values: &mut T,
     offset: usize,
     length: usize,
-  ) -> Result<(BytesRef<Vec<u8>>, BytesRef<Vec<u8>>)>
+  ) -> Result<()>
   where
     T: PackedValues,
   {
@@ -1351,8 +1373,6 @@ where
     let value = packed_values.get_value(0)?;
     let bytes_ref = value.bytes;
     let first_offset = value.offset;
-    let mut min: BytesRefBuilder<Vec<u8>> = BytesRefBuilder::new();
-    let mut max: BytesRefBuilder<Vec<u8>> = BytesRefBuilder::new();
     let bytes = bytes_ref;
     min.copy_bytes_from_vec(bytes, first_offset + offset, length)?;
     max.copy_bytes_from_vec(bytes, first_offset + offset, length)?;
@@ -1385,7 +1405,7 @@ where
         max.copy_bytes_from_vec(candidate_bytes, candidate_offset + offset, length)?;
       }
     }
-    Ok((min.get_bytes_owner(), max.get_bytes_owner()))
+    Ok(())
   }
   fn write_leaf_block_packed_values_range<DO, T>(
     &self,
@@ -2385,12 +2405,12 @@ where
     bkd_writer.finished = true;
 
     let data_start_fp = data_out.get_file_pointer()?;
-    let leaf_values = vec![
-      0u8;
-      bkd_writer.config.max_points_in_leaf_node
-        * bkd_writer.config.packed_bytes_length()
-    ];
-    let leaf_docs = vec![0i32; bkd_writer.config.max_points_in_leaf_node];
+    let leaf_capacity = bkd_writer
+      .config
+      .max_points_in_leaf_node
+      .min(usize::try_from(bkd_writer.total_point_count).unwrap_or(usize::MAX));
+    let leaf_values = Vec::with_capacity(leaf_capacity * bkd_writer.config.packed_bytes_length());
+    let leaf_docs = Vec::with_capacity(leaf_capacity);
     #[cfg(debug_assertions)]
     let last_packed_value = vec![0u8; bkd_writer.config.packed_bytes_length()];
 
@@ -2435,12 +2455,12 @@ where
       self.leaf_cardinality += 1;
     }
 
-    let offset = self.leaf_count * self.bkd_writer.config.packed_bytes_length();
     let length = self.bkd_writer.config.packed_bytes_length();
-    self.leaf_values.copy_from(&packed_value[0..length], offset);
-
-    self.leaf_docs[self.leaf_count] = doc_id;
+    let value = &packed_value[..length];
+    assert!(self.leaf_count < self.bkd_writer.config.max_points_in_leaf_node);
     self.bkd_writer.docs_seen.set(doc_id as usize)?;
+    self.leaf_values.extend_from_slice(value);
+    self.leaf_docs.push(doc_id);
     self.leaf_count += 1;
 
     if self.value_count + self.leaf_count as i64 > self.bkd_writer.total_point_count {
@@ -2453,6 +2473,8 @@ where
 
     if self.leaf_count == self.bkd_writer.config.max_points_in_leaf_node {
       self.write_leaf_block(self.leaf_cardinality)?;
+      self.leaf_values.clear();
+      self.leaf_docs.clear();
       self.leaf_cardinality = 0;
       self.leaf_count = 0;
     }
@@ -2468,6 +2490,8 @@ where
   pub fn finish(&mut self) -> Result<Option<IORunnable>> {
     if self.leaf_count > 0 {
       self.write_leaf_block(self.leaf_cardinality)?;
+      self.leaf_values.clear();
+      self.leaf_docs.clear();
       self.leaf_cardinality = 0;
       self.leaf_count = 0;
     }
@@ -2840,7 +2864,7 @@ impl MergeIntersectsVisitor {
   fn new(packed_bytes_length: usize) -> Self {
     Self {
       docs_in_block: 0,
-      packed_values: vec![0u8; packed_bytes_length],
+      packed_values: Vec::new(),
       doc_ids: Vec::new(),
       packed_bytes_length,
     }

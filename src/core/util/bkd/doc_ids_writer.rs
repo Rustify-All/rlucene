@@ -19,6 +19,7 @@ use crate::core::search::doc_id_set_iterator::{DocIdSetIterator, NO_MORE_DOCS};
 use crate::core::store::{DataOutput, IndexInput};
 use crate::core::util::TryIntoInt;
 use crate::core::util::array_util::ArrayUtil;
+use crate::core::util::bit_set::BitSet;
 use crate::core::util::doc_base_bit_set_iterator::DocBaseBitSetIterator;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::fixed_bit_set::FixedBitSet;
@@ -369,6 +370,7 @@ impl DocIdsWriter {
         pos += 1;
       }
       debug_assert!(pos == count, "pos: {pos}, count: {count}");
+      self.scratch_longs.longs = iterator.bits.bits;
       return Ok(());
     }
     let mut pos = 0usize;
@@ -399,6 +401,7 @@ impl DocIdsWriter {
       }
     }
     debug_assert!(pos == count, "pos: {pos}, count: {count}");
+    self.scratch_longs.longs = iterator.bits.bits;
     Ok(())
   }
 
@@ -501,8 +504,9 @@ impl DocIdsWriter {
     V: IntersectVisitor,
   {
     let mut bit_set_iterator = self.read_bit_set_iterator(input, count)?;
-    visitor.visit_with_iterator(&mut bit_set_iterator)?;
-    Ok(())
+    let result = visitor.visit_with_iterator(&mut bit_set_iterator);
+    self.scratch_longs.longs = bit_set_iterator.bits.bits;
+    result
   }
   fn read_continuous_ids_with_visitor<II, V>(
     input: &mut II,
@@ -517,8 +521,8 @@ impl DocIdsWriter {
     let extra = start & 63;
     let offset = start - extra;
     let num_bits = count + extra;
-    let mut bit_set = FixedBitSet::new(num_bits);
-    bit_set.set_with_range(extra, num_bits);
+    let mut bit_set = FixedBitSet::with_set_prefix(num_bits, num_bits);
+    bit_set.clear_range(0, extra)?;
     let mut disi = DocBaseBitSetIterator::new(bit_set, count as i64, offset)?;
     visitor.visit_with_iterator(&mut disi)?;
     Ok(())

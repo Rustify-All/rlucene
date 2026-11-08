@@ -17,7 +17,6 @@
 use crate::core::codecs::CodecUtil;
 use crate::core::codecs::lucene90_points_format::Lucene90PointsFormat;
 use crate::core::codecs::points_reader::PointsReader;
-use crate::core::index::IndexFileNames;
 use crate::core::index::field_infos::FieldInfos;
 use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::segment_read_state::SegmentReadState;
@@ -54,35 +53,23 @@ where
   {
     let suffix = &read_state.segment_suffix;
 
-    let meta_file_name = IndexFileNames::segment_file_name(
-      &segment_info.name,
-      suffix,
-      Lucene90PointsFormat::META_EXTENSION,
-    );
-    let index_file_name = IndexFileNames::segment_file_name(
-      &segment_info.name,
-      suffix,
-      Lucene90PointsFormat::INDEX_EXTENSION,
-    );
-    let data_file_name = IndexFileNames::segment_file_name(
-      &segment_info.name,
-      suffix,
-      Lucene90PointsFormat::DATA_EXTENSION,
-    );
-
     let mut index_in = None;
     let mut shared_index_in = None;
     let mut data_in = None;
     let mut success = false;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<Self> {
-      index_in = Some(
-        read_state.directory.open_input(
-          &index_file_name,
-          &read_state
-            .context
-            .with_read_advice_self(ReadAdvice::RandomPreload)?,
-        )?,
-      );
+      index_in = Some(read_state.with_file_name(
+        &segment_info.name,
+        Lucene90PointsFormat::INDEX_EXTENSION,
+        |name| {
+          read_state.directory.open_input(
+            name,
+            &read_state
+              .context
+              .with_read_advice_self(ReadAdvice::RandomPreload)?,
+          )
+        },
+      )?);
       let index_in_ref = index_in
         .as_mut()
         .ok_or_else(|| LuceneError::illegal_state("points index input is missing"))?;
@@ -96,14 +83,18 @@ where
       )?;
       CodecUtil::retrieve_checksum(index_in_ref)?;
       // Points read whole ranges of bytes at once, so pass ReadAdvice.NORMAL to perform readahead.
-      data_in = Some(Arc::new(Mutex::new(
-        read_state.directory.open_input(
-          &data_file_name,
-          &read_state
-            .context
-            .with_read_advice_self(ReadAdvice::Normal)?,
-        )?,
-      )));
+      data_in = Some(Arc::new(Mutex::new(read_state.with_file_name(
+        &segment_info.name,
+        Lucene90PointsFormat::DATA_EXTENSION,
+        |name| {
+          read_state.directory.open_input(
+            name,
+            &read_state
+              .context
+              .with_read_advice_self(ReadAdvice::Normal)?,
+          )
+        },
+      )?)));
       let data_in_ref = data_in
         .as_ref()
         .ok_or_else(|| LuceneError::illegal_state("points data input is missing"))?;
@@ -122,8 +113,12 @@ where
 
       let mut index_length: i64 = -1;
       let mut data_length: i64 = -1;
-      let mut tmp_readers = HashMap::new();
-      let mut meta_in = read_state.directory.open_checksum_input(&meta_file_name)?;
+      let mut readers = HashMap::new();
+      let mut meta_in = read_state.with_file_name(
+        &segment_info.name,
+        Lucene90PointsFormat::META_EXTENSION,
+        |name| read_state.directory.open_checksum_input(name),
+      )?;
       let metadata_result =
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
           let read_result =
@@ -156,7 +151,7 @@ where
                     .ok_or_else(|| LuceneError::illegal_state("points data input is missing"))?
                     .clone(),
                 )?;
-                tmp_readers.insert(field_number, reader);
+                readers.insert(field_number, Arc::new(reader));
               }
 
               index_length = meta_in.read_long()?;
@@ -189,15 +184,15 @@ where
         Some(Arc::new(index_in.take().ok_or_else(|| {
           LuceneError::illegal_state("points index input is missing")
         })?));
-      let mut readers = HashMap::with_capacity(tmp_readers.len());
-      for mut value in tmp_readers.drain() {
-        value.1.init_index_in(
-          shared_index_in
-            .as_ref()
-            .ok_or_else(|| LuceneError::illegal_state("points index input is missing"))?
-            .clone(),
-        )?;
-        readers.insert(value.0, Arc::new(value.1));
+      for reader in readers.values_mut() {
+        Arc::get_mut(reader)
+          .ok_or_else(|| LuceneError::illegal_state("point reader is already shared"))?
+          .init_index_in(
+            shared_index_in
+              .as_ref()
+              .ok_or_else(|| LuceneError::illegal_state("points index input is missing"))?
+              .clone(),
+          )?;
       }
       let reader = Self {
         index_in: shared_index_in

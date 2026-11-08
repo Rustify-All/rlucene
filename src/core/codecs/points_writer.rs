@@ -58,7 +58,7 @@ pub trait PointsWriter: Closeable {
     CR: CodecReader,
   {
     let mut max_point_count = 0;
-    let mut point_values = Vec::with_capacity(merge_state.points_readers.len());
+    let mut point_values = Vec::new();
     for (i, points_reader_opt) in merge_state.points_readers.iter().enumerate() {
       let points_reader = match points_reader_opt.as_ref() {
         Some(v) => v,
@@ -81,6 +81,9 @@ pub trait PointsWriter: Closeable {
       };
 
       max_point_count += values.size()?;
+      if point_values.is_empty() {
+        point_values.reserve_exact(merge_state.points_readers.len());
+      }
       point_values.push((values, &merge_state.doc_maps[i]));
     }
     let mut points_reader =

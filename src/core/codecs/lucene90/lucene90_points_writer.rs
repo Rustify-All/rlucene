@@ -18,7 +18,6 @@ use crate::core::codecs::CodecUtil;
 use crate::core::codecs::lucene90_points_format::Lucene90PointsFormat;
 use crate::core::codecs::points_reader::PointsReader;
 use crate::core::codecs::points_writer::{PointsWriter, default_merge};
-use crate::core::index::IndexFileNames;
 use crate::core::index::field_info::FieldInfo;
 use crate::core::index::merge_state::MergeState;
 use crate::core::index::point_values::Relation::CellCrossesQuery;
@@ -81,10 +80,10 @@ where
     D1: Directory,
     T: PointTree,
   {
-    let mut writer = BKDWriter::<_, N>::new_with_bytes(
+    let mut writer = BKDWriter::<_, N>::new_with_shared_prefix(
       max_doc,
       dir,
-      &segment_info.name,
+      Arc::clone(&segment_info.name),
       config,
       self.max_mb_sort_in_heap,
       total,
@@ -129,17 +128,17 @@ where
     D2: Directory,
     CR: crate::core::index::codec_reader::CodecReader,
   {
-    let mut writer = BKDWriter::<_, N>::new_with_bytes(
+    let mut writer = BKDWriter::<_, N>::new_with_shared_prefix(
       merge_state.segment_info.max_doc()?,
       dir,
-      &merge_state.segment_info.name,
+      Arc::clone(&merge_state.segment_info.name),
       config,
       self.max_mb_sort_in_heap,
       total_max_size.try_convert()?,
     )?;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
-      let mut point_values = Vec::with_capacity(merge_state.points_readers.len());
-      let mut doc_maps = Vec::with_capacity(merge_state.points_readers.len());
+      let mut point_values = Vec::new();
+      let mut doc_maps = Vec::new();
       for (i, reader) in merge_state.points_readers.iter().enumerate() {
         let Some(reader) = reader.as_ref() else {
           continue;
@@ -153,8 +152,13 @@ where
           continue;
         }
         if let Some(values) = reader.get_values(&reader_field_info.name)? {
+          if point_values.is_empty() {
+            let reader_count = merge_state.points_readers.len();
+            point_values.reserve_exact(reader_count);
+            doc_maps.reserve_exact(reader_count);
+          }
           point_values.push(values);
-          doc_maps.push(merge_state.doc_map(i));
+          doc_maps.push(&merge_state.doc_maps[i]);
         }
       }
 
@@ -178,15 +182,9 @@ where
   {
     debug_assert!(write_state.field_infos.has_point_values());
 
-    let data_file = IndexFileNames::segment_file_name(
-      &segment_info.name,
-      &write_state.segment_suffix,
-      Lucene90PointsFormat::DATA_EXTENSION,
-    );
     let mut data_out = Some(
       write_state
-        .directory
-        .create_output(&data_file, write_state.context)?,
+        .create_segment_output(&segment_info.name, Lucene90PointsFormat::DATA_EXTENSION)?,
     );
     let mut meta_out = None;
     let mut index_out = None;
@@ -202,15 +200,9 @@ where
         &write_state.segment_suffix,
       )?;
 
-      let meta_file = IndexFileNames::segment_file_name(
-        &segment_info.name,
-        &write_state.segment_suffix,
-        Lucene90PointsFormat::META_EXTENSION,
-      );
       meta_out = Some(
         write_state
-          .directory
-          .create_output(&meta_file, write_state.context)?,
+          .create_segment_output(&segment_info.name, Lucene90PointsFormat::META_EXTENSION)?,
       );
       CodecUtil::write_index_header(
         meta_out
@@ -222,15 +214,9 @@ where
         &write_state.segment_suffix,
       )?;
 
-      let index_file = IndexFileNames::segment_file_name(
-        &segment_info.name,
-        &write_state.segment_suffix,
-        Lucene90PointsFormat::INDEX_EXTENSION,
-      );
       index_out = Some(
         write_state
-          .directory
-          .create_output(&index_file, write_state.context)?,
+          .create_segment_output(&segment_info.name, Lucene90PointsFormat::INDEX_EXTENSION)?,
       );
       CodecUtil::write_index_header(
         index_out

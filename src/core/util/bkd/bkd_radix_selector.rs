@@ -124,8 +124,6 @@ impl<const N: usize> BKDRadixSelector<N> {
     let bytes_sorted = config.bytes_per_dim
       + (config.num_dims - config.num_index_dims) * config.bytes_per_dim
       + BitUtil::INT_BYTES;
-    let number_of_points_offline = Self::MAX_SIZE_OFFLINE_BUFFER / config.bytes_per_doc();
-    let offline_buffer = vec![0u8; number_of_points_offline * config.bytes_per_doc()];
     let partition_bucket = smallvec::smallvec![0; bytes_sorted];
     let histogram = [0; 256];
     let scratch = smallvec::smallvec![0u8; bytes_sorted];
@@ -134,11 +132,20 @@ impl<const N: usize> BKDRadixSelector<N> {
       max_points_sort_in_heap,
       temp_file_name_prefix: temp_file_name_prefix.into(),
       bytes_sorted,
-      offline_buffer,
+      offline_buffer: Vec::new(),
       partition_bucket,
       histogram,
       scratch,
     }
+  }
+
+  fn take_offline_buffer(&mut self) -> Vec<u8> {
+    if self.offline_buffer.is_empty() {
+      let bytes_per_doc = self.config.bytes_per_doc();
+      let capacity = (Self::MAX_SIZE_OFFLINE_BUFFER / bytes_per_doc) * bytes_per_doc;
+      self.offline_buffer.resize(capacity, 0);
+    }
+    std::mem::take(&mut self.offline_buffer)
   }
 
   /// It uses the provided `points` from the given `from` to the given `to` to
@@ -402,12 +409,8 @@ impl<const N: usize> BKDRadixSelector<N> {
   {
     let common_prefix_position = self.bytes_sorted;
     let offset = dim * self.config.bytes_per_dim;
-    let mut reader = points.get_reader_with_buffer(
-      from,
-      to - from,
-      std::mem::take(&mut self.offline_buffer),
-      temp_dir,
-    )?;
+    let mut reader =
+      points.get_reader_with_buffer(from, to - from, self.take_offline_buffer(), temp_dir)?;
     let body_result =
       std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<usize> {
         match &mut reader {
@@ -628,12 +631,8 @@ impl<const N: usize> BKDRadixSelector<N> {
     debug_assert!(byte_position == self.bytes_sorted - 1 || delta_points.is_some());
     let offset = dim * self.config.bytes_per_dim;
     let tiebreak_counter = 0usize;
-    let mut reader = points.get_reader_with_buffer(
-      from,
-      to - from,
-      std::mem::take(&mut self.offline_buffer),
-      temp_dir,
-    )?;
+    let mut reader =
+      points.get_reader_with_buffer(from, to - from, self.take_offline_buffer(), temp_dir)?;
     let body_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       match &mut reader {
         OfflinePointReader::Plain(reader) => self.partition_from_reader(

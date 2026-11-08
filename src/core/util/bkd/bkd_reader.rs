@@ -470,15 +470,15 @@ where
     let bytes_per_dim = self.config.bytes_per_dim;
     let split_dim_pos = self.split_positions[level].dimension;
 
-    if self.split_dim_value_stack[level].is_empty() {
-      self.split_dim_value_stack[level] = vec![0; bytes_per_dim].into_boxed_slice();
+    // Save the dimension we are going to change.
+    let start = self.config.packed_index_bytes_length() + split_dim_pos;
+    let bound = &self.packed_bounds[start..start + bytes_per_dim];
+    let saved = &mut self.split_dim_value_stack[level];
+    if saved.is_empty() {
+      *saved = Box::from(bound);
+    } else {
+      saved.copy_from_slice(bound);
     }
-    // save the dimension we are going to change
-    self.split_dim_value_stack[level].copy_from(
-      &self.packed_bounds[self.config.packed_index_bytes_length()..]
-        [split_dim_pos..split_dim_pos + bytes_per_dim],
-      0,
-    );
 
     debug_assert!(
       BKDBytes::<0>::new(bytes_per_dim).compare(

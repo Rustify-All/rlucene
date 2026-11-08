@@ -93,17 +93,20 @@ impl XYPointField {
     let x_encoded = XYEncodingUtils::encode(x)?;
     let y_encoded = XYEncodingUtils::encode(y)?;
 
-    let mut encoded = [0u8; 2 * BitUtil::INT_BYTES];
-    NumericUtils::int_to_sortable_bytes(x_encoded, &mut encoded, 0);
-    NumericUtils::int_to_sortable_bytes(y_encoded, &mut encoded, BitUtil::INT_BYTES);
-
     match &mut self.parent_field.fields_data {
       FieldDataEnum::Binary(bytes) => {
-        bytes.bytes[..encoded.len()].copy_from_slice(&encoded);
+        let encoded = &mut bytes.bytes[..2 * BitUtil::INT_BYTES];
+        NumericUtils::int_to_sortable_bytes(x_encoded, encoded, 0);
+        NumericUtils::int_to_sortable_bytes(y_encoded, encoded, BitUtil::INT_BYTES);
         bytes.offset = 0;
         bytes.length = bytes.bytes.len();
       },
-      _ => self.parent_field.fields_data = BytesRef::from_bytes(encoded.to_vec()).into(),
+      _ => {
+        let mut encoded = vec![0u8; 2 * BitUtil::INT_BYTES];
+        NumericUtils::int_to_sortable_bytes(x_encoded, &mut encoded, 0);
+        NumericUtils::int_to_sortable_bytes(y_encoded, &mut encoded, BitUtil::INT_BYTES);
+        self.parent_field.fields_data = BytesRef::from_bytes(encoded).into();
+      },
     }
     Ok(())
   }
