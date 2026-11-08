@@ -209,6 +209,14 @@ impl ForUtil {
         _ => {},
       }
     }
+    if bits_per_value == primitive_size
+      && matches!(primitive_size, 8 | 16 | 32)
+      && ints.len() >= num_ints
+      && tmp.len() >= num_ints
+    {
+      tmp[..num_ints].copy_from_slice(&ints[..num_ints]);
+      return out.write_ints(&tmp[..num_ints]);
+    }
     let mut idx = 0;
     let mut shift = primitive_size - bits_per_value;
     for (t, l) in tmp.iter_mut().take(num_ints_per_shift).zip(&ints[idx..]) {
