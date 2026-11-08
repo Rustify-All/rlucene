@@ -21,6 +21,7 @@ use crate::core::util::SliceCopyOps;
 /// calculations.
 pub struct BufferedChecksum<T> {
   buffer: Box<[u8]>,
+  buffer_size: usize,
   upto: usize,
   checksum: T,
 }
@@ -29,20 +30,23 @@ impl<T: Checksum> BufferedChecksum<T> {
   /// Default buffer size: 1024
   pub const DEFAULT_BUFFER_SIZE: usize = 1024;
   pub fn new(checksum: T) -> Self {
-    Self {
-      buffer: vec![0; Self::DEFAULT_BUFFER_SIZE].into_boxed_slice(),
-      upto: 0,
-      checksum,
-    }
+    Self::with_buffer_size(checksum, Self::DEFAULT_BUFFER_SIZE)
   }
   /// Creates a new [`BufferedChecksum`] with the specified `buffer_size`.
   pub fn with_buffer_size(checksum: T, buffer_size: usize) -> Self {
     Self {
-      buffer: vec![0; buffer_size].into_boxed_slice(),
+      buffer: Box::default(),
+      buffer_size,
       upto: 0,
       checksum,
     }
   }
+  fn ensure_buffer(&mut self) {
+    if self.buffer.is_empty() {
+      self.buffer = vec![0; self.buffer_size].into_boxed_slice();
+    }
+  }
+
   fn flush(&mut self) {
     if self.upto > 0 {
       self.checksum.update_bytes(&self.buffer, 0, self.upto);
@@ -69,7 +73,7 @@ impl<T: Checksum> BufferedChecksum<T> {
     // Validate the same source slice before changing the checksum buffer.
     let _ = &values[offset..offset + len];
     // Preserve the existing direct-update path for buffers smaller than a long.
-    if self.buffer.len() < size_of::<i64>() {
+    if self.buffer_size < size_of::<i64>() {
       for value in &values[offset..offset + len] {
         self.update_long(*value);
       }
@@ -86,7 +90,10 @@ impl<T: Checksum> BufferedChecksum<T> {
         return;
       }
     }
-    let capacity = self.buffer.len() / size_of::<i64>();
+    if len != 0 {
+      self.ensure_buffer();
+    }
+    let capacity = self.buffer_size / size_of::<i64>();
     while len > 0 {
       self.flush();
       let count = capacity.min(len);
@@ -106,27 +113,30 @@ impl<T: Checksum> BufferedChecksum<T> {
 }
 impl<T: Checksum> Checksum for BufferedChecksum<T> {
   fn update(&mut self, b: u8) {
-    debug_assert!(self.buffer.len() <= i32::MAX as usize);
-    if self.upto == self.buffer.len() {
+    debug_assert!(self.buffer_size <= i32::MAX as usize);
+    if self.upto == self.buffer_size {
       self.flush();
     }
+    self.ensure_buffer();
     self.buffer[self.upto] = b;
     self.upto += 1;
   }
 
   fn update_bytes(&mut self, bytes: &[u8], offset: usize, len: usize) {
-    if len >= self.buffer.len() {
+    if len >= self.buffer_size {
       self.flush();
       self
         .checksum
         .update_bytes(&bytes[offset..offset + len], 0, len);
     } else {
-      if self.upto + len > self.buffer.len() {
+      if self.upto + len > self.buffer_size {
         self.flush();
       }
-      self
-        .buffer
-        .copy_from(&bytes[offset..offset + len], self.upto);
+      let bytes = &bytes[offset..offset + len];
+      if !bytes.is_empty() {
+        self.ensure_buffer();
+        self.buffer.copy_from(bytes, self.upto);
+      }
       self.upto += len;
     }
   }

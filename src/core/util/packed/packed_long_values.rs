@@ -201,10 +201,8 @@ impl Builder {
     let page_shift = PackedInts::check_block_size(page_size, MIN_PAGE_SIZE, MAX_PAGE_SIZE)?;
     let page_size = page_size as usize;
     let page_mask = page_size - 1;
-    let pending = Vec::with_capacity(page_size);
-    let values = Vec::with_capacity(INITIAL_PAGE_COUNT);
+    let values = Vec::new();
     let ram_bytes_used = Self::BASE_RAM_BYTES_USED
-      .saturating_add(size_of_vec(&pending))
       .saturating_add(size_of_vec(&values))
       .saturating_add(
         sub_packed_long_values_builder
@@ -215,7 +213,7 @@ impl Builder {
       page_shift,
       page_mask,
       acceptable_overhead_ratio,
-      pending,
+      pending: Vec::new(),
       size: 0,
       values,
       ram_bytes_used,
@@ -250,13 +248,19 @@ impl Builder {
       let current_value_len = self.values.capacity();
       if current_value_len == self.values_off {
         // Increase by half of the current length.
-        let new_length = current_value_len + current_value_len / 2;
+        let new_length = (current_value_len + current_value_len / 2).max(INITIAL_PAGE_COUNT);
         debug_assert!(new_length <= i32::MAX as usize);
         self.grow(new_length)?;
       }
       self.pack_impl()?;
     }
 
+    if self.pending.capacity() == 0 {
+      self.pending.reserve_exact(self.page_mask + 1);
+      self.ram_bytes_used = self
+        .ram_bytes_used
+        .saturating_add(size_of_vec(&self.pending));
+    }
     self.pending.push(l);
     self.size += 1;
     Ok(self)
@@ -264,7 +268,7 @@ impl Builder {
   pub(crate) fn finish(&mut self) -> Result<()> {
     if !self.pending.is_empty() {
       if self.values.capacity() == self.values_off {
-        self.grow(self.values_off + 1)?;
+        self.grow((self.values_off + 1).max(INITIAL_PAGE_COUNT))?;
       }
       self.pack_impl()?;
     }

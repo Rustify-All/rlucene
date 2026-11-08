@@ -23,7 +23,7 @@ use crate::core::util::allocator_byte::DirectTrackingAllocatorByte;
 use crate::core::util::array_util::ArrayUtil;
 use crate::core::util::byte_block_pool::{BYTE_BLOCK_MASK, BYTE_BLOCK_SHIFT, BYTE_BLOCK_SIZE};
 use crate::core::util::error::lucene_error::{LuceneError, Result};
-use crate::core::util::ram_usage_estimator::{size_of_array_capacity, size_of_vec};
+use crate::core::util::ram_usage_estimator::size_of_array_capacity;
 use crate::core::util::sortable_bytes_ref_array::SortableBytesRefArray;
 use crate::core::util::{
   ByteBlockPool, BytesRefComparator, Counter, MSBRadixSorterBase, SharedCounter, SliceCopyOps,
@@ -50,8 +50,7 @@ pub struct BytesRefArray {
 impl BytesRefArray {
   pub fn new(byte_used: SharedCounter) -> Result<BytesRefArray> {
     let allocator = DirectTrackingAllocatorByte::new(byte_used.clone());
-    let mut pool = ByteBlockPool::new(allocator);
-    pool.next_buffer()?;
+    let pool = ByteBlockPool::new(allocator);
     let offsets = smallvec::SmallVec::with_capacity(1);
     byte_used.add_and_get(size_of_array_capacity::<usize>(offsets.capacity()));
     Ok(BytesRefArray {
@@ -250,6 +249,9 @@ impl<'a> SortableBytesRefArray<'a> for BytesRefArray {
       self
         .byte_used
         .add_and_get(size_of_array_capacity::<usize>(self.offsets.capacity()) - old_size);
+    }
+    if self.pool.buffer_upto.is_none() {
+      self.pool.next_buffer()?;
     }
     self.pool.append(view)?;
     self.offsets.push(self.current_offset);

@@ -16,24 +16,21 @@
  */
 use crate::core::index::index_reader::Identity;
 use crate::core::store::IOContext;
-use crate::core::store::directory::{Directory, get_temp_file_name};
+use crate::core::store::directory::Directory;
 use crate::core::util::HasIdentity;
 use crate::core::util::close::CloseableRef;
 use crate::core::util::error::lucene_error::{LuceneError, LuceneErrorKind, Result};
 use crate::core::util::io_utils::IOUtils;
 use parking_lot::Mutex;
-use regex::Regex;
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::io::{Error, ErrorKind};
-use std::sync::LazyLock;
-
-static EXT_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-  expect_invariant!(
-    Regex::new(r"\.([a-zA-Z]+)"),
-    "the built-in file extension pattern is valid"
-  )
-});
+fn embedded_extension(name: &str) -> Option<&str> {
+  name.split('.').skip(1).find_map(|part| {
+    let len = part.bytes().take_while(u8::is_ascii_alphabetic).count();
+    (len != 0).then(|| &part[..len])
+  })
+}
 
 /// Utility method to return a file's extension.
 pub fn get_extension(name: &str) -> &str {
@@ -42,13 +39,11 @@ pub fn get_extension(name: &str) -> &str {
   };
 
   let ext = &name[index + 1..];
-  if ext == "tmp"
-    && let Some(captures) = EXT_PATTERN.captures(&name[..index + 1])
-    && let Some(ext) = captures.get(1)
-  {
-    return ext.as_str();
+  if ext == "tmp" {
+    embedded_extension(&name[..index]).unwrap_or(ext)
+  } else {
+    ext
   }
-  ext
 }
 
 /// Expert: A [`Directory`] instance that switches files between two other
@@ -276,13 +271,39 @@ where
     // to the same directory hence we use the full file-name to find the right
     // directory. Here we can't make a decision but we need to ensure that all
     // other operations map to the right directory.
-    let tmp_file_name = get_temp_file_name(prefix, suffix, 0);
-    self
-      .get_directory(&tmp_file_name)
-      .create_temp_output(prefix, suffix, context)
+    let extension = embedded_extension(prefix)
+      .or_else(|| embedded_extension(suffix))
+      .unwrap_or("tmp");
+    let directory = if self.primary_extensions.contains(extension) {
+      &self.primary_dir
+    } else {
+      &self.secondary_dir
+    };
+    directory.create_temp_output(prefix, suffix, context)
   }
 
   fn sync(&self, names: &[String]) -> Result<()> {
+    if let Some(first) = names.first() {
+      let primary = self.is_primary(first);
+      let split = names
+        .iter()
+        .position(|name| self.is_primary(name) != primary)
+        .unwrap_or(names.len());
+      let (first_group, second_group) = names.split_at(split);
+      if second_group
+        .iter()
+        .all(|name| self.is_primary(name) != primary)
+      {
+        let (primary_names, secondary_names) = if primary {
+          (first_group, second_group)
+        } else {
+          (second_group, first_group)
+        };
+        self.primary_dir.sync(primary_names)?;
+        return self.secondary_dir.sync(secondary_names);
+      }
+    }
+
     let mut primary_names = smallvec::SmallVec::<[String; 2]>::new();
     let mut secondary_names = smallvec::SmallVec::<[String; 2]>::new();
 

@@ -35,6 +35,7 @@ pub struct DirectMonotonicWriter<'a, I1, I2> {
   base_data_pointer: usize,
   buffer: smallvec::SmallVec<[i64; 4]>,
   buffer_limit: usize,
+  packed_scratch: Vec<i64>,
   count: i64,
   finished: bool,
   previous: i64,
@@ -91,6 +92,7 @@ where
       base_data_pointer,
       buffer,
       buffer_limit: buffer_len,
+      packed_scratch: Vec::new(),
       count: 0,
       finished: false,
       previous: i64::MIN,
@@ -156,11 +158,18 @@ where
       self.meta.write_byte(0)?;
     } else {
       let bits_required = unsigned_bits_required(max_delta);
-      let mut writer = DirectWriter::get_instance(self.data, size as i64, bits_required)?;
-      for &value in &self.buffer {
-        writer.add(value)?;
-      }
-      writer.finish()?;
+      DirectWriter::write_with_scratch(
+        self.data,
+        size as i64,
+        bits_required,
+        &mut self.packed_scratch,
+        |writer| {
+          for &value in &self.buffer {
+            writer.add(value)?;
+          }
+          Ok(())
+        },
+      )?;
       self.meta.write_byte(bits_required as u8)?;
     }
     self.buffer.clear();

@@ -67,6 +67,23 @@ impl DataInput for ReverseBytesReader {
   }
 
   fn read_bytes(&mut self, b: &mut [u8], offset: usize, len: usize) -> Result<()> {
+    if len > 1
+      && let Ok(end) = usize::try_from(self.pos)
+      && end < self.bytes.len()
+      && len <= end + 1
+      && let Some(target) = offset
+        .checked_add(len)
+        .and_then(|end| b.get_mut(offset..end))
+    {
+      for (output, &input) in target
+        .iter_mut()
+        .zip(self.bytes[end + 1 - len..=end].iter().rev())
+      {
+        *output = input;
+      }
+      self.pos -= len as i64;
+      return Ok(());
+    }
     for i in 0..len {
       debug_assert!(self.pos >= 0);
       b[offset + i] = self.bytes[self.pos as usize];

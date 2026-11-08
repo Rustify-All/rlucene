@@ -41,9 +41,9 @@ pub trait RandomAccessInput {
         "read past EOF at {pos} length {len}"
       )));
     }
-    let mut bytes = vec![0; len];
-    for (i, byte) in bytes.iter_mut().enumerate() {
-      *byte = self.read_byte(pos + i)?;
+    let mut bytes = Vec::with_capacity(len);
+    for i in 0..len {
+      bytes.push(self.read_byte(pos + i)?);
     }
     Ok(Cow::Owned(bytes))
   }

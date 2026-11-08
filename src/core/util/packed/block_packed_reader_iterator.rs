@@ -179,7 +179,7 @@ impl BlockPackedReaderIterator {
       data_input.seek_in_data_input(new_position)?;
     } else {
       // Use a temporary buffer to skip bytes
-      ArrayUtil::grow_no_copy(&mut self.blocks, self.block_size, || 0)?;
+      ArrayUtil::grow_no_copy(&mut self.blocks, count.min(self.block_size), || 0)?;
 
       let mut skipped = 0;
       while skipped < count {
@@ -278,8 +278,9 @@ impl BlockPackedReaderIterator {
     if self.values_ref.longs.is_empty() {
       self.values_ref.longs.resize(self.block_size, 0);
     }
+    let value_count = std::cmp::min(self.value_count - self.ord, self.block_size);
     if bits_per_value == 0 {
-      self.values_ref.longs.fill(min_value);
+      self.values_ref.longs[..value_count].fill(min_value);
     } else {
       let decoder = PackedInts::get_decoder(
         Format::Packed(PackedImpl::new(0)),
@@ -287,12 +288,10 @@ impl BlockPackedReaderIterator {
         bits_per_value,
       )?;
 
-      let iterations = self.block_size / Decoder::byte_value_count(decoder);
+      let iterations = value_count.div_ceil(Decoder::byte_value_count(decoder));
       let blocks_size = iterations * Decoder::byte_block_count(decoder);
 
       ArrayUtil::grow_no_copy(&mut self.blocks, blocks_size, || 0)?;
-
-      let value_count = std::cmp::min(self.value_count - self.ord, self.block_size);
 
       let blocks_count = Format::Packed(PackedImpl::new(0)).byte_count(
         self.packed_ints_version,

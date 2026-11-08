@@ -52,6 +52,22 @@ impl<D> TrackingDirectoryWrapper<D> {
     !self.created_filenames.lock().is_empty()
   }
 
+  pub(crate) fn delete_created_files_ignoring_errors(&mut self)
+  where
+    D: Directory,
+  {
+    let mut remaining = self.take_created_files();
+    remaining.retain(|name| {
+      !matches!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.in_.delete_file(name))),
+        Ok(Ok(()))
+      )
+    });
+    if !remaining.is_empty() {
+      self.created_filenames.lock().extend(remaining);
+    }
+  }
+
   pub fn take_created_files(&self) -> HashSet<String> {
     std::mem::take(&mut self.created_filenames.lock())
   }

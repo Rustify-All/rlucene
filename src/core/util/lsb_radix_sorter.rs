@@ -74,7 +74,8 @@ impl LSBRadixSorter {
   ) -> bool {
     histogram.fill(0);
     Self::build_histogram(array, len, histogram, shift);
-    if histogram[0] == len {
+    let bucket = (((array[0] as u32) >> shift) & 0xFF) as usize;
+    if histogram[bucket] == len {
       return false;
     }
     Self::sum_histogram(histogram);

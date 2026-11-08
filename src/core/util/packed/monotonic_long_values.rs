@@ -17,7 +17,6 @@
 use crate::core::util::accountable::Accountable;
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::packed::monotonic_block_packed_reader::expected;
-use crate::core::util::packed::packed_long_values::INITIAL_PAGE_COUNT;
 use crate::core::util::ram_usage_estimator::{size_of_slice, size_of_vec};
 
 pub(crate) struct MonotonicLongValues {
@@ -64,7 +63,7 @@ impl Default for MonotonicLongValuesBuilder {
 impl MonotonicLongValuesBuilder {
   pub(crate) fn new() -> Self {
     Self {
-      averages: Vec::with_capacity(INITIAL_PAGE_COUNT),
+      averages: Vec::new(),
     }
   }
 

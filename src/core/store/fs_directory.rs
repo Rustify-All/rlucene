@@ -399,8 +399,12 @@ where
   }
 
   fn sync(&self, names: &[String]) -> Result<()> {
+    let mut file_path = PathBuf::new();
     for name in names {
-      self.fsync(name)?;
+      file_path.clear();
+      file_path.push(&self.directory);
+      file_path.push(name);
+      IOUtils::fsync(&file_path, false)?;
     }
     Self::maybe_delete_pending_files(
       &self.directory,

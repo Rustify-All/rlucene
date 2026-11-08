@@ -186,8 +186,6 @@ where
       self.last_frozen_node = node;
     }
 
-    self.frontier[node_in_idx].clear();
-
     Ok(CompiledNode { node })
   }
   fn freeze_tail(&mut self, prefix_len_plus1: usize) -> Result<()> {
@@ -202,7 +200,7 @@ where
         let next_final_output = if self.dedup_hash.is_none() {
           node.output.take()
         } else {
-          node.output.clone()
+          None
         };
         // We "fake" the node as being final if it has no
         // outgoing arcs; in theory we could leave it
@@ -214,6 +212,9 @@ where
         (label, next_final_output, is_final, prev_idx)
       };
       let compiled = self.compile_node(idx)?;
+      let node = &mut self.frontier[idx];
+      let next_final_output = next_final_output.or_else(|| node.output.take());
+      node.clear();
       let parent = &mut self.frontier[prev_idx];
       // this node makes it and we now compile it.  first,
       // compile any targets that were previously
@@ -377,6 +378,7 @@ where
       }
     }
     let compiled_root = self.compile_node(0)?;
+    self.frontier[0].clear();
     self.finish(compiled_root.node)?;
     let v = std::mem::take(&mut self.fst.metadata);
     Ok(Some(v))

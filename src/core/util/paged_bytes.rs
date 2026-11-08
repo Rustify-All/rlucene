@@ -59,7 +59,7 @@ impl PagedBytes {
     let bytes_used_per_block = block_size as i64;
 
     PagedBytes {
-      blocks: Vec::with_capacity(16),
+      blocks: Vec::new(),
       frozen_blocks: None,
       num_blocks: 0,
       block_size,
@@ -73,7 +73,9 @@ impl PagedBytes {
     }
   }
   fn add_block(&mut self, block: Vec<u8>) -> Result<()> {
-    if self.blocks.len() == self.blocks.capacity() {
+    if self.blocks.capacity() == 0 {
+      self.blocks.reserve_exact(16);
+    } else if self.blocks.len() == self.blocks.capacity() {
       ArrayUtil::grow_capacity(&mut self.blocks, self.num_blocks + 1)?;
     }
     self.blocks.push(block);

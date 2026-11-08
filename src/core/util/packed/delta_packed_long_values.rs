@@ -19,7 +19,6 @@ use crate::core::util::error::lucene_error::Result;
 use crate::core::util::packed::monotonic_long_values::{
   MonotonicLongValues, MonotonicLongValuesBuilder,
 };
-use crate::core::util::packed::packed_long_values::INITIAL_PAGE_COUNT;
 use crate::core::util::ram_usage_estimator::{size_of_slice, size_of_vec};
 
 pub(crate) struct DeltaPackedLongValues {
@@ -36,8 +35,10 @@ impl DeltaPackedLongValues {
   }
   pub(crate) fn decode_block(&self, block: usize, dest: &mut [i64], count: usize) -> usize {
     let min = self.mins[block];
-    for item in dest.iter_mut().take(count) {
-      *item = item.wrapping_add(min);
+    if min != 0 {
+      for item in dest.iter_mut().take(count) {
+        *item = item.wrapping_add(min);
+      }
     }
     match self.sub_long_value {
       Some(ref sub) => sub.decode_block(block, dest, count),
@@ -83,7 +84,7 @@ impl DeltaPackedLongValuesBuilder {
   ) -> DeltaPackedLongValuesBuilder {
     Self {
       sub_builder,
-      mins: Vec::with_capacity(INITIAL_PAGE_COUNT),
+      mins: Vec::new(),
     }
   }
 

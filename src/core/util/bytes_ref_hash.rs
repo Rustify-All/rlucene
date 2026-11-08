@@ -80,21 +80,25 @@ where
 {
   pub fn from_bytes_start_array(capacity: usize, mut bytes_start_array: BSA) -> Result<Self> {
     bytes_start_array.init()?;
+    let mut hash = Self::without_storage(capacity, bytes_start_array);
+    hash.ids = vec![-1; capacity];
+    hash.bytes_used.add_and_get(size_of_vec(&hash.ids));
+    Ok(hash)
+  }
+
+  pub(crate) fn without_storage(capacity: usize, mut bytes_start_array: BSA) -> Self {
     let bytes_used = bytes_start_array.bytes_used();
-    let ref_pool = BytesRefBlockPool::new();
-    let ids = vec![-1; capacity];
-    bytes_used.add_and_get(size_of_vec(&ids));
-    Ok(BytesRefHash {
-      pool: ref_pool,
+    Self {
+      pool: BytesRefBlockPool::new(),
       hash_size: capacity,
       hash_half_size: capacity >> 1,
       hash_mask: capacity - 1,
       count: 0,
       last_count: None,
-      ids,
+      ids: Vec::new(),
       bytes_start_array,
       bytes_used,
-    })
+    }
   }
   /// Returns the number of [`BytesRef`] values in this [`BytesRefHash`].
   ///

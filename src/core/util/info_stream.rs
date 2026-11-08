@@ -45,9 +45,12 @@ where
   }
 }
 
+pub(crate) static NO_OUTPUT_INFO_STREAM: LazyLock<InfoStreamMT> =
+  LazyLock::new(|| Arc::new(InfoStreamEnum::NoOutput(NoOutput)));
+
 /// A global, thread-safe reference to the default [`InfoStream`](crate::core::util::info_stream::InfoStream).
 static DEFAULT_INFO_STREAM: LazyLock<RwLock<InfoStreamMT>> =
-  LazyLock::new(|| RwLock::new(Arc::new(InfoStreamEnum::NoOutput(NoOutput))));
+  LazyLock::new(|| RwLock::new(Arc::clone(&NO_OUTPUT_INFO_STREAM)));
 
 /// Instance of InfoStream that does no logging at all.
 #[derive(Clone, Debug, Default)]

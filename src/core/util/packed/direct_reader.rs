@@ -142,10 +142,11 @@ where
         .as_ref()
         .ok_or_else(|| LuceneError::illegal_state("input is empty"))?,
     };
+    let buffer_size = self.num_values.min(DirectReader::MERGE_BUFFER_SIZE);
     if self.buffer.is_empty() {
-      self.buffer = vec![-1; DirectReader::MERGE_BUFFER_SIZE].into_boxed_slice();
+      self.buffer = vec![-1; buffer_size].into_boxed_slice();
     }
-    let buffer = &mut self.buffer[..DirectReader::MERGE_BUFFER_SIZE];
+    let buffer = &mut self.buffer[..buffer_size];
     let bits_per_value_usize = self.bits_per_value as usize;
     if index + DirectReader::MERGE_BUFFER_SIZE >= self.num_values {
       // 128 values left or less
@@ -255,7 +256,14 @@ where
       self.fill_buffer(block_index << DirectReader::MERGE_BUFFER_SHIFT, slice)?;
       self.block_index = Some(block_index);
     }
-    Ok(self.buffer[index & DirectReader::MERGE_BUFFER_MASK])
+    // Omitted slots in a short column never belonged to a full block and retain -1.
+    Ok(
+      self
+        .buffer
+        .get(index & DirectReader::MERGE_BUFFER_MASK)
+        .copied()
+        .unwrap_or(-1),
+    )
   }
 }
 

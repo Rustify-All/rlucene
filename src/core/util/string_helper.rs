@@ -304,23 +304,26 @@ impl StringHelper {
   /// string representation for debugging. Never returns an error. The
   /// returned string may indicate if the ID is definitely invalid.
   pub fn id_to_string(id: Option<&[u8; StringHelper::ID_LENGTH]>) -> String {
-    if let Some(id) = id {
-      let mut value = u128::from_be_bytes(*id);
-      // A 128-bit unsigned integer needs at most 25 base-36 digits.
-      let mut digits = [0u8; 25];
-      let mut start = digits.len();
-      loop {
-        start -= 1;
-        digits[start] = b"0123456789abcdefghijklmnopqrstuvwxyz"[(value % 36) as usize];
-        value /= 36;
-        if value == 0 {
-          break;
-        }
+    let mut digits = [0; 25];
+    id.map_or("(null)", |id| Self::format_id(id, &mut digits))
+      .to_owned()
+  }
+
+  pub(crate) fn format_id<'a>(id: &[u8; Self::ID_LENGTH], digits: &'a mut [u8; 25]) -> &'a str {
+    let mut value = u128::from_be_bytes(*id);
+    let mut start = digits.len();
+    loop {
+      start -= 1;
+      digits[start] = b"0123456789abcdefghijklmnopqrstuvwxyz"[(value % 36) as usize];
+      value /= 36;
+      if value == 0 {
+        break;
       }
-      String::from_utf8_lossy(&digits[start..]).into_owned()
-    } else {
-      "(null)".to_string()
     }
+    expect_invariant!(
+      std::str::from_utf8(&digits[start..]),
+      "base-36 digits are ASCII"
+    )
   }
   /// Converts each `i32` in the incoming [`IntsRef`] to a `u8` in the
   /// returned [`BytesRef`].

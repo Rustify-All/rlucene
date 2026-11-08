@@ -46,6 +46,7 @@ struct BufferedIndexInputState {
   pos: usize,
   /// valid data length in the buffer
   length: usize,
+  bulk_scratch: Vec<u8>,
 }
 
 struct BufferedIndexInputAccess<'a, T> {
@@ -81,17 +82,26 @@ impl<T> BufferedIndexInput<T> {
     resource_desc: &str,
     buffer_size: usize,
   ) -> Result<BufferedIndexInput<T>> {
+    Self::with_description(sub_index_input, resource_desc, buffer_size)
+  }
+
+  pub(crate) fn with_description(
+    sub_index_input: T,
+    resource_desc: impl Into<Arc<str>>,
+    buffer_size: usize,
+  ) -> Result<BufferedIndexInput<T>> {
     let buffer = Cursor::new(vec![0u8; buffer_size]);
     check_buffer_size(buffer_size)?;
     Ok(BufferedIndexInput {
       buffer_size,
-      resource_desc: Arc::from(resource_desc),
+      resource_desc: resource_desc.into(),
       sub_index_input,
       state: Mutex::new(BufferedIndexInputState {
         buffer,
         buffer_start: 0,
         pos: 0,
         length: 0,
+        bulk_scratch: Vec::new(),
       }),
     })
   }
@@ -456,7 +466,19 @@ where
       return Err(LuceneError::eof(format!("read past EOF: {self}")));
     }
     // Prepare a temporary buffer to handle unaligned and remaining bytes.
-    let mut temp_vec = vec![0; remaining_bytes + unaligned_bytes];
+    let scratch_len = remaining_bytes + unaligned_bytes;
+    let reuse_scratch = scratch_len <= 8192;
+    let mut temp_vec = if reuse_scratch {
+      let mut bytes = std::mem::take(&mut self.bulk_scratch);
+      bytes.clear();
+      if bytes.capacity() < scratch_len {
+        bytes.reserve_exact(scratch_len);
+      }
+      bytes.resize(scratch_len, 0);
+      bytes
+    } else {
+      vec![0; scratch_len]
+    };
     if unaligned_bytes > 0 {
       // If there are unaligned bytes left from the previous buffer,
       // copy them into the beginning of the temporary vector
@@ -479,11 +501,17 @@ where
     }
     let mut temp_buffer = Cursor::new(temp_vec);
     temp_buffer.set_position(unaligned_bytes as u64);
-    self.sub_index_input.read_internal(
+    let read_result = self.sub_index_input.read_internal(
       &mut temp_buffer,
       remaining_bytes - unaligned_bytes,
       self.buffer_start + self.length,
-    )?;
+    );
+    if let Err(error) = read_result {
+      if reuse_scratch && temp_buffer.get_ref().capacity() <= 8192 {
+        self.bulk_scratch = temp_buffer.into_inner();
+      }
+      return Err(error);
+    }
 
     debug_assert!(temp_buffer.position() == remaining_bytes as u64);
     let src = temp_buffer.get_ref();
@@ -495,6 +523,9 @@ where
       &converter,
     );
 
+    if reuse_scratch && temp_buffer.get_ref().capacity() <= 8192 {
+      self.bulk_scratch = temp_buffer.into_inner();
+    }
     self.buffer_start = after;
     // we use temp_buffer to read underling data, so self.buffer is empty
     self.length = 0;
@@ -823,6 +854,7 @@ where
         buffer_start: file_pointer,
         pos: file_pointer,
         length: 0,
+        bulk_scratch: Vec::new(),
       }),
     })
   }

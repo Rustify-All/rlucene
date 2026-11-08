@@ -95,10 +95,12 @@ impl FSDirectoryBase for NIOFSDirectory {
         return Err(LuceneError::io_with_path(file_name, err));
       },
     };
-    let resource_desc = format!("NIOFSIndexInput(path=\"{}\")", file_path.display());
+    let resource_desc: Arc<str> =
+      format!("NIOFSIndexInput(path=\"{}\")", file_path.display()).into();
     let buffer_size = buffer_size(context);
-    let index_input = NIOFSIndexInput::new(file, &resource_desc, buffer_size)?;
-    BufferedIndexInput::with_buffer_size(index_input, &resource_desc, buffer_size)
+    let index_input =
+      NIOFSIndexInput::with_description(file, Arc::clone(&resource_desc), buffer_size)?;
+    BufferedIndexInput::with_description(index_input, resource_desc, buffer_size)
   }
 }
 
@@ -135,6 +137,14 @@ struct NIOFSIndexInputShared {
 
 impl NIOFSIndexInput {
   pub fn new(file: File, resource_desc: &str, buffer_size: usize) -> Result<Self> {
+    Self::with_description(file, resource_desc, buffer_size)
+  }
+
+  fn with_description(
+    file: File,
+    resource_desc: impl Into<Arc<str>>,
+    buffer_size: usize,
+  ) -> Result<Self> {
     let metadata = file.metadata()?;
     let len = metadata.len().try_convert()?;
     Ok(Self {
@@ -144,7 +154,7 @@ impl NIOFSIndexInput {
       is_clone: false,
       off: 0,
       end: len,
-      resource_desc: Arc::from(resource_desc),
+      resource_desc: resource_desc.into(),
       buffer_size,
     })
   }
@@ -152,7 +162,7 @@ impl NIOFSIndexInput {
     shared: Arc<NIOFSIndexInputShared>,
     off: usize,
     length: usize,
-    resource_desc: &str,
+    resource_desc: Arc<str>,
     buffer_size: usize,
   ) -> Self {
     Self {
@@ -160,7 +170,7 @@ impl NIOFSIndexInput {
       is_clone: true,
       off,
       end: off + length,
-      resource_desc: Arc::from(resource_desc),
+      resource_desc,
       buffer_size,
     }
   }
@@ -316,15 +326,15 @@ impl BufferedIndexInputBase for NIOFSIndexInput {
       )));
     }
 
-    let resource_desc = format!("{} [slice={slice_description}]", self);
+    let resource_desc: Arc<str> = format!("{} [slice={slice_description}]", self).into();
     let sub_index_input = NIOFSIndexInput::with_range(
       Arc::clone(&self.shared),
       self.off + offset,
       length,
-      &resource_desc,
+      Arc::clone(&resource_desc),
       self.buffer_size,
     );
-    BufferedIndexInput::with_buffer_size(sub_index_input, &resource_desc, self.buffer_size)
+    BufferedIndexInput::with_description(sub_index_input, resource_desc, self.buffer_size)
   }
   fn length(&self) -> usize {
     self.end - self.off

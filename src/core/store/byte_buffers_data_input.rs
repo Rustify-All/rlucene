@@ -107,6 +107,38 @@ impl<B: ByteBuffersDataInputBlock> ByteBuffersDataInput<B> {
       scratch: Vec::new(),
     })
   }
+  pub(crate) fn with_reusable_scratch<R>(
+    &mut self,
+    scratch: &mut Vec<u8>,
+    read: impl FnOnce(&mut Self) -> Result<R>,
+  ) -> Result<R> {
+    std::mem::swap(&mut self.scratch, scratch);
+    let result = read(self);
+    std::mem::swap(&mut self.scratch, scratch);
+    result
+  }
+
+  pub(crate) fn with_window<R>(
+    &mut self,
+    offset: usize,
+    length: usize,
+    read: impl FnOnce(&mut Self) -> Result<R>,
+  ) -> Result<R> {
+    if offset > self.length || length > self.length - offset {
+      return Err(LuceneError::illegal_argument(format!(
+        "slice(offset={offset}, length={length}) is out of bounds: {}",
+        self.length
+      )));
+    }
+    let original = (self.offset, self.length, self.pos);
+    self.offset += offset;
+    self.length = length;
+    self.pos = self.offset;
+    let result = read(self);
+    (self.offset, self.length, self.pos) = original;
+    result
+  }
+
   fn block_index(&self, pos: usize) -> usize {
     pos >> self.block_bits
   }
@@ -428,7 +460,8 @@ where
       ));
     }
     let mut bytes = std::mem::take(&mut self.scratch);
-    let result = if bytes.len() < len && bytes.capacity() > 0 && len / 2 >= bytes.capacity() {
+    let result = if len > 1 && bytes.len() < len && len / 2 >= bytes.capacity() {
+      let preserve_error_length = bytes.capacity() == 0;
       bytes = Vec::with_capacity(len);
       let mut pos = self.pos;
       let mut remaining = len;
@@ -452,6 +485,8 @@ where
       };
       if result.is_ok() {
         self.pos += len;
+      } else if preserve_error_length {
+        bytes.resize(len, 0);
       }
       result
     } else {

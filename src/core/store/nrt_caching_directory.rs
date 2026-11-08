@@ -231,7 +231,12 @@ where
   fn list_all(&self) -> Result<Vec<String>> {
     let _guard = self.lock.lock();
     let mut files = self.cache_directory.list_all()?;
-    files.extend(self.delegate.list_all()?);
+    let delegate_files = self.delegate.list_all()?;
+    if files.is_empty() {
+      files = delegate_files;
+    } else {
+      files.extend(delegate_files);
+    }
     files.sort_unstable();
     files.dedup();
     Ok(files)
