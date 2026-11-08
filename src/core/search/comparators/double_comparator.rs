@@ -38,7 +38,7 @@ use crate::core::util::{CoreHelper, ToInt};
 ///
 /// Provides an iterator that can skip over non-competitive documents.
 pub struct DoubleComparator {
-  values: Vec<f64>,
+  values: smallvec::SmallVec<[f64; 2]>,
   top_value: f64,
   bottom: f64,
   pub(crate) base: NumericComparator<f64>,
@@ -66,7 +66,7 @@ impl DoubleComparator {
       NumericUtils::double_to_sortable_long(missing_value),
     );
     Self {
-      values: vec![0.0; num_hits],
+      values: smallvec::smallvec![0.0; num_hits],
       top_value: 0.0,
       bottom: 0.0,
       base,

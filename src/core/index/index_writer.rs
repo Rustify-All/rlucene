@@ -3506,11 +3506,11 @@ where
 
     Ok(())
   }
-  fn acquire_write_locks<SD>(&self, dirs: &[Arc<SD>]) -> Result<Vec<SD::Lock>>
+  fn acquire_write_locks<SD>(&self, dirs: &[Arc<SD>]) -> Result<smallvec::SmallVec<[SD::Lock; 1]>>
   where
     SD: Directory,
   {
-    let mut locks = Vec::with_capacity(dirs.len());
+    let mut locks = smallvec::SmallVec::with_capacity(dirs.len());
     for dir in dirs {
       let mut success = false;
       let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
@@ -3551,7 +3551,7 @@ where
       self.flush_with_apply_merge_deletes(false, true)?;
 
       let mut total_max_doc = 0_i64;
-      let mut commits = Vec::with_capacity(dirs.len());
+      let mut commits = smallvec::SmallVec::<[SegmentInfos<SD>; 1]>::with_capacity(dirs.len());
       let index_created_version_major = self.get_index_major_version_created();
 
       for dir in dirs {
@@ -4607,7 +4607,7 @@ where
       }
     }
     // now do some best effort to check if a segment is fully deleted
-    let mut to_drop: Vec<Arc<str>> = Vec::new();
+    let mut to_drop = smallvec::SmallVec::<[Arc<str>; 1]>::new();
 
     for info in inner.segment_infos.iter() {
       if let Some(rld) = self.reader_pool.get(info, false, None)?
@@ -6998,23 +6998,39 @@ where
     success: bool,
     inner: &mut Inner<D>, // we hold lock
   ) -> Result<ApplyDeletesResult> {
-    let mut all_deleted: Vec<Arc<str>> = Vec::new();
+    let mut all_deleted = smallvec::SmallVec::new();
     let mut tot_del_count: i64 = 0;
 
     let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
-      if success {
-        let infos = inner.segment_infos.iter();
-        let dropped_infos = inner.segment_infos.dropped_segment_commit_infos.values();
-        let mut infos_by_id = HashMap::with_capacity(infos.len() + dropped_infos.len());
-        for info in infos {
-          infos_by_id.insert(info.info.get_id_key(), info);
-        }
-        for info in dropped_infos {
-          infos_by_id.insert(info.info.get_id_key(), info);
-        }
+      if success && !seg_states.is_empty() {
+        let segment_infos = &inner.segment_infos;
+        let infos_by_id = (seg_states.len() > 1).then(|| {
+          let dropped = segment_infos.dropped_segment_commit_infos.values();
+          let infos = segment_infos.iter();
+          let mut by_id = HashMap::with_capacity(infos.len() + dropped.len());
+          by_id.extend(
+            infos
+              .iter()
+              .chain(dropped)
+              .map(|info| (info.info.get_id_key(), info)),
+          );
+          by_id
+        });
         for seg_state in seg_states.iter_mut() {
-          let info_id = &seg_state.rld.info_id;
-          let info = match infos_by_id.get(info_id.as_ref()).copied() {
+          let info_id = seg_state.rld.info_id.as_ref();
+          let info = match &infos_by_id {
+            Some(by_id) => by_id.get(info_id).copied(),
+            None => segment_infos
+              .dropped_segment_commit_infos
+              .get(info_id)
+              .or_else(|| {
+                segment_infos
+                  .segments
+                  .iter()
+                  .rfind(|info| info.info.get_id_key() == info_id)
+              }),
+          };
+          let info = match info {
             Some(info) => info,
             None => Err(LuceneError::illegal_state(
               "could not find segment info from IndexWriter#segment_infos",

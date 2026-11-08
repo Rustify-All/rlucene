@@ -428,6 +428,7 @@ where
     D1: Directory,
     IS: InfoStream,
   {
+    let mut updates_to_apply = smallvec::SmallVec::<[&Arc<DocValuesFieldUpdatesEnum>; 4]>::new();
     for (field, updates) in inner.pending_dv_updates.iter() {
       let ty = updates[0].type_;
       debug_assert!(
@@ -436,7 +437,7 @@ where
         ty
       );
 
-      let mut updates_to_apply = smallvec::SmallVec::with_capacity(updates.len());
+      updates_to_apply.clear();
       let mut bytes: i64 = 0;
 
       for update in updates {
@@ -1409,12 +1410,12 @@ where
 
 struct FunctionImpl<'a> {
   field_info: &'a Arc<FieldInfo>,
-  updates_to_apply: smallvec::SmallVec<[&'a Arc<DocValuesFieldUpdatesEnum>; 4]>,
+  updates_to_apply: &'a [&'a Arc<DocValuesFieldUpdatesEnum>],
 }
 impl<'a> FunctionImpl<'a> {
   fn new(
     field_info: &'a Arc<FieldInfo>,
-    updates_to_apply: smallvec::SmallVec<[&'a Arc<DocValuesFieldUpdatesEnum>; 4]>,
+    updates_to_apply: &'a [&'a Arc<DocValuesFieldUpdatesEnum>],
   ) -> Self {
     Self {
       field_info,

@@ -79,7 +79,7 @@ pub struct SloppyPhraseMatcher<IE, SS> {
   /// in each group are PPs that repeats each other (i.e. same term), sorted by (query) offset
   rpt_groups: Vec<Vec<usize>>,
   /// temporary stack for switching colliding repeating pps
-  rpt_stack: Box<[usize]>,
+  rpt_stack: smallvec::SmallVec<[usize; 4]>,
   rpt_bits: FixedBitSet,
 
   positioned: bool,
@@ -173,7 +173,7 @@ where
       checked_rpts: false,
       has_multi_term_rpts: false,
       rpt_groups: Vec::new(),
-      rpt_stack: Box::default(),
+      rpt_stack: smallvec::SmallVec::new(),
       rpt_bits: FixedBitSet::new(0),
       positioned: false,
       match_length: 0,

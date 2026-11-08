@@ -343,6 +343,9 @@ impl TieredMergePolicy {
     // pick up another
     // merge next time around.
     let mut have_one_large_merge = false;
+    let mut candidate: smallvec::SmallVec<[SegmentCommitInfoMeta<'_, D>; 4]> =
+      smallvec::SmallVec::new();
+    let mut best: smallvec::SmallVec<[SegmentCommitInfoMeta<'_, D>; 4]> = smallvec::SmallVec::new();
 
     loop {
       // Gather eligible segments for merging, ie segments
@@ -378,12 +381,10 @@ impl TieredMergePolicy {
       }
       // OK we are over budget -- find best merge!
       let mut best_score: Option<MergeScoreImpl> = None;
-      let mut best = None;
+      best.clear();
       let mut best_too_large = false;
       let mut best_merge_bytes = 0;
 
-      let mut candidate: smallvec::SmallVec<[SegmentCommitInfoMeta<'_, D>; 4]> =
-        smallvec::SmallVec::new();
       for start_idx in 0..sorted_eligible.len() {
         candidate.clear();
         candidate.reserve_exact(std::cmp::min(

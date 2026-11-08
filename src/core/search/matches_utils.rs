@@ -80,13 +80,16 @@ where
     &self,
     field: &str,
   ) -> Result<Option<QueryWeightMatchesIterator<'_, IRCLeafReader<IRC>, SIM>>> {
-    let mut sub_iterators = Vec::with_capacity(self.sub.len());
+    let mut sub_iterators = smallvec::SmallVec::<[_; 1]>::new();
     for matches in &self.sub {
       if let Some(iterator) = matches.get_matches(field)? {
         sub_iterators.push(iterator);
       }
     }
-    from_sub_iterators(sub_iterators)
+    if sub_iterators.len() <= 1 {
+      return Ok(sub_iterators.pop());
+    }
+    from_sub_iterators(sub_iterators.into_vec())
   }
 
   fn get_sub_matches(&self) -> &[QueryWeightMatches<'a, IRC, SIM>] {

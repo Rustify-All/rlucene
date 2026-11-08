@@ -38,7 +38,7 @@ use crate::core::util::{CoreHelper, ToInt};
 ///
 /// Provides an iterator that can skip over non-competitive documents.
 pub struct FloatComparator {
-  values: Vec<f32>,
+  values: smallvec::SmallVec<[f32; 2]>,
   top_value: f32,
   bottom: f32,
   pub(crate) base: NumericComparator<f32>,
@@ -66,7 +66,7 @@ impl FloatComparator {
       NumericUtils::float_to_sortable_int(missing_value) as i64,
     );
     Self {
-      values: vec![0.0; num_hits],
+      values: smallvec::smallvec![0.0; num_hits],
       top_value: 0.0,
       bottom: 0.0,
       base,

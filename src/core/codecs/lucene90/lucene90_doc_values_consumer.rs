@@ -72,7 +72,14 @@ where
   max_doc: i32,
   skip_index_interval_size: i32,
   closed: bool,
+  skip_index_accumulators:
+    [smallvec::SmallVec<[SkipAccumulator; 1]>; Lucene90DocValuesFormat::SKIP_INDEX_MAX_LEVEL],
+  numeric_table_values: Vec<i64>,
+  numeric_packed_scratch: Vec<i64>,
+  numeric_unique_values: HashMap<i64, u8>,
+  terms_dict_previous: BytesRefBuilder<Vec<u8>>,
   terms_dict_buffer: ByteArrayDataOutput<Vec<u8>>,
+  terms_dict_hash_table: HashTableEnum,
 }
 impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
   /// expert: Creates a new writer
@@ -158,7 +165,13 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
       max_doc,
       skip_index_interval_size,
       closed: false,
+      skip_index_accumulators: std::array::from_fn(|_| smallvec::SmallVec::new()),
+      numeric_table_values: Vec::new(),
+      numeric_packed_scratch: Vec::new(),
+      numeric_unique_values: HashMap::new(),
+      terms_dict_previous: BytesRefBuilder::new(),
       terms_dict_buffer: ByteArrayDataOutput::default(),
+      terms_dict_hash_table: HashTableEnum::Fast(FastCompressionHashTable::default()),
     })
   }
   fn write_skip_index<T>(&mut self, field: &Arc<FieldInfo>, values_producer: &T) -> Result<()>
@@ -243,52 +256,55 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
     Ok(())
   }
 
-  fn write_levels(&mut self, accumulators: Vec<SkipAccumulator>) -> Result<Vec<SkipAccumulator>> {
-    let mut accumulators_levels: [Vec<SkipAccumulator>;
-      Lucene90DocValuesFormat::SKIP_INDEX_MAX_LEVEL] = std::array::from_fn(|_| Vec::new());
-    let accumulators_len = accumulators.len();
-    accumulators_levels[0] = accumulators;
-
-    for i in 0..(Lucene90DocValuesFormat::SKIP_INDEX_MAX_LEVEL - 1) {
-      let next_level = Self::build_level(&accumulators_levels[i]);
-      accumulators_levels[i + 1] = next_level;
+  fn write_levels(
+    data: &mut O,
+    accumulators_levels: &mut [smallvec::SmallVec<[SkipAccumulator; 1]>;
+           Lucene90DocValuesFormat::SKIP_INDEX_MAX_LEVEL],
+  ) -> Result<()> {
+    for i in 1..accumulators_levels.len() {
+      let (lower, higher) = accumulators_levels.split_at_mut(i);
+      Self::build_level(&lower[i - 1], &mut higher[0]);
     }
 
-    let total = accumulators_len;
+    let total = accumulators_levels[0].len();
     for index in 0..total {
       // compute how many levels we need to write for the current
       // accumulator
       let levels = Self::get_levels(index, total);
       // write the number of levels
-      self.data.write_byte(levels as u8)?;
+      data.write_byte(levels as u8)?;
       // write intervals in reverse order. This is done so we don't
       // need to read all of them in case of slipping
       for level in (0..levels).rev() {
         let idx = index >> (Lucene90DocValuesFormat::SKIP_INDEX_LEVEL_SHIFT * level);
         let acc = &accumulators_levels[level][idx];
-        self.data.write_int(acc.max_doc_id)?;
-        self.data.write_int(acc.min_doc_id)?;
-        self.data.write_long(acc.max_value)?;
-        self.data.write_long(acc.min_value)?;
-        self.data.write_int(acc.doc_count)?;
+        data.write_int(acc.max_doc_id)?;
+        data.write_int(acc.min_doc_id)?;
+        data.write_long(acc.max_value)?;
+        data.write_long(acc.min_value)?;
+        data.write_int(acc.doc_count)?;
       }
     }
 
-    let mut accumulators = std::mem::take(&mut accumulators_levels[0]);
-    accumulators.clear();
-    Ok(accumulators)
+    accumulators_levels[0].clear();
+    Ok(())
   }
 
-  fn build_level(accumulators: &[SkipAccumulator]) -> Vec<SkipAccumulator> {
+  fn build_level(
+    accumulators: &[SkipAccumulator],
+    collector: &mut smallvec::SmallVec<[SkipAccumulator; 1]>,
+  ) {
     let level_size = 1usize << Lucene90DocValuesFormat::SKIP_INDEX_LEVEL_SHIFT;
-    let mut collector = Vec::with_capacity(accumulators.len() / level_size);
-
-    for group in 0..accumulators.len() / level_size {
-      let merged = SkipAccumulator::merge(accumulators, group * level_size, level_size);
-      collector.push(merged);
+    let count = accumulators.len() / level_size;
+    collector.clear();
+    collector.reserve_exact(count);
+    for group in 0..count {
+      collector.push(SkipAccumulator::merge(
+        accumulators,
+        group * level_size,
+        level_size,
+      ));
     }
-
-    collector
   }
 
   fn get_levels(index: usize, size: usize) -> usize {
@@ -426,13 +442,28 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
       num_bits_per_value = 0;
       self.meta.write_int(-1)?;
     } else {
-      let unique_values = unique_values.filter(|set| {
+      let use_table = unique_values.as_ref().is_some_and(|set| {
         set.len() > 1
           && unsigned_bits_required(set.len() as i64 - 1)
             < unsigned_bits_required(max.wrapping_sub(min) / gcd)
       });
-      if let Some(mut map) = unique_values {
-        let mut sorted: smallvec::SmallVec<[i64; 32]> = map.keys().copied().collect();
+      let table_values = if use_table {
+        unique_values.take()
+      } else {
+        if let Some(values) = unique_values.take() {
+          self.numeric_unique_values = values;
+        }
+        None
+      };
+      if let Some(mut map) = table_values {
+        let mut sorted: smallvec::SmallVec<[i64; 32]> = if map.len() > 32 {
+          let mut sorted = std::mem::take(&mut self.numeric_table_values);
+          sorted.clear();
+          sorted.extend(map.keys().copied());
+          smallvec::SmallVec::from_vec(sorted)
+        } else {
+          map.keys().copied().collect()
+        };
         sorted.sort_unstable();
         debug_assert!(sorted.len() <= i32::MAX as usize);
         let set_len = sorted.len() as i32;
@@ -441,8 +472,11 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
         for v in &sorted {
           self.meta.write_long(*v)?;
         }
-        for (i, value) in sorted.into_iter().enumerate() {
+        for (i, &value) in sorted.iter().enumerate() {
           map.insert(value, i as u8);
+        }
+        if sorted.spilled() {
+          self.numeric_table_values = sorted.into_vec();
         }
         encode = Some(map);
         min = 0;
@@ -551,13 +585,22 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
     Ok(())
   }
 
-  fn write_values_multiple_blocks<T>(&mut self, values: &mut T, gcd: i64) -> Result<i64>
+  fn write_values_multiple_blocks<T>(
+    &mut self,
+    values: &mut T,
+    gcd: i64,
+    num_values: i64,
+  ) -> Result<i64>
   where
     T: SortedNumericDocValues,
   {
-    let mut offsets =
-      smallvec::SmallVec::<[i64; 16]>::with_capacity(ArrayUtil::oversize(1, BitUtil::LONG_BYTES)?);
     const NUMERIC_BLOCK_SIZE: usize = Lucene90DocValuesFormat::NUMERIC_BLOCK_SIZE as usize;
+    let block_count = usize::try_from(num_values)
+      .ok()
+      .map(|count| count.div_ceil(NUMERIC_BLOCK_SIZE))
+      .filter(|&count| ArrayUtil::oversize(count, BitUtil::LONG_BYTES).is_ok())
+      .unwrap_or(ArrayUtil::oversize(1, BitUtil::LONG_BYTES)?);
+    let mut offsets = smallvec::SmallVec::<[i64; 16]>::with_capacity(block_count);
     let mut buffer = [0i64; NUMERIC_BLOCK_SIZE];
     let mut encode_buffer = ByteBuffersDataOutput::new_resettable_instance();
     let mut upto = 0;

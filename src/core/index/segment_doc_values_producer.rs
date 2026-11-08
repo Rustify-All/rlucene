@@ -39,8 +39,8 @@ where
 {
   // Own each producer Arc once in this Vec and store its stable index in the field map.
   dv_producers_by_field: HashMap<i32, usize>,
-  dv_producers: Vec<Arc<CodecDocValuesProducer<I>>>,
-  pub(crate) dv_gens: Vec<i64>,
+  dv_producers: smallvec::SmallVec<[Arc<CodecDocValuesProducer<I>>; 2]>,
+  pub(crate) dv_gens: smallvec::SmallVec<[i64; 2]>,
 }
 impl<I> SegmentDocValuesProducer<I>
 where
@@ -75,9 +75,9 @@ where
       + usize::from(all_infos.iter().any(|fi| {
         *fi.get_doc_values_type() != DocValuesType::None && fi.get_doc_values_gen() == -1
       }));
-    let mut dv_producers = Vec::with_capacity(num_dv_gens);
+    let mut dv_producers = smallvec::SmallVec::with_capacity(num_dv_gens);
     let mut producer_indices = (num_dv_gens > 2).then(|| HashMap::with_capacity(num_dv_gens));
-    let mut dv_gens = Vec::with_capacity(num_dv_gens);
+    let mut dv_gens = smallvec::SmallVec::with_capacity(num_dv_gens);
 
     let mut base_producer_index = None;
 
@@ -139,7 +139,7 @@ where
   }
 
   fn add_unique_producer(
-    producers: &mut Vec<Arc<CodecDocValuesProducer<I>>>,
+    producers: &mut smallvec::SmallVec<[Arc<CodecDocValuesProducer<I>>; 2]>,
     producer_indices: &mut Option<HashMap<*const CodecDocValuesProducer<I>, usize>>,
     producer: Arc<CodecDocValuesProducer<I>>,
   ) -> usize {

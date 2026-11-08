@@ -36,7 +36,7 @@ use crate::core::util::numeric_utils::NumericUtils;
 /// Comparator based on i32 for numHits.
 /// This comparator provides a skipping functionality – an iterator that can skip over non-competitive documents.
 pub struct IntComparator {
-  values: Vec<i32>,
+  values: smallvec::SmallVec<[i32; 2]>,
   top_value: i32,
   bottom: i32,
   pub(crate) base: NumericComparator<i32>,
@@ -64,7 +64,7 @@ impl IntComparator {
       missing_value as i64,
     );
     Self {
-      values: vec![0; num_hits],
+      values: smallvec::smallvec![0; num_hits],
       top_value: 0,
       bottom: 0,
       base,

@@ -380,7 +380,7 @@ where
       ram_bytes_used: i64,
     }
 
-    let mut holders: Vec<RamRecordingHolder<D>> = {
+    let mut holders: smallvec::SmallVec<[RamRecordingHolder<D>; 4]> = {
       let inner = self.inner.lock();
       // we have to record the RAM usage once and then sort
       // since the RAM usage can change concurrently and that will confuse the sort or hit an

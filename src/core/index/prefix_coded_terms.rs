@@ -42,7 +42,7 @@ use crate::core::util::ram_usage_estimator::size_of_vec;
 /// # Lucene Internal
 #[derive(Debug, Clone)]
 pub struct PrefixCodedTerms<B = Vec<u8>> {
-  content: Vec<Cursor<B>>,
+  content: smallvec::SmallVec<[Cursor<B>; 1]>,
   content_len: usize,
   size: i64,
   del_gen: i64,
@@ -55,6 +55,14 @@ pub type PrefixCodedTermsArc = PrefixCodedTerms<Arc<Vec<u8>>>;
 
 impl<B> PrefixCodedTerms<B> {
   pub fn new(content: Vec<Cursor<B>>, content_len: usize, size: i64) -> Self {
+    Self::with_blocks(smallvec::SmallVec::from_vec(content), content_len, size)
+  }
+
+  fn with_blocks(
+    content: smallvec::SmallVec<[Cursor<B>; 1]>,
+    content_len: usize,
+    size: i64,
+  ) -> Self {
     debug_assert!(!content.is_empty());
     PrefixCodedTerms {
       content,
@@ -62,6 +70,14 @@ impl<B> PrefixCodedTerms<B> {
       size,
       del_gen: 0,
       lazy_hash: 0,
+    }
+  }
+
+  fn block_slots_ram_bytes(&self) -> i64 {
+    if self.content.spilled() {
+      size_of_array_capacity::<Cursor<B>>(self.content.capacity())
+    } else {
+      0
     }
   }
 

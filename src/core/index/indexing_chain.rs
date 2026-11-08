@@ -745,26 +745,27 @@ where
   }
 
   fn rehash(&mut self) {
-    let new_hash_size = self.field_hash.len() * 2;
-    debug_assert!(new_hash_size > self.field_hash.len());
+    let old_size = self.field_hash.len();
+    let new_size = old_size * 2;
+    debug_assert!(new_size > old_size);
+    self.field_hash.resize(new_size, None);
+    let (low_buckets, high_buckets) = self.field_hash.split_at_mut(old_size);
 
-    let mut new_hash_array = smallvec::smallvec![None; new_hash_size];
-    let new_hash_mask = new_hash_size - 1;
-    for &idx in &self.field_hash {
-      let mut fp_idx = idx;
-      while let Some(index) = fp_idx {
-        let fp0 = &mut self.per_fields[index];
-        let next_fp0 = fp0.next;
-        let hash_pos2 =
-          (CoreHelper::calculate_hash(&fp0.schema.name) & new_hash_mask as u64) as usize;
-        let idx = new_hash_array[hash_pos2];
-        fp0.next = idx;
-        new_hash_array[hash_pos2] = Some(index);
-        fp_idx = next_fp0;
+    for (low, high) in low_buckets.iter_mut().zip(high_buckets) {
+      let mut next = low.take();
+      while let Some(index) = next {
+        let field = &mut self.per_fields[index];
+        next = field.next;
+        let hash = CoreHelper::calculate_hash(&field.schema.name);
+        let target = if hash & old_size as u64 == 0 {
+          &mut *low
+        } else {
+          &mut *high
+        };
+        field.next = target.replace(index);
       }
     }
-    self.field_hash = new_hash_array;
-    self.hash_mask = new_hash_mask;
+    self.hash_mask = new_size - 1;
   }
 
   /// Calls `start_document` on the stored fields consumer, aborting the segment on error.

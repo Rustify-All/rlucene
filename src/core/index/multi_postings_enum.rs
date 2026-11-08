@@ -26,7 +26,7 @@ use std::fmt::{Display, Formatter};
 pub struct MultiPostingsEnum<PE> {
   parent: Identity,
   pub(crate) sub_postings_enums: Box<[Option<PE>]>,
-  subs: smallvec::SmallVec<[EnumWithSlice; 4]>,
+  pub(crate) subs: smallvec::SmallVec<[EnumWithSlice; 4]>,
   num_subs: usize,
   upto: Option<usize>,
   current: Option<usize>,

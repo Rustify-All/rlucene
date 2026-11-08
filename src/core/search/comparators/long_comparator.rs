@@ -36,7 +36,7 @@ use crate::core::util::numeric_utils::NumericUtils;
 /// Comparator based on partial_cmp for numHits.
 /// This comparator provides a skipping functionality – an iterator that can skip over non-competitive documents.
 pub struct LongComparator {
-  values: Vec<i64>,
+  values: smallvec::SmallVec<[i64; 2]>,
   top_value: i64,
   bottom: i64,
   pub(crate) base: NumericComparator<i64>,
@@ -64,7 +64,7 @@ impl LongComparator {
       missing_value,
     );
     Self {
-      values: vec![0; num_hits],
+      values: smallvec::smallvec![0; num_hits],
       top_value: 0,
       bottom: 0,
       base,

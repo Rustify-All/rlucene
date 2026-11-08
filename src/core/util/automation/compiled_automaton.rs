@@ -401,7 +401,7 @@ impl CompiledAutomaton {
     }
 
     let mut idx = 0;
-    let mut stack: SmallVec<[i32; 8]> = SmallVec::with_capacity(input.length);
+    let mut stack = SmallVec::<[i32; 8]>::new();
 
     loop {
       let mut label = input.bytes[input.offset + idx] as i32;
@@ -456,6 +456,9 @@ impl CompiledAutomaton {
       } else {
         output.grow(idx + 1)?;
         output.set_byte_at(idx, label as u8);
+        if !stack.spilled() && stack.len() == stack.capacity() {
+          stack.reserve_exact(input.length - stack.len());
+        }
         stack.push(state);
         state = next_state;
         idx += 1;

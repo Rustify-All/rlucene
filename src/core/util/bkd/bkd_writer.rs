@@ -446,6 +446,13 @@ where
       0
     );
 
+    stack_or_heap_buffer!(
+      spare_doc_ids,
+      i32,
+      point_count.min(self.config.max_points_in_leaf_node),
+      64,
+      0
+    );
     self.build_with_reader(
       0,
       num_leaves,
@@ -709,6 +716,13 @@ where
         0
       );
       max_packed_value.copy_from_slice(&self.max_packed_value);
+      stack_or_heap_buffer!(
+        spare_doc_ids,
+        i32,
+        (self.point_count as usize).min(self.config.max_points_in_leaf_node),
+        64,
+        0
+      );
       self.build(
         0,
         num_leaves,
@@ -2177,10 +2191,11 @@ where
         address,
       );
 
+      let bounds_len = self.config.packed_index_bytes_length();
       let mut min_split_packed_value =
-        ArrayUtil::copy_of_sub_array(min_packed_value, 0, self.config.packed_index_bytes_length());
+        smallvec::SmallVec::<[u8; 32]>::from_slice(&min_packed_value[..bounds_len]);
       let mut max_split_packed_value =
-        ArrayUtil::copy_of_sub_array(max_packed_value, 0, self.config.packed_index_bytes_length());
+        smallvec::SmallVec::<[u8; 32]>::from_slice(&max_packed_value[..bounds_len]);
 
       let start = split_dim * self.config.bytes_per_dim;
       min_split_packed_value

@@ -30,7 +30,7 @@ use crate::core::util::error::lucene_error::{LuceneError, Result};
 
 /// Comparator that sorts by asc _doc
 pub struct DocComparator {
-  doc_ids: Vec<i32>,
+  doc_ids: smallvec::SmallVec<[i32; 2]>,
   // if skipping functionality should be enabled
   enable_skipping: bool,
   bottom: i32,
@@ -46,7 +46,7 @@ impl DocComparator {
     // skipping functionality is enabled if we are sorting by _doc in asc order as a primary sort
     let enable_skipping = !reverse && pruning != Pruning::None;
     Self {
-      doc_ids: vec![0; num_hits],
+      doc_ids: smallvec::smallvec![0; num_hits],
       enable_skipping,
       bottom: 0,
       top_value: 0,

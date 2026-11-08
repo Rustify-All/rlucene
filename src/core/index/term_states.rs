@@ -48,7 +48,7 @@ static EMPTY_TERM_STATE: LazyLock<Arc<TermStateEnum>> =
 pub struct TermStates {
   identity: Identity,
   pub(crate) top_reader_context_identity: Identity,
-  states: Box<[OnceLock<Arc<TermStateEnum>>]>,
+  states: smallvec::SmallVec<[OnceLock<Arc<TermStateEnum>>; 1]>,
   term: Option<Arc<Term>>,
   doc_freq: i32,
   total_term_freq: i64,
@@ -60,7 +60,7 @@ impl TermStates {
   {
     debug_assert!(context.base().is_top_level);
     let num_leaves = context.leaves()?.len();
-    let mut states = Vec::with_capacity(num_leaves);
+    let mut states = smallvec::SmallVec::with_capacity(num_leaves);
     for _ in 0..num_leaves {
       states.push(OnceLock::new())
     }

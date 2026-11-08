@@ -80,7 +80,7 @@ where
   // total number of docs seen
   num_docs: i32,
   // pending docs
-  pending_docs: Vec<DocData>,
+  pending_docs: smallvec::SmallVec<[DocData; 1]>,
   // current document
   cur_doc: usize,
   // current field
@@ -229,7 +229,7 @@ where
       num_dirty_chunks: 0,
       num_dirty_docs: 0,
       num_docs: 0,
-      pending_docs: Vec::new(),
+      pending_docs: smallvec::SmallVec::new(),
       cur_doc: 0,
       cur_field: 0,
       last_term,
@@ -650,13 +650,15 @@ where
   }
   fn flush_offsets(&mut self, field_nums: &[i32]) -> Result<()> {
     let mut has_offsets = false;
-    stack_or_heap_buffer!(sum_pos, u64, field_nums.len(), 16, 0);
-    stack_or_heap_buffer!(sum_offsets, u64, field_nums.len(), 16, 0);
+    let mut sums = smallvec::SmallVec::<[[u64; 2]; 16]>::new();
 
     for doc in &self.pending_docs {
       for field in &doc.fields {
         has_offsets |= field.has_offsets;
         if field.has_offsets && field.has_positions {
+          if sums.is_empty() {
+            sums.resize(field_nums.len(), [0; 2]);
+          }
           let field_index = match field_nums.binary_search(&field.field_num) {
             Ok(idx) => idx,
             Err(_) => {
@@ -1464,7 +1466,7 @@ pub(crate) struct FieldData {
   pub flags: i32,
   pub num_terms: usize,
   pub freqs: smallvec::SmallVec<[i32; 4]>,
-  pub term_lengths: Vec<usize>,
+  pub term_lengths: smallvec::SmallVec<[usize; 4]>,
   pub pos_start: usize,
   pub off_start: usize,
   pub pay_start: usize,
@@ -1495,7 +1497,7 @@ impl FieldData {
       flags,
       num_terms,
       freqs: smallvec::smallvec![0; num_terms],
-      term_lengths: vec![0; num_terms * 2],
+      term_lengths: smallvec::smallvec![0; num_terms * 2],
       pos_start,
       off_start,
       pay_start,

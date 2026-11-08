@@ -740,14 +740,12 @@ where
       unwrap_caught_result!(result)
     }?;
 
-    let mut full_flush_buffer = Vec::new();
+    let mut full_flush_buffer = smallvec::SmallVec::<[_; 4]>::new();
     let dwpts = {
       self
         .per_thread_pool
         .filter_and_lock(|v| Arc::ptr_eq(&v.state.delete_queue, &flushing_queue))?
     };
-
-    full_flush_buffer.reserve(dwpts.len());
 
     for dwpt in dwpts {
       let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {

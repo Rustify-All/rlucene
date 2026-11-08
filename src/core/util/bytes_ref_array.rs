@@ -178,7 +178,7 @@ impl BytesRefArray {
     C: BytesRefComparator<Cow<'a, Vec<u8>>>,
   {
     let size = self.size();
-    let mut indices = (size > 1).then(|| (0..size).collect::<Vec<_>>());
+    let mut indices = (size > 1).then(|| (0..size).collect::<smallvec::SmallVec<_>>());
     let mut identity = [0];
     let ordered_entries = indices
       .as_deref_mut()
@@ -294,16 +294,24 @@ impl<'a> SortableBytesRefArray<'a> for BytesRefArray {
 
 #[derive(Clone, Debug)]
 pub struct SortState {
-  pub(crate) indices: Option<Vec<usize>>,
+  pub(crate) indices: Option<smallvec::SmallVec<[usize; 4]>>,
 }
 impl SortState {
-  pub(crate) fn new(indices: Option<Vec<usize>>) -> SortState {
+  fn new(indices: Option<smallvec::SmallVec<[usize; 4]>>) -> SortState {
     SortState { indices }
   }
 }
 impl Accountable for SortState {
   fn ram_bytes_used(&self) -> Result<i64> {
-    Ok(self.indices.as_ref().map_or(0, size_of_vec))
+    Ok(
+      self
+        .indices
+        .as_ref()
+        .filter(|indices| indices.spilled())
+        .map_or(0, |indices| {
+          size_of_array_capacity::<usize>(indices.capacity())
+        }),
+    )
   }
 }
 

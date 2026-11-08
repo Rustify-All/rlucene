@@ -33,8 +33,8 @@ pub struct MaxScoreBulkScorer<S1, S2> {
   max_doc: i32,
   all_scorers: Box<[DisiWrapper<S1>]>,
   // All scorers, sorted by increasing max score.
-  pub(crate) all_scorers_idx: Vec<usize>,
-  scratch: Box<[usize]>,
+  pub(crate) all_scorers_idx: smallvec::SmallVec<[usize; 4]>,
+  scratch: smallvec::SmallVec<[usize; 4]>,
   // These are the last scorers from `allScorers` that are "essential", ie. required for a match to
   // have a competitive score.
   essential_queue: DisiPriorityQueue,
@@ -46,7 +46,7 @@ pub struct MaxScoreBulkScorer<S1, S2> {
   pub(crate) next_min_competitive_score: f32,
   cost: i64,
   pub(crate) scorable: Score,
-  pub(crate) max_score_sums: Box<[f64]>,
+  pub(crate) max_score_sums: smallvec::SmallVec<[f64; 4]>,
   filter: Option<DisiWrapper<S2>>,
   window_matches: [u64; (INNER_WINDOW_SIZE as usize) >> 6],
   window_scores: Box<[f64]>,
@@ -79,7 +79,7 @@ where
       Some(f) => Some(DisiWrapper::new(f)?),
     };
     let mut all_scorers: Vec<DisiWrapper<S1>> = Vec::with_capacity(scorers.len());
-    let mut all_scorers_idx = Vec::with_capacity(scorers.len());
+    let mut all_scorers_idx = smallvec::SmallVec::<[usize; 4]>::with_capacity(scorers.len());
     let mut cost: i64 = 0;
 
     for (i, scorer) in scorers.into_iter().enumerate() {
@@ -88,27 +88,26 @@ where
       all_scorers.push(w);
       all_scorers_idx.push(i);
     }
-    let scratch = vec![0usize; all_scorers_idx.len()];
+    let scratch = smallvec::smallvec![0; all_scorers_idx.len()];
     let essential_queue = DisiPriorityQueue::new(all_scorers_idx.len());
-    let max_score_sums = vec![0f64; all_scorers_idx.len()];
+    let max_score_sums = smallvec::smallvec![0.0; all_scorers_idx.len()];
     let window_matches = [0u64; (INNER_WINDOW_SIZE as usize) >> 6];
-    let window_scores = vec![0f64; INNER_WINDOW_SIZE as usize];
 
     Ok(Self {
       max_doc,
       all_scorers: all_scorers.into_boxed_slice(),
       all_scorers_idx,
-      scratch: scratch.into_boxed_slice(),
+      scratch,
       essential_queue,
       first_essential_scorer: 0,
       first_required_scorer: 0,
       next_min_competitive_score: 0.0,
       cost,
       scorable: Score::new(),
-      max_score_sums: max_score_sums.into_boxed_slice(),
+      max_score_sums,
       filter,
       window_matches,
-      window_scores: window_scores.into_boxed_slice(),
+      window_scores: Box::default(),
 
       num_outer_windows: 0,
       num_candidates: 0,

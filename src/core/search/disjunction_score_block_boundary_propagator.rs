@@ -27,7 +27,7 @@ use crate::core::util::error::lucene_error::Result;
 /// only across clauses whose maximum score is greater than or equal to the minimum competitive
 /// score, or the maximum scoring clause if there is no such clause.
 pub struct DisjunctionScoreBlockBoundaryPropagator {
-  cost: Box<[Cost]>,
+  cost: smallvec::SmallVec<[Cost; 4]>,
   lead_index: usize,
 }
 impl DisjunctionScoreBlockBoundaryPropagator {
@@ -35,7 +35,7 @@ impl DisjunctionScoreBlockBoundaryPropagator {
   where
     S: Scorer,
   {
-    let mut cost = Vec::with_capacity(scorers.len());
+    let mut cost = smallvec::SmallVec::<[Cost; 4]>::with_capacity(scorers.len());
     for (i, scorer) in scorers.iter_mut().enumerate() {
       scorer.advance_shallow(0)?;
       let max_score = scorer.get_max_score(NO_MORE_DOCS)?;

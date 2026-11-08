@@ -641,7 +641,7 @@ where
 pub struct SortingDocsEnum<P> {
   sorter: LSBRadixSorter,
   postings_enum: Option<P>,
-  docs: Vec<i32>,
+  docs: smallvec::SmallVec<[i32; 8]>,
   doc_it: Option<usize>,
   upto: usize,
 }
@@ -650,7 +650,7 @@ impl<P> SortingDocsEnum<P> {
     Self {
       sorter: LSBRadixSorter::new(),
       postings_enum: None,
-      docs: Vec::new(),
+      docs: smallvec::SmallVec::new(),
       doc_it: None,
       upto: 0,
     }

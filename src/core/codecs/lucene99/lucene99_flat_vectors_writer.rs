@@ -155,27 +155,29 @@ where
 
   fn write_float32_vectors(vector_data: &mut O, dim: usize, vectors: &[Box<[f32]>]) -> Result<()> {
     #[cfg(target_endian = "little")]
-    if dim >= 16 {
+    {
       for vector in vectors {
         debug_assert_eq!(vector.len(), dim);
         let bytes: &[u8] = wide::bytemuck::cast_slice(vector);
         vector_data.write_bytes_range(bytes, 0, bytes.len())?;
       }
-      return Ok(());
+      Ok(())
     }
 
-    let byte_size = BitUtil::FLOAT_BYTES;
-    stack_or_heap_buffer!(buffer, u8, dim * byte_size, 128, 0);
+    #[cfg(target_endian = "big")]
+    {
+      let byte_size = BitUtil::FLOAT_BYTES;
+      stack_or_heap_buffer!(buffer, u8, dim * byte_size, 128, 0);
 
-    for vector in vectors.iter() {
-      debug_assert_eq!(vector.len(), dim);
-      write_float_vector(vector, buffer)?;
-      vector_data.write_bytes_range(buffer, 0, buffer.len())?;
+      for vector in vectors.iter() {
+        debug_assert_eq!(vector.len(), dim);
+        write_float_vector(vector, buffer)?;
+        vector_data.write_bytes_range(buffer, 0, buffer.len())?;
+      }
+
+      Ok(())
     }
-
-    Ok(())
   }
-
   fn write_byte_vectors(vector_data: &mut O, vectors: &[Box<[u8]>]) -> Result<()> {
     for vector in vectors.iter() {
       vector_data.write_bytes_range(vector, 0, vector.len())?;
@@ -196,27 +198,30 @@ where
 
     let dim = field_data.dim;
     #[cfg(target_endian = "little")]
-    if dim >= 16 {
+    {
       for &ord in ord_map {
         let vector = &vectors[ord];
         debug_assert_eq!(vector.len(), dim);
         let bytes: &[u8] = wide::bytemuck::cast_slice(vector);
         vector_data.write_bytes_range(bytes, 0, bytes.len())?;
       }
-      return Ok(vector_data_offset);
+      Ok(vector_data_offset)
     }
 
-    let byte_size = BitUtil::FLOAT_BYTES;
-    stack_or_heap_buffer!(buffer, u8, dim * byte_size, 128, 0);
+    #[cfg(target_endian = "big")]
+    {
+      let byte_size = BitUtil::FLOAT_BYTES;
+      stack_or_heap_buffer!(buffer, u8, dim * byte_size, 128, 0);
 
-    for &ord in ord_map {
-      let vector = &vectors[ord];
-      debug_assert_eq!(vector.len(), dim);
-      write_float_vector(vector, buffer)?;
-      vector_data.write_bytes_range(buffer, 0, buffer.len())?;
+      for &ord in ord_map {
+        let vector = &vectors[ord];
+        debug_assert_eq!(vector.len(), dim);
+        write_float_vector(vector, buffer)?;
+        vector_data.write_bytes_range(buffer, 0, buffer.len())?;
+      }
+
+      Ok(vector_data_offset)
     }
-
-    Ok(vector_data_offset)
   }
   fn write_sorted_byte_vectors(
     vector_data: &mut O,
@@ -282,6 +287,7 @@ where
     max_doc: i32,
     sort_map: &DM,
     vectors: Option<VectorSlices<'_>>,
+    ord_map: &mut smallvec::SmallVec<[usize; 8]>,
   ) -> Result<()>
   where
     DM: DocMap,
@@ -295,7 +301,9 @@ where
     let cardinality = field_data.get_docs_with_field_set().cardinality() as usize;
 
     // new ord -> old ord
-    let mut ord_map: smallvec::SmallVec<[usize; 8]> = smallvec::smallvec![0; cardinality];
+    ord_map.clear();
+    ord_map.reserve_exact(cardinality);
+    ord_map.resize(cardinality, 0);
 
     let mut new_docs_with_field = DocsWithFieldSet::new();
 
@@ -374,6 +382,7 @@ where
   where
     DM: DocMap,
   {
+    let mut ord_map = smallvec::SmallVec::new();
     for field_idx in 0..self.fields.len() {
       if let Some(sort_map) = sort_map {
         Self::write_sorting_field(
@@ -529,6 +538,7 @@ where
     DM: DocMap,
     FS: FlatVectorsScorer,
   {
+    let mut ord_map = smallvec::SmallVec::new();
     for idx in 0..self.fields.len() {
       let fields = &fields[idx];
       let vectors = fields.get_vectors()?;

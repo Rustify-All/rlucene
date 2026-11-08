@@ -89,6 +89,7 @@ impl HnswUtil {
     mut not_fully_connected: Option<&mut FixedBitSet>,
     connected_nodes: &mut FixedBitSet,
     max_conn: usize,
+    stack: &mut SmallVec<[usize; 4]>,
   ) -> Result<usize>
   where
     N: Iterator<Item = usize>,
@@ -121,6 +122,7 @@ impl HnswUtil {
     let mut components = Vec::new();
     debug_assert!(hnsw.size() <= i32::MAX as usize);
     let mut connected_nodes = FixedBitSet::new(hnsw.size());
+    let mut stack = SmallVec::<[usize; 4]>::new();
 
     debug_assert_eq!(hnsw.size(), hnsw.get_nodes_on_level(0)?.size());
 
@@ -233,12 +235,13 @@ impl HnswUtil {
     mut not_fully_connected: Option<&mut FixedBitSet>,
     max_conn: usize,
     entry_point: usize,
+    stack: &mut SmallVec<[usize; 4]>,
   ) -> Result<Component>
   where
     G: HnswGraph,
   {
     // Start at entry point and search all nodes on this level
-    let mut stack = SmallVec::<[usize; 4]>::new();
+    stack.clear();
     stack.push(entry_point);
     let mut count = 0;
 
@@ -265,6 +268,11 @@ impl HnswUtil {
       {
         nfc.set(node)?;
       }
+    }
+
+    // Bound retained traversal storage while later components accumulate.
+    if stack.capacity() > (64 * 1024) / size_of::<usize>() {
+      *stack = SmallVec::new();
     }
 
     Ok(Component {

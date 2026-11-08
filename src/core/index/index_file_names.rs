@@ -106,6 +106,39 @@ impl IndexFileNames {
     }
   }
 
+  pub(crate) fn with_segment_file_name<R>(
+    segment_name: &str,
+    suffix: &str,
+    ext: &str,
+    use_name: impl FnOnce(&str) -> R,
+  ) -> R {
+    if suffix.is_empty() && ext.is_empty() {
+      return use_name(segment_name);
+    }
+    debug_assert!(!ext.starts_with('.'), "Extension should not start with '.'");
+    let mut name = smallvec::SmallVec::<[u8; 64]>::with_capacity(
+      segment_name.len()
+        + suffix.len()
+        + ext.len()
+        + usize::from(!suffix.is_empty())
+        + usize::from(!ext.is_empty()),
+    );
+    name.extend_from_slice(segment_name.as_bytes());
+    if !suffix.is_empty() {
+      name.push(b'_');
+      name.extend_from_slice(suffix.as_bytes());
+    }
+    if !ext.is_empty() {
+      name.push(b'.');
+      name.extend_from_slice(ext.as_bytes());
+    }
+    let name = expect_invariant!(
+      std::str::from_utf8(&name),
+      "filename parts and separators are UTF-8"
+    );
+    use_name(name)
+  }
+
   /// Returns true if the given filename ends with the given extension. One
   /// should provide a `pure` extension, without '.'.
   pub fn matches_extension(filename: &str, ext: &str) -> bool {

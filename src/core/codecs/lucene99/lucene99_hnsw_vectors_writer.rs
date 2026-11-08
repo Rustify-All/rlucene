@@ -213,12 +213,18 @@ where
       vector_index_length.try_convert()?,
       cardinality,
       graph,
-      &graph_level_node_offsets,
+      offsets,
     )?;
 
     Ok(())
   }
-  fn write_sorting_field<DM>(&mut self, field_data_idx: usize, sort_map: &DM) -> Result<()>
+  fn write_sorting_field<DM>(
+    &mut self,
+    field_data_idx: usize,
+    sort_map: &DM,
+    offsets: &mut Vec<i32>,
+    ordinal_maps: &mut smallvec::SmallVec<[usize; 16]>,
+  ) -> Result<()>
   where
     DM: DocMap,
   {
@@ -462,24 +468,17 @@ where
 
     meta.write_vint(graph.num_levels()? as i32)?;
     let mut value_count: i64 = 0;
-    let mut nol = smallvec::SmallVec::<[usize; 32]>::new();
-
     for level in 0..graph.num_levels()? {
-      let mut nodes_on_level = graph.get_nodes_on_level(level)?;
+      let nodes_on_level = graph.get_nodes_on_level(level)?;
       value_count += nodes_on_level.size() as i64;
 
       if level > 0 {
-        nol.clear();
-        nol.resize(nodes_on_level.size(), 0usize);
-        let number_consumed = nodes_on_level.consume(nol.as_mut())?;
-        nol.sort_unstable();
+        meta.write_vint(nodes_on_level.size() as i32)?;
 
-        debug_assert_eq!(number_consumed, nodes_on_level.size());
-
-        meta.write_vint(nol.len() as i32)?;
-
+        // Completed on-heap graphs and the sorted flush view both yield nodes in order.
         let mut previous = 0;
-        for &node in &nol {
+        for node in nodes_on_level {
+          debug_assert!(node >= previous);
           meta.write_vint((node - previous) as i32)?;
           previous = node;
         }
@@ -627,12 +626,15 @@ where
       .flat_vector_writer
       .flat_flush(max_doc, sort_map, &self.fields)?;
 
+    let mut offsets = Vec::new();
+    let mut ordinal_maps = smallvec::SmallVec::new();
     for field_idx in 0..self.fields.len() {
       if let Some(sm) = sort_map {
-        self.write_sorting_field(field_idx, sm)?;
+        self.write_sorting_field(field_idx, sm, &mut offsets, &mut ordinal_maps)?;
       } else {
-        self.write_field(field_idx)?;
+        self.write_field(field_idx, &mut offsets)?;
       }
+      offsets.clear();
     }
 
     Ok(())

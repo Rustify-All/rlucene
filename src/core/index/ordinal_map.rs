@@ -267,7 +267,7 @@ impl OrdinalMap {
       )?);
     }
 
-    let mut counters = vec![0i64; sub_len * 2];
+    let mut counters: smallvec::SmallVec<[i64; 8]> = smallvec::smallvec![0; sub_len * 2];
     let (ord_delta_bits, segment_ords) = counters.split_at_mut(sub_len);
 
     //  queue of term enums

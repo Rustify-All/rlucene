@@ -50,6 +50,21 @@ pub(crate) mod fields_index_writer_const {
   pub(crate) const VERSION_CURRENT: i32 = 0;
 }
 
+pub(crate) fn with_index_label<R>(
+  base: &str,
+  suffix: &str,
+  use_label: impl FnOnce(&str) -> R,
+) -> R {
+  stack_or_heap_buffer!(bytes, u8, base.len() + suffix.len(), 64, 0);
+  let (prefix_bytes, suffix_bytes) = bytes.split_at_mut(base.len());
+  prefix_bytes.copy_from_slice(base.as_bytes());
+  suffix_bytes.copy_from_slice(suffix.as_bytes());
+  use_label(expect_invariant!(
+    std::str::from_utf8(bytes),
+    "codec label parts are UTF-8"
+  ))
+}
+
 impl<D> FieldsIndexWriter<D>
 where
   D: Directory,

@@ -193,7 +193,7 @@ impl BufferedUpdatesStream {
 
     let wait_for = {
       let inner = self.inner.lock();
-      let mut packets = Vec::new();
+      let mut packets = smallvec::SmallVec::new();
 
       for packet in inner.updates.values() {
         if packet.del_gen() <= max_del_gen {
@@ -222,7 +222,7 @@ impl BufferedUpdatesStream {
 
   fn wait_apply<D>(
     &self,
-    wait_for: Vec<Arc<FrozenBufferedUpdates>>,
+    mut wait_for: smallvec::SmallVec<[Arc<FrozenBufferedUpdates>; 4]>,
     writer: &IndexWriter<D>,
   ) -> Result<()>
   where
@@ -429,13 +429,13 @@ impl FinishedSegments {
 /// - `all_deleted`: if `Some`, contains segments_id that are 100% deleted
 pub(crate) struct ApplyDeletesResult {
   pub(crate) any_deletes: bool,
-  pub(crate) all_deleted: Option<Vec<Arc<str>>>,
+  pub(crate) all_deleted: Option<smallvec::SmallVec<[Arc<str>; 1]>>,
 }
 impl ApplyDeletesResult {
   pub(crate) fn any_deletes(&self) -> bool {
     self.any_deletes
   }
-  pub(crate) fn all_deleted(&self) -> Option<&Vec<Arc<str>>> {
-    self.all_deleted.as_ref()
+  pub(crate) fn all_deleted(&self) -> Option<&[Arc<str>]> {
+    self.all_deleted.as_deref()
   }
 }

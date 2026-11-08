@@ -294,32 +294,44 @@ where
     vectors: &[Box<[f32]>],
     scalar_quantizer: &ScalarQuantizer,
     version: i32,
+    ord_map: &mut smallvec::SmallVec<[usize; 8]>,
+    scratch: &mut QuantizedFlushScratch,
   ) -> Result<()>
   where
     DM: DocMap,
     FW: FlatFieldVectorsWriter,
   {
     let docs_with_field = field_data.get_docs_with_field_set(flat_field_vectors_writers)?;
-    let mut ord_map = vec![0usize; docs_with_field.cardinality() as usize]; // new ord to old ord
+    // New ordinal to old ordinal.
+    let cardinality = docs_with_field.cardinality() as usize;
+    ord_map.clear();
+    ord_map.reserve_exact(cardinality);
+    ord_map.resize(cardinality, 0);
 
     let mut new_docs_with_field = DocsWithFieldSet::new();
     map_old_ord_to_new_ord(
       docs_with_field,
       sort_map,
       None,
-      Some(&mut ord_map),
+      Some(ord_map),
       Some(&mut new_docs_with_field),
     )?;
     new_docs_with_field.finish();
 
     // write vector values
     let vector_data_offset = quantized_vector_data.align_file_pointer(BitUtil::FLOAT_BYTES)?;
-    write_sorted_quantized_vectors(
+    let sorted_vectors = ord_map.iter().map(|&ordinal| {
+      vectors
+        .get(ordinal)
+        .map(Box::as_ref)
+        .ok_or_else(|| LuceneError::illegal_state("Invalid vector ordinal"))
+    });
+    write_quantized_vectors(
       quantized_vector_data,
       field_data,
-      &ord_map,
-      vectors,
+      sorted_vectors,
       scalar_quantizer,
+      scratch,
     )?;
     let quantized_vector_length = quantized_vector_data.get_file_pointer()? - vector_data_offset;
     write_meta(
@@ -526,6 +538,8 @@ where
   {
     self.raw_vector_delegate.flush(max_doc, sort_map)?;
 
+    let mut ord_map = smallvec::SmallVec::new();
+    let mut scratch = QuantizedFlushScratch::default();
     for field_idx in 0..self.fields.len() {
       let field = &self.fields[field_idx];
       let vectors = {
@@ -706,6 +720,8 @@ where
       .raw_vector_delegate
       .flat_flush(max_doc, sort_map, fields)?;
 
+    let mut ord_map = smallvec::SmallVec::new();
+    let mut scratch = QuantizedFlushScratch::default();
     for field_idx in 0..self.fields.len() {
       let field = &self.fields[field_idx];
       let vectors = fields
@@ -893,107 +909,57 @@ where
   )
 }
 
-fn write_quantized_vectors<O>(
-  quantized_vector_data: &mut O,
-  field_data: &ScalarQuantizedFieldWriter,
-  vectors: &[Box<[f32]>],
-  scalar_quantizer: &ScalarQuantizer,
-) -> Result<()>
-where
-  O: IndexOutput,
-{
-  let dimension = field_data.field_info.get_vector_dimension() as usize;
-  let mut vector: smallvec::SmallVec<[u8; 32]> = smallvec::smallvec![0u8; dimension];
-  let mut compressed_vector = if field_data.compress {
-    compressed_array(dimension, field_data.bits)
-  } else {
-    None
-  };
-  let mut copy: Option<smallvec::SmallVec<[f32; 32]>> = if field_data.normalize {
-    Some(smallvec::smallvec![0f32; dimension])
-  } else {
-    None
-  };
-  debug_assert!(vectors.is_empty() || scalar_quantizer.get_bits() == field_data.bits);
-  for v in vectors {
-    let borrowed;
-    let vector_value = if field_data.normalize {
-      let copy = copy
-        .as_mut()
-        .ok_or_else(|| LuceneError::illegal_state("missing normalized vector buffer"))?;
-      copy.copy_from_slice(v.as_ref());
-      VectorUtil::l2normalize(copy)?;
-      borrowed = copy.as_slice();
-      borrowed
-    } else {
-      v.as_ref()
-    };
-
-    let offset_correction = scalar_quantizer.quantize(
-      vector_value,
-      &mut vector,
-      *field_data.field_info.get_vector_similarity_function(),
-    );
-    if let Some(compressed_vector) = compressed_vector.as_mut() {
-      compress_bytes(&vector, compressed_vector)?;
-      quantized_vector_data.write_bytes_range(compressed_vector, 0, compressed_vector.len())?;
-    } else {
-      quantized_vector_data.write_bytes_range(&vector, 0, vector.len())?;
-    }
-    let offset_buffer = offset_correction.to_le_bytes();
-    quantized_vector_data.write_bytes_range(&offset_buffer, 0, offset_buffer.len())?;
-  }
-  Ok(())
+#[derive(Default)]
+struct QuantizedFlushScratch {
+  vector: smallvec::SmallVec<[u8; 32]>,
+  normalized: smallvec::SmallVec<[f32; 32]>,
+  compressed: Vec<u8>,
 }
 
-fn write_sorted_quantized_vectors<O>(
+fn write_quantized_vectors<'v, O>(
   quantized_vector_data: &mut O,
   field_data: &ScalarQuantizedFieldWriter,
-  ord_map: &[usize],
-  vectors: &[Box<[f32]>],
+  vectors: impl ExactSizeIterator<Item = Result<&'v [f32]>>,
   scalar_quantizer: &ScalarQuantizer,
+  scratch: &mut QuantizedFlushScratch,
 ) -> Result<()>
 where
   O: IndexOutput,
 {
+  if vectors.len() == 0 {
+    return Ok(());
+  }
   let dimension = field_data.field_info.get_vector_dimension() as usize;
-  let mut vector: smallvec::SmallVec<[u8; 32]> = smallvec::smallvec![0u8; dimension];
-  let mut compressed_vector = if field_data.compress {
-    compressed_array(dimension, field_data.bits)
-  } else {
-    None
-  };
-  let mut copy: Option<smallvec::SmallVec<[f32; 32]>> = if field_data.normalize {
-    Some(smallvec::smallvec![0f32; dimension])
-  } else {
-    None
-  };
-  for &ordinal in ord_map {
-    let v = vectors
-      .get(ordinal)
-      .ok_or_else(|| LuceneError::illegal_state("Invalid vector ordinal"))?;
-    let borrowed;
+  scratch.vector.resize(dimension, 0);
+  scratch.vector.fill(0);
+  let compressed = field_data.compress && field_data.bits <= 4;
+  if compressed {
+    scratch.compressed.resize(dimension.div_ceil(2), 0);
+  }
+  if field_data.normalize {
+    scratch.normalized.resize(dimension, 0.0);
+  }
+
+  for value in vectors {
+    let value = value?;
     let vector_value = if field_data.normalize {
-      let copy = copy
-        .as_mut()
-        .ok_or_else(|| LuceneError::illegal_state("missing normalized vector buffer"))?;
-      copy.copy_from_slice(v.as_ref());
-      VectorUtil::l2normalize(copy)?;
-      borrowed = copy.as_slice();
-      borrowed
+      scratch.normalized.copy_from_slice(value);
+      VectorUtil::l2normalize(&mut scratch.normalized)?;
+      scratch.normalized.as_slice()
     } else {
-      v.as_ref()
+      value
     };
+
     let offset_correction = scalar_quantizer.quantize(
       vector_value,
-      &mut vector,
+      &mut scratch.vector,
       *field_data.field_info.get_vector_similarity_function(),
     );
-    if let Some(compressed_vector) = compressed_vector.as_mut() {
-      compress_bytes(&vector, compressed_vector)?;
-      quantized_vector_data.write_bytes_range(compressed_vector, 0, compressed_vector.len())?;
+    if compressed {
+      compress_bytes(&scratch.vector, &mut scratch.compressed)?;
+      quantized_vector_data.write_bytes_range(&scratch.compressed, 0, scratch.compressed.len())?;
     } else {
-      quantized_vector_data.write_bytes_range(&vector, 0, vector.len())?;
+      quantized_vector_data.write_bytes_range(&scratch.vector, 0, scratch.vector.len())?;
     }
     let offset_buffer = offset_correction.to_le_bytes();
     quantized_vector_data.write_bytes_range(&offset_buffer, 0, offset_buffer.len())?;
@@ -1093,8 +1059,7 @@ where
     *field_info.get_vector_encoding(),
     VectorEncoding::FLOAT32(BitUtil::FLOAT_BYTES)
   );
-  let mut quantization_states = Vec::with_capacity(merge_state.live_docs.len());
-  let mut segment_sizes = Vec::with_capacity(merge_state.live_docs.len());
+  let mut quantization_states = smallvec::SmallVec::<[(Option<ScalarQuantizer>, usize); 4]>::new();
   for i in 0..merge_state.live_docs.len() {
     if has_vector_values(&merge_state.field_infos[i], &field_info.name)?
       && let Some(knn_vectors_reader) = merge_state.knn_vectors_readers[i].as_ref()

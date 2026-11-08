@@ -370,26 +370,34 @@ impl FieldInfos {
     })? as usize;
     let by_number;
     let values: Vec<Arc<FieldInfo>>;
-    if field_number_strictly_ascending && by_number_len == infos.len() {
-      // The input FieldInfo[] contains all fields numbered from 0 to
-      // infos.length - 1, and they are sorted, use it
-      // directly. This is an optimization when reading a segment with all
-      // fields since the FieldInfo[] is sorted.
+    if infos.len() <= 2 || (field_number_strictly_ascending && by_number_len == infos.len()) {
+      if let [first, second] = infos.as_slice() {
+        if first.number == second.number {
+          return Err(LuceneError::illegal_argument(format!(
+            "duplicate field numbers: {} and {} have: {}",
+            first.name, second.name, second.number
+          )));
+        }
+        if first.number > second.number {
+          infos.swap(0, 1);
+        }
+      }
+      // Small collections and already sorted dense field numbers need no lookup table.
       by_number = None;
       infos.shrink_to_fit();
       values = infos;
     } else {
-      let mut indexed_slots: smallvec::SmallVec<[Option<Arc<FieldInfo>>; 8]> =
-        smallvec::smallvec![None; by_number_len];
-      for field_info in &infos {
-        let field_number = field_info.number as usize;
-        if let Some(existing) = &indexed_slots[field_number] {
+      let mut indexed_slots: smallvec::SmallVec<[usize; 8]> =
+        smallvec::smallvec![usize::MAX; by_number_len];
+      for (index, field_info) in infos.iter().enumerate() {
+        let slot = &mut indexed_slots[field_info.number as usize];
+        if let Some(existing) = infos.get(*slot) {
           return Err(LuceneError::illegal_argument(format!(
             "duplicate field numbers: {} and {} have: {}",
             existing.name, field_info.name, field_info.number
           )));
         }
-        indexed_slots[field_number] = Some(Arc::clone(field_info));
+        *slot = index;
       }
       if by_number_len == infos.len() {
         // Unique field numbers now cover 0..infos.len(), so retain these owners

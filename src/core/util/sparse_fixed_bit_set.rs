@@ -297,20 +297,19 @@ impl SparseFixedBitSet {
       self.non_zero_long_count += non_zero_long_count;
       return;
     }
-    let current_bits = std::mem::take(&mut self.bits[i4096]);
     let new_index = current_index | index;
     let required_capacity = new_index.count_ones() as usize;
-    let current_bytes = block_heap_bytes(&current_bits);
-    let (mut new_bits, old_bits) = if current_bits.len() >= required_capacity {
-      (current_bits, None)
-    } else {
-      let new_bits = SmallVec::from_elem(0, oversize(required_capacity));
+    let new_bits = &mut self.bits[i4096];
+    if new_bits.len() < required_capacity {
+      let current_bytes = block_heap_bytes(new_bits);
+      let new_size = oversize(required_capacity);
+      new_bits.reserve_exact(new_size - new_bits.len());
+      new_bits.resize(new_size, 0);
       self.ram_bytes_used = self
         .ram_bytes_used
         .saturating_sub(current_bytes)
-        .saturating_add(block_heap_bytes(&new_bits));
-      (new_bits, Some(current_bits))
-    };
+        .saturating_add(block_heap_bytes(new_bits));
+    }
     // we iterate backwards in order to not override data we might need on
     // the next iteration if the array is reused
     let mut i = new_index.leading_zeros() as usize;

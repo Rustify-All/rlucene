@@ -108,12 +108,32 @@ impl CompetitiveImpactAccumulator {
       return impacts;
     }
 
-    let mut freq_norm_pairs = self.other_freq_norm_pairs.clone();
-    for imp in &impacts {
-      Self::add_entry(imp.clone(), &mut freq_norm_pairs);
+    if impacts.is_empty() {
+      return self.other_freq_norm_pairs.iter().cloned().collect();
     }
-    impacts.clear();
-    impacts.extend(freq_norm_pairs);
+    let mut byte_impacts = impacts.into_iter().rev().peekable();
+    let mut custom_impacts = self.other_freq_norm_pairs.iter().rev().peekable();
+    let mut impacts = smallvec::SmallVec::<[Impact; 8]>::new();
+    let mut lowest_norm = None;
+    loop {
+      let next = if let Some(custom) = custom_impacts.peek()
+        && byte_impacts.peek().is_none_or(|byte| *custom > byte)
+      {
+        custom_impacts.next().cloned()
+      } else {
+        byte_impacts.next()
+      };
+      let Some(impact) = next else {
+        break;
+      };
+      let norm = impact.norm as u64;
+      // Descending frequencies only retain a new lower unsigned norm.
+      if lowest_norm.is_none_or(|previous| norm < previous) {
+        lowest_norm = Some(norm);
+        impacts.push(impact);
+      }
+    }
+    impacts.reverse();
     impacts
   }
 

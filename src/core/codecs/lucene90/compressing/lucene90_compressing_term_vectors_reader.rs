@@ -557,7 +557,7 @@ where
     };
 
     // read field numbers and flags
-    let mut field_num_offs = Vec::with_capacity(num_fields);
+    let mut field_num_offs = smallvec::SmallVec::with_capacity(num_fields);
     let (flags, expanded_flags) = {
       let bits_per_off = bits_required((field_nums.len() - 1) as i64)?;
       let bytes = Self::slice(&mut self.vectors_stream)?;
@@ -628,7 +628,7 @@ where
     let mut doc_len = 0;
     #[allow(unused)]
     let mut total_len = 0;
-    let mut field_lengths = Vec::with_capacity(num_fields);
+    let mut field_lengths = smallvec::SmallVec::with_capacity(num_fields);
     let mut prefix_lengths = Vec::with_capacity(num_fields);
     let mut suffix_lengths = Vec::with_capacity(num_fields);
     {
@@ -949,15 +949,26 @@ where
         && payload_offset + payload_len <= suffix_bytes.bytes.len()
     );
 
-    let field_flags = if all_flags.spilled() && skip == 0 && num_fields == total_fields {
-      all_flags.into_vec()
-    } else {
-      all_flags[skip..skip + num_fields].to_vec()
-    };
+    let field_flags =
+      if all_flags.spilled() && num_fields > 8 && num_fields >= total_fields.div_ceil(2) {
+        if skip != 0 {
+          all_flags.copy_within(skip..skip + num_fields, 0);
+        }
+        all_flags.truncate(num_fields);
+        smallvec::SmallVec::from_vec(all_flags.into_vec())
+      } else {
+        smallvec::SmallVec::from_slice(&all_flags[skip..skip + num_fields])
+      };
 
     let field_term_freqs: smallvec::SmallVec<[Vec<usize>; 1]> =
-      if num_fields == 1 && skip == 0 && num_terms[0] == term_freqs.len() {
-        // This field owns the entire decoded chunk; keep its exact-sized buffer.
+      if num_fields == 1 && num_terms[skip] >= term_freqs.len().div_ceil(2) {
+        let start: usize = num_terms[..skip].iter().sum();
+        let count = num_terms[skip];
+        let mut term_freqs = term_freqs;
+        if start != 0 || count > term_freqs.len() {
+          term_freqs.copy_within(start..start + count, 0);
+        }
+        term_freqs.truncate(count);
         smallvec::smallvec![term_freqs]
       } else {
         let mut field_term_freqs = smallvec::SmallVec::with_capacity(num_fields);
@@ -1161,11 +1172,11 @@ impl TVTermData {
 }
 
 pub struct TVFields {
-  field_nums: Box<[usize]>,
-  field_flags: Box<[u8]>,
-  field_lengths: Box<[usize]>,
+  field_nums: smallvec::SmallVec<[usize; 1]>,
+  field_flags: smallvec::SmallVec<[u8; 8]>,
+  field_lengths: smallvec::SmallVec<[usize; 1]>,
 
-  term_data: Box<[Rc<TVTermData>]>,
+  term_data: smallvec::SmallVec<[Rc<TVTermData>; 1]>,
 
   payload_offset: usize,
   payload_length: usize,
@@ -1177,10 +1188,10 @@ impl TVFields {
   #[allow(clippy::too_many_arguments)]
   pub(crate) fn new(
     field_nums: smallvec::SmallVec<[i32; 4]>,
-    field_flags: Vec<u8>,
-    mut field_num_offs: Vec<usize>,
-    field_lengths: Vec<usize>,
-    term_data: Vec<Rc<TVTermData>>,
+    field_flags: smallvec::SmallVec<[u8; 8]>,
+    mut field_num_offs: smallvec::SmallVec<[usize; 1]>,
+    field_lengths: smallvec::SmallVec<[usize; 1]>,
+    term_data: smallvec::SmallVec<[Rc<TVTermData>; 1]>,
     payload_offset: usize,
     payload_length: usize,
     suffix_bytes: BytesRef<Rc<Vec<u8>>>,

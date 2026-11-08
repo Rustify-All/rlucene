@@ -408,15 +408,17 @@ impl<D> SegmentInfo<D> {
     I: IntoIterator<Item = S>,
     S: AsRef<str> + Into<String>,
   {
-    let files: Vec<S> = files.into_iter().collect();
+    let files: smallvec::SmallVec<[S; 4]> = files.into_iter().collect();
     self.check_file_names(&files)?;
     match self.set_files {
-      Some(ref mut set_files) => {
+      Some(ref mut set_files) if !files.is_empty() => {
+        let set_files = Arc::make_mut(set_files);
         set_files.reserve(files.len());
         for f in files {
           set_files.insert(named_for_this_segment(&self.name, f));
         }
       },
+      Some(_) => {},
       None => return Err(LuceneError::illegal_state("set_files was not initialized")),
     }
     Ok(())

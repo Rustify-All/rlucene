@@ -70,7 +70,8 @@ where
   max_docs_per_chunk: i32,
   buffered_docs: ByteBuffersDataOutput,
   num_stored_fields: smallvec::SmallVec<[i32; 8]>,
-  end_offsets: smallvec::SmallVec<[i32; 8]>,
+  lengths: smallvec::SmallVec<[i32; 8]>,
+  last_end_offset: i32,
   doc_base: usize,
   num_buffered_docs: usize,
   num_chunks: i64,
@@ -98,9 +99,8 @@ where
     let compressor = compression_mode.new_compressor();
     let buffered_docs = ByteBuffersDataOutput::new_resettable_instance();
     let num_stored_fields = smallvec::SmallVec::<[i32; 8]>::new();
-    let end_offsets = smallvec::SmallVec::<[i32; 8]>::new();
+    let lengths = smallvec::SmallVec::<[i32; 8]>::new();
 
-    let meta_file = IndexFileNames::segment_file_name(segment, segment_suffix, META_EXTENSION);
     let mut directory = Some(directory);
     let mut meta_stream = None;
     let mut fields_stream = None;
@@ -684,8 +684,7 @@ where
     Self: Sized,
   {
     let matching_readers = MatchingReaders::new(merge_state)?;
-    let mut visitors: smallvec::SmallVec<[Option<MergeVisitor<'_>>; 4]> =
-      smallvec::smallvec![None; merge_state.stored_fields_readers.len()];
+    let mut visitors = smallvec::SmallVec::<[Option<MergeVisitor<'_>>; 4]>::new();
     let mut subs = Vec::with_capacity(merge_state.stored_fields_readers.len());
 
     for (i, reader) in merge_state.stored_fields_readers.iter().enumerate() {
@@ -804,13 +803,11 @@ where
             0
           },
         ))
-        .saturating_add(size_of_array_capacity::<i32>(
-          if self.end_offsets.spilled() {
-            self.end_offsets.capacity()
-          } else {
-            0
-          },
-        )),
+        .saturating_add(size_of_array_capacity::<i32>(if self.lengths.spilled() {
+          self.lengths.capacity()
+        } else {
+          0
+        })),
     )
   }
 }

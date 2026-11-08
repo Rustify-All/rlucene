@@ -363,7 +363,7 @@ where
     Self: 'a;
 
   fn get_impacts(&self) -> Result<Self::Impacts<'_>> {
-    let mut impacts = Vec::with_capacity(self.impacts_enums.len());
+    let mut impacts = smallvec::SmallVec::with_capacity(self.impacts_enums.len());
     for idx in 0..self.impacts_enums.len() {
       let v = self.impacts_enums.iterator_at(idx);
       impacts.push(v.get_impacts()?);
@@ -409,12 +409,12 @@ where
 }
 
 pub struct ImpactsImpl<I> {
-  impacts: Vec<I>,
+  impacts: smallvec::SmallVec<[I; 2]>,
   lead_index: usize,
 }
 
 impl<I> ImpactsImpl<I> {
-  fn new(impacts: Vec<I>, lead_index: usize) -> Self {
+  fn new(impacts: smallvec::SmallVec<[I; 2]>, lead_index: usize) -> Self {
     Self {
       impacts,
       lead_index,
@@ -446,7 +446,7 @@ where
   fn get_impacts(&'_ self, level: usize) -> Result<Vec<Impact>> {
     let doc_id_up_to = self.get_doc_id_upto(level);
     let impact_len = self.impacts.len();
-    let mut sub_iterators = Vec::new();
+    let mut sub_iterators = smallvec::SmallVec::<[SubIterator; 2]>::new();
     let mut first_sub = None;
 
     for i in 0..impact_len {

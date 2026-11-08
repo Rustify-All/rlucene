@@ -798,7 +798,8 @@ impl<D, V: Borrow<PackedLongValues>> BufferedSortedSetDocValues<D, V> {
       ords_iter: PackedLongValuesIterator::new(ords())?,
       ord_counts_iter: PackedLongValuesIterator::new(ord_counts())?,
       docs_with_field,
-      current_doc: smallvec::smallvec![0; max_count],
+      current_doc: smallvec::SmallVec::new(),
+      max_count,
       ord_count: 0,
       ord_upto: 0,
     })

@@ -44,7 +44,7 @@ where
 {
   current: Option<E::Item>,
   queue: PriorityQueue<usize, TermMergeQueueCmp<E>>,
-  top: Box<[usize]>,
+  top: smallvec::SmallVec<[usize; 4]>,
   remove_duplicates: bool,
   num_top: usize,
 }
@@ -101,7 +101,7 @@ where
     Ok(Self {
       current: None,
       queue,
-      top: vec![0; top_len].into_boxed_slice(),
+      top: smallvec::smallvec![0; top_len],
       remove_duplicates,
       num_top: 0,
     })

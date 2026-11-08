@@ -159,24 +159,20 @@ impl<const DESC_ORDER: bool> NeighborArray<DESC_ORDER> {
 
     debug_assert!(self.sorted_node_size < self.size);
 
-    let mut unchecked_indexes: smallvec::SmallVec<[usize; 1]> =
-      smallvec::smallvec![0usize; self.size - self.sorted_node_size];
-    let mut count = 0;
+    let mut unchecked_indexes =
+      smallvec::SmallVec::with_capacity(self.size - self.sorted_node_size);
 
     while self.sorted_node_size != self.size {
       let inserted_index = self.insert_sorted_internal(scorer)?;
-      unchecked_indexes[count] = inserted_index;
-
-      for idx in &mut unchecked_indexes[..count] {
+      for idx in &mut unchecked_indexes {
         if *idx >= inserted_index {
           *idx += 1;
         }
       }
-
-      count += 1;
+      unchecked_indexes.push(inserted_index);
     }
 
-    unchecked_indexes[..count].sort_unstable();
+    unchecked_indexes.sort_unstable();
     Ok(unchecked_indexes)
   }
   /// insert the first unsorted node into its sorted position

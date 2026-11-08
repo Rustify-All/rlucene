@@ -672,15 +672,12 @@ impl<const N: usize> BKDRadixSelector<N> {
   }
 
   fn partition_point_from_common_prefix(&self) -> Result<smallvec::SmallVec<[u8; 16]>> {
-    let mut partition = smallvec::smallvec![0u8; self.config.bytes_per_dim];
-    for (i, p) in partition
-      .iter_mut()
-      .enumerate()
-      .take(self.config.bytes_per_dim)
-    {
-      *p = self.partition_bucket[i] as u8;
-    }
-    Ok(partition)
+    Ok(
+      self.partition_bucket[..self.config.bytes_per_dim]
+        .iter()
+        .map(|&byte| byte as u8)
+        .collect(),
+    )
   }
 
   #[allow(clippy::too_many_arguments)]
