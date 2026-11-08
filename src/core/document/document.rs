@@ -48,9 +48,7 @@ impl Default for Document {
 impl Document {
   /// Constructs a new document with no fields.
   pub fn new() -> Self {
-    Document {
-      fields: Vec::with_capacity(10),
-    }
+    Document { fields: Vec::new() }
   }
   /// Adds a field to a document. Several fields may be added with the same
   /// name. In this case, if the fields are indexed, their text is treated
@@ -65,7 +63,11 @@ impl Document {
   where
     T: Into<Fields>,
   {
-    self.fields.push(field.into());
+    let field = field.into();
+    if self.fields.capacity() == 0 {
+      self.fields.reserve_exact(10);
+    }
+    self.fields.push(field);
   }
   /// Removes the field with the specified name from the document. If multiple
   /// fields exist with this name, this method removes the first field

@@ -64,17 +64,19 @@ impl<'a> FiniteStringsIterator<'a> {
   /// from given state
   pub fn with_start_end(a: &'a Automaton, start_state: i32, end_state: i32) -> Result<Self> {
     let num_states = a.get_num_states();
-    let mut nodes = Vec::with_capacity((num_states as usize).clamp(1, 16));
-    nodes.push(PathNode::new());
-
-    let mut path_states = BitSet::with_capacity(num_states as usize);
+    let mut nodes = Vec::new();
+    let mut path_states = BitSet::new();
     let mut string = IntsRefBuilder::new();
 
     let emit_empty_string = a.is_accept(start_state);
 
     if num_states > start_state && a.get_num_transitions_with_state(start_state) > 0 {
+      nodes.reserve_exact((num_states as usize).clamp(1, 16));
+      let mut node = PathNode::new();
+      node.reset_state(a, start_state);
+      nodes.push(node);
+      path_states = BitSet::with_capacity(num_states as usize);
       path_states.insert(start_state as usize);
-      nodes[0].reset_state(a, start_state);
       string.append(start_state)?;
     }
 

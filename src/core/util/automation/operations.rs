@@ -204,18 +204,18 @@ impl Operations {
     builder.set_accept(0, true);
 
     let num_states = a.get_num_states();
-    let mut state_map = vec![0; num_states as usize];
+    let mut state_map = Vec::with_capacity(num_states as usize);
     for state in 0..num_states {
-      let state_index = state as usize;
-      if !a.is_accept(state) {
-        state_map[state_index] = builder.create_state();
+      let mapped = if !a.is_accept(state) {
+        builder.create_state()
       } else if a.get_num_transitions_with_state(state) == 0 {
-        state_map[state_index] = 0; // merge into initial state
+        0 // merge into initial state
       } else {
         let new_state = builder.create_state();
-        state_map[state_index] = new_state;
         builder.set_accept(new_state, true);
-      }
+        new_state
+      };
+      state_map.push(mapped);
     }
 
     // Copy transitions with remapped states
@@ -827,6 +827,9 @@ impl Operations {
   /// A state is considered "live" if an accept state is reachable from it
   /// and if it is reachable from the initial state.
   pub fn get_live_states(a: &Automaton) -> Result<BitSet> {
+    if a.get_accept_states().is_empty() {
+      return Ok(BitSet::with_capacity(a.get_num_states() as usize));
+    }
     let mut live = Operations::get_live_states_from_initial(a)?;
     live.intersect_with(&Operations::get_live_states_to_accept(a)?);
     Ok(live)
@@ -907,12 +910,16 @@ impl Operations {
     let num_states = a.get_num_states();
     let state_count = num_states as usize;
     let live_set = Operations::get_live_states(a)?;
-    if live_set.count() == state_count {
+    let live_count = live_set.count();
+    if live_count == state_count {
       return Ok(Cow::Borrowed(a));
     }
 
+    let mut result = Automaton::with_capacity(live_count.max(2), 2);
+    if live_count == 0 {
+      return Ok(Cow::Owned(result));
+    }
     let mut map = vec![0; state_count];
-    let mut result = Automaton::with_capacity(live_set.count().max(2), 2);
 
     for (i, state) in (0..num_states).enumerate() {
       if live_set.contains(i) {
@@ -952,6 +959,15 @@ impl Operations {
   /// - The common prefix, which can be an empty (length 0) `String` (never
   ///   `None`).
   pub fn get_common_prefix(a: &Automaton) -> Result<String> {
+    let mut prefix = String::new();
+    Self::visit_common_prefix(a, |label| {
+      prefix.push(label);
+      Ok(())
+    })?;
+    Ok(prefix)
+  }
+
+  fn visit_common_prefix(a: &Automaton, mut visit: impl FnMut(char) -> Result<()>) -> Result<()> {
     if Operations::has_dead_states_from_initial(a)? {
       return Err(LuceneError::illegal_argument(
         "input automaton has dead states",
@@ -959,10 +975,9 @@ impl Operations {
     }
 
     if Operations::is_empty(a)? {
-      return Ok("".to_string());
+      return Ok(());
     }
 
-    let mut builder = String::new();
     let mut scratch = Transition::default();
     let capacity = a.get_num_states() as usize;
     let mut current = FixedBitSet::new(capacity);
@@ -1007,14 +1022,14 @@ impl Operations {
       let label = char::from_u32(label as u32).ok_or_else(|| {
         LuceneError::illegal_state("automaton transition is not a Unicode scalar")
       })?;
-      builder.push(label);
+      visit(label)?;
 
       // swap current and next
       std::mem::swap(&mut current, &mut next);
       next.clear()?;
     }
 
-    Ok(builder)
+    Ok(())
   }
   /// Returns the longest [`BytesRef`] that is a prefix of all accepted
   /// strings and visits each state at most once.
@@ -1024,13 +1039,17 @@ impl Operations {
   ///   (never `None`), and might possibly include a UTF-8 fragment of a full
   ///   Unicode character.
   pub fn get_common_prefix_bytes_ref(a: &Automaton) -> Result<BytesRef<Vec<u8>>> {
-    let prefix = Operations::get_common_prefix(a)?;
     let mut builder: BytesRefBuilder<Vec<u8>> = BytesRefBuilder::new();
-    for ch in prefix.chars() {
-      if ch as u32 > 255 {
-        return Err(LuceneError::illegal_state("automaton is not binary"));
+    let mut binary = true;
+    Self::visit_common_prefix(a, |label| {
+      binary &= label as u32 <= u8::MAX as u32;
+      if binary {
+        builder.append_byte(label as u8)?;
       }
-      builder.append_byte(ch as u8)?;
+      Ok(())
+    })?;
+    if !binary {
+      return Err(LuceneError::illegal_state("automaton is not binary"));
     }
 
     Ok(builder.get_bytes_owner())
@@ -1251,6 +1270,10 @@ impl Operations {
   /// - Returns an error if the input automaton has a cycle.
   pub fn topo_sort_states_with_state(a: &Automaton, states: &mut [i32]) -> Result<usize> {
     let num_states = a.get_num_states() as usize;
+    if num_states != 0 && a.get_num_transitions_with_state(0) == 0 {
+      states[0] = 0;
+      return Ok(1);
+    }
     let mut on_stack = BitSet::with_capacity(num_states);
     let mut visited = BitSet::with_capacity(num_states);
     let mut stack = smallvec::SmallVec::<[i32; 8]>::new();

@@ -85,7 +85,15 @@ impl AnalyzerStoredValue {
       .borrow_mut();
     if let Some(value) = Arc::get_mut(&mut buffer) {
       value.clear();
-      value.reserve_exact(text.len());
+      if value.capacity() < text.len() {
+        let capacity = text.len().max(
+          value
+            .capacity()
+            .saturating_mul(2)
+            .min(MAX_REUSABLE_TEXT_BYTES),
+        );
+        value.reserve_exact(capacity);
+      }
       value.push_str(text);
     } else {
       // A reader or its clone still owns the previous text. Do not copy it

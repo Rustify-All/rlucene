@@ -79,19 +79,10 @@ impl<T> CharArrayMap<T> {
     self.with_lookup_key(slice, |key| self.map.contains_key(key))
   }
   pub fn contains_key_str(&self, key: &str) -> bool {
-    // UTF-8 byte length bounds the number of characters; longer keys keep the heap path.
-    if key.len() <= 32 {
-      let mut chars = ['\0'; 32];
-      let mut len = 0;
-      for c in key.chars() {
-        chars[len] = if self.ignore { lowercase(&c) } else { c };
-        len += 1;
-      }
-      return self.map.contains_key(&chars[..len]);
-    }
-    let chars = self.collect_key(key);
-    debug_assert!(chars.len() <= i32::MAX as usize);
-    self.map.contains_key(chars.as_slice())
+    self.with_str_key(key, |chars| {
+      debug_assert!(chars.len() <= i32::MAX as usize);
+      self.map.contains_key(chars)
+    })
   }
   pub fn contains_key_any<V>(&self, key: &V) -> bool
   where
@@ -128,18 +119,26 @@ impl<T> CharArrayMap<T> {
     self.with_lookup_key(slice, |key| self.map.get(key))
   }
   pub fn get_str(&self, key: &str) -> Option<&T> {
-    // UTF-8 byte length bounds the number of characters; longer keys keep the heap path.
-    if key.len() <= 32 {
-      let mut chars = ['\0'; 32];
-      let mut len = 0;
-      for c in key.chars() {
-        chars[len] = if self.ignore { lowercase(&c) } else { c };
-        len += 1;
-      }
-      return self.map.get(&chars[..len]);
+    self.with_str_key(key, |chars| self.map.get(chars))
+  }
+
+  fn with_str_key<R>(&self, key: &str, lookup: impl FnOnce(&[char]) -> R) -> R {
+    let mut scratch = ['\0'; 32];
+    let mut chars = key.chars();
+    let normalize = |c| if self.ignore { lowercase(&c) } else { c };
+    for (len, slot) in scratch.iter_mut().enumerate() {
+      let Some(ch) = chars.next() else {
+        return lookup(&scratch[..len]);
+      };
+      *slot = normalize(ch);
     }
-    let chars = self.collect_key(key);
-    self.map.get(chars.as_slice())
+    if chars.as_str().is_empty() {
+      return lookup(&scratch);
+    }
+    let mut owned = Vec::with_capacity(scratch.len() + chars.size_hint().0);
+    owned.extend_from_slice(&scratch);
+    owned.extend(chars.map(normalize));
+    lookup(&owned)
   }
   fn with_lookup_key<R>(&self, key: &[char], lookup: impl FnOnce(&[char]) -> R) -> R {
     if !self.ignore {
@@ -157,14 +156,6 @@ impl<T> CharArrayMap<T> {
       lookup(&chars[..key.len()])
     } else {
       lookup(norm(true, key).as_ref())
-    }
-  }
-
-  fn collect_key(&self, key: &str) -> Vec<char> {
-    if self.ignore {
-      key.chars().map(|ch| lowercase(&ch)).collect()
-    } else {
-      key.chars().collect()
     }
   }
 
