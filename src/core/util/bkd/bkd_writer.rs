@@ -347,6 +347,79 @@ where
     );
 
     let comparator = BKDBytes::<B>::new(self.config.bytes_per_dim);
+    if B == 4 && to <= from + 1 {
+      return Ok(());
+    }
+    if B == 4
+      && self.config.num_index_dims >= 4
+      && self.config.bytes_per_dim == 4
+      && min_packed_value.len() / 4 >= self.config.num_index_dims
+      && max_packed_value.len() / 4 >= self.config.num_index_dims
+    {
+      use wide::u32x4;
+
+      let vector_dims = self.config.num_index_dims & !3;
+      for i in from + 1..to {
+        let value = values.get_value(i, &mut self.scratch_bytes_ref1)?;
+        let offset = value.offset;
+        let mut scalar_start = 0;
+        if offset <= value.bytes.len() && vector_dims <= (value.bytes.len() - offset) / 4 {
+          for dim in (0..vector_dims).step_by(4) {
+            let start = dim * 4;
+            let input = &value.bytes[offset + start..offset + start + 16];
+            let min = &mut min_packed_value[start..start + 16];
+            let max = &mut max_packed_value[start..start + 16];
+            let current = u32x4::new(std::array::from_fn(|lane| {
+              let j = lane * 4;
+              u32::from_be_bytes([input[j], input[j + 1], input[j + 2], input[j + 3]])
+            }));
+            let old_min = u32x4::new(std::array::from_fn(|lane| {
+              let j = lane * 4;
+              u32::from_be_bytes([min[j], min[j + 1], min[j + 2], min[j + 3]])
+            }));
+            let old_max = u32x4::new(std::array::from_fn(|lane| {
+              let j = lane * 4;
+              u32::from_be_bytes([max[j], max[j + 1], max[j + 2], max[j + 3]])
+            }));
+            let next_min = old_min.min(current).to_array().map(u32::to_be_bytes);
+            let next_max = old_max.max(current).to_array().map(u32::to_be_bytes);
+            min.copy_from_slice(next_min.as_flattened());
+            max.copy_from_slice(next_max.as_flattened());
+          }
+          scalar_start = vector_dims;
+        }
+        for dim in scalar_start..self.config.num_index_dims {
+          let start_offset = dim * self.config.bytes_per_dim;
+          let end_offset = start_offset + self.config.bytes_per_dim;
+
+          if comparator.compare(
+            &value.bytes[offset + start_offset..offset + end_offset],
+            0,
+            &min_packed_value[start_offset..end_offset],
+            0,
+          ) < 0
+          {
+            min_packed_value.copy_from(
+              &value.bytes[offset + start_offset..offset + end_offset],
+              start_offset,
+            );
+          } else if comparator.compare(
+            &value.bytes[offset + start_offset..offset + end_offset],
+            0,
+            &max_packed_value[start_offset..end_offset],
+            0,
+          ) > 0
+          {
+            max_packed_value.copy_from(
+              &value.bytes[offset + start_offset..offset + end_offset],
+              start_offset,
+            );
+          }
+        }
+      }
+      return Ok(());
+    }
+
     for i in from + 1..to {
       let value = values.get_value(i, &mut self.scratch_bytes_ref1)?;
       let offset = value.offset;
