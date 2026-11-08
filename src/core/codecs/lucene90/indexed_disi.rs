@@ -1410,7 +1410,7 @@ fn add_jumps(
     offset < i32::MAX as usize,
     "Logically the offset should not exceed 2^30 but was >= i32::MAX"
   );
-  let required = (end_block + 1) * 2;
+  let required = end_block * 2;
   if jumps.len() < required {
     ArrayUtil::oversize(required, std::mem::size_of::<i32>())?;
     if jumps.capacity() < required {

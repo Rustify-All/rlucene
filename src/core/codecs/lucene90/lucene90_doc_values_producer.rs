@@ -48,7 +48,7 @@ use crate::core::index::sorted_doc_values::SortedDocValues;
 use crate::core::index::sorted_numeric_doc_values::SortedNumericDocValues;
 use crate::core::index::sorted_set_doc_values::SortedSetDocValues;
 use crate::core::index::terms_enum::{SeekStatus, TermsEnum};
-use crate::core::index::{BytesRef, BytesRefCow, BytesRefValue, BytesRefValueEnum, IndexFileNames};
+use crate::core::index::{BytesRef, BytesRefCow, BytesRefValue, BytesRefValueEnum};
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
 use crate::core::search::doc_id_set_iterator::NO_MORE_DOCS;
 use crate::core::store::directory::Directory;
@@ -105,9 +105,6 @@ where
   where
     D1: Directory<IndexInput = I>,
   {
-    let meta_name =
-      IndexFileNames::segment_file_name(&segment_info.name, &state.segment_suffix, meta_extension);
-
     let max_doc = segment_info.max_doc()?;
     let mut version = -1;
 
@@ -119,7 +116,9 @@ where
     let mut skippers = HashMap::new();
 
     {
-      let mut input = state.directory.open_checksum_input(&meta_name)?;
+      let mut input = state.with_file_name(&segment_info.name, meta_extension, |name| {
+        state.directory.open_checksum_input(name)
+      })?;
       let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
         let prior_result =
           std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
@@ -152,14 +151,16 @@ where
       IOUtils::use_or_suppress_caught_result(result, close_result)?;
     }
 
-    let data_name =
-      IndexFileNames::segment_file_name(&segment_info.name, &state.segment_suffix, data_extension);
     // Doc-values have a forward-only access pattern, so pass
     // ReadAdvice.NORMAL to perform readahead.
-    let mut data = Some(state.directory.open_input(
-      &data_name,
-      &state.context.with_read_advice_self(ReadAdvice::Normal)?,
-    )?);
+    let mut data = Some(
+      state.with_file_name(&segment_info.name, data_extension, |name| {
+        state.directory.open_input(
+          name,
+          &state.context.with_read_advice_self(ReadAdvice::Normal)?,
+        )
+      })?,
+    );
     let mut success = false;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<Self> {
       let data_ref = data

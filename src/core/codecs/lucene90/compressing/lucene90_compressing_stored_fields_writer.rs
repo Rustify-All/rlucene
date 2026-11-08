@@ -110,7 +110,12 @@ where
       let dir = directory
         .as_ref()
         .ok_or_else(|| LuceneError::illegal_state("directory is missing"))?;
-      meta_stream = Some(dir.create_output(&meta_file, context)?);
+      meta_stream = Some(IndexFileNames::with_segment_file_name(
+        segment,
+        segment_suffix,
+        META_EXTENSION,
+        |name| dir.create_output(name, context),
+      )?);
       let meta = meta_stream
         .as_mut()
         .ok_or_else(|| LuceneError::illegal_state("metadata output is missing"))?;
@@ -126,9 +131,12 @@ where
         meta.get_file_pointer()?
       );
 
-      let fields_file =
-        IndexFileNames::segment_file_name(segment, segment_suffix, FIELDS_EXTENSION);
-      fields_stream = Some(dir.create_output(&fields_file, context)?);
+      fields_stream = Some(IndexFileNames::with_segment_file_name(
+        segment,
+        segment_suffix,
+        FIELDS_EXTENSION,
+        |name| dir.create_output(name, context),
+      )?);
       let fields = fields_stream
         .as_mut()
         .ok_or_else(|| LuceneError::illegal_state("stored fields output is missing"))?;
@@ -187,7 +195,8 @@ where
       max_docs_per_chunk,
       buffered_docs,
       num_stored_fields,
-      end_offsets,
+      lengths,
+      last_end_offset: 0,
       doc_base: 0,
       num_buffered_docs: 0,
       num_chunks: 0,
@@ -227,7 +236,7 @@ where
     )?;
     // save lengths
     Self::save_ints(
-      &self.end_offsets,
+      &self.lengths,
       self.num_buffered_docs,
       &mut self.fields_stream,
     )?;
@@ -251,25 +260,6 @@ where
       self.fields_stream.get_file_pointer()?,
     )?;
 
-    // convert end offsets into lengths
-    if self.num_buffered_docs > 1
-      && let Some(end_offsets) = self.end_offsets.get_mut(..self.num_buffered_docs)
-    {
-      let mut offsets = end_offsets.iter_mut().rev();
-      if let Some(mut current) = offsets.next() {
-        for previous in offsets {
-          *current -= *previous;
-          debug_assert!(*current >= 0);
-          current = previous;
-        }
-      }
-    } else {
-      for i in (1..self.num_buffered_docs).rev() {
-        self.end_offsets[i] -= self.end_offsets[i - 1];
-        debug_assert!(self.end_offsets[i] >= 0);
-      }
-    }
-
     let sliced = self.buffered_docs.size() >= 2 * self.chunk_size as usize;
     let dirty_chunk = force;
 
@@ -281,10 +271,9 @@ where
       let mut compressed = 0;
       while compressed < capacity {
         let len = std::cmp::min(self.chunk_size as usize, capacity - compressed);
-        let mut bbdi = byte_buffers.slice(compressed, len)?;
-        self
-          .compressor
-          .compress(&mut bbdi, &mut self.fields_stream)?;
+        byte_buffers.with_window(compressed, len, |view| {
+          self.compressor.compress(view, &mut self.fields_stream)
+        })?;
         compressed += len;
       }
     } else {
@@ -297,7 +286,8 @@ where
     self.doc_base += self.num_buffered_docs;
     self.num_buffered_docs = 0;
     self.num_stored_fields.clear();
-    self.end_offsets.clear();
+    self.lengths.clear();
+    self.last_end_offset = 0;
     self.buffered_docs.reset();
 
     Ok(())
@@ -554,16 +544,19 @@ where
         .num_stored_fields
         .reserve(self.num_buffered_docs + 1 - self.num_stored_fields.len());
     }
-    if self.end_offsets.len() == self.end_offsets.capacity() {
+    if self.lengths.len() == self.lengths.capacity() {
       ArrayUtil::oversize(self.num_buffered_docs + 1, std::mem::size_of::<i32>())?;
       self
-        .end_offsets
-        .reserve(self.num_buffered_docs + 1 - self.end_offsets.len());
+        .lengths
+        .reserve(self.num_buffered_docs + 1 - self.lengths.len());
     }
     let end_offset = self.buffered_docs.size().try_convert()?;
     self.num_stored_fields.push(self.num_stored_fields_in_doc);
     self.num_stored_fields_in_doc = 0;
-    self.end_offsets.push(end_offset);
+    let length = end_offset - self.last_end_offset;
+    debug_assert!(length >= 0);
+    self.lengths.push(length);
+    self.last_end_offset = end_offset;
     self.num_buffered_docs += 1;
 
     if self.trigger_flush() {
@@ -694,6 +687,9 @@ where
         .check_integrity()?;
       let strategy = self.get_merge_strategy(merge_state, &matching_readers, i)?;
       if strategy == MergeStrategy::Visitor {
+        if visitors.is_empty() {
+          visitors.resize_with(merge_state.stored_fields_readers.len(), || None);
+        }
         visitors[i] = Some(MergeVisitor::new(
           merge_state.merge_field_infos.as_ref(),
           merge_state.field_infos[i].as_ref(),
@@ -796,6 +792,7 @@ where
       self
         .buffered_docs
         .ram_bytes_used()?
+        .saturating_add(self.compressor.input_scratch_bytes_used())
         .saturating_add(size_of_array_capacity::<i32>(
           if self.num_stored_fields.spilled() {
             self.num_stored_fields.capacity()

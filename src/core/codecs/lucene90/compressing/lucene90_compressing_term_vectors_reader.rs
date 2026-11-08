@@ -124,11 +124,11 @@ where
     let mut reader = None;
     let mut success = false;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
-      let vectors_stream_fn =
-        IndexFileNames::segment_file_name(segment, segment_suffix, VECTORS_EXTENSION);
-      vectors_stream = Some(dir.open_input(
-        &vectors_stream_fn,
-        &context.with_read_advice_self(ReadAdvice::Random)?,
+      vectors_stream = Some(IndexFileNames::with_segment_file_name(
+        segment,
+        segment_suffix,
+        VECTORS_EXTENSION,
+        |name| dir.open_input(name, &context.with_read_advice_self(ReadAdvice::Random)?),
       )?);
       let vectors_stream_ref = vectors_stream
         .as_mut()
@@ -147,9 +147,12 @@ where
         vectors_stream_ref.get_file_pointer()?
       );
 
-      let meta_stream_fn =
-        IndexFileNames::segment_file_name(segment, segment_suffix, VECTORS_META_EXTENSION);
-      let meta = meta_in.insert(dir.open_checksum_input(&meta_stream_fn)?);
+      let meta = meta_in.insert(IndexFileNames::with_segment_file_name(
+        segment,
+        segment_suffix,
+        VECTORS_META_EXTENSION,
+        |name| dir.open_checksum_input(name),
+      )?);
 
       CodecUtil::check_index_header(
         meta,
@@ -1213,11 +1216,11 @@ impl TVFields {
 
     Ok(Self {
       // Reuse the document's offsets buffer for its validated field numbers.
-      field_nums: field_num_offs.into_boxed_slice(),
-      field_flags: field_flags.into_boxed_slice(),
-      field_lengths: field_lengths.into_boxed_slice(),
+      field_nums: field_num_offs,
+      field_flags,
+      field_lengths,
 
-      term_data: term_data.into_boxed_slice(),
+      term_data,
       payload_offset,
       payload_length,
       suffix_bytes,
@@ -1612,18 +1615,27 @@ impl TermsEnum for TVTermsEnum {
       .ok_or_else(|| LuceneError::illegal_state("ord is None"))?;
     let freq = self.term_data.term_freqs[ord];
     let position_index = self.term_data.position_index[ord];
-    let term_data = self.term_data.clone();
-    let payloads = BytesRef::from_slice(
-      self.input.bytes.clone(),
-      self.payload_offset,
-      self.payload_length,
-    );
     let docs_enum = match reuse {
       Some(mut docs_enum) => {
-        docs_enum.reset(freq, position_index, term_data, payloads);
+        if !Rc::ptr_eq(&docs_enum.term_data, &self.term_data) {
+          docs_enum.term_data = Rc::clone(&self.term_data);
+        }
+        if !Rc::ptr_eq(&docs_enum.payload.bytes, &self.input.bytes) {
+          docs_enum.payload.bytes = Rc::clone(&self.input.bytes);
+        }
+        docs_enum.reset_cursor(freq, position_index, self.payload_offset);
         docs_enum
       },
-      None => TVPostingsEnum::with_term(freq, position_index, term_data, payloads),
+      None => TVPostingsEnum::with_term(
+        freq,
+        position_index,
+        Rc::clone(&self.term_data),
+        BytesRef::from_slice(
+          Rc::clone(&self.input.bytes),
+          self.payload_offset,
+          self.payload_length,
+        ),
+      ),
     };
     Ok(docs_enum)
   }
@@ -1715,13 +1727,15 @@ impl TVPostingsEnum {
     term_data: Rc<TVTermData>,
     payloads: BytesRef<Rc<Vec<u8>>>,
   ) {
+    self.term_data = term_data;
+    self.payload.bytes = payloads.bytes;
+    self.reset_cursor(freq, position_index, payloads.offset);
+  }
+
+  fn reset_cursor(&mut self, freq: usize, position_index: usize, base_payload_offset: usize) {
     self.term_freq = freq;
     self.position_index = position_index;
-    self.term_data = term_data;
-
-    self.base_payload_offset = payloads.offset;
-
-    self.payload.bytes = payloads.bytes;
+    self.base_payload_offset = base_payload_offset;
     self.payload.offset = 0;
     self.payload.length = 0;
 

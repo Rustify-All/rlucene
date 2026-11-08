@@ -16,13 +16,10 @@
  */
 use crate::core::codecs::CodecUtil;
 
-use crate::core::codecs::indexed_disi::{
-  DEFAULT_DENSE_RANK_POWER, write_bitset_with_dense_rank_power,
-};
+use crate::core::codecs::indexed_disi::{DEFAULT_DENSE_RANK_POWER, write_bitset_with_dense_rank_power};
 use crate::core::codecs::lucene90_norms_format::Lucene90NormsFormat;
 use crate::core::codecs::norms_consumer::NormsConsumer;
 use crate::core::codecs::norms_producer::NormsProducer;
-use crate::core::index::IndexFileNames;
 use crate::core::index::field_info::FieldInfo;
 use crate::core::index::numeric_doc_values::NumericDocValues;
 use crate::core::index::segment_info::SegmentInfo;
@@ -60,13 +57,11 @@ impl<O: IndexOutput> Lucene90NormsConsumer<O> {
   where
     D1: Directory<IndexOutput = O>,
   {
-    let data_name =
-      IndexFileNames::segment_file_name(&segment_info.name, &state.segment_suffix, data_extension);
     let mut data = None;
     let mut meta = None;
     let mut success = false;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<i32> {
-      data = Some(state.directory.create_output(&data_name, state.context)?);
+      data = Some(state.create_segment_output(&segment_info.name, data_extension)?);
       CodecUtil::write_index_header(
         data
           .as_mut()
@@ -77,12 +72,7 @@ impl<O: IndexOutput> Lucene90NormsConsumer<O> {
         &state.segment_suffix,
       )?;
 
-      let meta_name = IndexFileNames::segment_file_name(
-        &segment_info.name,
-        &state.segment_suffix,
-        meta_extension,
-      );
-      meta = Some(state.directory.create_output(&meta_name, state.context)?);
+      meta = Some(state.create_segment_output(&segment_info.name, meta_extension)?);
       CodecUtil::write_index_header(
         meta
           .as_mut()

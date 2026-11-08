@@ -23,9 +23,7 @@ use crate::core::codecs::dummy::dummy_numeric_doc_values::DummyNumericDocValues;
 use crate::core::codecs::dummy::dummy_sorted_doc_values::DummySortedDocValues;
 use crate::core::codecs::dummy::dummy_sorted_numeric_doc_values::DummySortedNumericDocValues;
 use crate::core::codecs::dummy::dummy_sorted_set_doc_values::DummySortedSetDocValues;
-use crate::core::codecs::indexed_disi::{
-  DEFAULT_DENSE_RANK_POWER, write_bitset_with_dense_rank_power,
-};
+use crate::core::codecs::indexed_disi::{DEFAULT_DENSE_RANK_POWER, write_bitset_with_dense_rank_power};
 use crate::core::codecs::lucene90_doc_values_format::Lucene90DocValuesFormat;
 use crate::core::index::binary_doc_values::BinaryDocValues;
 use crate::core::index::doc_values::DocValues;
@@ -39,7 +37,7 @@ use crate::core::index::singleton_sorted_numeric_doc_values::SingletonSortedNume
 use crate::core::index::sorted_doc_values::SortedDocValues;
 use crate::core::index::sorted_numeric_doc_values::SortedNumericDocValues;
 use crate::core::index::sorted_set_doc_values::SortedSetDocValues;
-use crate::core::index::{BytesRefBuilder, BytesRefValue, IndexFileNames};
+use crate::core::index::{BytesRefBuilder, BytesRefValue};
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
 use crate::core::search::doc_id_set_iterator::NO_MORE_DOCS;
 use crate::core::search::sorted_set_selector::{
@@ -95,13 +93,11 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
   where
     D1: Directory<IndexOutput = O>,
   {
-    let data_name =
-      IndexFileNames::segment_file_name(&segment_info.name, &state.segment_suffix, data_extension);
     let mut data = None;
     let mut meta = None;
     let mut success = false;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<i32> {
-      data = Some(state.directory.create_output(&data_name, state.context)?);
+      data = Some(state.create_segment_output(&segment_info.name, data_extension)?);
       CodecUtil::write_index_header(
         data
           .as_mut()
@@ -112,12 +108,7 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
         &state.segment_suffix,
       )?;
 
-      let meta_name = IndexFileNames::segment_file_name(
-        &segment_info.name,
-        &state.segment_suffix,
-        meta_extension,
-      );
-      meta = Some(state.directory.create_output(&meta_name, state.context)?);
+      meta = Some(state.create_segment_output(&segment_info.name, meta_extension)?);
       CodecUtil::write_index_header(
         meta
           .as_mut()
@@ -186,7 +177,10 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
     let mut global_doc_count = 0;
     let mut max_doc_id = -1;
 
-    let mut accumulators: Vec<SkipAccumulator> = Vec::new();
+    let accumulators = &mut self.skip_index_accumulators;
+    for level in accumulators.iter_mut() {
+      level.clear();
+    }
     let max_accumulators = 1
       << (Lucene90DocValuesFormat::SKIP_INDEX_LEVEL_SHIFT
         * (Lucene90DocValuesFormat::SKIP_INDEX_MAX_LEVEL - 1));
@@ -213,9 +207,9 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
         global_min_value = global_min_value.min(acc.min_value);
         global_doc_count += acc.doc_count;
         max_doc_id = acc.max_doc_id;
-        accumulators.push(acc);
-        if accumulators.len() == max_accumulators {
-          accumulators = self.write_levels(std::mem::take(&mut accumulators))?;
+        accumulators[0].push(acc);
+        if accumulators[0].len() == max_accumulators {
+          Self::write_levels(&mut self.data, accumulators)?;
         }
       }
 
@@ -235,11 +229,11 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
       global_min_value = global_min_value.min(acc.min_value);
       global_doc_count += acc.doc_count;
       max_doc_id = acc.max_doc_id;
-      accumulators.push(acc)
+      accumulators[0].push(acc)
     }
 
-    if !accumulators.is_empty() {
-      self.write_levels(accumulators)?;
+    if !accumulators[0].is_empty() {
+      Self::write_levels(&mut self.data, accumulators)?;
     }
 
     self.meta.write_long(start as i64)?; // record the start in meta
@@ -340,7 +334,12 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
     let mut min_max = MinMaxTracker::new();
     let mut block_min_max = MinMaxTracker::new();
     let mut gcd = 0i64;
-    let mut unique_values = if !ords { Some(HashMap::new()) } else { None };
+    let mut unique_values = (!ords).then(|| {
+      let mut values = std::mem::take(&mut self.numeric_unique_values);
+      values.clear();
+      values
+    });
+    let mut first_distinct = None;
 
     let mut doc = values.next_doc()?;
     while doc != NO_MORE_DOCS {
@@ -367,12 +366,19 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
           block_min_max.next_block();
         }
 
-        if !ords
-          && let Some(map) = unique_values.as_mut()
-          && map.insert(v, 0).is_none()
-          && map.len() > 256
-        {
-          unique_values = None;
+        if let Some(map) = unique_values.as_mut() {
+          if map.is_empty() {
+            let first = *first_distinct.get_or_insert(v);
+            if v != first {
+              map.insert(first, 0);
+              map.insert(v, 0);
+            }
+          } else if map.insert(v, 0).is_none()
+            && map.len() > 256
+            && let Some(values) = unique_values.take()
+          {
+            self.numeric_unique_values = values;
+          }
         }
       }
 
@@ -513,7 +519,7 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
 
     if do_blocks {
       let mut values = values_producer.get_sorted_numeric(field)?;
-      jump_table_offset = self.write_values_multiple_blocks(&mut values, gcd)?;
+      jump_table_offset = self.write_values_multiple_blocks(&mut values, gcd, num_values)?;
     } else if num_bits_per_value != 0 {
       let mut values = values_producer.get_sorted_numeric(field)?;
       self.write_values_single_block(
@@ -522,7 +528,7 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
         num_bits_per_value,
         min,
         gcd,
-        encode,
+        encode.as_ref(),
       )?;
     }
 
@@ -531,6 +537,9 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
       .write_long((self.data.get_file_pointer()? - start_offset) as i64)?;
     self.meta.write_long(jump_table_offset)?;
 
+    if let Some(values) = encode.or(unique_values) {
+      self.numeric_unique_values = values;
+    }
     Ok((num_docs_with_value, num_values))
   }
 
@@ -541,26 +550,23 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
     num_bits_per_value: i32,
     min: i64,
     gcd: i64,
-    encode: Option<HashMap<i64, u8>>,
+    encode: Option<&HashMap<i64, u8>>,
   ) -> Result<()>
   where
     T: SortedNumericDocValues,
   {
-    let mut writer = DirectWriter::get_instance(&mut self.data, num_values, num_bits_per_value)?;
-
-    match encode.as_ref() {
-      Some(map) => {
-        Self::write_values_with_encoder(values, &mut writer, |v| {
-          i64::from(*map.get(&v).unwrap_or(&0))
-        })?;
+    DirectWriter::write_with_scratch(
+      &mut self.data,
+      num_values,
+      num_bits_per_value,
+      &mut self.numeric_packed_scratch,
+      |writer| match encode.as_ref() {
+        Some(map) => {
+          Self::write_values_with_encoder(values, writer, |v| i64::from(*map.get(&v).unwrap_or(&0)))
+        },
+        None => Self::write_values_with_encoder(values, writer, |v| v.wrapping_sub(min) / gcd),
       },
-      None => {
-        Self::write_values_with_encoder(values, &mut writer, |v| v.wrapping_sub(min) / gcd)?;
-      },
-    }
-
-    writer.finish()?;
-    Ok(())
+    )
   }
 
   fn write_values_with_encoder<T, E>(
@@ -618,7 +624,13 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
             offsets.reserve(min_size.saturating_sub(offsets.len()));
           }
           offsets.push(self.data.get_file_pointer()? as i64);
-          self.write_block(&buffer, NUMERIC_BLOCK_SIZE, gcd, &mut encode_buffer)?;
+          Self::write_block(
+            &mut self.data,
+            &buffer,
+            gcd,
+            &mut encode_buffer,
+            &mut self.numeric_packed_scratch,
+          )?;
           upto = 0;
         }
       }
@@ -631,7 +643,13 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
         offsets.reserve(min_size.saturating_sub(offsets.len()));
       }
       offsets.push(self.data.get_file_pointer()? as i64);
-      self.write_block(&buffer[..upto], upto, gcd, &mut encode_buffer)?;
+      Self::write_block(
+        &mut self.data,
+        &buffer[..upto],
+        gcd,
+        &mut encode_buffer,
+        &mut self.numeric_packed_scratch,
+      )?;
     }
     // All blocks has been written. Flush the offset jump-table
     let offsets_origo = self.data.get_file_pointer()?.try_convert()?;
@@ -643,16 +661,14 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
   }
 
   fn write_block(
-    &mut self,
+    data: &mut O,
     values: &[i64],
-    length: usize,
     gcd: i64,
     buffer: &mut ByteBuffersDataOutput,
+    packed_scratch: &mut Vec<i64>,
   ) -> Result<()> {
+    let length = values.len();
     debug_assert!(length > 0);
-    debug_assert!(length <= values.len());
-
-    let values = &values[..length];
 
     let mut min = values[0];
     let mut max = values[0];
@@ -664,27 +680,29 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
     }
 
     if min == max {
-      self.data.write_byte(0)?;
-      self.data.write_long(min)?;
+      data.write_byte(0)?;
+      data.write_long(min)?;
     } else {
       let bits_per_value = unsigned_bits_required(max.wrapping_sub(min) / gcd);
 
       buffer.reset();
       debug_assert_eq!(buffer.size(), 0);
-
-      let mut w = DirectWriter::get_instance(buffer, length as i64, bits_per_value)?;
-      for &v in values {
-        w.add(v.wrapping_sub(min) / gcd)?;
-      }
-      w.finish()?;
-
-      self.data.write_byte(bits_per_value as u8)?;
-      self.data.write_long(min)?;
-
-      let buffer_size = buffer.size().try_convert()?;
-      self.data.write_int(buffer_size)?;
-
-      buffer.copy_to(&mut self.data)?;
+      DirectWriter::write_with_scratch(
+        buffer,
+        length as i64,
+        bits_per_value,
+        packed_scratch,
+        |writer| {
+          for &v in values {
+            writer.add(v.wrapping_sub(min) / gcd)?;
+          }
+          Ok(())
+        },
+      )?;
+      data.write_byte(bits_per_value as u8)?;
+      data.write_long(min)?;
+      data.write_int(buffer.size().try_convert()?)?;
+      buffer.copy_to(data)?;
     }
 
     Ok(())
@@ -739,7 +757,8 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
       Lucene90DocValuesFormat::DIRECT_MONOTONIC_BLOCK_SHIFT,
     )?;
 
-    let mut previous = BytesRefBuilder::<Vec<u8>>::new();
+    let previous = &mut self.terms_dict_previous;
+    previous.clear();
     let mut ord: i64 = 0;
     let mut start = data.get_file_pointer()?;
     let mut max_length = 0;
@@ -748,11 +767,13 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
     {
       let mut iterator = values.terms_enum()?;
 
-      let mut ht = HashTableEnum::Fast(FastCompressionHashTable::default());
-      let buffered_output = &mut self.terms_dict_buffer;
-      if buffered_output.bytes.is_empty() {
-        buffered_output.bytes.resize(1 << 14, 0);
+      let ht = &mut self.terms_dict_hash_table;
+      if size > 1
+        && let HashTableEnum::Fast(table) = ht
+      {
+        table.clear();
       }
+      let buffered_output = &mut self.terms_dict_buffer;
       buffered_output.reset()?;
       let mut dict_length: usize = 0;
       while let Some(term) = iterator.next()? {
@@ -766,7 +787,7 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
             let uncompressed_length = Self::compress_and_get_terms_dict_block_length(
               buffered_output,
               dict_length,
-              &mut ht,
+              ht,
               data,
             )?;
             max_block_length = max_block_length.max(uncompressed_length);
@@ -810,12 +831,8 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
       }
       // Compress and write out the last block
       if buffered_output.get_position() > dict_length {
-        let uncompressed_length = Self::compress_and_get_terms_dict_block_length(
-          buffered_output,
-          dict_length,
-          &mut ht,
-          data,
-        )?;
+        let uncompressed_length =
+          Self::compress_and_get_terms_dict_block_length(buffered_output, dict_length, ht, data)?;
         max_block_length = max_block_length.max(uncompressed_length);
       }
     }
@@ -832,7 +849,7 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
     meta.write_long(start as i64)?;
     meta.write_long((data.get_file_pointer()? - start) as i64)?;
     address_output.delegate_mut()?.reset();
-    self.write_terms_index(values, address_output)?;
+    Self::write_terms_index(data, meta, values, address_output, previous)?;
     Ok(())
   }
 
@@ -863,9 +880,9 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
     let pos = buffered_output.get_position();
     let terms_dict_buffer = &mut buffered_output.bytes;
     debug_assert!(terms_dict_buffer.len() <= i32::MAX as usize);
-    let original_length = terms_dict_buffer.len();
-    if pos + term_length >= original_length - 1 {
-      ArrayUtil::grow_with(terms_dict_buffer, original_length + term_length, || 0)?;
+    let required = pos + term_length;
+    if required > terms_dict_buffer.len() {
+      ArrayUtil::grow_with(terms_dict_buffer, required, || 0)?;
       debug_assert!(terms_dict_buffer.len() <= i32::MAX as usize);
       let terms_dict_buffer_len = terms_dict_buffer.len();
       buffered_output.reset_with_range(pos, terms_dict_buffer_len - pos)?;
@@ -874,18 +891,18 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
   }
 
   fn write_terms_index<T>(
-    &mut self,
+    data: &mut O,
+    meta: &mut O,
     values: &mut T,
     mut address_output: ByteBuffersIndexOutput,
+    previous: &mut BytesRefBuilder<Vec<u8>>,
   ) -> Result<()>
   where
     T: SortedSetDocValues,
   {
     let size = values.get_value_count()?;
-    self
-      .meta
-      .write_int(Lucene90DocValuesFormat::TERMS_DICT_REVERSE_INDEX_SHIFT)?;
-    let start = self.data.get_file_pointer()?;
+    meta.write_int(Lucene90DocValuesFormat::TERMS_DICT_REVERSE_INDEX_SHIFT)?;
+    let start = data.get_file_pointer()?;
 
     let num_blocks = 1
       + ((size + Lucene90DocValuesFormat::TERMS_DICT_REVERSE_INDEX_MASK as i64)
@@ -893,14 +910,14 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       let mut writer = DirectMonotonicWriter::get_instance(
-        &mut self.meta,
+        meta,
         &mut address_output,
         num_blocks,
         Lucene90DocValuesFormat::DIRECT_MONOTONIC_BLOCK_SHIFT,
       )?;
 
       let mut iterator = values.terms_enum()?;
-      let mut previous = BytesRefBuilder::<Vec<u8>>::new();
+      previous.clear();
       let mut offset: i64 = 0;
       let mut ord: i64 = 0;
 
@@ -914,9 +931,7 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
             StringHelper::sort_key_length(previous.get_bytes_mut_ref(), &term)?
           };
           offset += sort_key_length as i64;
-          self
-            .data
-            .write_bytes_range(term.bytes, term.offset, sort_key_length)?;
+          data.write_bytes_range(term.bytes, term.offset, sort_key_length)?;
         } else if (ord & Lucene90DocValuesFormat::TERMS_DICT_REVERSE_INDEX_MASK as i64)
           == Lucene90DocValuesFormat::TERMS_DICT_REVERSE_INDEX_MASK as i64
         {
@@ -929,20 +944,16 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
       writer.finish()?;
       drop(writer);
 
-      self.meta.write_long(start as i64)?;
-      self
-        .meta
-        .write_long((self.data.get_file_pointer()? - start) as i64)?;
+      meta.write_long(start as i64)?;
+      meta.write_long((data.get_file_pointer()? - start) as i64)?;
 
-      let start = self.data.get_file_pointer()?;
+      let start = data.get_file_pointer()?;
       let addresses = address_output.delegate()?;
       if addresses.size() != 0 {
-        addresses.copy_to(&mut self.data)?;
+        addresses.copy_to(data)?;
       }
-      self.meta.write_long(start as i64)?;
-      self
-        .meta
-        .write_long((self.data.get_file_pointer()? - start) as i64)?;
+      meta.write_long(start as i64)?;
+      meta.write_long((data.get_file_pointer()? - start) as i64)?;
       Ok(())
     }));
     let close_result =

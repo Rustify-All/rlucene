@@ -16,7 +16,9 @@
  */
 use crate::core::codecs::CodecUtil;
 use crate::core::codecs::lucene90::fields_index::FieldsIndex;
-use crate::core::codecs::lucene90::fields_index_writer::fields_index_writer_const;
+use crate::core::codecs::lucene90::fields_index_writer::{
+  fields_index_writer_const, with_index_label,
+};
 use crate::core::index::IndexFileNames;
 use crate::core::store::directory::Directory;
 use crate::core::store::{IOContext, IndexInput, ReadAdvice};
@@ -83,21 +85,26 @@ where
     let start_pointers_end_pointer: usize = meta_in.read_long()? as usize;
     let max_pointer = meta_in.read_long()? as usize;
 
-    let mut index_input = dir.open_input(
-      &IndexFileNames::segment_file_name(name, suffix, extension),
-      &context.with_read_advice_self(ReadAdvice::RandomPreload)?,
-    )?;
+    let mut index_input =
+      IndexFileNames::with_segment_file_name(name, suffix, extension, |name| {
+        dir.open_input(
+          name,
+          &context.with_read_advice_self(ReadAdvice::RandomPreload)?,
+        )
+      })?;
 
     let mut success = false;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
-      CodecUtil::check_index_header(
-        &mut index_input,
-        &format!("{codec_name}Idx"),
-        fields_index_writer_const::VERSION_START,
-        fields_index_writer_const::VERSION_CURRENT,
-        id,
-        suffix,
-      )?;
+      with_index_label(codec_name, "Idx", |label| {
+        CodecUtil::check_index_header(
+          &mut index_input,
+          label,
+          fields_index_writer_const::VERSION_START,
+          fields_index_writer_const::VERSION_CURRENT,
+          id,
+          suffix,
+        )
+      })?;
       CodecUtil::retrieve_checksum(&mut index_input)?;
       success = true;
       Ok(())

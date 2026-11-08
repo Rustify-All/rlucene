@@ -97,6 +97,7 @@ where
   // buffered term payloads
   payload_bytes: ByteBuffersDataOutput,
   writer: AbstractBlockPackedWriter<BlockPackedWriter>,
+  packed_scratch: Vec<i64>,
   max_docs_per_chunk: i32,
   scratch_buffer: ByteBuffersDataOutput,
 }
@@ -135,9 +136,11 @@ where
       let dir = directory
         .as_ref()
         .ok_or_else(|| LuceneError::illegal_state("directory is missing"))?;
-      meta_stream = Some(dir.create_output(
-        &IndexFileNames::segment_file_name(segment, segment_suffix, VECTORS_META_EXTENSION),
-        context,
+      meta_stream = Some(IndexFileNames::with_segment_file_name(
+        segment,
+        segment_suffix,
+        VECTORS_META_EXTENSION,
+        |name| dir.create_output(name, context),
       )?);
       let meta = meta_stream
         .as_mut()
@@ -154,9 +157,11 @@ where
         meta.get_file_pointer()?
       );
 
-      vectors_stream = Some(dir.create_output(
-        &IndexFileNames::segment_file_name(segment, segment_suffix, VECTORS_EXTENSION),
-        context,
+      vectors_stream = Some(IndexFileNames::with_segment_file_name(
+        segment,
+        segment_suffix,
+        VECTORS_EXTENSION,
+        |name| dir.create_output(name, context),
       )?);
       let vectors = vectors_stream
         .as_mut()
@@ -240,6 +245,7 @@ where
       term_suffixes,
       payload_bytes,
       writer,
+      packed_scratch: Vec::new(),
       max_docs_per_chunk,
       scratch_buffer,
     })
@@ -421,34 +427,34 @@ where
   }
   fn flush_fields(&mut self, total_fields: i32, field_nums: &[i32]) -> Result<()> {
     self.scratch_buffer.reset();
-
     let bits_required = bits_required((field_nums.len() - 1) as i64)?;
-    let mut writer =
-      DirectWriter::get_instance(&mut self.scratch_buffer, total_fields as i64, bits_required)?;
-
-    for doc in &self.pending_docs {
-      for field in &doc.fields {
-        let field_num = field.field_num;
-        let field_index = match field_nums.binary_search(&field_num) {
-          Ok(index) => index,
-          Err(_) => {
-            return Err(LuceneError::illegal_state(format!(
-              "Field number {field_num} not found in field_nums"
-            )));
-          },
-        };
-        writer.add(field_index as i64)?
-      }
-    }
-
-    writer.finish()?;
-
+    DirectWriter::write_with_scratch(
+      &mut self.scratch_buffer,
+      total_fields as i64,
+      bits_required,
+      &mut self.packed_scratch,
+      |writer| {
+        for doc in &self.pending_docs {
+          for field in &doc.fields {
+            let field_num = field.field_num;
+            let field_index = match field_nums.binary_search(&field_num) {
+              Ok(index) => index,
+              Err(_) => {
+                return Err(LuceneError::illegal_state(format!(
+                  "Field number {field_num} not found in field_nums"
+                )));
+              },
+            };
+            writer.add(field_index as i64)?
+          }
+        }
+        Ok(())
+      },
+    )?;
     self
       .vectors_stream
       .write_vlong(self.scratch_buffer.size() as i64)?;
-    self.scratch_buffer.copy_to(&mut self.vectors_stream)?;
-
-    Ok(())
+    self.scratch_buffer.copy_to(&mut self.vectors_stream)
   }
   fn flush_flags(&mut self, total_fields: i32, field_nums: &[i32]) -> Result<()> {
     // check if fields always have the same flags
@@ -477,23 +483,22 @@ where
     }
 
     self.scratch_buffer.reset();
-
     if non_changing_flags {
       // write one flag per field num
       self.vectors_stream.write_vint(0)?;
-      let mut writer = DirectWriter::get_instance(
+      DirectWriter::write_with_scratch(
         &mut self.scratch_buffer,
         field_flags.len() as i64,
         *FLAGS_BITS,
+        &mut self.packed_scratch,
+        |writer| {
+          for &flags in field_flags.iter() {
+            debug_assert!(flags >= 0);
+            writer.add(flags as i64)?;
+          }
+          Ok(())
+        },
       )?;
-
-      for &flags in field_flags.iter() {
-        debug_assert!(flags >= 0);
-        writer.add(flags as i64)?;
-      }
-
-      writer.finish()?;
-
       self
         .vectors_stream
         .write_vint(self.scratch_buffer.size().try_convert()?)?;
@@ -501,17 +506,20 @@ where
     } else {
       // write one flag for every field instance
       self.vectors_stream.write_vint(1)?;
-      let mut writer =
-        DirectWriter::get_instance(&mut self.scratch_buffer, total_fields as i64, *FLAGS_BITS)?;
-
-      for doc in &self.pending_docs {
-        for field in &doc.fields {
-          writer.add(field.flags as i64)?;
-        }
-      }
-
-      writer.finish()?;
-
+      DirectWriter::write_with_scratch(
+        &mut self.scratch_buffer,
+        total_fields as i64,
+        *FLAGS_BITS,
+        &mut self.packed_scratch,
+        |writer| {
+          for doc in &self.pending_docs {
+            for field in &doc.fields {
+              writer.add(field.flags as i64)?;
+            }
+          }
+          Ok(())
+        },
+      )?;
       self
         .vectors_stream
         .write_vint(self.scratch_buffer.size() as i32)?;
@@ -530,26 +538,26 @@ where
 
     let bits_required = bits_required(max_num_terms as i64)?;
     self.vectors_stream.write_vint(bits_required)?;
-
     self.scratch_buffer.reset();
 
-    let mut writer =
-      DirectWriter::get_instance(&mut self.scratch_buffer, total_fields as i64, bits_required)?;
-
-    for doc in &self.pending_docs {
-      for field in &doc.fields {
-        writer.add(field.num_terms as i64)?;
-      }
-    }
-
-    writer.finish()?;
-
+    DirectWriter::write_with_scratch(
+      &mut self.scratch_buffer,
+      total_fields as i64,
+      bits_required,
+      &mut self.packed_scratch,
+      |writer| {
+        for doc in &self.pending_docs {
+          for field in &doc.fields {
+            writer.add(field.num_terms as i64)?;
+          }
+        }
+        Ok(())
+      },
+    )?;
     self
       .vectors_stream
       .write_vint(self.scratch_buffer.size().try_convert()?)?;
-    self.scratch_buffer.copy_to(&mut self.vectors_stream)?;
-
-    Ok(())
+    self.scratch_buffer.copy_to(&mut self.vectors_stream)
   }
   fn flush_term_lengths(&mut self) -> Result<()> {
     self.writer.reset();
@@ -674,8 +682,8 @@ where
             let freq = field.freqs[i] as usize;
             let position_idx = field.pos_start + pos + freq - 1;
             let offset_idx = field.off_start + pos + freq - 1;
-            sum_pos[field_index] += self.positions_buf[position_idx] as u64;
-            sum_offsets[field_index] += self.offsets_buf[offset_idx][0] as u64;
+            sums[field_index][0] += self.positions_buf[position_idx] as u64;
+            sums[field_index][1] += self.offsets_buf[offset_idx][0] as u64;
             pos += freq;
           }
           debug_assert_eq!(pos, field.total_positions);
@@ -689,16 +697,15 @@ where
     }
 
     stack_or_heap_buffer!(chars_per_term, f32, field_nums.len(), 16, 0.0);
-    for i in 0..field_nums.len() {
-      chars_per_term[i] = if sum_pos[i] == 0 || sum_offsets[i] == 0 {
+    for (i, chars) in chars_per_term.iter_mut().enumerate() {
+      let [sum_pos, sum_offsets] = sums.get(i).copied().unwrap_or_default();
+      *chars = if sum_pos == 0 || sum_offsets == 0 {
         0.0
       } else {
-        (sum_offsets[i] as f64 / sum_pos[i] as f64) as f32
+        (sum_offsets as f64 / sum_pos as f64) as f32
       };
       // start offsets
-      self
-        .vectors_stream
-        .write_int(chars_per_term[i].to_bits() as i32)?;
+      self.vectors_stream.write_int(chars.to_bits() as i32)?;
     }
 
     // start offsets
@@ -992,7 +999,9 @@ where
           ),
         )
         .saturating_add(self.term_suffixes.ram_bytes_used()?)
+        .saturating_add(self.compressor.input_scratch_bytes_used())
         .saturating_add(self.payload_bytes.ram_bytes_used()?)
+        .saturating_add(size_of_vec(&self.packed_scratch))
         .saturating_add(size_of_vec(&self.last_term.bytes))
         .saturating_add(self.scratch_buffer.ram_bytes_used()?),
     )
@@ -1109,8 +1118,13 @@ where
       .write_bytes_range(term.bytes, term.offset + prefix, suffix_len)?;
     // copy last term
     let copy_from = if self.last_term.bytes.len() < term.length {
+      let copy_from = if self.last_term.bytes.capacity() >= term.length {
+        prefix
+      } else {
+        0
+      };
       ArrayUtil::grow_no_copy(&mut self.last_term.bytes, term.length, || 0)?;
-      0
+      copy_from
     } else {
       prefix
     };

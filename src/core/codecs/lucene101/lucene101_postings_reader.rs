@@ -23,6 +23,7 @@ use crate::core::codecs::lucene101::lucene101_postings_format::{
 use crate::core::codecs::lucene101::pfor_util::PForUtil;
 use crate::core::codecs::lucene101::postings_util::PostingsUtil;
 use crate::core::codecs::postings_reader_base::PostingsReaderBase;
+use crate::core::index::BytesRef;
 use crate::core::index::bytes_ref::BytesRefValueEnum;
 use crate::core::index::field_info::FieldInfo;
 use crate::core::index::impact::Impact;
@@ -36,7 +37,6 @@ use crate::core::index::postings_enum::{
 };
 use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::segment_read_state::SegmentReadState;
-use crate::core::index::{BytesRef, IndexFileNames};
 use crate::core::internal::vectorization::posting_decoding_util::PostingDecodingUtil;
 use crate::core::internal::vectorization::vectorization_provider::{
   DEFAULT_VECTORIZATION_PROVIDER, VectorizationProvider,
@@ -74,11 +74,6 @@ where
   where
     D1: Directory<IndexInput = I>,
   {
-    let meta_name = IndexFileNames::segment_file_name(
-      &segment_info.name,
-      &state.segment_suffix,
-      Lucene101PostingsFormat::META_EXTENSION,
-    );
     let mut max_num_impacts_at_level0 = 0;
     let mut max_impact_num_bytes_at_level0 = 0;
     let mut max_num_impacts_at_level1 = 0;
@@ -89,7 +84,11 @@ where
     let mut expected_pay_file_length = 0;
     let mut meta_in_opt = None;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
-      meta_in_opt = Some(state.directory.open_checksum_input(&meta_name)?);
+      meta_in_opt = Some(state.with_file_name(
+        &segment_info.name,
+        Lucene101PostingsFormat::META_EXTENSION,
+        |name| state.directory.open_checksum_input(name),
+      )?);
       if let Some(ref mut meta_in) = meta_in_opt {
         version = CodecUtil::check_index_header(
           meta_in,
@@ -142,20 +141,21 @@ where
     // structure of the checksum footer: which looks
     // for FOOTER_MAGIC + algorithmID. This is cheap and can detect some
     // forms of corruption such as file truncation.
-    let doc_name = IndexFileNames::segment_file_name(
-      &segment_info.name,
-      &state.segment_suffix,
-      Lucene101PostingsFormat::DOC_EXTENSION,
-    );
     // Postings have a forward-only access pattern, so pass
     // ReadAdvice.NORMAL to perform readahead.
     let mut doc_in_opt = None;
     let mut pos_in_opt: Option<I> = None;
     let mut pay_in_opt: Option<I> = None;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<Self> {
-      doc_in_opt = Some(state.directory.open_input(
-        &doc_name,
-        &state.context.with_read_advice_self(ReadAdvice::Normal)?,
+      doc_in_opt = Some(state.with_file_name(
+        &segment_info.name,
+        Lucene101PostingsFormat::DOC_EXTENSION,
+        |name| {
+          state.directory.open_input(
+            name,
+            &state.context.with_read_advice_self(ReadAdvice::Normal)?,
+          )
+        },
       )?);
       let doc_in = doc_in_opt
         .as_mut()
@@ -171,12 +171,11 @@ where
       CodecUtil::retrieve_checksum_with_expected(doc_in, expected_doc_file_length)?;
 
       if state.field_infos.has_prox() {
-        let pos_name = IndexFileNames::segment_file_name(
+        pos_in_opt = Some(state.with_file_name(
           &segment_info.name,
-          &state.segment_suffix,
           Lucene101PostingsFormat::POS_EXTENSION,
-        );
-        pos_in_opt = Some(state.directory.open_input(&pos_name, state.context)?);
+          |name| state.directory.open_input(name, state.context),
+        )?);
         let pos_in = pos_in_opt
           .as_mut()
           .ok_or_else(|| LuceneError::illegal_state("postings positions input is missing"))?;
@@ -191,12 +190,11 @@ where
         CodecUtil::retrieve_checksum_with_expected(pos_in, expected_pos_file_length as usize)?;
 
         if state.field_infos.has_payloads() || state.field_infos.has_offsets() {
-          let pay_name = IndexFileNames::segment_file_name(
+          pay_in_opt = Some(state.with_file_name(
             &segment_info.name,
-            &state.segment_suffix,
             Lucene101PostingsFormat::PAY_EXTENSION,
-          );
-          pay_in_opt = Some(state.directory.open_input(&pay_name, state.context)?);
+            |name| state.directory.open_input(name, state.context),
+          )?);
           let pay_in = pay_in_opt
             .as_mut()
             .ok_or_else(|| LuceneError::illegal_state("postings payloads input is missing"))?;
@@ -595,7 +593,7 @@ where
     let (payload_length_buffer, payload_bytes, payload) = if index_has_payloads && needs_pos {
       (
         vec![0; ForUtil::BLOCK_SIZE],
-        vec![0; 128],
+        Vec::new(),
         Some(BytesRef::new()),
       )
     } else {
@@ -1236,6 +1234,9 @@ where
               payload.copy_from_slice(&self.payload_bytes[offset..offset + length]);
               self.payload_position = None;
             }
+            if self.payload_bytes.is_empty() {
+              self.payload_bytes.resize(128, 0);
+            }
             if need > self.payload_bytes.len() {
               ArrayUtil::grow_with(&mut self.payload_bytes, need, || 0)?;
             }
@@ -1298,6 +1299,9 @@ where
           // Grow/read may overwrite the block before the complete refill succeeds.
           payload.copy_from_slice(&self.payload_bytes[offset..offset + length]);
           self.payload_position = None;
+        }
+        if self.payload_bytes.is_empty() {
+          self.payload_bytes.resize(128, 0);
         }
         if num_bytes > self.payload_bytes.len() {
           ArrayUtil::grow_no_copy(&mut self.payload_bytes, num_bytes, || 0)?;

@@ -35,7 +35,7 @@ use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::segment_write_state::SegmentWriteState;
 use crate::core::index::terms::Terms;
 use crate::core::index::terms_enum::TermsEnum;
-use crate::core::index::{BytesRef, BytesRefBuilder, BytesRefValue, IndexFileNames};
+use crate::core::index::{BytesRef, BytesRefBuilder, BytesRefValue};
 use crate::core::store::directory::Directory;
 use crate::core::store::dummy::dummy_index_output::DummyIndexOutput;
 use crate::core::store::{ByteArrayDataOutput, ByteBuffersDataOutput, DataOutput, IndexOutput};
@@ -59,6 +59,7 @@ use crate::core::util::fst_impl::fst::{
 use crate::core::util::fst_impl::fst_compiler::{
   Builder, DataOutputEnum, FSTCompiler, get_on_heap_reader_writer,
 };
+use crate::core::util::fst_impl::growable_byte_array_data_output::GrowableByteArrayDataOutput;
 use crate::core::util::fst_impl::util::Util;
 use crate::core::util::ints_ref_builder::IntsRefBuilder;
 use crate::core::util::packed::PackedInts;
@@ -195,7 +196,7 @@ where
   version: i32,
   postings_writer: PW,
   field_infos: Arc<FieldInfos>,
-  fields: Vec<ByteBuffersDataOutput>,
+  fields: Vec<GrowableByteArrayDataOutput>,
   closed: bool,
 }
 impl<O, PW> Lucene90BlockTreeTermsWriter<O, PW>
@@ -246,9 +247,7 @@ where
     }
 
     let max_doc = segment_info.max_doc()?;
-    let terms_name =
-      IndexFileNames::segment_file_name(&segment_info.name, &state.segment_suffix, TERMS_EXTENSION);
-    let mut terms_out = state.directory.create_output(&terms_name, state.context)?;
+    let mut terms_out = state.create_segment_output(&segment_info.name, TERMS_EXTENSION)?;
     let mut meta_out = None;
     let mut index_out = None;
     let mut success = false;
@@ -260,12 +259,7 @@ where
         segment_info.get_id(),
         &state.segment_suffix,
       )?;
-      let index_name = IndexFileNames::segment_file_name(
-        &segment_info.name,
-        &state.segment_suffix,
-        TERMS_INDEX_EXTENSION,
-      );
-      index_out = Some(state.directory.create_output(&index_name, state.context)?);
+      index_out = Some(state.create_segment_output(&segment_info.name, TERMS_INDEX_EXTENSION)?);
       CodecUtil::write_index_header(
         index_out
           .as_mut()
@@ -275,12 +269,7 @@ where
         segment_info.get_id(),
         &state.segment_suffix,
       )?;
-      let meta_name = IndexFileNames::segment_file_name(
-        &segment_info.name,
-        &state.segment_suffix,
-        TERMS_META_EXTENSION,
-      );
-      meta_out = Some(state.directory.create_output(&meta_name, state.context)?);
+      meta_out = Some(state.create_segment_output(&segment_info.name, TERMS_META_EXTENSION)?);
       CodecUtil::write_index_header(
         meta_out
           .as_mut()
@@ -420,7 +409,11 @@ where
             };
             reuse = terms_writer.write(term, &mut terms_enum, norms, reuse)?;
           }
-          terms_writer.finish(&mut self.fields, &mut self.index_out)?;
+          if let Some(field_meta) =
+            terms_writer.finish_field(GrowableByteArrayDataOutput::new, &mut self.index_out)?
+          {
+            self.fields.push(field_meta);
+          }
         },
         None => break,
       }
@@ -444,7 +437,7 @@ where
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       self.meta_out.write_vint(self.fields.len() as i32)?;
       for field_meta in &self.fields {
-        field_meta.copy_to(&mut self.meta_out)?;
+        field_meta.write_to_data_output(&mut self.meta_out)?;
       }
       CodecUtil::write_footer(&mut self.index_out)?;
       self
@@ -564,7 +557,7 @@ impl PendingBlock {
   }
   fn compile_index(
     mut blocks: Vec<PendingBlock>,
-    scratch_bytes: &mut ByteBuffersDataOutput,
+    scratch_bytes: &mut GrowableByteArrayDataOutput,
     scratch_ints_ref: &mut IntsRefBuilder<Vec<i32>>,
     version: i32,
   ) -> Result<(PendingBlock, Vec<PendingBlock>)> {
@@ -574,7 +567,7 @@ impl PendingBlock {
       blocks[0].is_floor,
       blocks.len()
     );
-    debug_assert_eq!(scratch_bytes.size(), 0);
+    debug_assert_eq!(scratch_bytes.get_position(), 0);
 
     let (is_floor, fp, prefix_len) = {
       let first_block = &mut blocks[0];
@@ -630,16 +623,16 @@ impl PendingBlock {
     builder.with_version(fst_version)?;
     let mut fst_compiler = builder.build()?;
 
-    let bytes = scratch_bytes.get_array_copy();
-    let len = bytes.len();
-    debug_assert!(!bytes.is_empty());
+    let len = scratch_bytes.get_position();
+    debug_assert_ne!(len, 0);
+    let bytes = Arc::new(scratch_bytes.get_bytes()[..len].to_vec());
 
     Util::to_ints_ref(&blocks[0].prefix, scratch_ints_ref)?;
     fst_compiler.add(
       scratch_ints_ref.get(),
-      Some(BytesRef::from_slice(Arc::from(bytes), 0, len)),
+      Some(BytesRef::from_slice(bytes, 0, len)),
     )?;
-    scratch_bytes.reset();
+    scratch_bytes.set_position(0)?;
 
     for block in blocks.iter_mut() {
       for sub_index in std::mem::take(&mut block.sub_indices) {
@@ -729,7 +722,8 @@ where
 {
   field_info: &'a FieldInfo,
   num_terms: i64,
-  docs_seen: FixedBitSet,
+  max_doc: usize,
+  docs_seen: Option<FixedBitSet>,
   sum_total_term_freq: i64,
   sum_doc_freq: i64,
   // Records index into pending where the current prefix at that
@@ -755,7 +749,7 @@ where
   compression_hash_table: Option<HashTableEnum>,
   min_items_in_block: i32,
   max_items_in_block: i32,
-  scratch_bytes: ByteBuffersDataOutput,
+  scratch_bytes: GrowableByteArrayDataOutput,
   scratch_ints_ref: IntsRefBuilder<Vec<i32>>,
   version: i32,
   first_pending_term_bytes: Option<Vec<u8>>,
@@ -783,12 +777,13 @@ where
     let v = Self {
       field_info: field_info.as_ref(),
       num_terms: 0,
-      docs_seen: FixedBitSet::new(max_doc.try_convert()?),
+      max_doc: max_doc.try_convert()?,
+      docs_seen: None,
       sum_total_term_freq: 0,
       sum_doc_freq: 0,
       last_term: BytesRefBuilder::new(),
       prefix_starts: smallvec::smallvec![0; 8],
-      pending: Vec::with_capacity(max_items_in_block.min(DEFAULT_MAX_BLOCK_SIZE) as usize),
+      pending: Vec::new(),
       new_blocks: Vec::new(),
       suffix_lengths_writer: ByteBuffersDataOutput::new_resettable_instance(),
       suffix_writer: BytesRefBuilder::new(),
@@ -799,7 +794,7 @@ where
       compression_hash_table: None,
       min_items_in_block,
       max_items_in_block,
-      scratch_bytes: ByteBuffersDataOutput::new_resettable_instance(),
+      scratch_bytes: GrowableByteArrayDataOutput::new(),
       scratch_ints_ref: IntsRefBuilder::new(),
       version,
       first_pending_term_bytes: None,
@@ -956,11 +951,7 @@ where
 
     let mut prefix_bytes = Vec::with_capacity(prefix_length + if has_floor_lead { 1 } else { 0 });
     prefix_bytes.extend_from_slice(&self.last_term.bytes_ref.bytes[0..prefix_length]);
-    if has_floor_lead {
-      prefix_bytes.resize(prefix_length + 1, 0);
-    }
     let mut prefix = BytesRef::from_bytes(prefix_bytes);
-    prefix.length = prefix_length;
 
     let num_entries = end - start;
     let mut code = (num_entries << 1) as i32;
@@ -1188,7 +1179,7 @@ where
     self.meta_writer.reset();
 
     if has_floor_lead {
-      prefix.bytes[prefix.length] = floor_lead_label as u8;
+      prefix.bytes.push(floor_lead_label as u8);
       prefix.length += 1;
     }
 
@@ -1213,13 +1204,13 @@ where
     PE: PostingsEnum,
     T: TermsEnum<PostingsEnum = PE>,
   {
-    let (reuse, state_opt) = self.postings_writer.write_term(
-      &text,
-      terms_enum,
-      &mut self.docs_seen,
-      norms,
-      postings_enum,
-    )?;
+    let docs_seen = self
+      .docs_seen
+      .get_or_insert_with(|| FixedBitSet::new(self.max_doc));
+    let (reuse, state_opt) =
+      self
+        .postings_writer
+        .write_term(&text, terms_enum, docs_seen, norms, postings_enum)?;
 
     if let Some(state) = state_opt {
       let base = state.as_ref();
@@ -1244,6 +1235,9 @@ where
       self.num_terms += 1;
 
       if self.first_pending_term_bytes.is_none() {
+        self
+          .pending
+          .reserve_exact(self.max_items_in_block.min(DEFAULT_MAX_BLOCK_SIZE) as usize);
         self.first_pending_term_bytes = Some(term.term_bytes.clone());
       }
       self.pending.push(PendingEntryEnum::Term(term));
@@ -1290,7 +1284,11 @@ where
       self.prefix_starts[i] = pending_count;
     }
 
-    if self.last_term.bytes().bytes.len() >= text.length {
+    if self.last_term.bytes().bytes.capacity() >= text.length {
+      if self.last_term.bytes().bytes.len() < text.length {
+        self.last_term.set_length(text.length);
+        self.last_term.grow_no_copy(text.length)?;
+      }
       self.last_term.set_length(prefix_length);
       self.last_term.append_with_range(
         &text.bytes,
@@ -1303,6 +1301,21 @@ where
     Ok(())
   }
   pub fn finish(&mut self, fields: &mut Vec<ByteBuffersDataOutput>, index_out: &mut O) -> Result<()>
+  where
+    O: IndexOutput,
+    PW: PostingsWriterBase,
+  {
+    if let Some(field_meta) = self.finish_field(ByteBuffersDataOutput::new, index_out)? {
+      fields.push(field_meta);
+    }
+    Ok(())
+  }
+
+  fn finish_field<DO: DataOutput>(
+    &mut self,
+    make_metadata: impl FnOnce() -> DO,
+    index_out: &mut O,
+  ) -> Result<Option<DO>>
   where
     O: IndexOutput,
     PW: PostingsWriterBase,
@@ -1343,7 +1356,7 @@ where
         .and_then(Option::as_ref)
         .ok_or_else(|| LuceneError::illegal_state("root terms index has no empty output"))?;
 
-      let mut meta_out = ByteBuffersDataOutput::new();
+      let mut meta_out = make_metadata();
 
       meta_out.write_vint(self.field_info.get_field_number())?;
       meta_out.write_vlong(self.num_terms)?;
@@ -1359,7 +1372,8 @@ where
         meta_out.write_vlong(self.sum_total_term_freq)?;
       }
       meta_out.write_vlong(self.sum_doc_freq)?;
-      meta_out.write_vint(self.docs_seen.cardinality().try_convert()?)?;
+      let doc_count = self.docs_seen.as_ref().map_or(0, FixedBitSet::cardinality);
+      meta_out.write_vint(doc_count.try_convert()?)?;
       let first_term_bytes = self
         .first_pending_term_bytes
         .take()
@@ -1375,7 +1389,7 @@ where
         .ok_or_else(|| LuceneError::illegal_state("root terms index is missing"))?
         .save(&mut meta_out, index_out)?;
 
-      fields.push(meta_out);
+      return Ok(Some(meta_out));
     } else {
       debug_assert!(
         self.sum_total_term_freq == 0
@@ -1383,10 +1397,13 @@ where
             && self.sum_total_term_freq == -1)
       );
       debug_assert_eq!(self.sum_doc_freq, 0);
-      debug_assert_eq!(self.docs_seen.cardinality(), 0);
+      debug_assert_eq!(
+        self.docs_seen.as_ref().map_or(0, FixedBitSet::cardinality),
+        0
+      );
     }
 
-    Ok(())
+    Ok(None)
   }
   fn write_bytes_ref<AV, DO>(&self, out: &mut DO, bytes: &BytesRef<AV>) -> Result<()>
   where

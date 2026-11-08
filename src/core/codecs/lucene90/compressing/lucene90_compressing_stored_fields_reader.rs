@@ -104,17 +104,17 @@ where
     let segment = &si.name;
     let num_docs = si.max_doc()?;
 
-    let fields_stream_fn =
-      IndexFileNames::segment_file_name(segment, segment_suffix, FIELDS_EXTENSION);
     let mut meta_in = None;
     let mut fields_stream = None;
     let mut fields_index_reader = None;
     let mut reader = None;
     let mut success = false;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
-      fields_stream = Some(dir.open_input(
-        &fields_stream_fn,
-        &context.with_read_advice_self(ReadAdvice::Random)?,
+      fields_stream = Some(IndexFileNames::with_segment_file_name(
+        segment,
+        segment_suffix,
+        FIELDS_EXTENSION,
+        |name| dir.open_input(name, &context.with_read_advice_self(ReadAdvice::Random)?),
       )?);
       let fields_stream_ref = fields_stream
         .as_mut()
@@ -134,9 +134,12 @@ where
         fields_stream_ref.get_file_pointer()?
       );
 
-      let meta_stream_fm =
-        IndexFileNames::segment_file_name(segment, segment_suffix, META_EXTENSION);
-      let meta = meta_in.insert(dir.open_checksum_input(&meta_stream_fm)?);
+      let meta = meta_in.insert(IndexFileNames::with_segment_file_name(
+        segment,
+        segment_suffix,
+        META_EXTENSION,
+        |name| dir.open_checksum_input(name),
+      )?);
 
       CodecUtil::check_index_header(
         meta,

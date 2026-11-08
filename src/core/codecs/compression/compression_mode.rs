@@ -342,12 +342,28 @@ impl Decompressor for DecompressorEnum {
   }
 }
 
+impl CompressorEnum {
+  pub(crate) fn input_scratch_bytes_used(&self) -> i64 {
+    match self {
+      Self::LZ4Fast(compressor) => {
+        crate::core::util::ram_usage_estimator::size_of_vec(&compressor.bytes)
+      },
+      Self::Deflate(compressor) => {
+        crate::core::util::ram_usage_estimator::size_of_vec(&compressor.bytes)
+      },
+      _ => 0,
+    }
+  }
+}
+
 pub struct LZ4FastCompressor {
+  bytes: Vec<u8>,
   ht: HashTableEnum,
 }
 impl LZ4FastCompressor {
   fn new() -> Self {
     LZ4FastCompressor {
+      bytes: Vec::new(),
       ht: HashTableEnum::Fast(FastCompressionHashTable::new()),
     }
   }
@@ -363,9 +379,10 @@ impl Compressor for LZ4FastCompressor {
     DO: DataOutput,
   {
     let len = buffers_input.length();
-    let bytes = buffers_input.get_bytes(len)?;
-    LZ4::compress(bytes.as_ref(), 0, len as i32, out, &mut self.ht)?;
-    Ok(())
+    buffers_input.with_reusable_scratch(&mut self.bytes, |input| {
+      let bytes = input.get_bytes(len)?;
+      LZ4::compress(bytes.as_ref(), 0, len as i32, out, &mut self.ht)
+    })
   }
 }
 
@@ -419,12 +436,14 @@ impl Closeable for LZ4HighCompressor {}
 
 pub struct DeflateDecompressor {
   compressed: Vec<u8>,
+  decoder: Option<Decompress>,
 }
 
 impl DeflateDecompressor {
   fn new() -> Self {
     Self {
       compressed: Vec::new(),
+      decoder: None,
     }
   }
 }
@@ -469,7 +488,8 @@ impl Decompressor for DeflateDecompressor {
     bytes.length = 0;
     let output_length = original_length as usize;
     ArrayUtil::grow_no_copy(&mut bytes.bytes, output_length, || 0)?;
-    let mut decoder = Decompress::new(false);
+    let decoder = self.decoder.get_or_insert_with(|| Decompress::new(false));
+    decoder.reset(false);
     let mut status = decoder
       .decompress(
         &compressed,
@@ -506,6 +526,7 @@ impl Decompressor for DeflateDecompressor {
 }
 
 pub struct DeflateCompressor {
+  bytes: Vec<u8>,
   level: u32,
   compressor: Option<Compress>,
   compressed: Vec<u8>,
@@ -514,6 +535,7 @@ pub struct DeflateCompressor {
 impl DeflateCompressor {
   fn new(level: u32) -> Self {
     DeflateCompressor {
+      bytes: Vec::new(),
       level,
       compressor: None,
       compressed: Vec::new(),
@@ -531,45 +553,50 @@ impl Compressor for DeflateCompressor {
     DO: DataOutput,
   {
     let len = buffers_input.length();
-    let bytes = buffers_input.get_bytes(len)?;
-    if len == 0 {
-      out.write_vint(0)?;
-      return Ok(());
-    }
-    let compressor = self
-      .compressor
-      .get_or_insert_with(|| Compress::new(Compression::new(self.level), false));
-    compressor.reset();
-    if self.compressed.is_empty() {
-      self.compressed.resize(64, 0);
-    }
-    let total_count = loop {
-      let consumed = compressor.total_in() as usize;
-      let total_count = compressor.total_out() as usize;
-      let status = compressor
-        .compress(
-          &bytes[consumed..],
-          &mut self.compressed[total_count..],
-          FlushCompress::Finish,
-        )
-        .map_err(|error| LuceneError::from(std::io::Error::other(error)))?;
-      let total_count = compressor.total_out() as usize;
-      debug_assert!(total_count <= self.compressed.len());
-      if status == Status::StreamEnd {
-        break total_count;
+    let result = buffers_input.with_reusable_scratch(&mut self.bytes, |input| {
+      let bytes = input.get_bytes(len)?;
+      if len == 0 {
+        out.write_vint(0)?;
+        return Ok(());
       }
-      let min_size = self.compressed.len() + 1;
-      ArrayUtil::grow_capacity(&mut self.compressed, min_size)?;
-      // Compression writes into the whole output slice, including its spare room.
-      self.compressed.resize(
-        self.compressed.capacity().min(ArrayUtil::MAX_ARRAY_LENGTH),
-        0,
-      );
-    };
-    debug_assert!(total_count <= i32::MAX as usize);
-    out.write_vint(total_count as i32)?;
-    out.write_bytes_with_len(&self.compressed, total_count)?;
-    Ok(())
+      let compressor = self
+        .compressor
+        .get_or_insert_with(|| Compress::new(Compression::new(self.level), false));
+      compressor.reset();
+      if self.compressed.is_empty() {
+        self.compressed.resize(64, 0);
+      }
+      let total_count = loop {
+        let consumed = compressor.total_in() as usize;
+        let total_count = compressor.total_out() as usize;
+        let status = compressor
+          .compress(
+            &bytes[consumed..],
+            &mut self.compressed[total_count..],
+            FlushCompress::Finish,
+          )
+          .map_err(|error| LuceneError::from(std::io::Error::other(error)))?;
+        let total_count = compressor.total_out() as usize;
+        debug_assert!(total_count <= self.compressed.len());
+        if status == Status::StreamEnd {
+          break total_count;
+        }
+        let min_size = self.compressed.len() + 1;
+        ArrayUtil::grow_capacity(&mut self.compressed, min_size)?;
+        self.compressed.resize(
+          self.compressed.capacity().min(ArrayUtil::MAX_ARRAY_LENGTH),
+          0,
+        );
+      };
+      debug_assert!(total_count <= i32::MAX as usize);
+      out.write_vint(total_count as i32)?;
+      out.write_bytes_with_len(&self.compressed, total_count)?;
+      Ok(())
+    });
+    if self.bytes.capacity() > 64 * 1024 {
+      self.bytes = Vec::new();
+    }
+    result
   }
 }
 

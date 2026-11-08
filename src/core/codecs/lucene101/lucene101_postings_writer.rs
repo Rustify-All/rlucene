@@ -29,13 +29,13 @@ use crate::core::codecs::push_postings_writer_base::{
 };
 use crate::core::index::field_info::FieldInfo;
 
+use crate::core::index::BytesRef;
 use crate::core::index::index_writer::MAX_POSITION;
 use crate::core::index::numeric_doc_values::NumericDocValues;
 use crate::core::index::postings_enum::PostingsEnum;
 use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::segment_write_state::SegmentWriteState;
 use crate::core::index::terms_enum::TermsEnum;
-use crate::core::index::{BytesRef, IndexFileNames};
 use crate::core::store::directory::Directory;
 use crate::core::store::{ByteBuffersDataOutput, DataOutput, IndexOutput};
 use crate::core::util::array_util::ArrayUtil;
@@ -134,30 +134,22 @@ where
   where
     D1: Directory<IndexOutput = O>,
   {
-    let meta_file = IndexFileNames::segment_file_name(
-      &segment_info.name,
-      &state.segment_suffix,
-      Lucene101PostingsFormat::META_EXTENSION,
-    );
-    let doc_file = IndexFileNames::segment_file_name(
-      &segment_info.name,
-      &state.segment_suffix,
-      Lucene101PostingsFormat::DOC_EXTENSION,
-    );
-
     let mut meta_out = None;
     let mut doc_out = None;
     let mut pos_out: Option<O> = None;
     let mut pay_out: Option<O> = None;
 
     let mut position_buffers = Vec::new();
-    let mut offset_buffers = None;
     let payload_bytes = Vec::new();
 
     let mut success = false;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<_> {
-      meta_out = Some(state.directory.create_output(&meta_file, state.context)?);
-      doc_out = Some(state.directory.create_output(&doc_file, state.context)?);
+      meta_out = Some(
+        state.create_segment_output(&segment_info.name, Lucene101PostingsFormat::META_EXTENSION)?,
+      );
+      doc_out = Some(
+        state.create_segment_output(&segment_info.name, Lucene101PostingsFormat::DOC_EXTENSION)?,
+      );
       CodecUtil::write_index_header(
         meta_out
           .as_mut()
@@ -186,12 +178,10 @@ where
           Lucene101PostingsFormat::BLOCK_SIZE
             * (1 + usize::from(state.field_infos.has_payloads()))
         ];
-        let pos_file = IndexFileNames::segment_file_name(
-          &segment_info.name,
-          &state.segment_suffix,
-          Lucene101PostingsFormat::POS_EXTENSION,
+        pos_out = Some(
+          state
+            .create_segment_output(&segment_info.name, Lucene101PostingsFormat::POS_EXTENSION)?,
         );
-        pos_out = Some(state.directory.create_output(&pos_file, state.context)?);
         CodecUtil::write_index_header(
           pos_out
             .as_mut()
@@ -202,17 +192,11 @@ where
           &state.segment_suffix,
         )?;
 
-        if state.field_infos.has_offsets() {
-          offset_buffers = Some(Box::new([[0; Lucene101PostingsFormat::BLOCK_SIZE]; 2]));
-        }
-
         if state.field_infos.has_payloads() || state.field_infos.has_offsets() {
-          let pay_file = IndexFileNames::segment_file_name(
-            &segment_info.name,
-            &state.segment_suffix,
-            Lucene101PostingsFormat::PAY_EXTENSION,
+          pay_out = Some(
+            state
+              .create_segment_output(&segment_info.name, Lucene101PostingsFormat::PAY_EXTENSION)?,
           );
-          pay_out = Some(state.directory.create_output(&pay_file, state.context)?);
           CodecUtil::write_index_header(
             pay_out
               .as_mut()
@@ -268,7 +252,7 @@ where
       doc_freq_buffers,
       doc_buffer_upto: 0,
       position_buffers,
-      offset_buffers,
+      offset_buffers: None,
       pos_buffer_upto: 0,
       payload_bytes,
       payload_byte_upto: 0,
@@ -631,6 +615,12 @@ where
   fn set_field(&mut self, field_info: &Arc<FieldInfo>) {
     self.last_state = IntBlockTermState::new();
     self.field_has_norms = field_info.has_norms();
+    if *field_info.get_index_options()
+      == crate::core::index::index_options::IndexOptions::DocsAndFreqsAndPositionsAndOffsets
+      && self.offset_buffers.is_none()
+    {
+      self.offset_buffers = Some(Box::new([[0; Lucene101PostingsFormat::BLOCK_SIZE]; 2]));
+    }
   }
 }
 

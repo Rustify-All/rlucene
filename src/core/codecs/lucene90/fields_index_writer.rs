@@ -23,13 +23,14 @@ use crate::core::util::close::{Closeable, CloseableRef};
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::io_utils::IOUtils;
 use crate::core::util::packed::direct_monotonic_writer::DirectMonotonicWriter;
+use std::sync::Arc;
 
 pub struct FieldsIndexWriter<D>
 where
   D: Directory,
 {
   dir: D,
-  name: String,
+  name: Arc<str>,
   suffix: String,
   extension: &'static str,
   codec_name: &'static str,
@@ -72,7 +73,7 @@ where
   #[allow(clippy::too_many_arguments)]
   pub(crate) fn new(
     dir: D,
-    name: &str,
+    name: &Arc<str>,
     suffix: &str,
     extension: &'static str,
     codec_name: &'static str,
@@ -80,27 +81,30 @@ where
     block_shift: i32,
     io_context: IOContext, // TODO:avoid copy? could wrap with Rc?
   ) -> Result<Self> {
-    let mut docs_out =
-      dir.create_temp_output(name, &format!("{codec_name}-doc_ids"), &io_context)?;
+    let mut docs_out = with_index_label(codec_name, "-doc_ids", |label| {
+      dir.create_temp_output(name, label, &io_context)
+    })?;
 
     let mut file_pointers_out = None;
     let mut success = false;
     let init_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
-      CodecUtil::write_header(
-        &mut docs_out,
-        &format!("{codec_name}Docs"),
-        fields_index_writer_const::VERSION_CURRENT,
-      )?;
+      with_index_label(codec_name, "Docs", |label| {
+        CodecUtil::write_header(
+          &mut docs_out,
+          label,
+          fields_index_writer_const::VERSION_CURRENT,
+        )
+      })?;
 
-      file_pointers_out =
-        Some(dir.create_temp_output(name, &format!("{codec_name}file_pointers"), &io_context)?);
-      CodecUtil::write_header(
-        file_pointers_out
-          .as_mut()
-          .ok_or_else(|| LuceneError::illegal_state("file pointers output is missing"))?,
-        &format!("{codec_name}FilePointers"),
-        fields_index_writer_const::VERSION_CURRENT,
-      )?;
+      file_pointers_out = Some(with_index_label(codec_name, "file_pointers", |label| {
+        dir.create_temp_output(name, label, &io_context)
+      })?);
+      let output = file_pointers_out
+        .as_mut()
+        .ok_or_else(|| LuceneError::illegal_state("file pointers output is missing"))?;
+      with_index_label(codec_name, "FilePointers", |label| {
+        CodecUtil::write_header(output, label, fields_index_writer_const::VERSION_CURRENT)
+      })?;
       success = true;
       Ok(())
     }));
@@ -127,7 +131,7 @@ where
 
     Ok(FieldsIndexWriter {
       dir,
-      name: name.to_string(),
+      name: Arc::clone(name),
       suffix: suffix.to_string(),
       extension,
       codec_name,
@@ -182,18 +186,20 @@ where
     }
     close_result?;
 
-    let mut data_out = self.dir.create_output(
-      &IndexFileNames::segment_file_name(&self.name, &self.suffix, self.extension),
-      &self.io_context,
-    )?;
+    let mut data_out =
+      IndexFileNames::with_segment_file_name(&self.name, &self.suffix, self.extension, |name| {
+        self.dir.create_output(name, &self.io_context)
+      })?;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
-      CodecUtil::write_index_header(
-        &mut data_out,
-        &format!("{}Idx", self.codec_name),
-        fields_index_writer_const::VERSION_CURRENT,
-        &self.id,
-        &self.suffix,
-      )?;
+      with_index_label(self.codec_name, "Idx", |label| {
+        CodecUtil::write_index_header(
+          &mut data_out,
+          label,
+          fields_index_writer_const::VERSION_CURRENT,
+          &self.id,
+          &self.suffix,
+        )
+      })?;
 
       meta_out.write_int(num_docs)?;
       meta_out.write_int(self.block_shift)?;
@@ -203,12 +209,14 @@ where
       {
         let mut docs_in = self.dir.open_checksum_input(&docs_out_file_name)?;
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
-          CodecUtil::check_header(
-            &mut docs_in,
-            &format!("{}Docs", self.codec_name),
-            fields_index_writer_const::VERSION_CURRENT,
-            fields_index_writer_const::VERSION_CURRENT,
-          )?;
+          with_index_label(self.codec_name, "Docs", |label| {
+            CodecUtil::check_header(
+              &mut docs_in,
+              label,
+              fields_index_writer_const::VERSION_CURRENT,
+              fields_index_writer_const::VERSION_CURRENT,
+            )
+          })?;
 
           let body_result =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
@@ -247,12 +255,14 @@ where
       {
         let mut file_pointers_in = self.dir.open_checksum_input(&file_pointers_out_file_name)?;
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
-          CodecUtil::check_header(
-            &mut file_pointers_in,
-            &format!("{}FilePointers", self.codec_name),
-            fields_index_writer_const::VERSION_CURRENT,
-            fields_index_writer_const::VERSION_CURRENT,
-          )?;
+          with_index_label(self.codec_name, "FilePointers", |label| {
+            CodecUtil::check_header(
+              &mut file_pointers_in,
+              label,
+              fields_index_writer_const::VERSION_CURRENT,
+              fields_index_writer_const::VERSION_CURRENT,
+            )
+          })?;
 
           let body_result =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {

@@ -74,16 +74,15 @@ impl CompressionModeBase for DeflateWithPresetDictCompressionMode {
 }
 
 pub struct DeflateWithPresetDictDecompressor {
-  compressed: [u8; 1],
+  decoder: Option<Decompress>,
 }
 
 impl DeflateWithPresetDictDecompressor {
   fn new() -> Self {
-    Self { compressed: [0] }
+    Self { decoder: None }
   }
 
   fn do_decompress<DI>(
-    &mut self,
     input: &mut DI,
     decompressor: &mut Decompress,
     bytes: &mut BytesRef<Vec<u8>>,
@@ -108,8 +107,6 @@ impl DeflateWithPresetDictDecompressor {
     // Preserve the original length error before reading the payload.
     ArrayUtil::oversize(padded_length, 1)?;
     let compressed = input.get_bytes(compressed_length)?;
-    self.compressed[0] = 0; // Explicitly set dummy byte to 0 after the payload read
-
     // Extra "dummy byte"
     let total_out = decompressor.total_out();
     let total_in = decompressor.total_in();
@@ -125,7 +122,7 @@ impl DeflateWithPresetDictDecompressor {
       let produced = (decompressor.total_out() - total_out) as usize;
       status = decompressor
         .decompress(
-          &self.compressed,
+          &[0],
           &mut bytes.bytes[bytes.length + produced..],
           FlushDecompress::Finish,
         )
@@ -171,10 +168,11 @@ impl LuceneDecompressor for DeflateWithPresetDictDecompressor {
     bytes.offset = 0;
     bytes.length = 0;
 
-    let mut decompressor = Decompress::new(false);
+    let decompressor = self.decoder.get_or_insert_with(|| Decompress::new(false));
+    decompressor.reset(false);
 
     // Read the dictionary
-    self.do_decompress(input, &mut decompressor, bytes)?;
+    Self::do_decompress(input, decompressor, bytes)?;
     if dict_length_usize != bytes.length {
       return Err(LuceneError::corrupt_index(format!(
         "Unexpected dict length (resource={input})"
@@ -199,7 +197,7 @@ impl LuceneDecompressor for DeflateWithPresetDictDecompressor {
       decompressor
         .set_dictionary(&bytes.bytes[..dict_length_usize])
         .map_err(|error| LuceneError::from(std::io::Error::other(error)))?;
-      self.do_decompress(input, &mut decompressor, bytes)?;
+      Self::do_decompress(input, decompressor, bytes)?;
       offset_in_block += block_length;
     }
 

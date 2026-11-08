@@ -658,6 +658,13 @@ impl FastCompressionHashTable {
       hash_table: None,
     }
   }
+  pub(crate) fn clear(&mut self) {
+    match self.hash_table.as_mut() {
+      Some(TableEnum::Table16(table)) => table.table.fill(0),
+      Some(TableEnum::Table32(table)) => table.table.fill(0),
+      None => {},
+    }
+  }
 }
 impl HashTable for FastCompressionHashTable {
   fn reset(&mut self, off: i32, len: i32) {

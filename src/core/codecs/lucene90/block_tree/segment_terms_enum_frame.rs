@@ -109,10 +109,9 @@ impl<S> SegmentTermsEnumFrame<S> {
       .new_term_state()?;
     state.as_mut().total_term_freq = -1;
     let state = <P::TermState as Into<S>>::into(state);
-    // The static frame only retains a term state and never loads a block.
-    let suffix_bytes = vec![0u8; if ord == -1 { 0 } else { 32 }];
+    let suffix_bytes = Vec::new();
     let suffixes_reader = ByteArrayDataInput::with_bytes(suffix_bytes);
-    let suffix_length_bytes = vec![0u8; if ord == -1 { 0 } else { 32 }];
+    let suffix_length_bytes = Vec::new();
     let suffix_lengths_reader = ByteArrayDataInput::with_bytes(suffix_length_bytes);
     let stat_bytes = Vec::new();
     let stats_reader = ByteArrayDataInput::with_bytes(stat_bytes);

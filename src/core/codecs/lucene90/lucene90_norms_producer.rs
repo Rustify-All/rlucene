@@ -21,7 +21,6 @@ use crate::core::codecs::indexed_disi::{create_block_slice, create_jump_table};
 use crate::core::codecs::lucene90::indexed_disi::{IndexInputImpl, IndexedDISIImpl};
 use crate::core::codecs::lucene90_norms_format::Lucene90NormsFormat;
 use crate::core::codecs::norms_producer::NormsProducer;
-use crate::core::index::IndexFileNames;
 use crate::core::index::doc_values::DocValues;
 use crate::core::index::doc_values_iterator::DocValuesIterator;
 use crate::core::index::field_info::FieldInfo;
@@ -77,13 +76,13 @@ where
     D1: Directory<IndexInput = I>,
   {
     let max_doc = segment_info.max_doc()?;
-    let meta_name =
-      IndexFileNames::segment_file_name(&segment_info.name, &state.segment_suffix, meta_extension);
     let mut version = -1;
 
     // Read in the entries from the metadata file
     let mut norms = HashMap::new();
-    let mut input = state.directory.open_checksum_input(&meta_name)?;
+    let mut input = state.with_file_name(&segment_info.name, meta_extension, |name| {
+      state.directory.open_checksum_input(name)
+    })?;
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       let prior_result =
@@ -108,15 +107,16 @@ where
     let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| input.close()));
     IOUtils::use_or_suppress_caught_result(result, close_result)?;
 
-    let data_name =
-      IndexFileNames::segment_file_name(&segment_info.name, &state.segment_suffix, data_extension);
-
     // Norms have a forward-only access pattern, so pass ReadAdvice::Normal
     // to perform readahead
-    let mut data = Some(state.directory.open_input(
-      &data_name,
-      &state.context.with_read_advice_self(ReadAdvice::Normal)?,
-    )?);
+    let mut data = Some(
+      state.with_file_name(&segment_info.name, data_extension, |name| {
+        state.directory.open_input(
+          name,
+          &state.context.with_read_advice_self(ReadAdvice::Normal)?,
+        )
+      })?,
+    );
 
     // Check header again in the data file
     let mut success = false;

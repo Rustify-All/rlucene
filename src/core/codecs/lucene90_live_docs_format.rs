@@ -16,7 +16,7 @@
  */
 use std::collections::HashSet;
 
-use num_bigint::BigInt;
+use crate::core::index::index_file_names::base36;
 
 use crate::core::codecs::CodecUtil;
 use crate::core::codecs::live_docs_format::LiveDocsFormat;
@@ -90,6 +90,25 @@ impl Lucene90LiveDocsFormat {
     IO: IndexOutput,
     T: Bits,
   {
+    if let Some(fixed) = bits.fixed_bit_set()
+      && fixed.length() <= i32::MAX as usize
+    {
+      let length = fixed.length();
+      let (full_words, trailing_bits) = (length / 64, length % 64);
+      let words = fixed.get_bits();
+      let mut live_count = 0;
+      for &word in &words[..full_words] {
+        live_count += word.count_ones() as usize;
+        output.write_long(word)?;
+      }
+      if trailing_bits != 0 {
+        let word = words[full_words] & ((1u64 << trailing_bits) - 1) as i64;
+        live_count += word.count_ones() as usize;
+        output.write_long(word)?;
+      }
+      return Ok((length - live_count) as i32);
+    }
+
     let mut del_count = 0;
     let long_count = FixedBitSet::bits2words(bits.length());
     for i in 0..long_count {
@@ -128,17 +147,20 @@ impl LiveDocsFormat for Lucene90LiveDocsFormat {
       ExecutionOwner::Lucene90LiveDocsFormat,
       ExecutionMethod::ReadLiveDocs,
     );
-    let gen_ = info.get_del_gen();
-    let name = IndexFileNames::file_name_from_generation(
-      &info.info.name,
-      Lucene90LiveDocsFormat::EXTENSION,
-      gen_,
-    );
+    let generation = info.get_del_gen();
     let length = info.info.max_doc()?.try_convert()?;
-    let name_str = name
-      .as_ref()
-      .ok_or_else(|| LuceneError::illegal_state("live docs file name is missing"))?;
-    let mut input = directory.open_checksum_input(name_str)?;
+    if generation == -1 {
+      return Err(LuceneError::illegal_state("live docs file name is missing"));
+    }
+    let mut digits = [0; 14];
+    let suffix = base36(generation, &mut digits);
+    let file_suffix = if generation == 0 { "" } else { suffix };
+    let mut input = IndexFileNames::with_segment_file_name(
+      &info.info.name,
+      file_suffix,
+      Lucene90LiveDocsFormat::EXTENSION,
+      |name| directory.open_checksum_input(name),
+    )?;
     let mut bits = None;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
       let prior_result =
@@ -149,7 +171,7 @@ impl LiveDocsFormat for Lucene90LiveDocsFormat {
             Lucene90LiveDocsFormat::VERSION_START,
             Lucene90LiveDocsFormat::VERSION_CURRENT,
             info.info.get_id(),
-            &BigInt::from(gen_).to_str_radix(36),
+            suffix,
           )?;
 
           let fbs = Self::read_fixed_bit_set(&mut input, length)?;
@@ -194,25 +216,28 @@ impl LiveDocsFormat for Lucene90LiveDocsFormat {
       ExecutionOwner::Lucene90LiveDocsFormat,
       ExecutionMethod::WriteLiveDocs,
     );
-    let gen_ = info.get_next_del_gen();
-    let name = IndexFileNames::file_name_from_generation(
-      &info.info.name,
-      Lucene90LiveDocsFormat::EXTENSION,
-      gen_,
-    );
-    let name = name
-      .as_ref()
-      .ok_or_else(|| LuceneError::illegal_state("live docs file name is missing"))?;
+    let generation = info.get_next_del_gen();
+    if generation == -1 {
+      return Err(LuceneError::illegal_state("live docs file name is missing"));
+    }
+    let mut digits = [0; 14];
+    let suffix = base36(generation, &mut digits);
+    let file_suffix = if generation == 0 { "" } else { suffix };
     let del_count: i32;
     {
-      let mut output = directory.create_output(name.as_str(), context)?;
+      let mut output = IndexFileNames::with_segment_file_name(
+        &info.info.name,
+        file_suffix,
+        Lucene90LiveDocsFormat::EXTENSION,
+        |name| directory.create_output(name, context),
+      )?;
       let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<i32> {
         CodecUtil::write_index_header(
           &mut output,
           Lucene90LiveDocsFormat::CODEC_NAME,
           Lucene90LiveDocsFormat::VERSION_CURRENT,
           info.info.get_id(),
-          &BigInt::from(gen_).to_str_radix(36),
+          suffix,
         )?;
 
         let del_count = Self::write_bits(&mut output, bits)?;

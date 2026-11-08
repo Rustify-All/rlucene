@@ -18,7 +18,6 @@ use crate::core::codecs::CodecUtil;
 use crate::core::codecs::fields_producer::FieldsProducer;
 use crate::core::codecs::lucene90::block_tree::field_reader::FieldReader;
 use crate::core::codecs::postings_reader_base::PostingsReaderBase;
-use crate::core::index::IndexFileNames;
 use crate::core::index::field_infos::FieldInfos;
 use crate::core::index::fields::Fields;
 use crate::core::index::index_options::IndexOptions;
@@ -113,9 +112,9 @@ where
     let mut reader = None;
     let mut success = false;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
-      let terms_name =
-        IndexFileNames::segment_file_name(segment, &state.segment_suffix, TERMS_EXTENSION);
-      terms_in = Some(state.directory.open_input(&terms_name, state.context)?);
+      terms_in = Some(state.with_file_name(segment, TERMS_EXTENSION, |name| {
+        state.directory.open_input(name, state.context)
+      })?);
       let terms_in_ref = terms_in
         .as_mut()
         .ok_or_else(|| LuceneError::illegal_state("terms input is missing"))?;
@@ -128,15 +127,15 @@ where
         &state.segment_suffix,
       )?;
 
-      let index_name =
-        IndexFileNames::segment_file_name(segment, &state.segment_suffix, TERMS_INDEX_EXTENSION);
       index_in = Some(
-        state.directory.open_input(
-          &index_name,
-          &state
-            .context
-            .with_read_advice_self(ReadAdvice::RandomPreload)?,
-        )?,
+        state.with_file_name(segment, TERMS_INDEX_EXTENSION, |name| {
+          state.directory.open_input(
+            name,
+            &state
+              .context
+              .with_read_advice_self(ReadAdvice::RandomPreload)?,
+          )
+        })?,
       );
       CodecUtil::check_index_header(
         index_in
@@ -149,12 +148,12 @@ where
         &state.segment_suffix,
       )?;
 
-      let meta_name =
-        IndexFileNames::segment_file_name(segment, &state.segment_suffix, TERMS_META_EXTENSION);
       let mut field_map = HashMap::new();
       let mut index_length = -1i64;
       let mut terms_length = -1i64;
-      let mut meta_in = state.directory.open_checksum_input(&meta_name)?;
+      let mut meta_in = state.with_file_name(segment, TERMS_META_EXTENSION, |name| {
+        state.directory.open_checksum_input(name)
+      })?;
       let meta_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
           CodecUtil::check_index_header(

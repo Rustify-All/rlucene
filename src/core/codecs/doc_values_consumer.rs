@@ -975,14 +975,16 @@ where
       // All subs are single-valued.
       // We specialize for that case since it makes it easier for codecs
       // to optimize for single-valued fields.
-      let mut single_valued_subs = Vec::with_capacity(subs.len());
-      for mut sub in subs {
-        let single_valued_values = sub.sub.values.get_numeric_doc_values()?;
-        single_valued_subs.push(Sub::new(NumericDocValuesSub::new(
-          sub.sub.doc_map,
-          single_valued_values,
-        )));
-      }
+      let single_valued_subs = subs
+        .into_iter()
+        .map(|mut sub| {
+          let single_valued_values = sub.sub.values.get_numeric_doc_values()?;
+          Ok(Sub::new(NumericDocValuesSub::new(
+            sub.sub.doc_map,
+            single_valued_values,
+          )))
+        })
+        .collect::<Result<Vec<_>>>()?;
       let dv = merge_numeric_values(single_valued_subs, self.merge_state.needs_index_sort())?;
       return Ok(SingletonOrMultiSortedNumericDocValuesEnum::Singleton(
         DocValues::singleton_numeric(dv)?,
@@ -1666,11 +1668,13 @@ where
       // All subs are single-valued.
       // We specialize for that case since it makes it easier for codecs to optimize
       // for single-valued fields.
-      let mut single_valued_subs = Vec::with_capacity(subs.len());
-      for mut sub in subs {
-        let single = sub.sub.values.get_sorted_doc_values()?;
-        single_valued_subs.push(Sub::new(SortedDocValuesSub::new(sub.sub.doc_map, single)));
-      }
+      let single_valued_subs = subs
+        .into_iter()
+        .map(|mut sub| {
+          let single = sub.sub.values.get_sorted_doc_values()?;
+          Ok(Sub::new(SortedDocValuesSub::new(sub.sub.doc_map, single)))
+        })
+        .collect::<Result<Vec<_>>>()?;
 
       let dv = merge_sorted_values(
         single_valued_subs,
