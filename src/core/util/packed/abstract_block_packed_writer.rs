@@ -26,7 +26,6 @@ pub(crate) const MAX_BLOCK_SIZE: i32 = 1 << (30 - 3);
 pub(crate) const MIN_VALUE_EQUALS_0: i32 = 1 << 0;
 pub(crate) const BPV_SHIFT: i32 = 1;
 pub(crate) struct AbstractBlockPackedWriter<D> {
-  block_size: usize,
   values: Vec<i64>,
   blocks: Vec<u8>,
   off: usize,
@@ -59,8 +58,7 @@ impl<D: AbstractBlockPackedWriterBase> AbstractBlockPackedWriter<D> {
     )?;
 
     Ok(Self {
-      block_size,
-      values: Vec::new(),
+      values: vec![0; block_size],
       blocks: Vec::new(),
       off: 0,
       ord: 0,
@@ -79,12 +77,6 @@ impl<D: AbstractBlockPackedWriterBase> AbstractBlockPackedWriter<D> {
     self.ord = 0;
     self.finished = false;
   }
-  fn ensure_values(&mut self) {
-    if self.values.is_empty() {
-      self.values.resize(self.block_size, 0);
-    }
-  }
-
   fn check_not_finished(&self) -> Result<()> {
     if self.finished {
       return Err(LuceneError::illegal_state("Already finished"));
@@ -108,7 +100,6 @@ impl<D: AbstractBlockPackedWriterBase> AbstractBlockPackedWriter<D> {
   {
     self.sub_writer.add(value);
     self.check_not_finished()?;
-    self.ensure_values();
     if self.off == self.values.len() {
       self
         .sub_writer
@@ -132,7 +123,6 @@ impl<D: AbstractBlockPackedWriterBase> AbstractBlockPackedWriter<D> {
     DO: DataOutput,
   {
     self.check_not_finished()?;
-    self.ensure_values();
     if self.off != 0 && self.off != self.values.len() {
       return Err(LuceneError::illegal_state(format!("{}", self.off)));
     }

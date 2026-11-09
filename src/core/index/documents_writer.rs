@@ -698,7 +698,9 @@ where
     Ok(())
   }
   pub(crate) fn get_next_sequence_number(&self) -> i64 {
-    let _guard = self.guard.lock();
+    // The delete queue mutex serializes allocation with reset_delete_queue.
+    // A caller holding the IndexWriter lock must not wait for a full flush
+    // that is waiting for a DWPT to finish registering with that same writer.
     self
       .flush_control
       .delete_queue

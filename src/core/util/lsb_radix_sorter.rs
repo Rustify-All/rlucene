@@ -48,7 +48,7 @@ impl LSBRadixSorter {
     use wide::u64x4;
 
     let mut accum = 0u64;
-    for chunk in histogram.chunks_exact_mut(4) {
+    for chunk in histogram.as_chunks_mut::<4>().0 {
       let values = u64x4::new([
         chunk[0] as u64,
         chunk[1] as u64,
