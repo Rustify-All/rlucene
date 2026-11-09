@@ -337,32 +337,20 @@ where
     let bytes_slice = bytes.as_byte_slice();
     let mut code = do_hash(bytes_slice, 0, bytes_slice.len());
 
-    // final position
-    let mut hash_pos = (code as usize) & self.hash_mask;
-    let mut e = self.ids[hash_pos];
-    if e != -1
-      && !self.pool.equals(
-        self.bytes_start_array.get_value(e as usize)?,
-        bytes,
-        byte_block_pool,
-      )
-    {
-      loop {
-        code = code.wrapping_add(1);
-        hash_pos = (code as usize) & self.hash_mask;
-        e = self.ids[hash_pos];
-        if e == -1
-          || self.pool.equals(
-            self.bytes_start_array.get_value(e as usize)?,
-            bytes,
-            byte_block_pool,
-          )
-        {
-          break;
-        }
+    loop {
+      let hash_pos = (code as usize) & self.hash_mask;
+      let e = self.ids[hash_pos];
+      if e == -1
+        || self.pool.equals(
+          self.bytes_start_array.get_value(e as usize)?,
+          bytes,
+          byte_block_pool,
+        )
+      {
+        return Ok(hash_pos);
       }
+      code = code.wrapping_add(1);
     }
-    Ok(hash_pos)
   }
   /// Adds an "arbitrary" integer offset instead of a [`BytesRef`] term.
   ///

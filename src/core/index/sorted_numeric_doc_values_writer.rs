@@ -187,7 +187,7 @@ pub(crate) struct SortedNumericDocValuesWriter {
 
 impl SortedNumericDocValuesWriter {
   pub(crate) fn new(field_info: Arc<FieldInfo>, iw_bytes_used: SharedCounter) -> Result<Self> {
-    let current_values = smallvec::SmallVec::<[i64; 4]>::new();
+    let current_values: smallvec::SmallVec<[i64; 4]> = smallvec::smallvec![0; 4];
     let docs_with_field = DocsWithFieldSet::new();
     let pending = PackedLongValues::delta_packed_long_values_builder_default(PackedInts::COMPACT)?;
 
@@ -250,19 +250,22 @@ impl SortedNumericDocValuesWriter {
       self.pending_counts = Some(pending_counts);
     }
     self.current_upto = 0;
-    self.current_values.clear();
     self.docs_with_field.add(self.current_doc)?;
     Ok(())
   }
 
   fn add_one_value(&mut self, value: i64) -> Result<()> {
-    if self.current_values.len() == self.current_values.capacity() {
-      ArrayUtil::oversize(self.current_upto + 1, std::mem::size_of::<i64>())?;
-      self
-        .current_values
-        .reserve(self.current_upto + 1 - self.current_values.len());
+    // The initialized prefix is retained across documents. Only current_upto
+    // counts the values that belong to this document.
+    if let Some(slot) = self.current_values.get_mut(self.current_upto) {
+      *slot = value;
+    } else {
+      if self.current_values.len() == self.current_values.capacity() {
+        ArrayUtil::oversize(self.current_upto + 1, std::mem::size_of::<i64>())?;
+        self.current_values.reserve(1);
+      }
+      self.current_values.push(value);
     }
-    self.current_values.push(value);
     self.current_upto += 1;
     Ok(())
   }

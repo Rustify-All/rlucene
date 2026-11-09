@@ -59,6 +59,7 @@ impl Document {
   /// change the content oR an existing index! In order to achieve this, a
   /// document has to be deleted from an index and a new changed version of
   /// that document has to be added.
+  #[inline(always)]
   pub fn add<T>(&mut self, field: T)
   where
     T: Into<Fields>,

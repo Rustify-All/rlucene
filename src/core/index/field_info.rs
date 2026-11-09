@@ -574,6 +574,7 @@ impl FieldInfo {
   }
 
   /// Returns true if any term vectors exist for this field.
+  #[inline]
   pub fn has_term_vectors(&self) -> bool {
     self.store_term_vector.load(Relaxed)
   }

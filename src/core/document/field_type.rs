@@ -17,6 +17,7 @@
 use std::collections::HashMap;
 use std::fmt::{self, Write};
 use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 use crate::core::index::doc_values_skip_index_type::DocValuesSkipIndexType;
 use crate::core::index::doc_values_type::DocValuesType;
@@ -47,7 +48,8 @@ pub struct FieldType {
   vector_dimension: i32,
   vector_encoding: VectorEncoding,
   vector_similarity_function: VectorSimilarityFunction,
-  attributes: Option<HashMap<String, String>>,
+  // Most fields have no attributes. Share populated maps until a clone is changed.
+  attributes: Option<Arc<HashMap<String, String>>>,
 }
 
 impl Default for FieldType {
@@ -105,7 +107,7 @@ impl FieldType {
       vector_dimension: ref_field.vector_dimension(),
       vector_encoding: *ref_field.vector_encoding(),
       vector_similarity_function: *ref_field.vector_similarity_function(),
-      attributes: ref_field.get_attributes().cloned(),
+      attributes: ref_field.get_attributes().cloned().map(Arc::new),
     })
   }
   /// Returns an error if this FieldType is frozen.
@@ -320,11 +322,11 @@ impl FieldType {
     let value = value.into();
     self.check_if_frozen()?;
     match self.attributes {
-      Some(ref mut attrs) => Ok(attrs.insert(key, value)),
+      Some(ref mut attrs) => Ok(Arc::make_mut(attrs).insert(key, value)),
       None => {
         let mut attrs = HashMap::new();
         attrs.insert(key, value);
-        self.attributes = Some(attrs);
+        self.attributes = Some(Arc::new(attrs));
         Ok(None)
       },
     }
@@ -444,7 +446,7 @@ impl IndexableFieldType for FieldType {
 
   /// Returns the attributes for the field type.
   fn get_attributes(&self) -> Option<&HashMap<String, String>> {
-    self.attributes.as_ref()
+    self.attributes.as_deref()
   }
 }
 impl PartialEq for FieldType {

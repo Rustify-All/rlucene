@@ -80,7 +80,6 @@ pub(crate) static TYPE_STORED: LazyLock<FieldType> = LazyLock::new(|| {
 /// separately to the document.
 pub struct StringField {
   parent_field: Field,
-  has_stored_value: bool,
 }
 
 impl StringField {
@@ -97,18 +96,15 @@ impl StringField {
     T2: Into<String>,
   {
     let store = store.into();
-    let (field_type, has_stored_value) = if store {
-      (TYPE_STORED.clone(), true)
+    let field_type = if store {
+      TYPE_STORED.clone()
     } else {
-      (TYPE_NOT_STORED.clone(), false)
+      TYPE_NOT_STORED.clone()
     };
     let value_str = value.into();
     let parent_field = Field::from_string(name, value_str, field_type)?;
 
-    Ok(Self {
-      parent_field,
-      has_stored_value,
-    })
+    Ok(Self { parent_field })
   }
   /// Creates a new binary [`StringField`], indexing the provided binary
   /// ([`BytesRef`]) value as a single token.
@@ -124,16 +120,13 @@ impl StringField {
     B: Into<BytesRef<Vec<u8>>>,
   {
     let store = store.into();
-    let (field_type, has_stored_value) = if store {
-      (TYPE_STORED.clone(), true)
+    let field_type = if store {
+      TYPE_STORED.clone()
     } else {
-      (TYPE_NOT_STORED.clone(), false)
+      TYPE_NOT_STORED.clone()
     };
     let parent_field = Field::from_bytes_ref(name, value, field_type)?;
-    Ok(Self {
-      parent_field,
-      has_stored_value,
-    })
+    Ok(Self { parent_field })
   }
 }
 
@@ -142,18 +135,14 @@ impl FieldBase for StringField {
   where
     B: Into<BytesRef<Vec<u8>>>,
   {
-    self.parent_field.set_bytes_value(value)?;
-    self.has_stored_value = true;
-    Ok(())
+    self.parent_field.set_bytes_value(value)
   }
 
   fn set_string_value<T>(&mut self, value: T) -> Result<()>
   where
     T: Into<String>,
   {
-    self.parent_field.set_string_value(value)?;
-    self.has_stored_value = true;
-    Ok(())
+    self.parent_field.set_string_value(value)
   }
 }
 
@@ -230,11 +219,7 @@ impl IndexableField for StringField {
     Self: 'a;
 
   fn stored_value(&self) -> Result<Option<Self::StoredValue<'_>>> {
-    if self.has_stored_value {
-      self.parent_field.stored_value()
-    } else {
-      Ok(None)
-    }
+    self.parent_field.stored_value()
   }
 
   fn invertable_type(&self) -> &InvertableType {

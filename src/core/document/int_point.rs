@@ -16,7 +16,7 @@
  */
 use crate::core::analysis::analyzer::Analyzer;
 use crate::core::analysis::reader::ReaderEnum;
-use crate::core::document::field::{Field, FieldBase, FieldDataEnum};
+use crate::core::document::field::{FieldBase, FieldDataEnum};
 use crate::core::document::field_type::FieldType;
 use crate::core::document::invertable_field::InvertableType;
 use crate::core::index::BinaryValueEnum;
@@ -25,6 +25,7 @@ use crate::core::index::indexable_field::{
   IndexableField, IndexingTokenStream, ReusedIndexingTokenStream,
 };
 use crate::core::index::indexable_field_type::IndexableFieldType;
+use crate::core::index::point_values::MAX_INDEX_DIMENSIONS;
 use crate::core::search::point_in_set_query::{PointInSetBase, PointInSetQuery};
 #[cfg(debug_assertions)]
 use crate::core::search::point_range_query::check_args;
@@ -53,7 +54,9 @@ use std::fmt;
 ///
 /// See also [`PointValues`](crate::core::index::point_values::PointValues).
 pub struct IntPoint {
-  parent_field: Field,
+  name: String,
+  field_type: FieldType,
+  packed: Option<[u8; MAX_INDEX_DIMENSIONS * BitUtil::INT_BYTES]>,
 }
 
 impl IntPoint {
@@ -69,10 +72,21 @@ impl IntPoint {
     P: AsRef<[i32]>,
   {
     let point = point.as_ref();
-    let value = Self::pack(point)?;
+    if point.is_empty() {
+      return Err(LuceneError::illegal_argument(
+        "point must not be 0 dimensions".to_string(),
+      ));
+    }
     let field_type = Self::get_type(point.len())?;
-    let parent_field = Field::from_bytes_ref(name, value, field_type)?;
-    Ok(IntPoint { parent_field })
+    let mut bytes = [0; MAX_INDEX_DIMENSIONS * BitUtil::INT_BYTES];
+    for (i, &dim) in point.iter().enumerate() {
+      Self::encode_dimension(dim, &mut bytes, i * BitUtil::INT_BYTES);
+    }
+    Ok(Self {
+      name: name.into(),
+      field_type,
+      packed: Some(bytes),
+    })
   }
 
   fn get_type(num_dims: usize) -> Result<FieldType> {
@@ -88,23 +102,20 @@ impl IntPoint {
     P: AsRef<[i32]>,
   {
     let point = point.as_ref();
-    if self.parent_field.field_type().point_dimension_count() != point.len() {
+    let dims = self.field_type.point_dimension_count();
+    if dims != point.len() {
       return Err(LuceneError::illegal_argument(format!(
         "this field (name={}) uses {} dimensions; cannot change to (incoming) {} dimensions",
-        self.parent_field.name(),
-        self.parent_field.field_type().point_dimension_count(),
+        self.name,
+        dims,
         point.len()
       )));
     }
-    if let FieldDataEnum::Binary(value) = &mut self.parent_field.fields_data {
-      // Dimensions are fixed, so the existing encoding has the required size.
-      for (i, &dim) in point.iter().enumerate() {
-        Self::encode_dimension(dim, &mut value.bytes, i * BitUtil::INT_BYTES);
-      }
-    } else {
-      // take_binary_value() may have transferred the previous allocation.
-      self.parent_field.fields_data = FieldDataEnum::Binary(Self::pack(point)?);
+    let mut bytes = [0; MAX_INDEX_DIMENSIONS * BitUtil::INT_BYTES];
+    for (i, &dim) in point.iter().enumerate() {
+      Self::encode_dimension(dim, &mut bytes, i * BitUtil::INT_BYTES);
     }
+    self.packed = Some(bytes);
     Ok(())
   }
 
@@ -305,7 +316,7 @@ impl FieldBase for IntPoint {
 
 impl IndexableField for IntPoint {
   fn name(&self) -> &str {
-    self.parent_field.name()
+    &self.name
   }
 
   type FieldType<'a>
@@ -314,33 +325,42 @@ impl IndexableField for IntPoint {
     Self: 'a;
 
   fn field_type(&self) -> Self::FieldType<'_> {
-    self.parent_field.field_type()
+    &self.field_type
   }
   fn token_stream<'a, A>(
     &'a mut self,
-    analyzer: &'a A,
-    reuse_token_stream: &'a mut Option<ReusedIndexingTokenStream>,
+    _analyzer: &'a A,
+    _reuse_token_stream: &'a mut Option<ReusedIndexingTokenStream>,
   ) -> Result<IndexingTokenStream<'a>>
   where
     A: Analyzer,
   {
-    self.parent_field.token_stream(analyzer, reuse_token_stream)
+    Ok(None)
   }
 
   fn binary_value(&self) -> Result<Option<BinaryValueEnum<'_>>> {
-    self.parent_field.binary_value()
+    Ok(self.packed.as_ref().map(|bytes| {
+      let length = self.field_type.point_dimension_count() * BitUtil::INT_BYTES;
+      BinaryValueEnum::Slice(BytesRef {
+        bytes: &bytes[..length],
+        offset: 0,
+        length,
+      })
+    }))
   }
 
   fn take_binary_value(&mut self) -> Result<Option<BytesRef<Vec<u8>>>> {
-    self.parent_field.take_binary_value()
+    let value = self.binary_value()?.map(BinaryValueEnum::into_owned);
+    self.packed = None;
+    Ok(value)
   }
 
   fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
-    self.parent_field.string_value()
+    Ok(None)
   }
 
   fn take_string_value(&mut self) -> Result<Option<String>> {
-    self.parent_field.take_string_value()
+    Ok(None)
   }
 
   fn take_reader_value(&mut self) -> Result<Option<ReaderEnum>> {
@@ -348,19 +368,15 @@ impl IndexableField for IntPoint {
   }
 
   fn numeric_value(&self) -> Result<Option<Number>> {
-    if self.parent_field.field_type().point_dimension_count() != 1 {
+    let dims = self.field_type.point_dimension_count();
+    if dims != 1 {
       return Err(LuceneError::illegal_state(format!(
         "this field (name={}) uses {} dimensions; cannot convert to a single numeric value",
-        self.parent_field.name(),
-        self.parent_field.field_type().point_dimension_count()
+        self.name, dims
       )));
     }
-    match &self.parent_field.fields_data {
-      FieldDataEnum::Binary(bytes) => {
-        debug_assert!(bytes.length == BitUtil::INT_BYTES);
-        let value = Self::decode_dimension(&bytes.bytes, bytes.offset);
-        Ok(Some(value.into()))
-      },
+    match &self.packed {
+      Some(bytes) => Ok(Some(Self::decode_dimension(bytes, 0).into())),
       _ => Err(LuceneError::illegal_argument(
         "Unsupported FieldDataEnum variant",
       )),
@@ -373,30 +389,25 @@ impl IndexableField for IntPoint {
     Self: 'a;
 
   fn stored_value(&self) -> Result<Option<Self::StoredValue<'_>>> {
-    self.parent_field.stored_value()
+    Ok(None)
   }
 
   fn invertable_type(&self) -> &InvertableType {
-    self.parent_field.invertable_type()
+    &InvertableType::TokenStream
   }
 }
 
 impl fmt::Display for IntPoint {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(
-      f,
-      "{} <{}:",
-      std::any::type_name::<Self>(),
-      self.parent_field.name()
-    )?;
-    match &self.parent_field.fields_data {
-      FieldDataEnum::Binary(bytes) => {
-        let dim_count = self.parent_field.field_type().point_dimension_count();
+    write!(f, "{} <{}:", std::any::type_name::<Self>(), self.name)?;
+    match &self.packed {
+      Some(bytes) => {
+        let dim_count = self.field_type.point_dimension_count();
         for dim in 0..dim_count {
           if dim > 0 {
             write!(f, ",")?;
           }
-          let value = Self::decode_dimension(&bytes.bytes, bytes.offset + dim * BitUtil::INT_BYTES);
+          let value = Self::decode_dimension(bytes, dim * BitUtil::INT_BYTES);
           write!(f, "{value}")?;
         }
       },

@@ -63,7 +63,7 @@ use crate::core::index::index_writer::{MAX_POSITION, MAX_STORED_STRING_LENGTH, M
 use crate::core::index::indexable_field::{
   IndexableField, IndexingTokenStream, ReusedIndexingTokenStream,
 };
-use crate::core::index::indexable_field_type::IndexableFieldType;
+use crate::core::index::indexable_field_type::{IndexableFieldType, IndexableFieldTypeEnum};
 use crate::core::index::leaf_metadata::LeafMetaData;
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
@@ -426,7 +426,7 @@ where
             .take()
             .ok_or_else(|| LuceneError::illegal_state("terms hash is missing"))?;
           if terms_hash.base.get_num_terms() > 0 {
-            fields_to_flush.push(terms_hash);
+            fields_to_flush.push(*terms_hash);
           }
         }
         fp_idx = pf.next;
@@ -749,6 +749,7 @@ where
       )
     }));
     self.field_hash.fill(None);
+    self.doc_fields.clear();
     IOUtils::use_or_suppress_caught_result(result, close_result)
   }
 
@@ -831,7 +832,6 @@ where
     self.next_field_gen += 1;
     let mut doc_field_idx = 0;
     self.fields.clear();
-    self.doc_fields.clear();
     // NOTE: we need two passes here, in case there are
     // multi-valued fields, because we must process all
     // instances of a given field at once, since the
@@ -855,19 +855,26 @@ where
       document.reserve(document_fields.size_hint().0.saturating_sub(1));
       while let Some(field_value) = document_fields.next().transpose()? {
         let field = field_value.borrow();
-        dispatch_fields!(field, |field| self.process_field_schema(
-          field,
+        let metadata = dispatch_fields!(field, |field| (
+          field.field_type().into(),
+          field.is_reserved(),
+          field.name(),
+        ));
+        self.process_field_schema(
+          metadata,
           doc_id,
           field_gen,
           &mut field_count,
           &mut doc_field_idx,
-        ))?;
+        )?;
         if first_field.is_none() {
           first_field = Some(field_value);
         } else {
           document.push(field_value);
         }
       }
+
+      self.doc_fields.truncate(doc_field_idx);
 
       // For each field, if it's the first time we see this field in this segment,
       // initialize its FieldInfo.
@@ -912,6 +919,9 @@ where
       }
       Ok(())
     }));
+    if !matches!(&result, Ok(Ok(()))) {
+      self.doc_fields.clear();
+    }
     if !self.has_hit_aborting_exception {
       // Finish each indexed field name seen in the document:
       for i in 0..indexed_field_count {
@@ -1161,26 +1171,26 @@ where
     Ok(indexed_field)
   }
   // Keep the concrete field and field type through the first schema pass.
-  fn process_field_schema<F>(
+  fn process_field_schema(
     &mut self,
-    field: &F,
+    (field_type, is_reserved, field_name): (IndexableFieldTypeEnum<'_>, bool, &str),
     doc_id: i32,
     field_gen: i64,
     field_count: &mut usize,
     doc_field_idx: &mut usize,
-  ) -> Result<()>
-  where
-    F: IndexableField,
-  {
-    let field_type = field.field_type();
-    let is_reserved = field.is_reserved();
-    let pf_idx = self.get_or_add_per_field(field, is_reserved)?;
+  ) -> Result<()> {
+    // The previous document's slot is a hint. Validate the name before
+    // reusing its per-segment index, since documents can reorder fields.
+    let pf_idx = match self.doc_fields.get(*doc_field_idx).copied() {
+      Some(idx) if self.per_fields[idx].schema.name == field_name => idx,
+      _ => self.get_or_add_per_field(field_name, is_reserved)?,
+    };
     {
       let pf = &mut self.per_fields[pf_idx];
       if pf.reserved != is_reserved {
         return Err(LuceneError::illegal_argument(format!(
           "\"{}\" is a reserved field and should not be added to any document",
-          field.name()
+          field_name
         )));
       }
 
@@ -1197,16 +1207,29 @@ where
         pf.reset(doc_id);
       }
     }
-    if self.doc_fields.len() == self.doc_fields.capacity() {
-      let min_size = self.doc_fields.len() + 1;
-      ArrayUtil::oversize(min_size, std::mem::size_of::<usize>())?;
-      self.doc_fields.reserve(min_size - self.doc_fields.len());
+    if let Some(slot) = self.doc_fields.get_mut(*doc_field_idx) {
+      *slot = pf_idx;
+    } else {
+      if self.doc_fields.len() == self.doc_fields.capacity() {
+        let min_size = self.doc_fields.len() + 1;
+        ArrayUtil::oversize(min_size, std::mem::size_of::<usize>())?;
+        self.doc_fields.reserve(min_size - self.doc_fields.len());
+      }
+      self.doc_fields.push(pf_idx);
     }
-    self.doc_fields.push(pf_idx);
     *doc_field_idx += 1;
     let pf = &mut self.per_fields[pf_idx];
-    Self::update_doc_field_schema(field.name(), &mut pf.schema, &field_type)?;
-    if let Some(attrs) = field_type.get_attributes()
+    let attributes = match field_type {
+      IndexableFieldTypeEnum::FieldType(field_type) => {
+        Self::update_doc_field_schema(field_name, &mut pf.schema, field_type)?;
+        field_type.get_attributes()
+      },
+      IndexableFieldTypeEnum::Custom(field_type) => {
+        Self::update_doc_field_schema(field_name, &mut pf.schema, field_type)?;
+        field_type.get_attributes()
+      },
+    };
+    if let Some(attrs) = attributes
       && pf.field_info.is_none()
       && !attrs.is_empty()
     {
@@ -1216,11 +1239,8 @@ where
   }
   /// Returns a previously created [`PerField`], absorbing the type information from
   /// [`FieldType`](crate::core::document::field_type::FieldType), and creates a new [`PerField`] if this field name wasn't seen yet.
-  pub(crate) fn get_or_add_per_field<F>(&mut self, field: &F, reserved: bool) -> Result<usize>
-  where
-    F: IndexableField,
-  {
-    let field_name = field.name();
+  #[inline(always)]
+  pub(crate) fn get_or_add_per_field(&mut self, field_name: &str, reserved: bool) -> Result<usize> {
     let hash_pos = CoreHelper::calculate_hash(field_name) as usize & self.hash_mask;
     let mut per_field_index = self.field_hash[hash_pos];
     let mut conflict = false;
@@ -1260,7 +1280,7 @@ where
     field_type: &IFT,
   ) -> Result<()>
   where
-    IFT: IndexableFieldType,
+    IFT: IndexableFieldType + ?Sized,
   {
     if *field_type.index_options() != IndexOptions::None {
       schema.set_index_options(
@@ -1306,7 +1326,7 @@ where
 
   fn verify_unindexed_field_type<IFT>(name: &str, ft: &IFT) -> Result<()>
   where
-    IFT: IndexableFieldType,
+    IFT: IndexableFieldType + ?Sized,
   {
     if ft.store_term_vectors() {
       return Err(LuceneError::illegal_argument(format!(
@@ -1477,7 +1497,7 @@ where
     None
   }
   pub(crate) fn mark_as_reserved(&mut self, field: &Fields) -> Result<()> {
-    self.get_or_add_per_field(field, true).map(|_| ())
+    self.get_or_add_per_field(field.name(), true).map(|_| ())
   }
 
   pub(crate) fn get_has_doc_values(&mut self, field: &str) -> Result<Option<DocValuesWriterDISI>> {
@@ -1536,7 +1556,7 @@ pub(crate) struct PerField {
   pub(crate) reserved: bool,
   pub(crate) field_info: Option<Arc<FieldInfo>>,
   pub(crate) invert_state: Option<FieldInvertState>,
-  pub(crate) terms_hash_per_field: Option<FreqProxTermsWriterPerField>,
+  pub(crate) terms_hash_per_field: Option<Box<FreqProxTermsWriterPerField>>,
   pub(crate) doc_values_writer: Option<DocValuesWriterEnum>,
   pub(crate) point_values_writer: Option<PointValuesWriter>,
   pub(crate) knn_field_vectors_writer: Option<usize>,
@@ -1609,7 +1629,7 @@ impl PerField {
       *fi.get_index_options(),
     );
     self.invert_state = Some(state);
-    self.terms_hash_per_field = Some(terms_hash.add_field(fi.clone())?);
+    self.terms_hash_per_field = Some(Box::new(terms_hash.add_field(fi.clone())?));
 
     if !fi.omits_norms() {
       // Even if no documents actually succeed in setting a norm, we still write norms for this
