@@ -14,14 +14,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use crate::core::index::field_info::FieldInfo;
 use crate::core::index::index_options::IndexOptions;
+use std::sync::Arc;
+
+#[cfg_attr(test, derive(Clone))]
+enum InvertedFieldName {
+  Owned(String),
+  Registered(Arc<FieldInfo>),
+}
+
 /// This struct tracks the number and position / offset parameters of terms being
 /// added to the index. The information collected in This struct is also used to
 /// calculate the normalization factor for a field.
 #[cfg_attr(test, derive(Clone))]
 pub struct FieldInvertState {
   index_created_version_major: i32,
-  name: String,
+  name: InvertedFieldName,
   index_options: IndexOptions,
   pub(crate) position: i32,
   pub(crate) length: i32,
@@ -37,7 +46,7 @@ impl Default for FieldInvertState {
   fn default() -> Self {
     FieldInvertState {
       index_created_version_major: 6,
-      name: String::new(),
+      name: InvertedFieldName::Owned(String::new()),
       index_options: IndexOptions::None,
       position: -1,
       length: 0,
@@ -61,7 +70,30 @@ impl FieldInvertState {
   where
     FName: Into<String>,
   {
-    let name = name.into();
+    Self::with_name(
+      index_created_version_major,
+      InvertedFieldName::Owned(name.into()),
+      index_options,
+    )
+  }
+
+  pub(crate) fn from_field_info(
+    index_created_version_major: i32,
+    field_info: Arc<FieldInfo>,
+  ) -> Self {
+    let index_options = *field_info.get_index_options();
+    Self::with_name(
+      index_created_version_major,
+      InvertedFieldName::Registered(field_info),
+      index_options,
+    )
+  }
+
+  fn with_name(
+    index_created_version_major: i32,
+    name: InvertedFieldName,
+    index_options: IndexOptions,
+  ) -> Self {
     FieldInvertState {
       index_created_version_major,
       name,
@@ -159,7 +191,10 @@ impl FieldInvertState {
 
   /// Return the field's name.
   pub fn get_name(&self) -> &str {
-    &self.name
+    match &self.name {
+      InvertedFieldName::Owned(name) => name,
+      InvertedFieldName::Registered(field_info) => field_info.get_name(),
+    }
   }
 
   /// Return the version that was used to create the index, or 6 if it was

@@ -20,7 +20,6 @@ use crate::core::index::byte_slice_reader::ByteSliceReader;
 use crate::core::index::field_info::FieldInfo;
 use crate::core::index::field_invert_state::FieldInvertState;
 use crate::core::index::index_options::IndexOptions;
-use crate::core::index::indexable_field::IndexableField;
 use crate::core::index::indexable_field_type::IndexableFieldType;
 use crate::core::index::parallel_postings_array::{
   ParallelPostingsArray, PostingsArray, PostingsArrayBase,
@@ -30,43 +29,71 @@ use crate::core::index::terms_hash_per_field::{
   PostingsArrayWrapper, TermsHashPerField, TermsHashPerFieldBase,
 };
 use crate::core::store::directory::Directory;
-use crate::core::util::ByteBlockPool;
 use crate::core::util::array_util::ArrayUtil;
 use crate::core::util::attribute_source::AttributeSource;
 use crate::core::util::bit_util::BitUtil;
 use crate::core::util::bytes_ref_block_pool::BytesRefBlockPool;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::int_block_pool::IntBlockPool;
-use std::sync::Arc;
+use crate::core::util::{ByteBlockPool, SharedCounter};
+
+pub(crate) struct TermVectorOptions {
+  vectors: bool,
+  positions: bool,
+  offsets: bool,
+  payloads: bool,
+}
+
+impl TermVectorOptions {
+  pub(crate) fn from_field_type(field_type: &impl IndexableFieldType) -> Self {
+    Self {
+      vectors: field_type.store_term_vectors(),
+      positions: field_type.store_term_vector_positions(),
+      offsets: field_type.store_term_vector_offsets(),
+      payloads: field_type.store_term_vector_payloads(),
+    }
+  }
+}
 
 pub(crate) struct TermVectorsConsumerPerField {
-  field_info: Arc<FieldInfo>,
   pub(super) do_vectors: bool,
   do_vector_positions: bool,
   do_vector_offsets: bool,
   do_vector_payloads: bool,
   term_byte_pool: BytesRefBlockPool,
   has_payloads: bool,
-  base: TermsHashPerField<TermVectorsPostingsArray>,
+  base: Option<Box<TermsHashPerField<TermVectorsPostingsArray>>>,
 }
 impl TermVectorsConsumerPerField {
-  pub(crate) fn new<D>(
-    terms_hash: &TermVectorsConsumer<D>,
-    field_info: Arc<FieldInfo>,
-  ) -> Result<Self>
+  fn missing_postings_state() -> LuceneError {
+    LuceneError::illegal_state("term vector postings state is missing")
+  }
+
+  fn new_postings_state(
+    field_info: &FieldInfo,
+    bytes_used: &SharedCounter,
+  ) -> Result<Box<TermsHashPerField<TermVectorsPostingsArray>>> {
+    Ok(Box::new(TermsHashPerField::new(
+      2,
+      bytes_used.clone(),
+      PostingsArrayWrapper::new(field_info.index_options),
+      field_info.index_options,
+      true,
+    )?))
+  }
+  pub(crate) fn new<D>(terms_hash: &TermVectorsConsumer<D>, field_info: &FieldInfo) -> Result<Self>
   where
     D: Directory,
   {
-    let postings_array_wrapper = PostingsArrayWrapper::new(field_info.index_options);
-    let base = TermsHashPerField::new(
-      2,
-      terms_hash.base.bytes_used.clone(),
-      postings_array_wrapper,
-      field_info.index_options,
-      field_info.has_term_vectors(),
-    )?;
+    let bytes_used = &terms_hash.base.bytes_used;
+    // Keep validation state for every indexed field, but allocate the postings
+    // state only for a field that stores term vectors.
+    let base = if field_info.has_term_vectors() {
+      Some(Self::new_postings_state(field_info, bytes_used)?)
+    } else {
+      None
+    };
     Ok(Self {
-      field_info,
       do_vectors: false,
       do_vector_positions: false,
       do_vector_offsets: false,
@@ -80,6 +107,7 @@ impl TermVectorsConsumerPerField {
   pub(crate) fn finish_document<D>(
     &mut self,
     term_vectors_consumer: &mut TermVectorsConsumer<D>,
+    field_info: &FieldInfo,
     int_pool: &mut IntBlockPool,
     byte_pool: &ByteBlockPool,
     term_byte_pool: &ByteBlockPool,
@@ -92,12 +120,13 @@ impl TermVectorsConsumerPerField {
     }
     self.do_vectors = false;
 
-    term_vectors_consumer.write_per_field(self, int_pool, byte_pool, term_byte_pool)
+    term_vectors_consumer.write_per_field(self, field_info, int_pool, byte_pool, term_byte_pool)
   }
 
   pub(crate) fn write_to_writer<TW>(
     &mut self,
     tv: &mut TW,
+    field_info: &FieldInfo,
     int_pool: &mut IntBlockPool,
     byte_pool: &ByteBlockPool,
     term_byte_pool: &ByteBlockPool,
@@ -105,20 +134,23 @@ impl TermVectorsConsumerPerField {
   where
     TW: TermVectorsWriter,
   {
-    let num_postings = self.base.get_num_terms();
+    let base = self
+      .base
+      .as_deref_mut()
+      .ok_or_else(Self::missing_postings_state)?;
+    let num_postings = base.get_num_terms();
 
-    self.base.sort_terms(term_byte_pool)?;
-    let term_ids = self.base.get_sorted_term_ids();
+    base.sort_terms(term_byte_pool)?;
+    let term_ids = base.get_sorted_term_ids();
 
     tv.start_field(
-      &self.field_info,
+      field_info,
       num_postings,
       self.do_vector_positions,
       self.do_vector_offsets,
       self.has_payloads,
     )?;
-    let postings = self
-      .base
+    let postings = base
       .postings_array()
       .ok_or_else(|| LuceneError::illegal_state("postings_array not initialized"))?;
     let mut off_reader = ByteSliceReader::new(byte_pool);
@@ -139,17 +171,13 @@ impl TermVectorsConsumerPerField {
 
       if self.do_vector_positions || self.do_vector_offsets {
         let positions = if self.do_vector_positions {
-          self
-            .base
-            .init_reader(&mut pos_reader, term_id, 0, int_pool)?;
+          base.init_reader(&mut pos_reader, term_id, 0, int_pool)?;
           Some(&mut pos_reader)
         } else {
           None
         };
         let offsets = if self.do_vector_offsets {
-          self
-            .base
-            .init_reader(&mut off_reader, term_id, 1, int_pool)?;
+          base.init_reader(&mut off_reader, term_id, 1, int_pool)?;
           Some(&mut off_reader)
         } else {
           None
@@ -161,11 +189,13 @@ impl TermVectorsConsumerPerField {
     }
 
     tv.finish_field()?;
-    self.field_info.set_store_term_vectors()?;
+    field_info.set_store_term_vectors()?;
     Ok(())
   }
   pub(crate) fn reset(&mut self, byte_pool: &mut ByteBlockPool) {
-    self.base.reset(byte_pool);
+    if let Some(base) = self.base.as_deref_mut() {
+      base.reset(byte_pool);
+    }
   }
   // Secondary entry point (for 2nd & subsequent TermsHash),
   // because token text has already been "interned" into
@@ -185,17 +215,18 @@ impl TermVectorsConsumerPerField {
   where
     AS: AttributeSource,
   {
-    let term_id = self
+    let base = self
       .base
+      .as_deref_mut()
+      .ok_or_else(Self::missing_postings_state)?;
+    let term_id = base
       .bytes_hash
       .add_by_pool_offset(text_start, term_byte_pool)?;
     if term_id >= 0 {
       let term_id = term_id as usize;
       // First time we are seeing this token since we last
       // flushed the hash.
-      self
-        .base
-        .init_stream_slices(term_id, doc_id, int_pool, byte_pool)?;
+      base.init_stream_slices(term_id, doc_id, int_pool, byte_pool)?;
       self.new_term(
         term_id,
         doc_id,
@@ -205,7 +236,7 @@ impl TermVectorsConsumerPerField {
         byte_pool,
       )?;
     } else {
-      let term_id = self.base.position_stream_slice(term_id, doc_id)?;
+      let term_id = base.position_stream_slice(term_id, doc_id)?;
       self.add_term(
         term_id,
         doc_id,
@@ -217,90 +248,92 @@ impl TermVectorsConsumerPerField {
     }
     Ok(())
   }
-  pub(crate) fn start<F>(
+  pub(crate) fn start(
     &mut self,
-    field: &F,
+    field_info: &FieldInfo,
+    options: TermVectorOptions,
     first: bool,
+    bytes_used: &SharedCounter,
     byte_pool: &mut ByteBlockPool,
-  ) -> Result<bool>
-  where
-    F: IndexableField,
-  {
-    debug_assert!(*field.field_type().index_options() != IndexOptions::None);
-
+  ) -> Result<bool> {
+    let field_name = field_info.get_name();
     if first {
-      if self.base.get_num_terms() != 0 {
-        // Only necessary if previous doc hit a
-        // non-aborting error while writing vectors in
-        // this field:
-        self.base.reset(byte_pool);
+      if let Some(base) = self.base.as_deref_mut()
+        && base.get_num_terms() != 0
+      {
+        // The previous document hit a non-aborting error writing these vectors.
+        base.reset(byte_pool);
       }
 
       self.has_payloads = false;
 
-      self.do_vectors = field.field_type().store_term_vectors();
+      self.do_vectors = options.vectors;
 
       if self.do_vectors {
-        self.base.reinit_hash()?;
-        self.do_vector_positions = field.field_type().store_term_vector_positions();
+        if let Some(base) = self.base.as_deref_mut() {
+          base.reinit_hash()?;
+        } else {
+          self.base = Some(Self::new_postings_state(field_info, bytes_used)?);
+        }
+        self.do_vector_positions = options.positions;
         // Somewhat confusingly, unlike postings, you are
         // allowed to index TV offsets without TV positions:
-        self.do_vector_offsets = field.field_type().store_term_vector_offsets();
+        self.do_vector_offsets = options.offsets;
 
         if self.do_vector_positions {
-          self.do_vector_payloads = field.field_type().store_term_vector_payloads();
+          self.do_vector_payloads = options.payloads;
         } else {
           self.do_vector_payloads = false;
-          if field.field_type().store_term_vector_payloads() {
+          if options.payloads {
             return Err(LuceneError::illegal_argument(format!(
               "cannot index term vector payloads without term vector positions (field=\"{}\")",
-              field.name()
+              field_name
             )));
           }
         }
       } else {
-        if field.field_type().store_term_vector_offsets() {
+        if options.offsets {
           return Err(LuceneError::illegal_argument(format!(
             "cannot index term vector offsets when term vectors are not indexed (field=\"{}\")",
-            field.name()
+            field_name
           )));
         }
-        if field.field_type().store_term_vector_positions() {
+        if options.positions {
           return Err(LuceneError::illegal_argument(format!(
             "cannot index term vector positions when term vectors are not indexed (field=\"{}\")",
-            field.name()
+            field_name
           )));
         }
-        if field.field_type().store_term_vector_payloads() {
+        if options.payloads {
           return Err(LuceneError::illegal_argument(format!(
             "cannot index term vector payloads when term vectors are not indexed (field=\"{}\")",
-            field.name()
+            field_name
           )));
         }
       }
     } else {
-      if self.do_vectors != field.field_type().store_term_vectors() {
+      if self.do_vectors != options.vectors {
         return Err(LuceneError::illegal_argument(format!(
           "all instances of a given field name must have the same term vectors settings (storeTermVectors changed for field=\"{}\")",
-          field.name()
+          field_name
         )));
       }
-      if self.do_vector_positions != field.field_type().store_term_vector_positions() {
+      if self.do_vector_positions != options.positions {
         return Err(LuceneError::illegal_argument(format!(
           "all instances of a given field name must have the same term vectors settings (storeTermVectorPositions changed for field=\"{}\")",
-          field.name()
+          field_name
         )));
       }
-      if self.do_vector_offsets != field.field_type().store_term_vector_offsets() {
+      if self.do_vector_offsets != options.offsets {
         return Err(LuceneError::illegal_argument(format!(
           "all instances of a given field name must have the same term vectors settings (storeTermVectorOffsets changed for field=\"{}\")",
-          field.name()
+          field_name
         )));
       }
-      if self.do_vector_payloads != field.field_type().store_term_vector_payloads() {
+      if self.do_vector_payloads != options.payloads {
         return Err(LuceneError::illegal_argument(format!(
           "all instances of a given field name must have the same term vectors settings (storeTermVectorPayloads changed for field=\"{}\")",
-          field.name()
+          field_name
         )));
       }
     }
@@ -317,8 +350,11 @@ impl TermVectorsConsumerPerField {
   where
     AS: AttributeSource,
   {
-    let postings = self
+    let base = self
       .base
+      .as_deref_mut()
+      .ok_or_else(Self::missing_postings_state)?;
+    let postings = base
       .postings_array()
       .ok_or_else(|| LuceneError::illegal_state("postings_array not initialized"))?;
     let mut last_offset = None;
@@ -330,15 +366,13 @@ impl TermVectorsConsumerPerField {
       let start_offset = field_state.offset + start;
       let end_offset = field_state.offset + end;
 
-      self.base.write_vint(
+      base.write_vint(
         1,
         start_offset - postings.term_data[term_id][1],
         int_pool,
         byte_pool,
       )?;
-      self
-        .base
-        .write_vint(1, end_offset - start_offset, int_pool, byte_pool)?;
+      base.write_vint(1, end_offset - start_offset, int_pool, byte_pool)?;
       last_offset = Some(end_offset);
     }
 
@@ -349,13 +383,9 @@ impl TermVectorsConsumerPerField {
         && let Some(payload) = attribute_source.get_payload()?
       {
         if payload.length > 0 {
-          self
-            .base
-            .write_vint(0, (pos << 1) | 1, int_pool, byte_pool)?;
-          self
-            .base
-            .write_vint(0, payload.length as i32, int_pool, byte_pool)?;
-          self.base.write_bytes(
+          base.write_vint(0, (pos << 1) | 1, int_pool, byte_pool)?;
+          base.write_vint(0, payload.length as i32, int_pool, byte_pool)?;
+          base.write_bytes(
             0,
             &payload.bytes,
             payload.offset,
@@ -365,16 +395,15 @@ impl TermVectorsConsumerPerField {
           )?;
           self.has_payloads = true;
         } else {
-          self.base.write_vint(0, pos << 1, int_pool, byte_pool)?;
+          base.write_vint(0, pos << 1, int_pool, byte_pool)?;
         }
       } else {
-        self.base.write_vint(0, pos << 1, int_pool, byte_pool)?;
+        base.write_vint(0, pos << 1, int_pool, byte_pool)?;
       }
 
       last_position = Some(field_state.position);
     }
-    let postings = self
-      .base
+    let postings = base
       .postings_array_mut()
       .ok_or_else(|| LuceneError::illegal_state("postings_array not initialized"))?;
     if let Some(offset) = last_offset {
@@ -386,7 +415,7 @@ impl TermVectorsConsumerPerField {
 
     Ok(())
   }
-  pub(crate) fn get_term_freq<AS>(&self, attribute_source: &AS) -> Result<i32>
+  pub(crate) fn get_term_freq<AS>(&self, field_name: &str, attribute_source: &AS) -> Result<i32>
   where
     AS: AttributeSource,
   {
@@ -396,13 +425,13 @@ impl TermVectorsConsumerPerField {
       if self.do_vector_positions {
         return Err(LuceneError::illegal_argument(format!(
           "field \"{}\": cannot index term vector positions while using custom TermFrequencyAttribute",
-          self.field_info.name
+          field_name
         )));
       }
       if self.do_vector_offsets {
         return Err(LuceneError::illegal_argument(format!(
           "field \"{}\": cannot index term vector offsets while using custom TermFrequencyAttribute",
-          self.field_info.name
+          field_name
         )));
       }
     }
@@ -417,7 +446,12 @@ impl TermVectorsConsumerPerField {
   where
     D: Directory + Clone,
   {
-    if !self.do_vectors || self.base.get_num_terms() == 0 {
+    if !self.do_vectors
+      || self
+        .base
+        .as_ref()
+        .is_none_or(|base| base.get_num_terms() == 0)
+    {
       return Ok(());
     }
     term_vectors_consumer.add_field_to_flush(PerFieldMeta { idx: field_index })
@@ -436,9 +470,12 @@ impl TermsHashPerFieldBase for TermVectorsConsumerPerField {
   where
     AS: AttributeSource,
   {
-    let freq = self.get_term_freq(attribute_source)?;
-    let postings = self
+    let freq = self.get_term_freq(field_state.get_name(), attribute_source)?;
+    let base = self
       .base
+      .as_deref_mut()
+      .ok_or_else(Self::missing_postings_state)?;
+    let postings = base
       .postings_array_mut()
       .ok_or_else(|| LuceneError::illegal_state("postings_array not initialized"))?;
     postings.term_data[term_id][0] = freq;
@@ -461,9 +498,12 @@ impl TermsHashPerFieldBase for TermVectorsConsumerPerField {
   where
     AS: AttributeSource,
   {
-    let freq = self.get_term_freq(attribute_source)?;
-    let postings = self
+    let freq = self.get_term_freq(state.get_name(), attribute_source)?;
+    let base = self
       .base
+      .as_deref_mut()
+      .ok_or_else(Self::missing_postings_state)?;
+    let postings = base
       .postings_array_mut()
       .ok_or_else(|| LuceneError::illegal_state("postings_array not initialized"))?;
 
@@ -475,7 +515,6 @@ impl TermsHashPerFieldBase for TermVectorsConsumerPerField {
 }
 
 pub(crate) struct TermVectorsPostingsArray {
-  pub(crate) size: usize,
   // Per-term [frequency, last offset, last position], without element padding.
   term_data: Vec<[i32; 3]>,
   pub(crate) parent: ParallelPostingsArray,
@@ -484,7 +523,6 @@ pub(crate) struct TermVectorsPostingsArray {
 impl TermVectorsPostingsArray {
   pub fn new(size: usize) -> Self {
     TermVectorsPostingsArray {
-      size,
       term_data: vec![[0; 3]; size],
       parent: ParallelPostingsArray::new(size),
     }
@@ -497,7 +535,6 @@ impl PostingsArrayBase for TermVectorsPostingsArray {
   }
   fn copy_to(&mut self, new_size: usize) -> Result<()> {
     self.parent.copy_to(new_size)?;
-    self.size = new_size;
     ArrayUtil::grow_exact(&mut self.term_data, new_size, || [0; 3])?;
     Ok(())
   }
@@ -506,9 +543,6 @@ impl PostingsArrayBase for TermVectorsPostingsArray {
 impl PostingsArray for TermVectorsPostingsArray {
   fn new_for_index(size: usize, _index_options: IndexOptions) -> Self {
     Self::new(size)
-  }
-  fn get_size(&self) -> usize {
-    self.size
   }
   fn get_address_offset(&self) -> &[[i32; 3]] {
     self.parent.get_address_offset()

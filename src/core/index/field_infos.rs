@@ -24,7 +24,7 @@ use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::leaf_reader_context::LeafReaderContext;
 use crate::core::index::vector_encoding::VectorEncoding;
 use crate::core::index::vector_similarity_function::VectorSimilarityFunction;
-use crate::core::util::collection_util::CollectionUtil;
+use crate::core::util::TryIntoInt;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use parking_lot::Mutex;
 use std::borrow::Borrow;
@@ -52,9 +52,9 @@ pub struct FieldInfos {
   soft_deletes_field: Option<Arc<FieldInfo>>,
 
   parent_field: Option<Arc<FieldInfo>>,
-  // Dense field numbers use the already sorted values; sparse numbers retain indexed slots.
-  by_number: Option<Box<[usize]>>,
-  by_name: HashMap<String, Arc<FieldInfo>>,
+  by_number: Option<Box<[u32]>>,
+  search_by_number: bool,
+  by_name: HashMap<Box<str>, Arc<FieldInfo>>,
   values: Box<[Arc<FieldInfo>]>,
   pub(crate) hook: FieldInfosHook,
 }
@@ -177,7 +177,12 @@ impl FieldInfosDefaults {
     Ok(match &in_.by_number {
       Some(by_number) => by_number
         .get(field_number as usize)
-        .and_then(|&index| in_.values.get(index)),
+        .and_then(|&index| in_.values.get(index as usize)),
+      None if in_.search_by_number => in_
+        .values
+        .binary_search_by_key(&field_number, |info| info.number)
+        .ok()
+        .map(|index| &in_.values[index]),
       None => match in_.values.as_ref() {
         [info] => (info.number == field_number).then_some(info),
         [first, second] => {
@@ -320,7 +325,14 @@ impl FieldInfosHook {
 impl FieldInfos {
   /// Constructs a new FieldInfos from an array of FieldInfo objects. The
   /// array can be used directly as the backing structure.
-  pub fn new(mut infos: Vec<Arc<FieldInfo>>) -> Result<Self> {
+  pub fn new(infos: Vec<Arc<FieldInfo>>) -> Result<Self> {
+    Self::from_infos(infos, None)
+  }
+
+  fn from_infos(
+    mut infos: Vec<Arc<FieldInfo>>,
+    names: Option<HashMap<Box<str>, Arc<FieldInfo>>>,
+  ) -> Result<Self> {
     let mut has_term_vectors = false;
     let mut has_postings = false;
     let mut has_prox = false;
@@ -335,9 +347,11 @@ impl FieldInfos {
     let mut parent_field: Option<Arc<FieldInfo>> = None;
 
     let build_pair_names = infos.len() == 2;
-    let build_names = infos.len() > 2;
-    let mut by_name = if build_names {
-      CollectionUtil::new_hashmap(infos.len())
+    let build_names = infos.len() > 2 && names.is_none();
+    let mut by_name = if let Some(names) = names.filter(|_| infos.len() > 2) {
+      names
+    } else if build_names {
+      HashMap::with_capacity(infos.len())
     } else {
       HashMap::new()
     };
@@ -357,7 +371,8 @@ impl FieldInfos {
       } else {
         field_number_strictly_ascending = false;
       }
-      if build_names && let Some(previous) = by_name.insert(info.name.clone(), info.clone()) {
+      if build_names && let Some(previous) = by_name.insert(info.name.as_str().into(), info.clone())
+      {
         return Err(LuceneError::illegal_argument(format!(
           "duplicate field names: {} and {} have: {}",
           previous.number, info.number, info.name
@@ -411,6 +426,7 @@ impl FieldInfos {
       LuceneError::illegal_argument(format!("field number is too large: {max_field_number}"))
     })? as usize;
     let by_number;
+    let search_by_number = infos.len() > 2 && by_number_len > infos.len().saturating_mul(8);
     let values: Vec<Arc<FieldInfo>>;
     if infos.len() <= 2 || (field_number_strictly_ascending && by_number_len == infos.len()) {
       if let [first, second] = infos.as_slice() {
@@ -428,18 +444,36 @@ impl FieldInfos {
       by_number = None;
       infos.shrink_to_fit();
       values = infos;
+    } else if search_by_number {
+      // Searching the sorted fields avoids allocating slots for a mostly empty number range.
+      if !field_number_strictly_ascending {
+        let mut seen = HashMap::with_capacity(infos.len());
+        for field_info in &infos {
+          if let Some(existing) = seen.insert(field_info.number, field_info) {
+            return Err(LuceneError::illegal_argument(format!(
+              "duplicate field numbers: {} and {} have: {}",
+              existing.name, field_info.name, field_info.number
+            )));
+          }
+        }
+        infos.sort_unstable_by_key(|fi| fi.number);
+      }
+      infos.shrink_to_fit();
+      values = infos;
+      by_number = None;
     } else {
-      let mut indexed_slots: smallvec::SmallVec<[usize; 8]> =
-        smallvec::smallvec![usize::MAX; by_number_len];
+      let mut indexed_slots: smallvec::SmallVec<[u32; 8]> =
+        smallvec::smallvec![u32::MAX; by_number_len];
       for (index, field_info) in infos.iter().enumerate() {
         let slot = &mut indexed_slots[field_info.number as usize];
-        if let Some(existing) = infos.get(*slot) {
+        if let Some(existing) = infos.get(*slot as usize) {
           return Err(LuceneError::illegal_argument(format!(
             "duplicate field numbers: {} and {} have: {}",
             existing.name, field_info.name, field_info.number
           )));
         }
-        *slot = index;
+        // Each preceding field occupied a distinct slot, and by_number_len fits in i32.
+        *slot = index as u32;
       }
       if by_number_len == infos.len() {
         // Unique field numbers now cover 0..infos.len(), so retain these owners
@@ -457,12 +491,12 @@ impl FieldInfos {
           infos.sort_unstable_by_key(|fi| fi.number);
         }
         // Occupied slots appear in the same field-number order as the sorted values.
-        let mut indices = 0..infos.len();
+        let mut indices = 0..infos.len() as u32;
         let to_index = |slot| {
-          if slot == usize::MAX {
-            usize::MAX
+          if slot == u32::MAX {
+            u32::MAX
           } else {
-            indices.next().unwrap_or(usize::MAX)
+            indices.next().unwrap_or(u32::MAX)
           }
         };
         infos.shrink_to_fit();
@@ -491,6 +525,7 @@ impl FieldInfos {
       soft_deletes_field,
       parent_field,
       by_number: by_number.map(Vec::into_boxed_slice),
+      search_by_number,
       by_name,
       values: values.into_boxed_slice(),
       hook: FieldInfosHook::Default,
@@ -691,40 +726,35 @@ impl<'a> IntoIterator for &'a FieldInfos {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FieldDimensions {
-  pub dimension_count: usize,
-  pub index_dimension_count: usize,
-  pub dimension_num_bytes: usize,
+  pub dimension_count: u32,
+  pub index_dimension_count: u32,
+  pub dimension_num_bytes: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct FieldVectorProperties {
-  pub num_dimensions: i32,
-  pub vector_encoding: VectorEncoding,
-  pub similarity_function: VectorSimilarityFunction,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct IndexOptionsProperties {
-  pub store_term_vectors: bool,
-  pub omit_norms: bool,
-}
+const STORE_TERM_VECTORS: u8 = 1;
+const OMIT_NORMS: u8 = 1 << 1;
+const VECTOR_FLOAT: u8 = 1 << 2;
+const DOC_VALUES_RANGE: u8 = 1 << 3;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FieldProperties {
   pub number: i32,
   pub index_options: IndexOptions,
-  pub index_options_properties: Option<IndexOptionsProperties>,
+  schema_flags: u8,
   pub doc_values_type: DocValuesType,
-  pub doc_values_skip_index: DocValuesSkipIndexType,
-  pub field_dimensions: FieldDimensions,
-  pub field_vector_properties: FieldVectorProperties,
+  point_dimensions: Option<[u8; 3]>,
+  vector_dimensions: i32,
+  vector_similarity: VectorSimilarityFunction,
 }
 
 pub(crate) type FieldNumbersLock = Arc<Mutex<FieldNumbers>>;
 pub(crate) struct FieldNumbers {
-  number_to_name: HashSet<i32>,
-  field_properties: HashMap<String, FieldProperties>,
-  lowest_unassigned_field_number: i32,
+  // Numbers up to assigned_prefix_end are present without individual entries.
+  assigned_beyond_prefix: HashSet<i32>,
+  field_properties: HashMap<Box<str>, FieldProperties>,
+  // Preserve wide dimensions accepted by the low-level FieldInfo API.
+  wide_point_dimensions: HashMap<i32, FieldDimensions>,
+  assigned_prefix_end: i32,
   soft_deletes_field_name: Option<String>,
   // The parent document field from IWC to mark parent document when indexing
   parent_field_name: Option<String>,
@@ -751,9 +781,10 @@ impl FieldNumbers {
     }
 
     Ok(FieldNumbers {
-      number_to_name: HashSet::new(),
+      assigned_beyond_prefix: HashSet::new(),
       field_properties: HashMap::new(),
-      lowest_unassigned_field_number: -1,
+      wide_point_dimensions: HashMap::new(),
+      assigned_prefix_end: -1,
       soft_deletes_field_name,
       parent_field_name,
     })
@@ -782,55 +813,73 @@ impl FieldNumbers {
         field_properties.number
       },
       None => {
-        // first time we see this field in this index
-        let field_number = if fi.number != -1 && !self.number_to_name.contains(&fi.number) {
-          // cool - we can use this number globally
-          fi.number
+        let field_dimensions = FieldDimensions {
+          dimension_count: fi.get_point_dimension_count().try_convert()?,
+          index_dimension_count: fi.get_point_index_dimension_count().try_convert()?,
+          dimension_num_bytes: fi.get_point_num_bytes().try_convert()?,
+        };
+        let preferred = fi.number;
+        let next = self.assigned_prefix_end.checked_add(1);
+        let field_number = if preferred != -1
+          && !(0..=self.assigned_prefix_end).contains(&preferred)
+          && !self.assigned_beyond_prefix.contains(&preferred)
+        {
+          preferred
         } else {
-          // find a new FieldNumber
-          loop {
-            self.lowest_unassigned_field_number += 1;
-            if !self
-              .number_to_name
-              .contains(&self.lowest_unassigned_field_number)
-            {
-              break;
-            }
-            // might not be up to date - lets do the work once needed
-          }
-          self.lowest_unassigned_field_number
+          next.ok_or_else(|| LuceneError::illegal_argument("too many registered field numbers"))?
         };
         debug_assert!(field_number >= 0);
-        self.number_to_name.insert(field_number);
-        let index_options_props = if fi.get_index_options() != &IndexOptions::None {
-          Some(IndexOptionsProperties {
-            store_term_vectors: fi.has_term_vectors(),
-            omit_norms: fi.omits_norms(),
-          })
+        if Some(field_number) == next {
+          self.assigned_prefix_end = field_number;
+          while let Some(candidate) = self.assigned_prefix_end.checked_add(1)
+            && self.assigned_beyond_prefix.remove(&candidate)
+          {
+            self.assigned_prefix_end = candidate;
+          }
         } else {
-          None
+          self.assigned_beyond_prefix.insert(field_number);
+        }
+        let schema_flags = if fi.get_index_options() != &IndexOptions::None {
+          (u8::from(fi.has_term_vectors()) * STORE_TERM_VECTORS)
+            | (u8::from(fi.omits_norms()) * OMIT_NORMS)
+        } else {
+          0
+        };
+        let vector_encoding = match fi.get_vector_encoding() {
+          VectorEncoding::BYTE(_) => 0,
+          VectorEncoding::FLOAT32(_) => VECTOR_FLOAT,
+        };
+        let skip_index = match fi.doc_values_skip_index_type() {
+          DocValuesSkipIndexType::None => 0,
+          DocValuesSkipIndexType::Range => DOC_VALUES_RANGE,
         };
         let field_properties = FieldProperties {
           number: field_number,
           index_options: *fi.get_index_options(),
-          index_options_properties: index_options_props,
+          schema_flags: schema_flags | vector_encoding | skip_index,
           doc_values_type: *fi.get_doc_values_type(),
-          doc_values_skip_index: *fi.doc_values_skip_index_type(),
-          field_dimensions: FieldDimensions {
-            dimension_count: fi.get_point_dimension_count(),
-            index_dimension_count: fi.get_point_index_dimension_count(),
-            dimension_num_bytes: fi.get_point_num_bytes(),
+          point_dimensions: match [
+            field_dimensions.dimension_count,
+            field_dimensions.index_dimension_count,
+            field_dimensions.dimension_num_bytes,
+          ]
+          .map(u8::try_from)
+          {
+            [Ok(dimensions), Ok(index_dimensions), Ok(bytes)] => {
+              Some([dimensions, index_dimensions, bytes])
+            },
+            _ => None,
           },
-          field_vector_properties: FieldVectorProperties {
-            num_dimensions: fi.get_vector_dimension(),
-            vector_encoding: *fi.get_vector_encoding(),
-            similarity_function: *fi.get_vector_similarity_function(),
-          },
+          vector_dimensions: fi.get_vector_dimension(),
+          vector_similarity: *fi.get_vector_similarity_function(),
         };
         let number = field_properties.number;
+        if field_properties.point_dimensions.is_none() {
+          self.wide_point_dimensions.insert(number, field_dimensions);
+        }
         self
           .field_properties
-          .insert(field_name.to_string(), field_properties);
+          .insert(field_name.into(), field_properties);
         number
       },
     };
@@ -907,21 +956,13 @@ impl FieldNumbers {
       fi.get_index_options(),
     )?;
     if field_properties.index_options != IndexOptions::None {
-      let index_options_properties = field_properties
-        .index_options_properties
-        .as_ref()
-        .ok_or_else(|| {
-          LuceneError::illegal_state(format!(
-            "index option properties are missing for indexed field [{field_name}]"
-          ))
-        })?;
-      let current_term_vector = index_options_properties.store_term_vectors;
+      let current_term_vector = field_properties.schema_flags & STORE_TERM_VECTORS != 0;
       FieldInfo::verify_same_store_term_vectors(
         field_name,
         current_term_vector,
         fi.has_term_vectors(),
       )?;
-      let current_omit_norms = index_options_properties.omit_norms;
+      let current_omit_norms = field_properties.schema_flags & OMIT_NORMS != 0;
       FieldInfo::verify_same_omit_norms(field_name, current_omit_norms, fi.omits_norms())?;
     }
     FieldInfo::verify_same_doc_values_type(
@@ -931,25 +972,42 @@ impl FieldNumbers {
     )?;
     FieldInfo::verify_same_doc_values_skip_index(
       field_name,
-      &field_properties.doc_values_skip_index,
+      if field_properties.schema_flags & DOC_VALUES_RANGE == 0 {
+        &DocValuesSkipIndexType::None
+      } else {
+        &DocValuesSkipIndexType::Range
+      },
       fi.doc_values_skip_index_type(),
     )?;
-    let dims = &field_properties.field_dimensions;
+    let [dimensions, index_dimensions, bytes] = match field_properties.point_dimensions {
+      Some(dimensions) => dimensions.map(usize::from),
+      None => {
+        let wide = &self.wide_point_dimensions[&field_properties.number];
+        [
+          wide.dimension_count as usize,
+          wide.index_dimension_count as usize,
+          wide.dimension_num_bytes as usize,
+        ]
+      },
+    };
     FieldInfo::verify_same_points_options(
       field_name,
-      dims.dimension_count,
-      dims.index_dimension_count,
-      dims.dimension_num_bytes,
+      dimensions,
+      index_dimensions,
+      bytes,
       fi.get_point_dimension_count(),
       fi.get_point_index_dimension_count(),
       fi.get_point_num_bytes(),
     )?;
-    let vec_props = &field_properties.field_vector_properties;
     FieldInfo::verify_same_vector_options(
       field_name,
-      vec_props.num_dimensions,
-      &vec_props.vector_encoding,
-      &vec_props.similarity_function,
+      field_properties.vector_dimensions,
+      if field_properties.schema_flags & VECTOR_FLOAT == 0 {
+        &VectorEncoding::BYTE(1)
+      } else {
+        &VectorEncoding::FLOAT32(4)
+      },
+      &field_properties.vector_similarity,
       fi.get_vector_dimension(),
       fi.get_vector_encoding(),
       fi.get_vector_similarity_function(),
@@ -1024,12 +1082,15 @@ impl FieldNumbers {
           dv_type, field_name, field_props.doc_values_type
         )));
       }
-      if field_props.doc_values_skip_index != DocValuesSkipIndexType::None {
+      if field_props.schema_flags & DOC_VALUES_RANGE != 0 {
         return Err(LuceneError::illegal_argument(format!(
           "Can't update [{dv_type:?}] doc values; the field [{field_name}] must be doc values only field, but it has doc values skip index"
         )));
       }
-      if field_props.field_dimensions.dimension_count != 0 {
+      if field_props
+        .point_dimensions
+        .is_none_or(|dimensions| dimensions[0] != 0)
+      {
         return Err(LuceneError::illegal_argument(format!(
           "Can't update [{dv_type:?}] doc values; the field [{field_name}] must be doc values only field, but is also indexed with points."
         )));
@@ -1039,7 +1100,7 @@ impl FieldNumbers {
           "Can't update [{dv_type:?}] doc values; the field [{field_name}] must be doc values only field, but is also indexed with postings."
         )));
       }
-      if field_props.field_vector_properties.num_dimensions != 0 {
+      if field_props.vector_dimensions != 0 {
         return Err(LuceneError::illegal_argument(format!(
           "Can't update [{dv_type:?}] doc values; the field [{field_name}] must be doc values only field, but is also indexed with vectors."
         )));
@@ -1106,17 +1167,18 @@ impl FieldNumbers {
   }
 
   pub fn get_field_names(&self) -> impl ExactSizeIterator<Item = &str> {
-    self.field_properties.keys().map(String::as_str)
+    self.field_properties.keys().map(Box::as_ref)
   }
 
   pub fn clear(&mut self) {
-    self.number_to_name.clear();
+    self.assigned_beyond_prefix.clear();
     self.field_properties.clear();
-    self.lowest_unassigned_field_number = -1;
+    self.wide_point_dimensions.clear();
+    self.assigned_prefix_end = -1;
   }
 }
 pub struct Builder {
-  by_name: HashMap<String, Arc<FieldInfo>>,
+  by_name: HashMap<Box<str>, Arc<FieldInfo>>,
   global_field_numbers: FieldNumbersLock,
   finished: AtomicBool,
 }
@@ -1189,7 +1251,9 @@ impl Builder {
       fi.is_soft_deletes_field(),
       fi.is_parent_field(),
     )?);
-    self.by_name.insert(fi_new.name.clone(), fi_new.clone());
+    self
+      .by_name
+      .insert(fi_new.name.as_str().into(), fi_new.clone());
     Ok(fi_new)
   }
 
@@ -1202,12 +1266,12 @@ impl Builder {
     fi.number = field_number;
     fi.set_doc_values_gen(-1)?;
     let fi = Arc::new(fi);
-    self.by_name.insert(fi.name.clone(), fi.clone());
+    self.by_name.insert(fi.name.as_str().into(), fi.clone());
     Ok(fi)
   }
 
   fn add_existing(&self, fi: &FieldInfo) -> Result<Option<Arc<FieldInfo>>> {
-    if let Some(cur_fi) = self.by_name.get(&fi.name) {
+    if let Some(cur_fi) = self.by_name.get(fi.name.as_str()) {
       cur_fi.verify_same_schema(fi)?;
 
       let attributes = fi.attributes();
@@ -1244,7 +1308,14 @@ impl Builder {
     FieldInfos::new(self.by_name.values().cloned().collect())
   }
 
-  pub(crate) fn finish_owned(self) -> Result<FieldInfos> {
-    FieldInfos::new(self.by_name.into_values().collect())
+  pub(crate) fn finish_owned(mut self) -> Result<FieldInfos> {
+    self.finish_and_take_names()
+  }
+
+  pub(crate) fn finish_and_take_names(&mut self) -> Result<FieldInfos> {
+    self.finished.store(true, Relaxed);
+    let names = std::mem::take(&mut self.by_name);
+    let infos = names.values().cloned().collect();
+    FieldInfos::from_infos(infos, Some(names))
   }
 }

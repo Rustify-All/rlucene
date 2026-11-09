@@ -18,13 +18,14 @@ use crate::core::index::field_info::FieldInfo;
 use crate::core::index::field_invert_state::FieldInvertState;
 use crate::core::index::freq_prox_terms_writer::FreqProxTermsWriter;
 use crate::core::index::index_options::IndexOptions;
-use crate::core::index::indexable_field::IndexableField;
 use crate::core::index::indexing_chain::IndexContext;
 use crate::core::index::parallel_postings_array::{
   ParallelPostingsArray, PostingsArray, PostingsArrayBase,
 };
 use crate::core::index::term_vectors_consumer::TermVectorsConsumer;
-use crate::core::index::term_vectors_consumer_per_field::TermVectorsConsumerPerField;
+use crate::core::index::term_vectors_consumer_per_field::{
+  TermVectorOptions, TermVectorsConsumerPerField,
+};
 use crate::core::index::terms_hash_per_field::{
   PostingsArrayWrapper, TermsHashPerField, TermsHashPerFieldBase,
 };
@@ -35,7 +36,7 @@ use crate::core::util::attribute_source::AttributeSource;
 use crate::core::util::bit_util::BitUtil;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::int_block_pool::IntBlockPool;
-use crate::core::util::{ByteBlockPool, ToInt};
+use crate::core::util::{ByteBlockPool, SharedCounter, ToInt};
 #[cfg(test)]
 use crate::test_framework::core::index::test_terms_hash_per_field::TermsHashPerFieldMock;
 use std::cmp::Ordering;
@@ -262,6 +263,7 @@ impl FreqProxTermsWriterPerField {
   where
     AS: AttributeSource,
   {
+    #[cfg(debug_assertions)]
     debug_assert!(self.base.assert_doc_id(doc_id));
     // We are first in the chain so we must "intern" the
     // term text into textStart address
@@ -349,6 +351,7 @@ impl FreqProxTermsWriterPerField {
   where
     AS: AttributeSource,
   {
+    #[cfg(debug_assertions)]
     debug_assert!(self.base.assert_doc_id(doc_id));
     // We are first in the chain so we must "intern" the
     // term text into textStart address
@@ -387,20 +390,23 @@ impl FreqProxTermsWriterPerField {
     }
     Ok(())
   }
-  pub(crate) fn start<F>(
+  pub(crate) fn start(
     &mut self,
-    field: &F,
+    vector_options: TermVectorOptions,
     first: bool,
+    bytes_used: &SharedCounter,
     byte_pool: &mut ByteBlockPool,
-  ) -> Result<bool>
-  where
-    F: IndexableField,
-  {
+  ) -> Result<bool> {
     match self.next_per_field {
-      Some(ref mut next_per_field) => next_per_field.start(field, first, byte_pool)?,
-      None => true,
-    };
-    Ok(true)
+      Some(ref mut next_per_field) => next_per_field.start(
+        self.field_info.as_ref(),
+        vector_options,
+        first,
+        bytes_used,
+        byte_pool,
+      ),
+      None => Ok(false),
+    }
   }
 }
 impl TermsHashPerFieldBase for FreqProxTermsWriterPerField {
@@ -646,7 +652,6 @@ impl Ord for FreqProxTermsWriterPerField {
 }
 
 pub(crate) struct FreqProxPostingsArray {
-  pub(crate) size: usize,
   pub(crate) term_freqs: Option<Vec<i32>>, /* # times this term occurs in
                                             * the current doc  */
   // Per-term [last document ID, prior document code], without element padding.
@@ -675,7 +680,6 @@ impl FreqProxPostingsArray {
       None
     };
     FreqProxPostingsArray {
-      size,
       term_freqs,
       last_docs: vec![[0; 2]; size],
       last_positions,
@@ -704,7 +708,6 @@ impl PostingsArrayBase for FreqProxPostingsArray {
 
   fn copy_to(&mut self, new_size: usize) -> Result<()> {
     self.parent.copy_to(new_size)?;
-    self.size = new_size;
     ArrayUtil::grow_exact(&mut self.last_docs, new_size, || [0; 2])?;
     if let Some(last_positions) = self.last_positions.as_mut() {
       ArrayUtil::grow_exact(last_positions, new_size, || 0)?;
@@ -726,9 +729,6 @@ impl PostingsArray for FreqProxPostingsArray {
     let has_prox = index_options >= IndexOptions::DocsAndFreqsAndPositions;
     let has_offsets = index_options >= IndexOptions::DocsAndFreqsAndPositionsAndOffsets;
     Self::new(size, has_freq, has_prox, has_offsets)
-  }
-  fn get_size(&self) -> usize {
-    self.size
   }
   fn get_address_offset(&self) -> &[[i32; 3]] {
     self.parent.get_address_offset()

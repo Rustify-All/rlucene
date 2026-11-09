@@ -49,7 +49,6 @@ use crate::core::util::close::Closeable;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::info_stream::InfoStream;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -348,40 +347,39 @@ where
     }
   });
 
-  let mut new_id_to_old_ord = HashMap::with_capacity(value_count);
-
   let mut iterator = old_doc_ids.iterator()?;
-  let mut new_doc_ids = vec![0; value_count];
-
-  let mut old_ord = 0;
+  // Both document IDs and their field-local ordinals fit in 32 bits.
+  let mut remapped = vec![(0i32, 0i32); value_count];
+  let mut old_ord = 0i32;
 
   let mut old_doc_id = iterator.next_doc()?;
   while old_doc_id != NO_MORE_DOCS {
-    let new_id = sort_map.old_to_new(old_doc_id)?;
-    new_id_to_old_ord.insert(new_id, old_ord);
-    new_doc_ids[old_ord] = new_id;
+    let new_doc_id = sort_map.old_to_new(old_doc_id)?;
+    remapped[old_ord as usize] = (new_doc_id, old_ord);
     old_ord += 1;
-
     old_doc_id = iterator.next_doc()?;
   }
 
-  new_doc_ids.sort_unstable();
+  remapped.sort_unstable();
 
-  for (new_ord, &new_doc_id) in new_doc_ids.iter().enumerate() {
-    let curr_old_ord = *new_id_to_old_ord
-      .get(&new_doc_id)
-      .ok_or_else(|| LuceneError::illegal_state("missing mapping for new_doc_id"))?;
+  let mut new_ord = 0;
+  for same_doc in remapped.chunk_by(|left, right| left.0 == right.0) {
+    // Preserve the last inserted ordinal if a custom map returns duplicate IDs.
+    let (new_doc_id, curr_old_ord) = same_doc[same_doc.len() - 1];
+    let curr_old_ord = curr_old_ord as usize;
+    for _ in same_doc {
+      if let Some(arr) = old2new_ord.as_mut() {
+        arr[curr_old_ord] = new_ord;
+      }
 
-    if let Some(arr) = old2new_ord.as_mut() {
-      arr[curr_old_ord] = new_ord;
-    }
+      if let Some(arr) = new2old_ord.as_mut() {
+        arr[new_ord] = curr_old_ord;
+      }
 
-    if let Some(arr) = new2old_ord.as_mut() {
-      arr[new_ord] = curr_old_ord;
-    }
-
-    if let Some(set) = new_docs_with_field.as_mut() {
-      set.add(new_doc_id)?;
+      if let Some(set) = new_docs_with_field.as_mut() {
+        set.add(new_doc_id)?;
+      }
+      new_ord += 1;
     }
   }
 

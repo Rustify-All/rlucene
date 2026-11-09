@@ -62,18 +62,22 @@ pub(crate) struct FieldUpdatesBuffer {
   // since by definition we store them in order.
   term_values: BytesRefArray,
   term_sort_state: Option<SortState>,
-  // Present only after buffering a binary value.
-  byte_values: Option<BytesRefArray>,
+  values: FieldUpdateValues,
   docs_upto: smallvec::SmallVec<[i32; 1]>,
-  // `None` when buffering binary values.
-  numeric_values: Option<smallvec::SmallVec<[i64; 1]>>,
   has_values: Option<FixedBitSet>,
-  max_numeric: i64,
-  min_numeric: i64,
   fields: smallvec::SmallVec<[usize; 1]>,
   field_names: smallvec::SmallVec<[String; 1]>,
-  is_numeric: bool,
   finished: bool,
+}
+
+#[derive(Debug)]
+enum FieldUpdateValues {
+  Binary(Option<Box<BytesRefArray>>),
+  Numeric {
+    values: smallvec::SmallVec<[i64; 1]>,
+    max: i64,
+    min: i64,
+  },
 }
 
 impl FieldUpdatesBuffer {
@@ -92,27 +96,28 @@ impl FieldUpdatesBuffer {
     }
     bytes_used.add_and_get(Self::size_of_string(&term.field));
 
-    let term_values = BytesRefArray::new(bytes_used.clone())?;
+    // A field can have just one small selector term. Store its bytes without a full byte block.
+    let term_values = BytesRefArray::new_compact(bytes_used.clone());
 
     let mut buffer = FieldUpdatesBuffer {
       bytes_used,
       num_updates: 1,
       term_values,
       term_sort_state: None,
-      byte_values: None,
-      docs_upto: smallvec::smallvec![doc_upto],
-      numeric_values: if is_numeric {
-        Some(smallvec::SmallVec::new())
+      values: if is_numeric {
+        FieldUpdateValues::Numeric {
+          values: smallvec::SmallVec::new(),
+          max: i64::MIN,
+          min: i64::MAX,
+        }
       } else {
-        None
+        FieldUpdateValues::Binary(None)
       },
+      docs_upto: smallvec::smallvec![doc_upto],
       has_values,
-      max_numeric: i64::MIN,
-      min_numeric: i64::MAX,
       // TODO: we should estimate the size of the fields array
       fields: smallvec::smallvec![0],
       field_names: smallvec::smallvec![term.field.clone()],
-      is_numeric,
       finished: false,
     };
     buffer.term_values.append(&term.bytes)?;
@@ -135,9 +140,11 @@ impl FieldUpdatesBuffer {
       (smallvec::smallvec![0], i64::MIN, i64::MAX)
     };
     let mut buffer = Self::new(bytes_used, initial_value, doc_upto, true)?;
-    buffer.numeric_values = Some(numeric_values);
-    buffer.max_numeric = max_numeric;
-    buffer.min_numeric = min_numeric;
+    buffer.values = FieldUpdateValues::Numeric {
+      values: numeric_values,
+      max: max_numeric,
+      min: min_numeric,
+    };
     {
       buffer.bytes_used.add_and_get(BitUtil::LONG_BYTES as i64);
     }
@@ -180,19 +187,19 @@ impl FieldUpdatesBuffer {
   }
 
   pub(crate) fn get_max_numeric(&self) -> i64 {
-    debug_assert!(self.is_numeric);
-    if self.min_numeric == i64::MAX && self.max_numeric == i64::MIN {
-      return 0;
+    debug_assert!(self.is_numeric());
+    match &self.values {
+      FieldUpdateValues::Numeric { max, min, .. } if *min != i64::MAX || *max != i64::MIN => *max,
+      _ => 0,
     }
-    self.max_numeric
   }
 
   pub(crate) fn get_min_numeric(&self) -> i64 {
-    debug_assert!(self.is_numeric);
-    if self.min_numeric == i64::MAX && self.max_numeric == i64::MIN {
-      return 0;
+    debug_assert!(self.is_numeric());
+    match &self.values {
+      FieldUpdateValues::Numeric { max, min, .. } if *min != i64::MAX || *max != i64::MIN => *min,
+      _ => 0,
     }
-    self.min_numeric
   }
   pub(crate) fn add(
     &mut self,
@@ -288,16 +295,22 @@ impl FieldUpdatesBuffer {
     Ok(())
   }
   pub fn add_update_with_long(&mut self, term: &Term, value: i64, doc_upto: i32) -> Result<()> {
-    debug_assert!(self.is_numeric);
+    debug_assert!(self.is_numeric());
     let ord = self.append(term)?;
     let field = &term.field;
     self.add(field, doc_upto, ord, true)?;
-    self.min_numeric = min(self.min_numeric, value);
-    self.max_numeric = max(self.max_numeric, value);
-    let numeric_values = self
-      .numeric_values
-      .as_mut()
-      .ok_or_else(|| LuceneError::illegal_state("numeric_values is missing for numeric updates"))?;
+    let FieldUpdateValues::Numeric {
+      values: numeric_values,
+      max: maximum,
+      min: minimum,
+    } = &mut self.values
+    else {
+      return Err(LuceneError::illegal_state(
+        "numeric_values is missing for numeric updates",
+      ));
+    };
+    *minimum = min(*minimum, value);
+    *maximum = max(*maximum, value);
     let numeric_values_len = numeric_values.len();
     if numeric_values[0] != value || numeric_values_len != 1 {
       if numeric_values_len <= ord {
@@ -332,7 +345,7 @@ impl FieldUpdatesBuffer {
     value: &BytesRef<Vec<u8>>,
     doc_upto: i32,
   ) -> Result<()> {
-    debug_assert!(!self.is_numeric);
+    debug_assert!(!self.is_numeric());
     let ord = self.append(term)?;
     self.append_binary_value(value)?;
     self.add(&term.field, doc_upto, ord, true)?;
@@ -340,12 +353,18 @@ impl FieldUpdatesBuffer {
   }
 
   fn append_binary_value(&mut self, value: &BytesRef<Vec<u8>>) -> Result<()> {
-    if self.is_numeric {
+    let FieldUpdateValues::Binary(byte_values) = &mut self.values else {
       return Err(LuceneError::illegal_state("byte_values is None"));
-    }
-    let values = match &mut self.byte_values {
+    };
+    let values = match byte_values {
       Some(values) => values,
-      slot => slot.insert(BytesRefArray::new(self.bytes_used.clone())?),
+      slot => {
+        let values = Box::new(BytesRefArray::new(self.bytes_used.clone())?);
+        self
+          .bytes_used
+          .add_and_get(size_of::<BytesRefArray>() as i64);
+        slot.insert(values)
+      },
     };
     values.append(value)?;
     Ok(())
@@ -420,14 +439,11 @@ impl FieldUpdatesBuffer {
     BufferedUpdateIterator::new(self)
   }
   pub(crate) fn is_numeric(&self) -> bool {
-    self.is_numeric
+    matches!(self.values, FieldUpdateValues::Numeric { .. })
   }
   pub(crate) fn has_single_value(&self) -> bool {
     // we only do this optimization for numerics so far.
-    self
-      .numeric_values
-      .as_ref()
-      .is_some_and(|numeric_values| self.is_numeric && numeric_values.len() == 1)
+    matches!(&self.values, FieldUpdateValues::Numeric { values, .. } if values.len() == 1)
   }
   pub(crate) fn get_numeric_value(&self, idx: usize) -> Result<i64> {
     if let Some(ref has_values) = self.has_values
@@ -435,10 +451,13 @@ impl FieldUpdatesBuffer {
     {
       return Ok(0);
     }
-    let numeric_values = self
-      .numeric_values
-      .as_ref()
-      .ok_or_else(|| LuceneError::illegal_state("numeric_values is missing"))?;
+    let FieldUpdateValues::Numeric {
+      values: numeric_values,
+      ..
+    } = &self.values
+    else {
+      return Err(LuceneError::illegal_state("numeric_values is missing"));
+    };
     let length = numeric_values.len();
     Ok(numeric_values[Self::get_array_index(length, idx)])
   }
@@ -473,10 +492,10 @@ impl<'a> BufferedUpdateIterator<'a> {
       .term_sort_state
       .as_ref()
       .map(|state| field_updates_buffer.term_values.iterator_with_state(state));
-    let byte_values_iterator = field_updates_buffer
-      .byte_values
-      .as_ref()
-      .map(BytesRefArray::iterator);
+    let (byte_values_iterator, numeric_values_length) = match &field_updates_buffer.values {
+      FieldUpdateValues::Binary(values) => (values.as_deref().map(BytesRefArray::iterator), 0),
+      FieldUpdateValues::Numeric { values, .. } => (None, values.len()),
+    };
     let updates_with_value = if let Some(item) = &field_updates_buffer.has_values {
       UpdateBits::B(item)
     } else {
@@ -484,15 +503,6 @@ impl<'a> BufferedUpdateIterator<'a> {
     };
     let fields_length = field_updates_buffer.fields.len();
     let docs_upto_length = field_updates_buffer.docs_upto.len();
-    let numeric_values_length = if field_updates_buffer.is_numeric {
-      field_updates_buffer
-        .numeric_values
-        .as_ref()
-        .ok_or_else(|| LuceneError::illegal_state("numeric_values is missing for numeric updates"))?
-        .len()
-    } else {
-      0
-    };
     debug_assert!(docs_upto_length <= i32::MAX as usize);
     Ok(BufferedUpdateIterator {
       term_values_iterator,
@@ -533,13 +543,9 @@ impl<'a> BufferedUpdateIterator<'a> {
 
       let mut binary_value = None;
       if buffered_update.has_value {
-        if self.field_updates_buffer.is_numeric {
-          buffered_update.numeric_value = self
-            .field_updates_buffer
-            .numeric_values
-            .as_ref()
-            .ok_or_else(|| LuceneError::illegal_state("numeric_values is missing"))?
-            [FieldUpdatesBuffer::get_array_index(self.numeric_values_length, idx)];
+        if let FieldUpdateValues::Numeric { values, .. } = &self.field_updates_buffer.values {
+          buffered_update.numeric_value =
+            values[FieldUpdatesBuffer::get_array_index(self.numeric_values_length, idx)];
         } else {
           debug_assert!(self.numeric_values_length == 0);
           if let Some(iterator) = &mut self.byte_values_iterator {

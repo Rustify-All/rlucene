@@ -174,13 +174,11 @@ impl LongValues for PackedLongValues {
 #[derive(Default)]
 pub struct Builder {
   pub(crate) page_shift: i32,
-  pub(crate) page_mask: usize,
   acceptable_overhead_ratio: f32,
   pending: Vec<i64>,
   pub(crate) size: i64,
   pub(crate) values: Vec<PackedIntsReadEnum>,
   pub(crate) ram_bytes_used: i64,
-  pub(crate) values_off: usize,
   finished: bool,
   sub_builder: Option<DeltaPackedLongValuesBuilder>,
 }
@@ -199,8 +197,6 @@ impl Builder {
     sub_packed_long_values_builder: Option<DeltaPackedLongValuesBuilder>,
   ) -> Result<Builder> {
     let page_shift = PackedInts::check_block_size(page_size, MIN_PAGE_SIZE, MAX_PAGE_SIZE)?;
-    let page_size = page_size as usize;
-    let page_mask = page_size - 1;
     let values = Vec::new();
     let ram_bytes_used = Self::BASE_RAM_BYTES_USED
       .saturating_add(size_of_vec(&values))
@@ -211,13 +207,11 @@ impl Builder {
       );
     Ok(Self {
       page_shift,
-      page_mask,
       acceptable_overhead_ratio,
       pending: Vec::new(),
       size: 0,
       values,
       ram_bytes_used,
-      values_off: 0,
       finished: false,
       sub_builder: sub_packed_long_values_builder,
     })
@@ -229,24 +223,25 @@ impl Builder {
     self.finished = true;
     self.pending = Vec::new();
 
-    let mut values = std::mem::take(&mut self.values);
-    values.truncate(self.values_off);
+    let values = std::mem::take(&mut self.values);
 
     let sub = match self.sub_builder.take() {
-      Some(sb) => Some(sb.build(self.values_off)?),
+      Some(sb) => Some(sb.build(values.len())?),
       None => None,
     };
 
-    PackedLongValues::new(self.page_shift, self.page_mask, values, self.size, sub)
+    let page_mask = (1usize << self.page_shift) - 1;
+    PackedLongValues::new(self.page_shift, page_mask, values, self.size, sub)
   }
   #[inline]
   pub fn add(&mut self, l: i64) -> Result<&mut Self> {
     if self.finished {
       return Err(LuceneError::illegal_state("Cannot be reused after build()"));
     }
-    if self.pending.len() == self.page_mask + 1 {
+    let page_size = 1usize << self.page_shift;
+    if self.pending.len() == page_size {
       let current_value_len = self.values.capacity();
-      if current_value_len == self.values_off {
+      if current_value_len == self.values.len() {
         // Increase by half of the current length.
         let new_length = (current_value_len + current_value_len / 2).max(INITIAL_PAGE_COUNT);
         debug_assert!(new_length <= i32::MAX as usize);
@@ -256,7 +251,7 @@ impl Builder {
     }
 
     if self.pending.capacity() == 0 {
-      self.pending.reserve_exact(self.page_mask + 1);
+      self.pending.reserve_exact(page_size);
       self.ram_bytes_used = self
         .ram_bytes_used
         .saturating_add(size_of_vec(&self.pending));
@@ -267,8 +262,8 @@ impl Builder {
   }
   pub(crate) fn finish(&mut self) -> Result<()> {
     if !self.pending.is_empty() {
-      if self.values.capacity() == self.values_off {
-        self.grow((self.values_off + 1).max(INITIAL_PAGE_COUNT))?;
+      if self.values.capacity() == self.values.len() {
+        self.grow((self.values.len() + 1).max(INITIAL_PAGE_COUNT))?;
       }
       self.pack_impl()?;
     }
@@ -279,30 +274,21 @@ impl Builder {
     let normalized_bits = self
       .sub_builder
       .as_mut()
-      .and_then(|builder| builder.pack(self.pending.as_mut(), num_values, self.values_off));
+      .and_then(|builder| builder.pack(self.pending.as_mut(), num_values, self.values.len()));
 
-    self.pack(
-      num_values,
-      self.values_off,
-      self.acceptable_overhead_ratio,
-      normalized_bits,
-    )?;
-
-    self.ram_bytes_used = self
-      .ram_bytes_used
-      .saturating_add(self.values[self.values_off].ram_bytes_used()?);
-    self.values_off += 1;
+    let reader = self.pack(num_values, self.acceptable_overhead_ratio, normalized_bits)?;
+    self.ram_bytes_used = self.ram_bytes_used.saturating_add(reader.ram_bytes_used()?);
+    self.values.push(reader);
     // Reset pending buffer
     self.pending.clear();
     Ok(())
   }
   fn pack(
-    &mut self,
+    &self,
     num_values: usize,
-    block: usize,
     acceptable_overhead_ratio: f32,
     normalized_bits: Option<i64>,
-  ) -> Result<()> {
+  ) -> Result<PackedIntsReadEnum> {
     let value_bits = normalized_bits.unwrap_or_else(|| {
       let mut bits = self.pending[0];
       if bits >= 0 {
@@ -314,7 +300,7 @@ impl Builder {
     });
 
     // The union preserves zero, the sign bit and the highest required bit.
-    let reader = if value_bits == 0 {
+    Ok(if value_bits == 0 {
       PackedIntsReadEnum::NullReader(NullReader::new(num_values))
     } else {
       let bits_required = if value_bits < 0 {
@@ -347,13 +333,7 @@ impl Builder {
         MutablePacked64Enum::P64SingleBlock32(value) => PackedIntsReadEnum::P64SingleBlock32(value),
         MutablePacked64Enum::P64(value) => PackedIntsReadEnum::P64(value),
       }
-    };
-    if block == self.values.len() {
-      self.values.push(reader);
-    } else {
-      self.values[block] = reader;
-    }
-    Ok(())
+    })
   }
 
   fn grow(&mut self, new_block_count: usize) -> Result<()> {

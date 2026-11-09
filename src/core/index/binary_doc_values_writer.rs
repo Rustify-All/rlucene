@@ -58,12 +58,16 @@ pub(crate) struct BinaryDocValuesWriter {
   field_info: Arc<FieldInfo>,
   bytes_out: PagedBytesDataOutput,
   iw_bytes_used: SharedCounter,
-  lengths: Builder,
+  lengths: BinaryLengths,
   docs_with_field: DocsWithFieldSet,
   bytes_used: i64,
   last_doc_id: i32,
   max_length: usize,
-  final_lengths: Option<PackedLongValues>,
+}
+
+enum BinaryLengths {
+  Pending(Builder),
+  Finished(PackedLongValues),
 }
 
 impl BinaryDocValuesWriter {
@@ -80,12 +84,11 @@ impl BinaryDocValuesWriter {
       field_info,
       bytes_out,
       iw_bytes_used,
-      lengths,
+      lengths: BinaryLengths::Pending(lengths),
       docs_with_field,
       bytes_used,
       last_doc_id: -1,
       max_length: 0,
-      final_lengths: None,
     })
   }
   pub(crate) fn add_value(&mut self, doc_id: i32, value: &BytesRef<&[u8]>) -> Result<()> {
@@ -103,21 +106,25 @@ impl BinaryDocValuesWriter {
     }
 
     self.max_length = self.max_length.max(value.length);
-    self.lengths.add(value.length as i64)?;
+    let BinaryLengths::Pending(lengths) = &mut self.lengths else {
+      return Err(LuceneError::illegal_state("Cannot be reused after build()"));
+    };
+    lengths.add(value.length as i64)?;
 
     self
       .bytes_out
       .write_bytes_range(value.bytes, value.offset, value.length)?;
 
     self.docs_with_field.add(doc_id)?;
-    self.update_bytes_used()?;
+    let lengths_bytes_used = lengths.ram_bytes_used()?;
+    self.update_bytes_used(lengths_bytes_used)?;
 
     self.last_doc_id = doc_id;
     Ok(())
   }
 
-  fn update_bytes_used(&mut self) -> Result<()> {
-    let new_bytes_used = self.lengths.ram_bytes_used()?
+  fn update_bytes_used(&mut self, lengths_bytes_used: i64) -> Result<()> {
+    let new_bytes_used = lengths_bytes_used
       + self.bytes_out.paged_bytes.ram_bytes_used()?
       + self.docs_with_field.ram_bytes_used()?;
     let delta = new_bytes_used - self.bytes_used;
@@ -149,17 +156,16 @@ impl DocValuesWriter for BinaryDocValuesWriter {
     DC: DocValuesConsumer,
   {
     self.bytes_out.paged_bytes.freeze(false)?;
-    // final_lengths should already be available because finish() runs before flush().
-    if self.final_lengths.is_none() {
-      self.final_lengths = Some(self.lengths.build()?);
+    if let BinaryLengths::Pending(lengths) = &mut self.lengths {
+      self.lengths = BinaryLengths::Finished(lengths.build()?);
     }
+    let BinaryLengths::Finished(final_lengths) = &self.lengths else {
+      return Err(LuceneError::illegal_state(
+        "final lengths are unavailable after they were built",
+      ));
+    };
     let sorted = match sort_map {
       Some(sort_map) => {
-        let Some(final_lengths) = self.final_lengths.as_ref() else {
-          return Err(LuceneError::illegal_state(
-            "final lengths are unavailable after they were built",
-          ));
-        };
         let mut buffered_binary_doc_values = BufferedBinaryDocValues::new(
           || final_lengths,
           self.max_length,
@@ -174,12 +180,6 @@ impl DocValuesWriter for BinaryDocValuesWriter {
       },
       None => None,
     };
-    let Some(final_lengths) = self.final_lengths.as_ref() else {
-      return Err(LuceneError::illegal_state(
-        "final lengths are unavailable after they were built",
-      ));
-    };
-
     let producer = DocValuesProducerImpl::new(
       &self.field_info,
       final_lengths,
@@ -194,7 +194,7 @@ impl DocValuesWriter for BinaryDocValuesWriter {
   type DocIdSetIterator = BufferedBinaryDocValues<DocsWithFieldSetDISI, PagedBytesDataInput>;
 
   fn get_doc_values(&self) -> Result<Self::DocIdSetIterator> {
-    let Some(final_lengths) = self.final_lengths.as_ref() else {
+    let BinaryLengths::Finished(final_lengths) = &self.lengths else {
       return Err(LuceneError::illegal_state(
         "must be finished before getting doc values".to_string(),
       ));
@@ -209,8 +209,8 @@ impl DocValuesWriter for BinaryDocValuesWriter {
 
   fn finish(&mut self, _pool: &Arc<ByteBlockPool>) -> Result<()> {
     self.docs_with_field.finish();
-    if self.final_lengths.is_none() {
-      self.final_lengths = Some(self.lengths.build()?);
+    if let BinaryLengths::Pending(lengths) = &mut self.lengths {
+      self.lengths = BinaryLengths::Finished(lengths.build()?);
     }
     Ok(())
   }
@@ -518,13 +518,13 @@ impl<D: Borrow<BinaryDVs>> BinaryDocValues for SortingBinaryDocValues<D> {
     Self: 'a;
 
   fn binary_value(&self) -> Result<Self::Value<'_>> {
-    let idx = self.dvs.borrow().offsets[self.doc_id as usize] - 1;
+    let idx = self.dvs.borrow().offsets[self.doc_id as usize] as usize - 1;
     self.dvs.borrow().values.get(idx)
   }
 }
 
 pub struct BinaryDVs {
-  pub(crate) offsets: Vec<usize>,
+  pub(crate) offsets: Vec<i32>,
   pub(crate) values: BytesRefArray,
 }
 
@@ -537,7 +537,7 @@ impl BinaryDVs {
     let mut offsets = vec![0; max_doc];
     let counter = Arc::new(AtomicCounter::new());
     let mut values = BytesRefArray::new(counter)?;
-    let mut offset = 1; // 0 means no values for this document
+    let mut offset = 1; // 0 means missing, and there is at most one value per doc.
     let mut doc_id;
     loop {
       doc_id = old_values.next_doc()?;

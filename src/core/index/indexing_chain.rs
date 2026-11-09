@@ -53,6 +53,7 @@ use crate::core::index::index_sorter::DocComparatorEnum2;
 use crate::core::index::index_sorter::{DocComparator, IndexSorter};
 use crate::core::store::IO_CONTEXT_DEFAULT;
 use std::borrow::{Borrow, BorrowMut, Cow};
+use std::num::NonZeroU32;
 
 use crate::core::analysis::reader::ReaderEnum;
 use crate::core::codecs::knn_vectors_format::KnnVectorsFormat;
@@ -91,6 +92,7 @@ use crate::core::index::sorting_term_vectors_consumer::SortingTermVectorsConsume
 use crate::core::index::stored_fields_consumer::{StoredFieldsConsumer, StoredFieldsConsumerHook};
 use crate::core::index::term::Term;
 use crate::core::index::term_vectors_consumer::{TermVectorsConsumer, TermVectorsConsumerHook};
+use crate::core::index::term_vectors_consumer_per_field::TermVectorOptions;
 use crate::core::index::vector_encoding::VectorEncoding;
 use crate::core::index::vector_similarity_function::VectorSimilarityFunction;
 use crate::core::index::vector_values_consumer::VectorValuesConsumer;
@@ -154,20 +156,20 @@ where
   doc_values_byte_pool: ByteBlockPool,
   stored_fields_consumer: StoredFieldsConsumer<D>,
   vector_values_consumer: VectorValuesConsumer<D>,
-  field_hash: smallvec::SmallVec<[Option<usize>; 2]>,
+  field_hash: smallvec::SmallVec<[Option<NonZeroU32>; 2]>,
   hash_mask: usize,
   total_field_count: usize,
-  next_field_gen: i64,
   // Holds fields seen in each document
-  fields: smallvec::SmallVec<[usize; 1]>,
+  fields: smallvec::SmallVec<[u32; 1]>,
   per_fields: Vec<PerField>,
-  doc_fields: smallvec::SmallVec<[usize; 2]>,
+  doc_fields: smallvec::SmallVec<[u32; 2]>,
   info_stream: InfoStreamMT,
   index_created_version_major: i32,
   has_hit_aborting_exception: bool,
   context: IndexContext,
 }
 pub(crate) struct IndexContext {
+  term_vectors_bytes_used: SharedCounter,
   pub(crate) term_vectors_int_pool: IntBlockPool,
   pub(crate) freq_prox_term_int_pool: IntBlockPool,
   pub(crate) term_vectors_byte_pool: ByteBlockPool,
@@ -235,6 +237,7 @@ where
     let allocator = DirectTrackingAllocatorByte::allocator_enum(bytes_used.clone());
     let byte_pool = ByteBlockPool::new(allocator);
     let context = IndexContext {
+      term_vectors_bytes_used: Arc::clone(&terms_hash.next_terms_hash.base.bytes_used),
       term_vectors_int_pool,
       freq_prox_term_int_pool,
       term_vectors_byte_pool,
@@ -250,7 +253,6 @@ where
       field_hash: smallvec::smallvec![None; 2],
       hash_mask: 1,
       total_field_count: 0,
-      next_field_gen: 0,
       fields: smallvec::SmallVec::new(),
       per_fields: vec![],
       doc_fields: smallvec::SmallVec::new(),
@@ -260,17 +262,10 @@ where
       context,
     })
   }
-  fn get_doc_values_leaf_reader<'a>(
-    index_chain: &'a mut IndexingChain<D>,
-    field_info: &'a mut Builder,
-  ) -> DocValuesLeafReaderImpl1<'a, D> {
-    DocValuesLeafReaderImpl1::new(index_chain, field_info)
-  }
   pub(crate) fn maybe_sort_segment<D1>(
     &mut self,
     state: &SegmentWriteState<D>,
     segment_info: &SegmentInfo<D1>,
-    field_info: &mut Builder,
   ) -> Result<Option<Arc<DocMapImpl>>>
   where
     D: Directory,
@@ -280,7 +275,7 @@ where
       return Ok(None);
     };
 
-    let doc_values_reader = Self::get_doc_values_leaf_reader(self, field_info);
+    let doc_values_reader = DocValuesLeafReaderImpl1::new(self, &state.field_infos);
     let max_doc = segment_info.max_doc()?;
     let has_blocks = segment_info.get_has_blocks();
     let parent_field = state.field_infos.get_parent_field();
@@ -336,7 +331,6 @@ where
     segment_info: &mut SegmentInfo<D1>,
     seg_updates: Option<&mut BufferedUpdates>,
     index_writer_config: &T,
-    field_info: &mut Builder,
   ) -> Result<Option<Arc<DocMapImpl>>>
   where
     T: LiveIndexWriterConfig,
@@ -346,7 +340,7 @@ where
       ExecutionScope::enter(ExecutionOwner::IndexingChain, ExecutionMethod::Flush);
     // NOTE: caller (DocumentsWriterPerThread) handles
     // aborting on any error from this method
-    let sort_map = self.maybe_sort_segment(state, segment_info, field_info)?;
+    let sort_map = self.maybe_sort_segment(state, segment_info)?;
     let max_doc = segment_info.max_doc()?;
 
     // write norms
@@ -407,8 +401,9 @@ where
       .per_fields
       .iter()
       .filter(|pf| {
-        pf.terms_hash_per_field
+        pf.invert_state
           .as_ref()
+          .and_then(|inversion| inversion.terms_hash.as_ref())
           .is_some_and(|field| field.base.get_num_terms() > 0)
       })
       .count();
@@ -416,13 +411,14 @@ where
     for &idx in &self.field_hash {
       let mut fp_idx = idx;
       while let Some(index) = fp_idx {
+        let index = index.get() as usize - 1;
         let pf = &mut self.per_fields[index];
-        if pf.invert_state.is_some() {
-          pf.field_info
-            .as_ref()
+        if let Some(inversion) = pf.invert_state.as_mut() {
+          pf.schema
+            .field_info()
             .ok_or_else(|| LuceneError::illegal_state("field info is missing"))?;
-          let terms_hash = pf
-            .terms_hash_per_field
+          let terms_hash = inversion
+            .terms_hash
             .take()
             .ok_or_else(|| LuceneError::illegal_state("terms hash is missing"))?;
           if terms_hash.base.get_num_terms() > 0 {
@@ -432,6 +428,9 @@ where
         fp_idx = pf.next;
       }
     }
+    // Postings now own the field data they need; this segment will not index more documents.
+    self.per_fields = Vec::new();
+    self.field_hash.fill(None);
     let io_context = IO_CONTEXT_DEFAULT.as_ref().map_err(Clone::clone)?;
     let read_state = SegmentReadState::with_suffix(
       state.directory,
@@ -535,11 +534,12 @@ where
       for bucket in 0..self.field_hash.len() {
         let mut per_field_index = self.field_hash[bucket];
         while let Some(index) = per_field_index {
+          let index = index.get() as usize - 1;
           let per_field = &mut self.per_fields[index];
           if let Some(point_values_writer) = per_field.point_values_writer.as_mut() {
             let field_info = per_field
-              .field_info
-              .as_ref()
+              .schema
+              .field_info()
               .ok_or_else(|| LuceneError::illegal_state("field info is missing"))?;
             // We could have initialized pointValuesWriter, but failed to write even a single doc
             if field_info.get_point_dimension_count() > 0 {
@@ -583,6 +583,7 @@ where
     for i in 0..self.field_hash.len() {
       per_field_index = self.field_hash[i];
       while let Some(index) = per_field_index {
+        let index = index.get() as usize - 1;
         let per_field = &mut self.per_fields[index];
         if let Some(ref mut writer) = per_field.doc_values_writer {
           let pool = pool.get_or_insert_with(|| Arc::new(std::mem::take(&mut bytes)));
@@ -616,11 +617,12 @@ where
       for bucket in 0..self.field_hash.len() {
         per_field_index = self.field_hash[bucket];
         while let Some(index) = per_field_index {
+          let index = index.get() as usize - 1;
           let per_field = &mut self.per_fields[index];
           if let Some(ref mut writer) = per_field.doc_values_writer {
             let field_info = per_field
-              .field_info
-              .as_ref()
+              .schema
+              .field_info()
               .ok_or_else(|| LuceneError::illegal_state("field info is missing"))?;
             if *field_info.get_doc_values_type() == DocValuesType::None {
               return Err(LuceneError::illegal_state(format!(
@@ -638,7 +640,7 @@ where
             };
             // Since it’s only ever called once globally, we didn’t implement the DocValuesWriter trait for DocValuesWriterEnum.
             writer.flush(state, sort_map, consumer, segment_info)?;
-          } else if let Some(field_info) = &per_field.field_info
+          } else if let Some(field_info) = per_field.schema.field_info()
             && field_info.get_doc_values_type() != &DocValuesType::None
           {
             return Err(LuceneError::illegal_state(format!(
@@ -714,8 +716,9 @@ where
             .get_mut(per_field_index)
             .ok_or_else(|| LuceneError::illegal_state("per-field index is out of range"))?;
           let norms = per_field
-            .norms
+            .invert_state
             .as_mut()
+            .and_then(|inversion| inversion.norms.as_mut())
             .ok_or_else(|| LuceneError::illegal_state("norms writer is missing"))?;
           norms.flush(sort_map, &mut norms_consumer, segment_info)?;
         }
@@ -763,9 +766,9 @@ where
     for (low, high) in low_buckets.iter_mut().zip(high_buckets) {
       let mut next = low.take();
       while let Some(index) = next {
-        let field = &mut self.per_fields[index];
+        let field = &mut self.per_fields[index.get() as usize - 1];
         next = field.next;
-        let hash = CoreHelper::calculate_hash(&field.schema.name);
+        let hash = CoreHelper::calculate_hash(field.schema.name());
         let target = if hash & old_size as u64 == 0 {
           &mut *low
         } else {
@@ -828,8 +831,6 @@ where
     let mut field_count = 0;
     // number of unique fields indexed with postings
     let mut indexed_field_count = 0;
-    let field_gen = self.next_field_gen;
-    self.next_field_gen += 1;
     let mut doc_field_idx = 0;
     self.fields.clear();
     // NOTE: we need two passes here, in case there are
@@ -860,13 +861,7 @@ where
           field.is_reserved(),
           field.name(),
         ));
-        self.process_field_schema(
-          metadata,
-          doc_id,
-          field_gen,
-          &mut field_count,
-          &mut doc_field_idx,
-        )?;
+        self.process_field_schema(metadata, doc_id, &mut field_count, &mut doc_field_idx)?;
         if first_field.is_none() {
           first_field = Some(field_value);
         } else {
@@ -881,9 +876,9 @@ where
       // If we have already seen this field, verify that its schema
       // within the current doc matches its schema in the index.
       for i in 0..field_count {
-        let idx = self.fields[i];
+        let idx = self.fields[i] as usize;
         let pf = &mut self.per_fields[idx];
-        if let Some(field_info) = pf.field_info.as_ref() {
+        if let Some(field_info) = pf.schema.field_info() {
           pf.schema.assert_same_schema(field_info)?;
         } else {
           self.initialize_field_info(
@@ -903,7 +898,7 @@ where
 
       for field in first_field.iter_mut().chain(document.iter_mut()) {
         let field = field.borrow_mut();
-        let per_field_idx = self.doc_fields[doc_field_idx];
+        let per_field_idx = self.doc_fields[doc_field_idx] as usize;
         // Keep the concrete field type through all accesses in process_field.
         if dispatch_fields!(field, |field| self.process_field(
           doc_id,
@@ -925,10 +920,15 @@ where
     if !self.has_hit_aborting_exception {
       // Finish each indexed field name seen in the document:
       for i in 0..indexed_field_count {
-        let idx = self.fields[i];
+        let idx = self.fields[i] as usize;
         let pf = &mut self.per_fields[idx];
-        debug_assert!(pf.field_info.is_some());
-        pf.finish(doc_id, &mut self.terms_hash.next_terms_hash, similarity)?;
+        debug_assert!(pf.schema.field_info().is_some());
+        pf.finish(
+          doc_id,
+          idx,
+          &mut self.terms_hash.next_terms_hash,
+          similarity,
+        )?;
       }
       self.finish_stored_fields(aborting_exception_consumer)?;
       catch_aborting_exception!(
@@ -973,19 +973,20 @@ where
     if let Some(index_sort) = index_writer_config.get_index_sort()
       && s.doc_values_type != DocValuesType::None
     {
-      Self::validate_index_sort_dv_type(index_sort, &s.name, &s.doc_values_type)?;
+      Self::validate_index_sort_dv_type(index_sort, s.name(), &s.doc_values_type)?;
     }
-    if s.vector_dimension != 0 {
+    let vectors = s.vectors();
+    if vectors.dimension != 0 {
       let max_dim = index_writer_config
         .get_codec()
         .knn_vectors_format()?
-        .get_max_dimensions(&s.name)?;
-      Self::validate_max_vector_dimension(&s.name, s.vector_dimension, max_dim)?;
+        .get_max_dimensions(s.name())?;
+      Self::validate_max_vector_dimension(s.name(), vectors.dimension, max_dim)?;
     }
-    let soft_deletes_field = field_infos.is_soft_deletes_field_name(&s.name);
-    let is_parent_field = field_infos.is_parent_field_name(&s.name);
+    let soft_deletes_field = field_infos.is_soft_deletes_field_name(s.name());
+    let is_parent_field = field_infos.is_parent_field_name(s.name());
     let field_info = FieldInfo::new(
-      s.name.clone(),
+      s.name().to_owned(),
       -1,
       s.store_term_vector,
       s.omit_norms,
@@ -995,12 +996,12 @@ where
       s.doc_values_skip_index,
       -1,
       s.attributes.clone(),
-      s.point_dimension_count,
-      s.point_index_dimension_count,
-      s.point_num_bytes,
-      s.vector_dimension as i32,
-      s.vector_encoding,
-      s.vector_similarity_function,
+      s.point_dimension_count as usize,
+      s.point_index_dimension_count as usize,
+      s.point_num_bytes as usize,
+      vectors.dimension as i32,
+      vectors.encoding,
+      vectors.similarity,
       soft_deletes_field,
       is_parent_field,
     )?;
@@ -1010,47 +1011,41 @@ where
     pf.set_field_info(fi);
 
     if indexed {
-      pf.set_invert_state(&mut self.terms_hash, &self.bytes_used)?;
+      pf.set_invert_state(
+        self.index_created_version_major,
+        &mut self.terms_hash,
+        &self.bytes_used,
+      )?;
     }
     let fi = pf
-      .field_info
-      .as_ref()
+      .schema
+      .field_info()
       .ok_or_else(|| LuceneError::illegal_state("field info is missing"))?;
 
-    match fi.get_doc_values_type() {
-      DocValuesType::None => {},
-      DocValuesType::Numeric => {
-        pf.doc_values_writer = Some(DocValuesWriterEnum::Numeric(NumericDocValuesWriter::new(
-          fi.clone(),
-          self.bytes_used.clone(),
-        )?));
-      },
-      DocValuesType::Binary => {
-        pf.doc_values_writer = Some(DocValuesWriterEnum::Binary(BinaryDocValuesWriter::new(
-          fi.clone(),
-          self.bytes_used.clone(),
-        )?));
-      },
-      DocValuesType::Sorted => {
-        pf.doc_values_writer = Some(DocValuesWriterEnum::Sorted(SortedDocValuesWriter::new(
-          fi.clone(),
-          self.bytes_used.clone(),
-        )?));
-      },
-      DocValuesType::SortedNumeric => {
-        pf.doc_values_writer = Some(DocValuesWriterEnum::SortedNumeric(
-          SortedNumericDocValuesWriter::new(fi.clone(), self.bytes_used.clone())?,
-        ));
-      },
-      DocValuesType::SortedSet => {
-        pf.doc_values_writer = Some(DocValuesWriterEnum::SortedSet(
-          SortedSetDocValuesWriter::new(fi.clone(), self.bytes_used.clone())?,
-        ));
-      },
-    }
+    pf.doc_values_writer = match fi.get_doc_values_type() {
+      DocValuesType::None => None,
+      DocValuesType::Numeric => Some(DocValuesWriterEnum::Numeric(Box::new(
+        NumericDocValuesWriter::new(fi.clone(), self.bytes_used.clone())?,
+      ))),
+      DocValuesType::Binary => Some(DocValuesWriterEnum::Binary(Box::new(
+        BinaryDocValuesWriter::new(fi.clone(), self.bytes_used.clone())?,
+      ))),
+      DocValuesType::Sorted => Some(DocValuesWriterEnum::Sorted(Box::new(
+        SortedDocValuesWriter::new(fi.clone(), self.bytes_used.clone())?,
+      ))),
+      DocValuesType::SortedNumeric => Some(DocValuesWriterEnum::SortedNumeric(Box::new(
+        SortedNumericDocValuesWriter::new(fi.clone(), self.bytes_used.clone())?,
+      ))),
+      DocValuesType::SortedSet => Some(DocValuesWriterEnum::SortedSet(Box::new(
+        SortedSetDocValuesWriter::new(fi.clone(), self.bytes_used.clone())?,
+      ))),
+    };
 
     if fi.get_point_dimension_count() != 0 {
-      pf.point_values_writer = Some(PointValuesWriter::new(self.bytes_used.clone(), fi.clone())?);
+      pf.point_values_writer = Some(Box::new(PointValuesWriter::new(
+        self.bytes_used.clone(),
+        fi.clone(),
+      )?));
     }
 
     if fi.get_vector_dimension() != 0 {
@@ -1062,7 +1057,12 @@ where
           .vector_values_consumer
           .add_field(Arc::clone(fi), segment_info)
       )?;
-      pf.knn_field_vectors_writer = Some(writer);
+      let vectors = pf
+        .schema
+        .vectors
+        .as_mut()
+        .ok_or_else(|| LuceneError::illegal_state("vector field state is missing"))?;
+      vectors.writer_index = Some(writer);
     }
 
     Ok(())
@@ -1137,8 +1137,8 @@ where
         aborting_exception,
         "panic while writing stored field",
         self.stored_fields_consumer.write_field(
-          pf.field_info
-            .as_ref()
+          pf.schema
+            .field_info()
             .ok_or_else(|| LuceneError::illegal_state("field info is missing"))?,
           stored_value,
         )
@@ -1163,7 +1163,10 @@ where
 
     if field.field_type().vector_dimension() != 0 {
       let field_writer_idx = pf
-        .knn_field_vectors_writer
+        .schema
+        .vectors
+        .as_ref()
+        .and_then(|vectors| vectors.writer_index)
         .ok_or_else(|| LuceneError::illegal_state("field writer idx not initialized"))?;
       self.index_vector_value(doc_id, field_writer_idx, field)?;
     }
@@ -1175,16 +1178,18 @@ where
     &mut self,
     (field_type, is_reserved, field_name): (IndexableFieldTypeEnum<'_>, bool, &str),
     doc_id: i32,
-    field_gen: i64,
     field_count: &mut usize,
     doc_field_idx: &mut usize,
   ) -> Result<()> {
     // The previous document's slot is a hint. Validate the name before
     // reusing its per-segment index, since documents can reorder fields.
-    let pf_idx = match self.doc_fields.get(*doc_field_idx).copied() {
-      Some(idx) if self.per_fields[idx].schema.name == field_name => idx,
-      _ => self.get_or_add_per_field(field_name, is_reserved)?,
+    let slot = match self.doc_fields.get(*doc_field_idx).copied() {
+      Some(slot) if self.per_fields[slot as usize].schema.name() == field_name => slot,
+      _ => self
+        .get_or_add_per_field(field_name, is_reserved)?
+        .try_convert()?,
     };
+    let pf_idx = slot as usize;
     {
       let pf = &mut self.per_fields[pf_idx];
       if pf.reserved != is_reserved {
@@ -1194,28 +1199,27 @@ where
         )));
       }
 
-      if pf.field_gen != field_gen {
-        // first time we see this field in this document
+      if pf.schema.doc_id != doc_id {
+        // The DWPT reserves a new doc ID before every indexing attempt.
         if self.fields.len() == self.fields.capacity() {
           let min_size = self.fields.len() + 1;
-          ArrayUtil::oversize(min_size, std::mem::size_of::<usize>())?;
+          ArrayUtil::oversize(min_size, std::mem::size_of::<u32>())?;
           self.fields.reserve(min_size - self.fields.len());
         }
-        self.fields.push(pf_idx);
+        self.fields.push(slot);
         *field_count += 1;
-        pf.field_gen = field_gen;
         pf.reset(doc_id);
       }
     }
-    if let Some(slot) = self.doc_fields.get_mut(*doc_field_idx) {
-      *slot = pf_idx;
+    if let Some(previous) = self.doc_fields.get_mut(*doc_field_idx) {
+      *previous = slot;
     } else {
       if self.doc_fields.len() == self.doc_fields.capacity() {
         let min_size = self.doc_fields.len() + 1;
-        ArrayUtil::oversize(min_size, std::mem::size_of::<usize>())?;
+        ArrayUtil::oversize(min_size, std::mem::size_of::<u32>())?;
         self.doc_fields.reserve(min_size - self.doc_fields.len());
       }
-      self.doc_fields.push(pf_idx);
+      self.doc_fields.push(slot);
     }
     *doc_field_idx += 1;
     let pf = &mut self.per_fields[pf_idx];
@@ -1230,7 +1234,7 @@ where
       },
     };
     if let Some(attrs) = attributes
-      && pf.field_info.is_none()
+      && pf.field_info().is_none()
       && !attrs.is_empty()
     {
       pf.schema.update_attributes(attrs);
@@ -1245,10 +1249,11 @@ where
     let mut per_field_index = self.field_hash[hash_pos];
     let mut conflict = false;
     while let Some(index) = per_field_index {
+      let index = index.get() as usize - 1;
       conflict = true;
       debug_assert!(self.per_fields.get(index).is_some());
       let pf = &mut self.per_fields[index];
-      if pf.schema.name != field_name {
+      if pf.schema.name() != field_name {
         per_field_index = pf.next;
       } else {
         return Ok(index);
@@ -1256,15 +1261,17 @@ where
     }
 
     let index = self.per_fields.len();
+    // Store a one-based slot so zero represents a missing link.
+    let slot: u32 = (index + 1).try_convert()?;
     let schema = FieldSchema::new(field_name);
-    let mut pf = PerField::new(self.index_created_version_major, schema, reserved, index);
+    let mut pf = PerField::new(schema, reserved);
     // filed_name's hash conflict happened, and could not find existing PerField with the same name in next chain
     if conflict {
       let old_pos = self.field_hash[hash_pos];
       pf.next = old_pos;
     }
     self.per_fields.push(pf);
-    self.field_hash[hash_pos] = Some(index);
+    self.field_hash[hash_pos] = NonZeroU32::new(slot);
 
     self.total_field_count += 1;
 
@@ -1300,7 +1307,7 @@ where
     } else if *field_type.doc_values_skip_index_type() != DocValuesSkipIndexType::None {
       return Err(LuceneError::illegal_argument(format!(
         "field '{}' cannot have docValuesSkipIndexType={} without doc values",
-        schema.name,
+        schema.name(),
         field_type.doc_values_skip_index_type()
       )));
     }
@@ -1391,8 +1398,8 @@ where
     T: IndexableField,
   {
     let field_name = &fp
-      .field_info
-      .as_ref()
+      .schema
+      .field_info()
       .ok_or_else(|| LuceneError::illegal_state("field info is missing"))?
       .name;
     match fp.doc_values_writer.as_mut() {
@@ -1488,8 +1495,9 @@ where
     let hash_pos = CoreHelper::calculate_hash(name) as usize & self.hash_mask;
     let mut per_field_index = self.field_hash[hash_pos];
     while let Some(index) = per_field_index {
+      let index = index.get() as usize - 1;
       let pf = &self.per_fields[index];
-      if pf.schema.name == name {
+      if pf.schema.name() == name {
         return Some(index);
       }
       per_field_index = pf.next;
@@ -1508,8 +1516,8 @@ where
         .ok_or_else(|| LuceneError::illegal_state("per-field index is out of range"))?;
       if let Some(ref writer_enum) = pf.doc_values_writer {
         let field_info = pf
-          .field_info
-          .as_ref()
+          .schema
+          .field_info()
           .ok_or_else(|| LuceneError::illegal_state("field info is missing"))?;
         if *field_info.get_doc_values_type() == DocValuesType::None {
           return Ok(None);
@@ -1550,23 +1558,21 @@ where
   }
 }
 
+pub(crate) struct PerFieldInversion {
+  state: FieldInvertState,
+  token_stream: Option<ReusedIndexingTokenStream>,
+  pub(super) terms_hash: Option<Box<FreqProxTermsWriterPerField>>,
+  norms: Option<Box<NormValuesWriter>>,
+}
+
 pub(crate) struct PerField {
-  pub(crate) index_created_version_major: i32,
   pub(crate) schema: FieldSchema,
   pub(crate) reserved: bool,
-  pub(crate) field_info: Option<Arc<FieldInfo>>,
-  pub(crate) invert_state: Option<FieldInvertState>,
-  pub(crate) terms_hash_per_field: Option<Box<FreqProxTermsWriterPerField>>,
+  pub(super) invert_state: Option<Box<PerFieldInversion>>,
   pub(crate) doc_values_writer: Option<DocValuesWriterEnum>,
-  pub(crate) point_values_writer: Option<PointValuesWriter>,
-  pub(crate) knn_field_vectors_writer: Option<usize>,
-  pub(crate) field_gen: i64,
-  pub(crate) next: Option<usize>,
-  pub(crate) norms: Option<NormValuesWriter>,
-  // reuse
-  pub(crate) token_stream: Option<ReusedIndexingTokenStream>,
+  pub(crate) point_values_writer: Option<Box<PointValuesWriter>>,
+  next: Option<NonZeroU32>,
   pub(crate) first: bool,
-  pub(crate) idx_in_doc_field: usize,
 }
 impl PerField {
   fn on_aborting_exception(
@@ -1578,28 +1584,15 @@ impl PerField {
     let _ = aborting_exception.set(throwable);
   }
 
-  pub(crate) fn new(
-    index_created_version_major: i32,
-    schema: FieldSchema,
-    reserved: bool,
-    idx_in_doc_field: usize,
-  ) -> Self {
+  pub(crate) fn new(schema: FieldSchema, reserved: bool) -> Self {
     PerField {
-      index_created_version_major,
       schema,
       reserved,
-      field_info: None,
       invert_state: None,
-      terms_hash_per_field: None,
       doc_values_writer: None,
       point_values_writer: None,
-      knn_field_vectors_writer: None,
-      field_gen: -1,
       next: None,
-      norms: None,
-      token_stream: None,
       first: false,
-      idx_in_doc_field,
     }
   }
   pub(crate) fn reset(&mut self, doc_id: i32) {
@@ -1607,12 +1600,17 @@ impl PerField {
     self.schema.reset(doc_id);
   }
 
+  pub(crate) fn field_info(&self) -> Option<&Arc<FieldInfo>> {
+    self.schema.field_info()
+  }
+
   pub(crate) fn set_field_info(&mut self, field_info: Arc<FieldInfo>) {
-    debug_assert!(self.field_info.is_none());
-    self.field_info = Some(field_info);
+    debug_assert!(self.schema.field_info().is_none());
+    self.schema.field = SchemaField::Registered(field_info);
   }
   pub(crate) fn set_invert_state<D>(
     &mut self,
+    index_created_version_major: i32,
     terms_hash: &mut FreqProxTermsWriter<D>,
     bytes_used: &SharedCounter,
   ) -> Result<()>
@@ -1620,22 +1618,26 @@ impl PerField {
     D: Directory + Clone,
   {
     let fi = self
-      .field_info
-      .as_ref()
+      .schema
+      .field_info()
       .ok_or_else(|| LuceneError::illegal_state("field info is missing"))?;
-    let state = FieldInvertState::new(
-      self.index_created_version_major,
-      fi.name.clone(),
-      *fi.get_index_options(),
-    );
-    self.invert_state = Some(state);
-    self.terms_hash_per_field = Some(Box::new(terms_hash.add_field(fi.clone())?));
+    let state = FieldInvertState::from_field_info(index_created_version_major, Arc::clone(fi));
+    let inversion = self.invert_state.insert(Box::new(PerFieldInversion {
+      state,
+      token_stream: None,
+      terms_hash: None,
+      norms: None,
+    }));
+    inversion.terms_hash = Some(Box::new(terms_hash.add_field(fi.clone())?));
 
     if !fi.omits_norms() {
       // Even if no documents actually succeed in setting a norm, we still write norms for this
       // segment
-      debug_assert!(self.norms.is_none());
-      self.norms = Some(NormValuesWriter::new(fi.clone(), bytes_used.clone())?);
+      debug_assert!(inversion.norms.is_none());
+      inversion.norms = Some(Box::new(NormValuesWriter::new(
+        fi.clone(),
+        bytes_used.clone(),
+      )?));
     }
 
     if fi.has_term_vectors() {
@@ -1646,6 +1648,7 @@ impl PerField {
   pub(crate) fn finish<D, S>(
     &mut self,
     doc_id: i32,
+    field_slot: usize,
     term_vectors_consumer: &mut TermVectorsConsumer<D>,
     similarity: &S,
   ) -> Result<()>
@@ -1654,14 +1657,15 @@ impl PerField {
     S: Similarity,
   {
     let field_info = self
-      .field_info
-      .as_ref()
+      .schema
+      .field_info()
       .ok_or_else(|| LuceneError::illegal_state("field info is missing"))?;
     if !field_info.omits_norms() {
       let norm_value = {
         let state = self
           .invert_state
           .as_ref()
+          .map(|inversion| &inversion.state)
           .ok_or_else(|| LuceneError::illegal_state("invert state is missing"))?;
         if state.length == 0 {
           // the field exists in this document, but it did not have
@@ -1679,16 +1683,18 @@ impl PerField {
         }
       };
       self
-        .norms
+        .invert_state
         .as_mut()
+        .and_then(|inversion| inversion.norms.as_mut())
         .ok_or_else(|| LuceneError::illegal_state("norms writer is missing"))?
         .add_value(doc_id, norm_value)?;
     }
     self
-      .terms_hash_per_field
+      .invert_state
       .as_mut()
+      .and_then(|inversion| inversion.terms_hash.as_mut())
       .ok_or_else(|| LuceneError::illegal_state("terms hash is missing"))?
-      .finish(term_vectors_consumer, self.idx_in_doc_field)
+      .finish(term_vectors_consumer, field_slot)
   }
   /// Inverts one field for one document; first is true if this is the first time we are seeing
   /// this field name in this document.
@@ -1717,7 +1723,7 @@ impl PerField {
       match &mut self.invert_state {
         Some(invert_state) => {
           // First time we're seeing this field (indexed) in this document
-          invert_state.reset()
+          invert_state.state.reset()
         },
         None => {
           return Err(LuceneError::illegal_state("invert_state not initialized"));
@@ -1761,50 +1767,56 @@ impl PerField {
     A: Analyzer,
     T: IndexableField,
   {
-    let analyzed = field.field_type().tokenized();
+    let (analyzed, vector_options) = {
+      // The stream can borrow the field, so copy its settings before obtaining it.
+      let field_type = field.field_type();
+      (
+        field_type.tokenized(),
+        TermVectorOptions::from_field_type(&field_type),
+      )
+    };
     /*
      * To assist people in tracking down problems in analysis components, we wish to write the field name to the infostream
      * when we fail. We expect some caller to eventually deal with the real error, so we don't want any 'catch' clauses,
      * but rather a finally that takes note of the problem.
      */
 
-    let field_name = self.schema.name.as_str();
+    let field_name = self.schema.name();
 
     let mut succeeded_in_processing_field = false;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
-      let terms_hash_per_field = self
-        .terms_hash_per_field
+      let PerFieldInversion {
+        state: invert_state,
+        token_stream,
+        terms_hash,
+        ..
+      } = self
+        .invert_state
+        .as_deref_mut()
+        .ok_or_else(|| LuceneError::illegal_state("terms hash is missing"))?;
+      let terms_hash_per_field = terms_hash
         .as_mut()
         .ok_or_else(|| LuceneError::illegal_state("terms hash is missing"))?;
-      terms_hash_per_field.start(field, first, &mut context.byte_pool)?;
       let mut stream = field
-        .token_stream(analyzer, &mut self.token_stream)?
+        .token_stream(analyzer, token_stream)?
         .ok_or_else(|| LuceneError::illegal_state("Analyzer token_stream is not initialized"))?;
       // Keep the owner (including the analyzer's RefMut) alive while a concrete
       // stream is borrowed for the entire reset/increment/end/close sequence.
-      macro_rules! consume_stream_with_vectors {
+      macro_rules! consume_tokens {
         ($stream:expr, $vectors:literal) => {{
-          let stream = $stream;
-      let stream_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-        || -> Result<()> {
-          stream.reset()?;
-          while stream.increment_token()? {
+          while $stream.increment_token()? {
             // If we hit an error in stream.next below
             // (which is fairly common, e.g. if analyzer
             // chokes on a given document), then it's
             // non-aborting and (above) this one document
             // will be marked as deleted, but still
             // consume a docID
-            let attribute_source = stream.get_attribute_source_mut();
+            let attribute_source = $stream.get_attribute_source_mut();
             // A custom stream may replace its attributes between tokens. Select
             // once for this token, then keep the inversion and postings concrete.
             macro_rules! invert_token {
               ($attribute_source:expr) => {{
                 let attribute_source = $attribute_source;
-            let invert_state = self
-              .invert_state
-              .as_mut()
-              .ok_or_else(|| LuceneError::illegal_state("invert state is missing"))?;
             let pos_incr = attribute_source.get_position_increment()?;
             invert_state.position += pos_incr;
             if invert_state.position < invert_state.last_position {
@@ -1906,35 +1918,34 @@ impl PerField {
               Attributes::RandomTokenStream(attributes) => invert_token!(attributes),
             }
           }
-          // trigger streams to perform end-of-stream operations
-          stream.end()?;
-          let invert_state = self
-            .invert_state
-            .as_mut()
-            .ok_or_else(|| LuceneError::illegal_state("invert state is missing"))?;
-          invert_state.position += stream.get_attribute_source().get_position_increment()?;
-          invert_state.offset += stream.get_attribute_source().end_offset()?;
-          Ok(())
-        },
-      ));
-      succeeded_in_processing_field = matches!(&stream_result, Ok(Ok(())));
-      let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| stream.close()));
-      IOUtils::use_or_suppress_caught_result(stream_result, close_result)
         }};
       }
-      // start has fixed this value's vector state; preserve the normal checks
-      // for enabled vectors and remove them from the disabled token loop.
       macro_rules! consume_stream {
         ($stream:expr) => {{
-          if terms_hash_per_field
-            .next_per_field
-            .as_ref()
-            .is_some_and(|next| next.do_vectors)
-          {
-            consume_stream_with_vectors!($stream, true)
-          } else {
-            consume_stream_with_vectors!($stream, false)
-          }
+          let stream = $stream;
+          let stream_result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+              stream.reset()?;
+              let do_vectors = terms_hash_per_field.start(
+                vector_options,
+                first,
+                &context.term_vectors_bytes_used,
+                &mut context.byte_pool,
+              )?;
+              if do_vectors {
+                consume_tokens!(stream, true);
+              } else {
+                consume_tokens!(stream, false);
+              }
+              stream.end()?;
+              invert_state.position += stream.get_attribute_source().get_position_increment()?;
+              invert_state.offset += stream.get_attribute_source().end_offset()?;
+              Ok(())
+            }));
+          succeeded_in_processing_field = matches!(&stream_result, Ok(Ok(())));
+          let close_result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| stream.close()));
+          IOUtils::use_or_suppress_caught_result(stream_result, close_result)
         }};
       }
       match &mut stream {
@@ -1965,13 +1976,14 @@ impl PerField {
 
     if analyzed {
       let field_name = &self
-        .field_info
-        .as_ref()
+        .schema
+        .field_info()
         .ok_or_else(|| LuceneError::illegal_state("field info is missing"))?
         .name;
       let invert_state = self
         .invert_state
         .as_mut()
+        .map(|inversion| &mut inversion.state)
         .ok_or_else(|| LuceneError::illegal_state("invert state is missing"))?;
       invert_state.position += analyzer.get_position_increment_gap(field_name);
       invert_state.offset += analyzer.get_offset_gap(field_name);
@@ -2008,19 +2020,25 @@ impl PerField {
         field.name()
       )));
     }
-    let state = self
+    let PerFieldInversion {
+      state, terms_hash, ..
+    } = self
       .invert_state
-      .as_mut()
+      .as_deref_mut()
       .ok_or_else(|| LuceneError::illegal_state("invert state is missing"))?;
     // TODO
     // state.set_attribute_source();
     state.position += 1;
     state.length += 1;
-    let terms_hash_per_field = self
-      .terms_hash_per_field
+    let terms_hash_per_field = terms_hash
       .as_mut()
       .ok_or_else(|| LuceneError::illegal_state("terms hash is missing"))?;
-    terms_hash_per_field.start(field, first, &mut context.byte_pool)?;
+    terms_hash_per_field.start(
+      TermVectorOptions::from_field_type(&field_type),
+      first,
+      &context.term_vectors_bytes_used,
+      &mut context.byte_pool,
+    )?;
     match state.length.checked_add(1) {
       Some(new_length) => {
         state.length = new_length;
@@ -2043,7 +2061,9 @@ impl PerField {
         prefix.copy_from_slice(&binary_value.as_bytes()[..30]);
         let msg = format!(
           "Document contains at least one immense term in field=\"{}\" (whose length is longer than the max length {}), all of which were skipped. The prefix of the first immense term is: '{:?}...'",
-          self.schema.name, MAX_TERM_LENGTH, prefix
+          self.schema.name(),
+          MAX_TERM_LENGTH,
+          prefix
         );
         let mut ia = LuceneError::illegal_argument(msg);
         ia.add_suppressed(e);
@@ -2057,7 +2077,7 @@ impl PerField {
 
 impl PartialEq for PerField {
   fn eq(&self, other: &Self) -> bool {
-    self.schema.name == other.schema.name
+    self.schema.name() == other.schema.name()
   }
 }
 impl Eq for PerField {}
@@ -2069,7 +2089,7 @@ impl PartialOrd for PerField {
 }
 impl Ord for PerField {
   fn cmp(&self, other: &Self) -> Ordering {
-    self.schema.name.cmp(&other.schema.name)
+    self.schema.name().cmp(other.schema.name())
   }
 }
 
@@ -2114,7 +2134,7 @@ impl AllocatorI32 for IntBlockAllocator {
 /// in the segment where this field appeared). If there is any inconsistency, we return an error.
 /// This ensures that a field’s data structures remain consistent across all documents.
 pub(crate) struct FieldSchema {
-  name: String,
+  field: SchemaField,
   doc_id: i32,
   attributes: Arc<HashMap<String, String>>,
   omit_norms: bool,
@@ -2122,20 +2142,63 @@ pub(crate) struct FieldSchema {
   index_options: IndexOptions,
   doc_values_type: DocValuesType,
   doc_values_skip_index: DocValuesSkipIndexType,
-  point_dimension_count: usize,
-  point_index_dimension_count: usize,
-  point_num_bytes: usize,
-  vector_dimension: usize,
-  vector_encoding: VectorEncoding,
-  vector_similarity_function: VectorSimilarityFunction,
+  point_dimension_count: u32,
+  point_index_dimension_count: u32,
+  point_num_bytes: u32,
+  vectors: Option<Box<FieldVectorState>>,
 }
+
+struct FieldVectorState {
+  schema: FieldVectorSchema,
+  writer_index: Option<usize>,
+}
+
+struct FieldVectorSchema {
+  dimension: usize,
+  encoding: VectorEncoding,
+  similarity: VectorSimilarityFunction,
+}
+
+const EMPTY_VECTOR_SCHEMA: FieldVectorSchema = FieldVectorSchema {
+  dimension: 0,
+  encoding: VectorEncoding::FLOAT32(4),
+  similarity: VectorSimilarityFunction::Euclidean,
+};
+
+// The pending name is only needed until the segment creates its FieldInfo.
+enum SchemaField {
+  Pending(Box<str>),
+  Registered(Arc<FieldInfo>),
+}
+
 impl FieldSchema {
+  fn vectors(&self) -> &FieldVectorSchema {
+    self
+      .vectors
+      .as_ref()
+      .map_or(&EMPTY_VECTOR_SCHEMA, |vectors| &vectors.schema)
+  }
+
+  fn name(&self) -> &str {
+    match &self.field {
+      SchemaField::Pending(name) => name,
+      SchemaField::Registered(field_info) => field_info.get_name(),
+    }
+  }
+
+  fn field_info(&self) -> Option<&Arc<FieldInfo>> {
+    match &self.field {
+      SchemaField::Pending(_) => None,
+      SchemaField::Registered(field_info) => Some(field_info),
+    }
+  }
+
   const ERR_MSG: &'static str =
     "Inconsistency of field data structures across documents for field ";
   pub(crate) fn new(name: &str) -> Self {
     FieldSchema {
-      name: name.to_string(),
-      doc_id: 0,
+      field: SchemaField::Pending(name.into()),
+      doc_id: -1,
       attributes: Arc::clone(&crate::core::index::field_info::EMPTY_FIELD_ATTRIBUTES),
       omit_norms: false,
       store_term_vector: false,
@@ -2145,9 +2208,7 @@ impl FieldSchema {
       point_dimension_count: 0,
       point_index_dimension_count: 0,
       point_num_bytes: 0,
-      vector_dimension: 0,
-      vector_encoding: VectorEncoding::FLOAT32(4),
-      vector_similarity_function: VectorSimilarityFunction::Euclidean,
+      vectors: None,
     }
   }
   #[inline]
@@ -2159,7 +2220,7 @@ impl FieldSchema {
       return Err(LuceneError::illegal_argument(format!(
         "{}[{}] of doc [{}]. {}: expected '{}', but it has '{}'.",
         Self::ERR_MSG,
-        self.name,
+        self.name(),
         self.doc_id,
         label,
         expected,
@@ -2236,21 +2297,28 @@ impl FieldSchema {
     num_bytes: usize,
   ) -> Result<()> {
     if self.point_index_dimension_count == 0 {
+      let dimension_count = dimension_count.try_convert()?;
+      let index_dimension_count = index_dimension_count.try_convert()?;
+      let num_bytes = num_bytes.try_convert()?;
       self.point_dimension_count = dimension_count;
       self.point_index_dimension_count = index_dimension_count;
       self.point_num_bytes = num_bytes;
     } else {
       self.assert_same(
         "point dimension",
-        &self.point_dimension_count,
+        &(self.point_dimension_count as usize),
         &dimension_count,
       )?;
       self.assert_same(
         "point index dimension",
-        &self.point_index_dimension_count,
+        &(self.point_index_dimension_count as usize),
         &index_dimension_count,
       )?;
-      self.assert_same("point num bytes", &self.point_num_bytes, &num_bytes)?;
+      self.assert_same(
+        "point num bytes",
+        &(self.point_num_bytes as usize),
+        &num_bytes,
+      )?;
     }
     Ok(())
   }
@@ -2261,18 +2329,27 @@ impl FieldSchema {
     similarity_function: VectorSimilarityFunction,
     dimension: usize,
   ) -> Result<()> {
-    if self.vector_dimension == 0 {
-      self.vector_encoding = encoding;
-      self.vector_similarity_function = similarity_function;
-      self.vector_dimension = dimension;
+    let previous = self.vectors();
+    if previous.dimension == 0 {
+      let vectors = self.vectors.get_or_insert_with(|| {
+        Box::new(FieldVectorState {
+          schema: EMPTY_VECTOR_SCHEMA,
+          writer_index: None,
+        })
+      });
+      vectors.schema = FieldVectorSchema {
+        dimension,
+        encoding,
+        similarity: similarity_function,
+      };
     } else {
-      self.assert_same("vector encoding", &self.vector_encoding, &encoding)?;
+      self.assert_same("vector encoding", &previous.encoding, &encoding)?;
       self.assert_same(
         "vector similarity function",
-        &self.vector_similarity_function,
+        &previous.similarity,
         &similarity_function,
       )?;
-      self.assert_same("vector dimension", &self.vector_dimension, &dimension)?;
+      self.assert_same("vector dimension", &previous.dimension, &dimension)?;
     }
     Ok(())
   }
@@ -2285,9 +2362,9 @@ impl FieldSchema {
     self.point_dimension_count = 0;
     self.point_index_dimension_count = 0;
     self.point_num_bytes = 0;
-    self.vector_dimension = 0;
-    self.vector_encoding = VectorEncoding::FLOAT32(4);
-    self.vector_similarity_function = VectorSimilarityFunction::Euclidean;
+    if let Some(vectors) = &mut self.vectors {
+      vectors.schema = EMPTY_VECTOR_SCHEMA;
+    }
   }
 
   #[inline]
@@ -2309,35 +2386,36 @@ impl FieldSchema {
       fi.doc_values_skip_index_type(),
       &self.doc_values_skip_index,
     )?;
+    let vectors = self.vectors();
     self.assert_same(
       "vector similarity function",
       fi.get_vector_similarity_function(),
-      &self.vector_similarity_function,
+      &vectors.similarity,
     )?;
     self.assert_same(
       "vector encoding",
       fi.get_vector_encoding(),
-      &self.vector_encoding,
+      &vectors.encoding,
     )?;
     self.assert_same(
       "vector dimension",
       &(fi.get_vector_dimension() as usize),
-      &self.vector_dimension,
+      &vectors.dimension,
     )?;
     self.assert_same(
       "point dimension",
       &fi.get_point_dimension_count(),
-      &self.point_dimension_count,
+      &(self.point_dimension_count as usize),
     )?;
     self.assert_same(
       "point index dimension",
       &fi.get_point_index_dimension_count(),
-      &self.point_index_dimension_count,
+      &(self.point_index_dimension_count as usize),
     )?;
     self.assert_same(
       "point num bytes",
       &fi.get_point_num_bytes(),
-      &self.point_num_bytes,
+      &(self.point_num_bytes as usize),
     )?;
     Ok(())
   }
@@ -2349,19 +2427,19 @@ where
 {
   index_chain: &'a mut IndexingChain<D>,
   base: DocValuesLeafReader,
-  field_info: &'a mut Builder,
+  field_infos: &'a Arc<FieldInfos>,
   index_base: IndexReaderBase,
 }
 impl<'a, D> DocValuesLeafReaderImpl1<'a, D>
 where
   D: Directory + Clone,
 {
-  fn new(index_chain: &'a mut IndexingChain<D>, field_info: &'a mut Builder) -> Self {
+  fn new(index_chain: &'a mut IndexingChain<D>, field_infos: &'a Arc<FieldInfos>) -> Self {
     let base = DocValuesLeafReader;
     DocValuesLeafReaderImpl1 {
       index_chain,
       base,
-      field_info,
+      field_infos,
       index_base: IndexReaderBase::new(),
     }
   }
@@ -2472,8 +2550,8 @@ where
       return Ok(None);
     };
     let field_info = pf
-      .field_info
-      .as_ref()
+      .schema
+      .field_info()
       .ok_or_else(|| LuceneError::illegal_state("field info is missing"))?;
     if *field_info.get_doc_values_type() != DocValuesType::Numeric {
       return Ok(None);
@@ -2482,7 +2560,7 @@ where
       Some(DocValuesWriterEnum::Numeric(writer)) => Ok(Option::from(writer.get_doc_values()?)),
       _ => Err(LuceneError::illegal_state(format!(
         "field=\"{}\": expected Numeric DocValuesWriter",
-        pf.schema.name
+        pf.schema.name()
       ))),
     }
   }
@@ -2494,8 +2572,8 @@ where
       return Ok(None);
     };
     let field_info = pf
-      .field_info
-      .as_ref()
+      .schema
+      .field_info()
       .ok_or_else(|| LuceneError::illegal_state("field info is missing"))?;
     if *field_info.get_doc_values_type() != DocValuesType::Binary {
       return Ok(None);
@@ -2504,7 +2582,7 @@ where
       Some(DocValuesWriterEnum::Binary(writer)) => Ok(Option::from(writer.get_doc_values()?)),
       _ => Err(LuceneError::illegal_state(format!(
         "field=\"{}\": expected Binary DocValuesWriter",
-        pf.schema.name
+        pf.schema.name()
       ))),
     }
   }
@@ -2516,8 +2594,8 @@ where
       return Ok(None);
     };
     let field_info = pf
-      .field_info
-      .as_ref()
+      .schema
+      .field_info()
       .ok_or_else(|| LuceneError::illegal_state("field info is missing"))?;
     if *field_info.get_doc_values_type() != DocValuesType::Sorted {
       return Ok(None);
@@ -2526,7 +2604,7 @@ where
       Some(DocValuesWriterEnum::Sorted(writer)) => Ok(Option::from(writer.get_doc_values()?)),
       _ => Err(LuceneError::illegal_state(format!(
         "field=\"{}\": expected Sorted DocValuesWriter",
-        pf.schema.name
+        pf.schema.name()
       ))),
     }
   }
@@ -2541,8 +2619,8 @@ where
       return Ok(None);
     };
     let field_info = pf
-      .field_info
-      .as_ref()
+      .schema
+      .field_info()
       .ok_or_else(|| LuceneError::illegal_state("field info is missing"))?;
     if *field_info.get_doc_values_type() != DocValuesType::SortedNumeric {
       return Ok(None);
@@ -2553,7 +2631,7 @@ where
       },
       _ => Err(LuceneError::illegal_state(format!(
         "field=\"{}\": expected SortedNumeric DocValuesWriter",
-        pf.schema.name
+        pf.schema.name()
       ))),
     }
   }
@@ -2601,8 +2679,8 @@ where
       return Ok(None);
     };
     let field_info = pf
-      .field_info
-      .as_ref()
+      .schema
+      .field_info()
       .ok_or_else(|| LuceneError::illegal_state("field info is missing"))?;
     if *field_info.get_doc_values_type() != DocValuesType::SortedSet {
       return Ok(None);
@@ -2611,7 +2689,7 @@ where
       Some(DocValuesWriterEnum::SortedSet(writer)) => Ok(Option::from(writer.get_doc_values()?)),
       _ => Err(LuceneError::illegal_state(format!(
         "field=\"{}\": expected SortedSet DocValuesWriter",
-        pf.schema.name
+        pf.schema.name()
       ))),
     }
   }
@@ -2641,7 +2719,7 @@ where
   }
 
   fn get_field_infos(&self) -> Result<Arc<FieldInfos>> {
-    Ok(Arc::new(self.field_info.finish()?))
+    Ok(Arc::clone(self.field_infos))
   }
 
   type Bits = <DocValuesLeafReader as LeafReader>::Bits;

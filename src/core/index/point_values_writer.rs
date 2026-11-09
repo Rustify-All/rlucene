@@ -33,7 +33,7 @@ use crate::core::util::clone::TryClone;
 use crate::core::util::close::CloseableRef;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::paged_bytes::{PagedBytes, PagedBytesDataOutput, Reader, get_data_output};
-use crate::core::util::{Counter, SharedCounter, SliceCopyOps};
+use crate::core::util::{Counter, SharedCounter, SliceCopyOps, TryIntoInt};
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::sync::Arc;
@@ -46,9 +46,7 @@ pub(crate) struct PointValuesWriter {
   bytes_out: PagedBytesDataOutput,
   iw_bytes_used: SharedCounter,
   doc_ids: Vec<i32>,
-  num_points: usize,
   num_docs: usize,
-  last_doc_id: i32,
   packed_bytes_length: usize,
 }
 
@@ -65,9 +63,7 @@ impl PointValuesWriter {
       bytes_out,
       iw_bytes_used,
       doc_ids,
-      num_points: 0,
       num_docs: 0,
-      last_doc_id: -1,
       packed_bytes_length,
     })
   }
@@ -83,7 +79,8 @@ impl PointValuesWriter {
 
     if self.doc_ids.len() == self.doc_ids.capacity() {
       let old_capacity = self.doc_ids.capacity();
-      ArrayUtil::grow_capacity(&mut self.doc_ids, self.num_points + 1)?;
+      let min_size = self.doc_ids.len() + 1;
+      ArrayUtil::grow_capacity(&mut self.doc_ids, min_size)?;
       self
         .iw_bytes_used
         .add_and_get(((self.doc_ids.capacity() - old_capacity) * BitUtil::INT_BYTES) as i64);
@@ -97,12 +94,10 @@ impl PointValuesWriter {
       .iw_bytes_used
       .add_and_get(self.bytes_out.paged_bytes.ram_bytes_used()? - bytes_ram_bytes_used_before);
 
-    self.doc_ids.push(doc_id);
-    if doc_id != self.last_doc_id {
+    if doc_id != self.doc_ids.last().copied().unwrap_or(-1) {
       self.num_docs += 1;
-      self.last_doc_id = doc_id;
     }
-    self.num_points += 1;
+    self.doc_ids.push(doc_id);
     Ok(())
   }
 
@@ -124,12 +119,13 @@ impl PointValuesWriter {
     PW: PointsWriter,
   {
     let bytes_reader = self.bytes_out.paged_bytes.freeze(false)?;
+    let doc_ids = std::mem::take(&mut self.doc_ids);
     let points = MutablePointTreeImpl::new(
-      self.num_points,
-      std::mem::take(&mut self.doc_ids),
+      doc_ids.len(),
+      doc_ids,
       bytes_reader,
       self.packed_bytes_length,
-    );
+    )?;
     match sort_map {
       Some(doc_map) => {
         let values = MutableSortingPointValues::new(points, doc_map);
@@ -367,8 +363,8 @@ where
 #[derive(Default)]
 struct MutablePointTreeImpl {
   num_points: usize,
-  ords: Vec<usize>,
-  temp: Option<Vec<usize>>,
+  ords: Vec<u32>,
+  temp: Option<Vec<u32>>,
   doc_ids: Vec<i32>,
   packed_bytes_length: usize,
   bytes_reader: Reader,
@@ -379,16 +375,17 @@ impl MutablePointTreeImpl {
     doc_ids: Vec<i32>,
     bytes_reader: Reader,
     packed_bytes_length: usize,
-  ) -> Self {
-    let ords = (0..num_points).collect();
-    Self {
+  ) -> Result<Self> {
+    let end: u32 = num_points.try_convert()?;
+    let ords = (0..end).collect();
+    Ok(Self {
       num_points,
       ords,
       temp: None,
       doc_ids,
       packed_bytes_length,
       bytes_reader,
-    }
+    })
   }
 }
 
@@ -451,19 +448,19 @@ impl MutablePointTree for MutablePointTreeImpl {
     i: usize,
     packed_value: &'a mut BytesRef<Vec<u8>>,
   ) -> Result<BytesRef<&'a [u8]>> {
-    let offset = self.packed_bytes_length * self.ords[i];
+    let offset = self.packed_bytes_length * self.ords[i] as usize;
     self
       .bytes_reader
       .fill_slice(packed_value, offset, self.packed_bytes_length)
   }
 
   fn get_byte_at(&self, i: usize, k: usize) -> u8 {
-    let offset = self.packed_bytes_length * self.ords[i] + k;
+    let offset = self.packed_bytes_length * self.ords[i] as usize + k;
     self.bytes_reader.get_byte(offset)
   }
 
   fn get_doc_id(&self, i: usize) -> Result<i32> {
-    Ok(self.doc_ids[self.ords[i]])
+    Ok(self.doc_ids[self.ords[i] as usize])
   }
 
   fn swap(&mut self, i: usize, j: usize) {

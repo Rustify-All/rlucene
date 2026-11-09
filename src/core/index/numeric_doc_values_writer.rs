@@ -52,13 +52,17 @@ use std::sync::Arc;
 
 /// Buffers pending `i64` values per document, then writes them during segment flush.
 pub(crate) struct NumericDocValuesWriter {
-  pending: Builder,
-  final_values: Option<PackedLongValues>,
+  values: NumericValues,
   iw_bytes_used: SharedCounter,
   bytes_used: i64,
   docs_with_field: DocsWithFieldSet,
   field_info: Arc<FieldInfo>,
   last_doc_id: i32,
+}
+
+enum NumericValues {
+  Pending(Builder),
+  Finished(PackedLongValues),
 }
 
 impl NumericDocValuesWriter {
@@ -70,8 +74,7 @@ impl NumericDocValuesWriter {
     iw_bytes_used.add_and_get(bytes_used);
 
     Ok(Self {
-      pending,
-      final_values: None,
+      values: NumericValues::Pending(pending),
       iw_bytes_used,
       bytes_used,
       docs_with_field,
@@ -88,20 +91,20 @@ impl NumericDocValuesWriter {
       )));
     }
 
-    self.pending.add(value)?;
+    let NumericValues::Pending(pending) = &mut self.values else {
+      return Err(LuceneError::illegal_state(
+        "DocsWithFieldSet must not be changed after finish() is called",
+      ));
+    };
+    pending.add(value)?;
     self.docs_with_field.add(doc_id)?;
-    self.update_bytes_used()?;
-    self.last_doc_id = doc_id;
-    Ok(())
-  }
-
-  fn update_bytes_used(&mut self) -> Result<()> {
-    let new_bytes_used = self.pending.ram_bytes_used()? + self.docs_with_field.ram_bytes_used()?;
+    let new_bytes_used = pending.ram_bytes_used()? + self.docs_with_field.ram_bytes_used()?;
     let delta = new_bytes_used - self.bytes_used;
     if delta != 0 {
       self.iw_bytes_used.add_and_get(delta);
     }
     self.bytes_used = new_bytes_used;
+    self.last_doc_id = doc_id;
     Ok(())
   }
 }
@@ -125,10 +128,13 @@ impl DocValuesWriter for NumericDocValuesWriter {
     DM: DocMap,
     DC: DocValuesConsumer,
   {
-    // `final_values` should always be `Some` here, because finish() runs before flush().
-    let final_values = match &mut self.final_values {
-      Some(final_values) => final_values,
-      slot @ None => slot.insert(std::mem::take(&mut self.pending).build()?),
+    if let NumericValues::Pending(pending) = &mut self.values {
+      self.values = NumericValues::Finished(std::mem::take(pending).build()?);
+    }
+    let NumericValues::Finished(final_values) = &self.values else {
+      return Err(LuceneError::illegal_state(
+        "final numeric values are unavailable after they were built",
+      ));
     };
     let sorted = get_sorted_values(final_values, &self.docs_with_field, sort_map)?;
     let producer = DocValuesProducerImpl::new(
@@ -144,7 +150,7 @@ impl DocValuesWriter for NumericDocValuesWriter {
   type DocIdSetIterator = BufferedNumericDocValues;
 
   fn get_doc_values(&self) -> Result<Self::DocIdSetIterator> {
-    let Some(final_values) = self.final_values.as_ref() else {
+    let NumericValues::Finished(final_values) = &self.values else {
       return Err(LuceneError::illegal_state(
         "must be finished before getting doc values",
       ));
@@ -155,8 +161,8 @@ impl DocValuesWriter for NumericDocValuesWriter {
 
   fn finish(&mut self, _pool: &Arc<ByteBlockPool>) -> Result<()> {
     self.docs_with_field.finish();
-    if self.final_values.is_none() {
-      self.final_values = Some(std::mem::take(&mut self.pending).build()?)
+    if let NumericValues::Pending(pending) = &mut self.values {
+      self.values = NumericValues::Finished(std::mem::take(pending).build()?);
     }
     Ok(())
   }

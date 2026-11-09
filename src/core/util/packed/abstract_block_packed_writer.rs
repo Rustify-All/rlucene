@@ -268,7 +268,7 @@ impl AbstractBlockPackedWriter<BlockPackedWriter> {
     Ok(())
   }
 
-  pub(crate) fn add_term_lengths<DO>(&mut self, lengths: &[usize], out: &mut DO) -> Result<()>
+  pub(crate) fn add_term_lengths<DO>(&mut self, lengths: &[i32], out: &mut DO) -> Result<()>
   where
     DO: DataOutput,
   {
@@ -289,7 +289,7 @@ impl AbstractBlockPackedWriter<BlockPackedWriter> {
       let (input, remaining) = lengths.split_at(count);
       let end = self.off + count;
       for (value, &length) in self.values[self.off..end].iter_mut().zip(input) {
-        *value = length as i64;
+        *value = i64::from(length);
       }
       self.off = end;
       self.ord += count;

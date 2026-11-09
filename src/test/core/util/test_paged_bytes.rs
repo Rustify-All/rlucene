@@ -276,9 +276,8 @@ fn test_ram_bytes_used() -> Result<()> {
   let mut untrimmed = PagedBytes::new(block_bits);
   let mut trimmed = PagedBytes::new(block_bits);
 
-  let initial_bytes = (16 * mem::size_of::<Vec<u8>>()) as i64;
-  assert_eq!(initial_bytes, untrimmed.ram_bytes_used()?);
-  assert_eq!(initial_bytes, trimmed.ram_bytes_used()?);
+  assert_eq!(0, untrimmed.ram_bytes_used()?);
+  assert_eq!(0, trimmed.ram_bytes_used()?);
 
   let mut pointer = 0;
   while pointer < total_bytes as i64 {
@@ -295,7 +294,13 @@ fn test_ram_bytes_used() -> Result<()> {
   } else {
     end_pointer.div_ceil(block_size)
   };
-  let expected_bytes = initial_bytes + (allocated_blocks * block_size) as i64;
+  // Before freeze, only completed pages occupy directory slots.
+  let mut directory = Vec::<Vec<u8>>::new();
+  for completed_blocks in 1..allocated_blocks {
+    directory.resize_with(completed_blocks, Vec::new);
+  }
+  let directory_bytes = directory.capacity() * mem::size_of::<Vec<u8>>();
+  let expected_bytes = (directory_bytes + allocated_blocks * block_size) as i64;
   assert_eq!(expected_bytes, untrimmed.ram_bytes_used()?);
   assert_eq!(expected_bytes, trimmed.ram_bytes_used()?);
 

@@ -301,8 +301,8 @@ impl SortedSetDocValues for SortedSetDocValuesWriterDocIdSetIterator {
 pub(crate) struct SortedSetDocValuesWriter {
   hash: Option<DirectBytesRefHash>,
   frozen_hash: Option<Arc<DirectBytesRefHash>>,
-  pending: Builder,                // stream of all termIDs
-  pending_counts: Option<Builder>, // termIDs per doc
+  ords: SortedSetOrdinals,         // stream of all termIDs
+  counts: Option<SortedSetCounts>, // termIDs per doc
   docs_with_field: DocsWithFieldSet,
   iw_bytes_used: SharedCounter,
   bytes_used: i64, // this only tracks differences in 'pending' and 'pendingCounts'
@@ -312,12 +312,20 @@ pub(crate) struct SortedSetDocValuesWriter {
   current_values: smallvec::SmallVec<[i32; 4]>,
   max_count: usize,
 
-  final_ords: Option<PackedLongValues>,
-  final_ord_counts: Option<PackedLongValues>,
   // Sorted term IDs remain in BytesRefHash; is_sorted tracks whether sort has been called.
   is_sorted: bool,
   final_ord_map: Option<Arc<Vec<i32>>>,
   pool: Option<Arc<ByteBlockPool>>,
+}
+
+enum SortedSetCounts {
+  Pending(Builder),
+  Finished(PackedLongValues),
+}
+
+enum SortedSetOrdinals {
+  Pending(Builder),
+  Finished(PackedLongValues),
 }
 
 impl SortedSetDocValuesWriter {
@@ -339,8 +347,8 @@ impl SortedSetDocValuesWriter {
     Ok(Self {
       hash: Some(hash),
       frozen_hash: None,
-      pending,
-      pending_counts: None,
+      ords: SortedSetOrdinals::Pending(pending),
+      counts: None,
       docs_with_field,
       iw_bytes_used,
       bytes_used,
@@ -348,8 +356,6 @@ impl SortedSetDocValuesWriter {
       current_doc: -1,
       current_values,
       max_count: 0,
-      final_ords: None,
-      final_ord_counts: None,
       is_sorted: false,
       final_ord_map: None,
       pool: None,
@@ -390,21 +396,27 @@ impl SortedSetDocValuesWriter {
     for &term_id in &self.current_values {
       // if it's not a duplicate
       if term_id != last_value {
-        self.pending.add(term_id as i64)?;
+        let SortedSetOrdinals::Pending(pending) = &mut self.ords else {
+          return Err(LuceneError::illegal_state("Cannot be reused after build()"));
+        };
+        pending.add(term_id as i64)?;
         count += 1;
       }
       last_value = term_id;
     }
     // record the number of unique term ids for this doc
-    if let Some(ref mut pc) = self.pending_counts {
-      pc.add(count as i64)?;
+    if let Some(counts) = &mut self.counts {
+      let SortedSetCounts::Pending(counts) = counts else {
+        return Err(LuceneError::illegal_state("Cannot be reused after build()"));
+      };
+      counts.add(count as i64)?;
     } else if count != 1 {
       let mut pc = PackedLongValues::delta_packed_long_values_builder_default(PackedInts::COMPACT)?;
       for _ in 0..self.docs_with_field.cardinality() {
         pc.add(1)?;
       }
       pc.add(count as i64)?;
-      self.pending_counts = Some(pc);
+      self.counts = Some(SortedSetCounts::Pending(pc));
     }
     self.max_count = self.max_count.max(count);
     self.current_values.clear();
@@ -440,12 +452,15 @@ impl SortedSetDocValuesWriter {
   }
 
   fn update_bytes_used(&mut self) -> Result<()> {
-    let pc_used = if let Some(ref pc) = self.pending_counts {
+    let pc_used = if let Some(SortedSetCounts::Pending(pc)) = &self.counts {
       pc.ram_bytes_used()?
     } else {
       0
     };
-    let new_used = self.pending.ram_bytes_used()?
+    let SortedSetOrdinals::Pending(pending) = &self.ords else {
+      return Err(LuceneError::illegal_state("Cannot be reused after build()"));
+    };
+    let new_used = pending.ram_bytes_used()?
       + pc_used
       + self.docs_with_field.ram_bytes_used()?
       + size_of_array_capacity::<i32>(if self.current_values.spilled() {
@@ -515,18 +530,20 @@ impl DocValuesWriter for SortedSetDocValuesWriter {
     DM: DocMap,
     DC: DocValuesConsumer,
   {
-    // `final_ords`, `final_ord_map`, and `frozen_hash` are populated by finish().
-    // Keep the state check explicit so a caller that flushes too early gets a normal error.
-    if self.final_ords.is_none() || self.final_ord_map.is_none() || self.frozen_hash.is_none() {
+    let SortedSetOrdinals::Finished(ords) = &self.ords else {
+      return Err(LuceneError::illegal_state(
+        "must be finished before flushing",
+      ));
+    };
+    if self.final_ord_map.is_none() || self.frozen_hash.is_none() {
       return Err(LuceneError::illegal_state(
         "must be finished before flushing",
       ));
     }
-    let ords = self
-      .final_ords
-      .as_ref()
-      .ok_or_else(|| LuceneError::illegal_state("must be finished before flushing"))?;
-    let ord_counts = self.final_ord_counts.as_ref();
+    let ord_counts = match &self.counts {
+      Some(SortedSetCounts::Finished(counts)) => Some(counts),
+      _ => None,
+    };
     let ord_map = self
       .final_ord_map
       .as_ref()
@@ -613,9 +630,11 @@ impl DocValuesWriter for SortedSetDocValuesWriter {
       .frozen_hash
       .as_ref()
       .ok_or_else(|| LuceneError::illegal_state("missing frozen hash while getting doc values"))?;
-    let final_ords = self.final_ords.as_ref().ok_or_else(|| {
-      LuceneError::illegal_state("missing final ordinals while getting doc values")
-    })?;
+    let SortedSetOrdinals::Finished(final_ords) = &self.ords else {
+      return Err(LuceneError::illegal_state(
+        "missing final ordinals while getting doc values",
+      ));
+    };
     let pool = self
       .pool
       .as_ref()
@@ -625,7 +644,10 @@ impl DocValuesWriter for SortedSetDocValuesWriter {
       frozen_hash.clone(),
       pool.clone(),
       final_ords,
-      self.final_ord_counts.as_ref(),
+      match &self.counts {
+        Some(SortedSetCounts::Finished(counts)) => Some(counts),
+        _ => None,
+      },
       self.max_count,
       &self.docs_with_field,
     )
@@ -633,9 +655,11 @@ impl DocValuesWriter for SortedSetDocValuesWriter {
 
   fn finish(&mut self, pool: &Arc<ByteBlockPool>) -> Result<()> {
     self.pool = Some(pool.clone());
-    if self.final_ords.is_none() {
+    if matches!(self.ords, SortedSetOrdinals::Pending(_)) {
       debug_assert!(
-        self.final_ord_counts.is_none() && !self.is_sorted && self.final_ord_map.is_none()
+        !matches!(self.counts, Some(SortedSetCounts::Finished(_)))
+          && !self.is_sorted
+          && self.final_ord_map.is_none()
       );
       self.finish_current_doc()?;
       let hash = self
@@ -643,11 +667,13 @@ impl DocValuesWriter for SortedSetDocValuesWriter {
         .as_mut()
         .ok_or_else(|| LuceneError::illegal_state("buffered value hash is missing"))?;
       let value_count = hash.size();
-      self.final_ords = Some(self.pending.build()?);
-      self.final_ord_counts = match std::mem::take(&mut self.pending_counts) {
-        Some(mut pc) => Some(pc.build()?),
-        None => None,
+      let SortedSetOrdinals::Pending(pending) = &mut self.ords else {
+        return Err(LuceneError::illegal_state("missing pending ordinal values"));
       };
+      self.ords = SortedSetOrdinals::Finished(pending.build()?);
+      if let Some(SortedSetCounts::Pending(mut counts)) = self.counts.take() {
+        self.counts = Some(SortedSetCounts::Finished(counts.build()?));
+      }
       hash.sort(pool.as_ref())?;
       self.is_sorted = true;
       let mut ord_map = vec![0; value_count];

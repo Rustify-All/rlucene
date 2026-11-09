@@ -59,7 +59,7 @@ impl PagedBytes {
     let bytes_used_per_block = block_size as i64;
 
     PagedBytes {
-      blocks: Vec::with_capacity(16),
+      blocks: Vec::new(),
       frozen_blocks: None,
       num_blocks: 0,
       block_size,
@@ -140,10 +140,8 @@ impl PagedBytes {
       .ok_or_else(|| LuceneError::illegal_state("current_block not initialized"))?;
     out.offset = self.upto;
     out.length = bytes.length;
-    current_block.copy_from(
-      &bytes.bytes[bytes.offset..bytes.offset + bytes.length],
-      self.upto,
-    );
+    current_block[self.upto..self.upto + bytes.length]
+      .copy_from_slice(&bytes.bytes[bytes.offset..bytes.offset + bytes.length]);
     self.upto += bytes.length;
     out.bytes = current_block;
     Ok(())

@@ -89,12 +89,10 @@ impl Comparator<PerFieldMeta> for PerFieldMetaComparator<'_> {
 
   fn compare(&self, a: &PerFieldMeta, b: &PerFieldMeta) -> Result<i32> {
     let name = self.per_fields[a.idx]
-      .field_info
-      .as_ref()
+      .field_info()
       .map_or("", |info| info.name.as_str());
     let other_name = self.per_fields[b.idx]
-      .field_info
-      .as_ref()
+      .field_info()
       .map_or("", |info| info.name.as_str());
     Ok(match name.cmp(other_name) {
       Ordering::Less => -1,
@@ -169,6 +167,7 @@ where
   fn write_per_field(
     &mut self,
     per_field: &mut TermVectorsConsumerPerField,
+    field_info: &FieldInfo,
     int_pool: &mut IntBlockPool,
     byte_pool: &ByteBlockPool,
     term_byte_pool: &ByteBlockPool,
@@ -178,14 +177,14 @@ where
         let writer = writer
           .as_mut()
           .ok_or_else(|| LuceneError::illegal_state("writer not initialized"))?;
-        per_field.write_to_writer(writer, int_pool, byte_pool, term_byte_pool)
+        per_field.write_to_writer(writer, field_info, int_pool, byte_pool, term_byte_pool)
       },
       Self::Sorting(hook) => {
         let writer = hook
           .writer
           .as_mut()
           .ok_or_else(|| LuceneError::illegal_state("writer not initialized"))?;
-        per_field.write_to_writer(writer, int_pool, byte_pool, term_byte_pool)
+        per_field.write_to_writer(writer, field_info, int_pool, byte_pool, term_byte_pool)
       },
     }
   }
@@ -267,14 +266,21 @@ where
     for i in 0..fields_to_write {
       let v = &mut per_fields[self.per_fields_idxs[i].idx];
       let terms_hash_per_field = v
-        .terms_hash_per_field
+        .invert_state
         .as_mut()
+        .and_then(|inversion| inversion.terms_hash.as_mut())
         .ok_or_else(|| LuceneError::illegal_state("terms_hash_per_field not initialized"))?;
       let next_per_field = terms_hash_per_field
         .next_per_field
         .as_mut()
         .ok_or_else(|| LuceneError::illegal_state("next_per_field not initialized"))?;
-      next_per_field.finish_document(self, int_pool, byte_pool, term_byte_pool)?;
+      next_per_field.finish_document(
+        self,
+        terms_hash_per_field.field_info.as_ref(),
+        int_pool,
+        byte_pool,
+        term_byte_pool,
+      )?;
       next_per_field.reset(term_byte_pool)
     }
 
@@ -296,22 +302,20 @@ where
     self.num_vector_fields = 0;
     Ok(())
   }
-  pub(crate) fn add_field(
-    &self,
-    field_info: Arc<FieldInfo>,
-  ) -> Result<TermVectorsConsumerPerField> {
+  pub(crate) fn add_field(&self, field_info: &FieldInfo) -> Result<TermVectorsConsumerPerField> {
     TermVectorsConsumerPerField::new(self, field_info)
   }
   pub(crate) fn write_per_field(
     &mut self,
     per_field: &mut TermVectorsConsumerPerField,
+    field_info: &FieldInfo,
     int_pool: &mut IntBlockPool,
     byte_pool: &ByteBlockPool,
     term_byte_pool: &ByteBlockPool,
   ) -> Result<()> {
     self
       .hook
-      .write_per_field(per_field, int_pool, byte_pool, term_byte_pool)
+      .write_per_field(per_field, field_info, int_pool, byte_pool, term_byte_pool)
   }
   pub(crate) fn add_field_to_flush(&mut self, meta: PerFieldMeta) -> Result<()> {
     let num_vector_fields = self.num_vector_fields;

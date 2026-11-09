@@ -49,7 +49,7 @@ where
   I: IndexInput,
 {
   // metadata maps (just file pointers and minimal stuff)
-  norms: Arc<HashMap<i32, NormsEntry>>,
+  norms: Arc<NormsEntries>,
   max_doc: i32,
   data: I,
 
@@ -79,7 +79,7 @@ where
     let mut version = -1;
 
     // Read in the entries from the metadata file
-    let mut norms = HashMap::new();
+    let mut norms = NormsEntries::default();
     let mut input = state.with_file_name(&segment_info.name, meta_extension, |name| {
       state.directory.open_checksum_input(name)
     })?;
@@ -163,15 +163,15 @@ where
     }
     unwrap_caught_result!(result)
   }
-  fn read_fields<II>(
-    meta: &mut II,
-    field_infos: &Arc<FieldInfos>,
-  ) -> Result<HashMap<i32, NormsEntry>>
+  fn read_fields<II>(meta: &mut II, field_infos: &Arc<FieldInfos>) -> Result<NormsEntries>
   where
     II: IndexInput,
   {
-    let mut norms =
-      HashMap::with_capacity(field_infos.iter().filter(|info| info.has_norms()).count());
+    let count = field_infos.iter().filter(|info| info.has_norms()).count();
+    let mut norms = NormsEntries {
+      by_field: HashMap::with_capacity(count),
+      values: Vec::with_capacity(count),
+    };
     loop {
       let field_number = meta.read_int()?;
       if field_number == -1 {
@@ -210,18 +210,22 @@ where
 
       let norms_offset = meta.read_long()?;
 
-      norms.insert(
-        info_number,
-        NormsEntry {
-          dense_rank_power,
-          bytes_per_norm,
-          docs_with_field_offset,
-          docs_with_field_length,
-          jump_table_entry_count,
-          num_docs_with_field,
-          norms_offset,
+      let value = NormsEntry {
+        dense_rank_power,
+        bytes_per_norm,
+        docs_with_field_offset,
+        docs_with_field_length,
+        jump_table_entry_count,
+        num_docs_with_field,
+        norms_offset,
+      };
+      match norms.by_field.entry(info_number) {
+        Entry::Occupied(slot) => norms.values[*slot.get()] = value,
+        Entry::Vacant(slot) => {
+          slot.insert(norms.values.len());
+          norms.values.push(value);
         },
-      );
+      }
     }
     Ok(norms)
   }
@@ -362,7 +366,11 @@ where
   I: IndexInput,
 {
   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-    write!(f, "Lucene90NormsProducer(fields={})", self.norms.len())
+    write!(
+      f,
+      "Lucene90NormsProducer(fields={})",
+      self.norms.by_field.len()
+    )
   }
 }
 
@@ -386,9 +394,10 @@ macro_rules! impl_norms_producer {
       type MergeInstance = Lucene90NormsProducer<I, true>;
 
       fn get_norms(&self, field: &Arc<FieldInfo>) -> Result<Self::NumericDocValues> {
-        let entry = self.norms.get(&field.number).ok_or_else(|| {
+        let slot = self.norms.by_field.get(&field.number).ok_or_else(|| {
           LuceneError::illegal_state(format!("norms entry is missing for field {}", field.name))
         })?;
+        let entry = &self.norms.values[*slot];
         if entry.docs_with_field_offset == -2 {
           // empty
           return Ok(Lucene90NormNumericDocValuesEnum::Empty(
@@ -559,6 +568,12 @@ impl_norms_producer!(
   Arc<I::RandomAccessSlice>,
   Shared
 );
+
+#[derive(Default)]
+struct NormsEntries {
+  by_field: HashMap<i32, usize>,
+  values: Vec<NormsEntry>,
+}
 
 #[derive(Clone)]
 struct NormsEntry {

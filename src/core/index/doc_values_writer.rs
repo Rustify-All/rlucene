@@ -61,11 +61,11 @@ pub(crate) trait DocValuesWriter: Display {
 }
 
 pub(crate) enum DocValuesWriterEnum {
-  Binary(BinaryDocValuesWriter),
-  Numeric(NumericDocValuesWriter),
-  SortedNumeric(SortedNumericDocValuesWriter),
-  Sorted(SortedDocValuesWriter),
-  SortedSet(SortedSetDocValuesWriter),
+  Binary(Box<BinaryDocValuesWriter>),
+  Numeric(Box<NumericDocValuesWriter>),
+  SortedNumeric(Box<SortedNumericDocValuesWriter>),
+  Sorted(Box<SortedDocValuesWriter>),
+  SortedSet(Box<SortedSetDocValuesWriter>),
 }
 impl Display for DocValuesWriterEnum {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

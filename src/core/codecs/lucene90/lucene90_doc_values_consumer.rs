@@ -387,6 +387,7 @@ impl<O: IndexOutput> Lucene90DocValuesConsumer<O> {
       num_docs_with_value += 1;
       doc = values.next_doc()?;
     }
+    drop(values);
 
     min_max.update_from(&block_min_max);
     min_max.finish();

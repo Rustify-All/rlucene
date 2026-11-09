@@ -19,8 +19,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 
-use crate::core::document::fields::Fields;
-use crate::core::document::stored_field::StoredField;
 use crate::core::index::BytesRef;
 use crate::core::index::byte_slice_reader::ByteSliceReader;
 use crate::core::index::indexing_chain::IntBlockAllocator;
@@ -100,15 +98,9 @@ fn test_add_and_update_term() -> Result<()> {
   let new_called = AtomicI64::new(0);
   let add_called = AtomicI64::new(0);
   let mut hash: TermsHashPerFieldMock = create_new_hash(new_called, add_called);
-  let dummy_value = "dummy";
-  let dummy_filed = Fields::Stored(StoredField::from_binary(
-    "binary",
-    dummy_value.as_bytes().to_vec(),
-  )?);
   let mut byte_pool = ByteBlockPool::new(DirectAllocatorByte::new());
   let mut next_byte_pool = ByteBlockPool::new(DirectAllocatorByte::new());
   let mut base = hash.base.take().unwrap();
-  base.start(&dummy_filed, true, &mut byte_pool)?;
   let mut int_pool = IntBlockPool::with_allocator(IntBlockAllocator::allocator_enum(Arc::new(
     AtomicCounter::new(),
   )));
@@ -339,18 +331,8 @@ fn test_add_and_update_random() -> Result<()> {
   let new_called = AtomicI64::new(0);
   let add_called = AtomicI64::new(0);
   let mut hash = create_new_hash(new_called, add_called);
-  let dummy_value = "dummy";
-  let dummy_filed = Fields::Stored(StoredField::from_binary(
-    "binary",
-    dummy_value.as_bytes().to_vec(),
-  )?);
   let mut byte_pool = ByteBlockPool::new(DirectAllocatorByte::new());
   let mut next_byte_pool = ByteBlockPool::new(DirectAllocatorByte::new());
-  hash
-    .base
-    .as_mut()
-    .unwrap()
-    .start(&dummy_filed, true, &mut byte_pool)?;
   let mut int_pool = IntBlockPool::with_allocator(IntBlockAllocator::allocator_enum(Arc::new(
     AtomicCounter::new(),
   )));
@@ -458,15 +440,9 @@ fn test_write_bytes() -> Result<()> {
     let new_called = AtomicI64::new(0);
     let add_called = AtomicI64::new(0);
     let mut hash = create_new_hash(new_called, add_called);
-    let dummy_value = "dummy";
-    let dummy_field = Fields::Stored(StoredField::from_binary(
-      "binary",
-      dummy_value.as_bytes().to_vec(),
-    )?);
     let mut byte_pool = ByteBlockPool::new(DirectAllocatorByte::new());
     let mut next_byte_pool = ByteBlockPool::new(DirectAllocatorByte::new());
     let mut base = hash.base.take().unwrap();
-    base.start(&dummy_field, true, &mut byte_pool)?;
     let mut int_pool = IntBlockPool::with_allocator(IntBlockAllocator::allocator_enum(Arc::new(
       AtomicCounter::new(),
     )));

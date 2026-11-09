@@ -20,7 +20,6 @@ use crate::core::util::bit_util::BitUtil;
 use crate::core::util::error::lucene_error::Result;
 
 pub(crate) struct ParallelPostingsArray {
-  size: usize,
   // Each record is [term text start, current stream address, byte-pool start].
   pub(crate) starts: Vec<[i32; 3]>,
 }
@@ -30,7 +29,6 @@ impl ParallelPostingsArray {
 
   pub(crate) fn new(size: usize) -> Self {
     Self {
-      size,
       starts: vec![[0; 3]; size],
     }
   }
@@ -40,7 +38,6 @@ impl PostingsArrayBase for ParallelPostingsArray {
     Self::BYTES_PER_POSTING
   }
   fn copy_to(&mut self, new_size: usize) -> Result<()> {
-    self.size = new_size;
     ArrayUtil::grow_exact(&mut self.starts, new_size, || [0; 3])?;
     Ok(())
   }
@@ -49,9 +46,6 @@ impl PostingsArrayBase for ParallelPostingsArray {
 impl PostingsArray for ParallelPostingsArray {
   fn new_for_index(size: usize, _index_options: IndexOptions) -> Self {
     Self::new(size)
-  }
-  fn get_size(&self) -> usize {
-    self.size
   }
   fn get_address_offset(&self) -> &[[i32; 3]] {
     self.starts.as_slice()
@@ -89,7 +83,9 @@ pub(crate) trait PostingsArray: PostingsArrayBase + Sized {
     let new_size = ArrayUtil::oversize(self.get_size() + 1, self.bytes_per_posting())?;
     self.copy_to(new_size)
   }
-  fn get_size(&self) -> usize;
+  fn get_size(&self) -> usize {
+    self.get_text_starts().len()
+  }
   fn get_address_offset(&self) -> &[[i32; 3]];
   fn set_address_offset(&mut self, index: usize, value: i32);
   fn get_text_starts(&self) -> &[[i32; 3]];

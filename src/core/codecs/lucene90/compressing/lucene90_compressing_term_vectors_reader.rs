@@ -363,8 +363,9 @@ where
     skip: usize,
     num_fields: usize,
     num_terms: &[usize],
-    term_freqs: &[usize],
-  ) -> Vec<Vec<usize>> {
+    term_freqs: &[i32],
+    flags: &[u8],
+  ) -> Vec<Vec<i32>> {
     let mut position_index = Vec::with_capacity(num_fields);
     let mut term_index = 0;
     #[allow(clippy::needless_range_loop)] // Preserve indexed failure timing for malformed chunks.
@@ -374,12 +375,17 @@ where
     }
     for i in 0..num_fields {
       let term_count = num_terms[skip + i];
+      if flags[skip + i] & (POSITIONS | OFFSETS | PAYLOADS) as u8 == 0 {
+        position_index.push(Vec::new());
+        term_index += term_count;
+        continue;
+      }
       let mut arr = Vec::with_capacity(term_count + 1);
       arr.push(0);
-      let mut position = 0;
+      let mut position = 0i32;
       for j in 0..term_count {
         let freq = term_freqs[term_index + j];
-        position += freq;
+        position = position.wrapping_add(freq);
         arr.push(position);
       }
       term_index += term_count;
@@ -395,10 +401,10 @@ where
     num_fields: usize,
     flags: &[u8],
     num_terms: &[usize],
-    term_freqs: &[usize],
+    term_freqs: &[i32],
     flag: i32,
     total_positions: usize,
-    position_index: &[Vec<usize>],
+    position_index: &[Vec<i32>],
   ) -> Result<Vec<Vec<i32>>> {
     let mut positions = Vec::with_capacity(num_fields);
     // reset reader
@@ -412,7 +418,7 @@ where
       let term_count = num_terms[i];
       if (f & flag) != 0 {
         for j in 0..term_count {
-          to_skip += term_freqs[term_index + j];
+          to_skip += term_freqs[term_index + j] as usize;
         }
       }
       term_index += term_count;
@@ -424,7 +430,7 @@ where
       let term_count = num_terms[skip + i];
 
       if (f & flag) != 0 {
-        let total_freq = position_index[i][term_count];
+        let total_freq = position_index[i][term_count] as usize;
         let mut field_positions = Vec::with_capacity(total_freq);
         while field_positions.len() < total_freq {
           let remaining = total_freq - field_positions.len();
@@ -657,7 +663,7 @@ where
             .next_batch(term_count - j, &mut self.vectors_stream)?;
           let src = &next.longs[next.offset..][..next.length];
           for &val in src {
-            field_prefix_lengths.push(val as usize);
+            field_prefix_lengths.push(val as i32);
           }
           j += next.length;
         }
@@ -688,11 +694,11 @@ where
             .reader
             .next_batch(term_count - j, &mut self.vectors_stream)?;
           for k in 0..next.length {
-            field_suffix_lengths.push(next.longs[next.offset + k] as usize);
+            field_suffix_lengths.push(next.longs[next.offset + k] as i32);
             j += 1;
           }
         }
-        let field_length = sum(&field_suffix_lengths);
+        let field_length: usize = field_suffix_lengths.iter().map(|&len| len as usize).sum();
         doc_len += field_length;
         field_lengths.push(field_length);
         suffix_lengths.push(field_suffix_lengths);
@@ -720,7 +726,7 @@ where
         term_freqs.extend(
           next.longs[next.offset..][..next.length]
             .iter()
-            .map(|&freq| 1 + freq as usize),
+            .map(|&freq| (freq as i32).wrapping_add(1)),
         );
       }
       term_freqs
@@ -746,7 +752,7 @@ where
       };
       let term_count = num_terms[i];
       for _ in 0..term_count {
-        let freq = term_freqs[term_index];
+        let freq = term_freqs[term_index] as usize;
         term_index += 1;
         if (i32::from(f) & POSITIONS) != 0 {
           total_positions += freq;
@@ -762,7 +768,8 @@ where
     }
 
     // position index
-    let position_index = Self::position_index(skip, num_fields, &num_terms, &term_freqs);
+    let position_index =
+      Self::position_index(skip, num_fields, &num_terms, &term_freqs, &all_flags);
 
     // positions
     let mut positions = if total_positions > 0 {
@@ -828,9 +835,9 @@ where
           let term_count = num_terms[skip + i];
           for j in 0..term_count {
             // delta-decode start offsets and  patch lengths using term lengths
-            let term_length = (f_prefix_lengths[j] + f_suffix_lengths[j]) as i32;
-            let pos_start = position_index[i][j];
-            let pos_end = position_index[i][j + 1];
+            let term_length = (f_prefix_lengths[j] as usize + f_suffix_lengths[j] as usize) as i32;
+            let pos_start = position_index[i][j] as usize;
+            let pos_end = position_index[i][j + 1] as usize;
             f_lengths[pos_start] += term_length;
             for k in (pos_start + 1)..pos_end {
               f_start_offsets[k] += f_start_offsets[k - 1];
@@ -854,7 +861,7 @@ where
           let term_count = num_terms[skip + i];
           for j in 0..term_count {
             // delta-decode start offsets
-            for k in (f_position_index[j] + 1)..f_position_index[j + 1] {
+            for k in (f_position_index[j] as usize + 1)..f_position_index[j + 1] as usize {
               f_positions[k] += f_positions[k - 1];
             }
           }
@@ -868,7 +875,7 @@ where
     };
     let mut total_payload_length = 0;
     let mut payload_off = 0;
-    let mut payload_len = 0;
+    let mut payload_len = 0usize;
 
     if total_payloads > 0 {
       self.reader.reset(total_payloads);
@@ -879,7 +886,7 @@ where
         let term_count = num_terms[i];
         if (f & PAYLOADS) != 0 {
           for j in 0..term_count {
-            let freq = term_freqs[term_index + j];
+            let freq = term_freqs[term_index + j] as usize;
             for _ in 0..freq {
               let l = self.reader.next_value(&mut self.vectors_stream)? as usize;
               payload_off += l;
@@ -895,15 +902,20 @@ where
         let f = i32::from(all_flags[skip + i]);
         let term_count = num_terms[skip + i];
         if (f & PAYLOADS) != 0 {
-          let total_freq = position_index[i][term_count];
+          let total_freq = position_index[i][term_count] as usize;
           let mut field_payload_index = Vec::with_capacity(total_freq + 1);
-          field_payload_index.push(payload_len);
+          field_payload_index.push(payload_len.try_convert()?);
           for j in 0..term_count {
-            let freq = term_freqs[term_index + j];
+            let freq = term_freqs[term_index + j] as usize;
             for _ in 0..freq {
-              let payload_length = self.reader.next_value(&mut self.vectors_stream)? as usize;
-              payload_len += payload_length;
-              field_payload_index.push(payload_len);
+              let payload_length: usize = self
+                .reader
+                .next_value(&mut self.vectors_stream)?
+                .try_convert()?;
+              payload_len = payload_len
+                .checked_add(payload_length)
+                .ok_or_else(|| LuceneError::corrupt_index("term-vector payload length overflow"))?;
+              field_payload_index.push(payload_len.try_convert()?);
             }
           }
           debug_assert_eq!(field_payload_index.len(), total_freq + 1);
@@ -919,7 +931,7 @@ where
         let term_count = num_terms[i];
         if (f & PAYLOADS) != 0 {
           for j in 0..term_count {
-            let freq = term_freqs[term_index + j];
+            let freq = term_freqs[term_index + j] as usize;
             for _ in 0..freq {
               total_payload_length += self.reader.next_value(&mut self.vectors_stream)? as usize;
             }
@@ -963,7 +975,7 @@ where
         smallvec::SmallVec::from_slice(&all_flags[skip..skip + num_fields])
       };
 
-    let field_term_freqs: smallvec::SmallVec<[Vec<usize>; 1]> =
+    let field_term_freqs: smallvec::SmallVec<[Vec<i32>; 1]> =
       if num_fields == 1 && num_terms[skip] >= term_freqs.len().div_ceil(2) {
         let start: usize = num_terms[..skip].iter().sum();
         let count = num_terms[skip];
@@ -1042,16 +1054,16 @@ where
             ),
             payload_index,
           )| {
-            Rc::new(TVTermData::new(
-              prefix_lengths,
-              suffix_lengths,
-              term_freqs,
-              position_index,
-              positions,
-              start_offsets,
-              lengths,
-              payload_index,
-            ))
+            Rc::new(TVTermData {
+              prefix_lengths: prefix_lengths.into_boxed_slice(),
+              suffix_lengths: suffix_lengths.into_boxed_slice(),
+              term_freqs: term_freqs.into_boxed_slice(),
+              position_index: position_index.into_boxed_slice(),
+              positions: positions.into_boxed_slice(),
+              start_offsets: start_offsets.into_boxed_slice(),
+              lengths: lengths.into_boxed_slice(),
+              payload_index: PayloadIndex::Compact(payload_index.into_boxed_slice()),
+            })
           },
         )
         .collect(),
@@ -1138,14 +1150,36 @@ impl BlockState {
 /// Immutable data shared by one term-vector field and its independent iterators.
 #[derive(Default)]
 pub struct TVTermData {
-  prefix_lengths: Box<[usize]>,
-  suffix_lengths: Box<[usize]>,
-  term_freqs: Box<[usize]>,
-  position_index: Box<[usize]>,
+  prefix_lengths: Box<[i32]>,
+  suffix_lengths: Box<[i32]>,
+  term_freqs: Box<[i32]>,
+  position_index: Box<[i32]>,
   positions: Box<[i32]>,
   start_offsets: Box<[i32]>,
   lengths: Box<[i32]>,
-  payload_index: Box<[usize]>,
+  payload_index: PayloadIndex,
+}
+
+enum PayloadIndex {
+  // The decompressor addresses term-vector documents with i32.
+  Compact(Box<[i32]>),
+  // The public constructor also accepts offsets outside that range.
+  Wide(Box<[usize]>),
+}
+
+impl Default for PayloadIndex {
+  fn default() -> Self {
+    Self::Compact(Box::default())
+  }
+}
+
+impl PayloadIndex {
+  fn is_empty(&self) -> bool {
+    match self {
+      Self::Compact(offsets) => offsets.is_empty(),
+      Self::Wide(offsets) => offsets.is_empty(),
+    }
+  }
 }
 
 impl TVTermData {
@@ -1162,14 +1196,14 @@ impl TVTermData {
     payload_index: Vec<usize>,
   ) -> Self {
     Self {
-      prefix_lengths: prefix_lengths.into_boxed_slice(),
-      suffix_lengths: suffix_lengths.into_boxed_slice(),
-      term_freqs: term_freqs.into_boxed_slice(),
-      position_index: position_index.into_boxed_slice(),
+      prefix_lengths: prefix_lengths.into_iter().map(|len| len as i32).collect(),
+      suffix_lengths: suffix_lengths.into_iter().map(|len| len as i32).collect(),
+      term_freqs: term_freqs.into_iter().map(|freq| freq as i32).collect(),
+      position_index: position_index.into_iter().map(|idx| idx as i32).collect(),
       positions: positions.into_boxed_slice(),
       start_offsets: start_offsets.into_boxed_slice(),
       lengths: lengths.into_boxed_slice(),
-      payload_index: payload_index.into_boxed_slice(),
+      payload_index: PayloadIndex::Wide(payload_index.into_boxed_slice()),
     }
   }
 }
@@ -1343,7 +1377,11 @@ impl TVTerms {
     payload_length: usize,
     term_bytes: BytesRef<Rc<Vec<u8>>>,
   ) -> Self {
-    let total_term_freq = term_data.term_freqs.iter().map(|&x| x as i64).sum();
+    let total_term_freq = term_data
+      .term_freqs
+      .iter()
+      .map(|&freq| i64::from(freq))
+      .sum();
 
     TVTerms {
       num_terms,
@@ -1485,8 +1523,8 @@ impl BytesRefIterator for TVTermsEnum {
 
     debug_assert!(ord < self.num_terms + 1);
 
-    let prefix_len = self.term_data.prefix_lengths[ord];
-    let suffix_len = self.term_data.suffix_lengths[ord];
+    let prefix_len = self.term_data.prefix_lengths[ord] as usize;
+    let suffix_len = self.term_data.suffix_lengths[ord] as usize;
     let total_len = prefix_len + suffix_len;
 
     self.term.offset = 0;
@@ -1600,7 +1638,7 @@ impl TermsEnum for TVTermsEnum {
     let ord = self
       .ord
       .ok_or_else(|| LuceneError::illegal_state("ord is None"))?;
-    Ok(self.term_data.term_freqs[ord] as i64)
+    Ok(i64::from(self.term_data.term_freqs[ord]))
   }
 
   type PostingsEnum = TVPostingsEnum;
@@ -1613,8 +1651,12 @@ impl TermsEnum for TVTermsEnum {
     let ord = self
       .ord
       .ok_or_else(|| LuceneError::illegal_state("ord is None"))?;
-    let freq = self.term_data.term_freqs[ord];
-    let position_index = self.term_data.position_index[ord];
+    let freq = self.term_data.term_freqs[ord] as usize;
+    let position_index = if self.term_data.position_index.is_empty() {
+      0
+    } else {
+      self.term_data.position_index[ord] as usize
+    };
     let docs_enum = match reuse {
       Some(mut docs_enum) => {
         if !Rc::ptr_eq(&docs_enum.term_data, &self.term_data) {
@@ -1819,9 +1861,12 @@ impl PostingsEnum for TVPostingsEnum {
     }
     if !self.term_data.payload_index.is_empty() {
       let index = self.position_index + i;
-      self.payload_offset = self.base_payload_offset + self.term_data.payload_index[index];
-      self.payload_length =
-        self.term_data.payload_index[index + 1] - self.term_data.payload_index[index];
+      let (offset, end) = match &self.term_data.payload_index {
+        PayloadIndex::Compact(offsets) => (offsets[index] as usize, offsets[index + 1] as usize),
+        PayloadIndex::Wide(offsets) => (offsets[index], offsets[index + 1]),
+      };
+      self.payload_offset = self.base_payload_offset + offset;
+      self.payload_length = end - offset;
     }
     if self.term_data.positions.is_empty() {
       Ok(-1)

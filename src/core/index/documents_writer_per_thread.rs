@@ -622,7 +622,7 @@ where
     let mut flush_state = SegmentWriteState::new(
       self.info_stream.clone(),
       &directory,
-      Arc::new(self.field_infos.finish()?),
+      Arc::new(self.field_infos.finish_and_take_names()?),
       &io_context,
     );
 
@@ -684,7 +684,6 @@ where
           &mut self.segment_info,
           Some(&mut self.pending_updates),
           index_writer_config,
-          &mut self.field_infos,
         )?;
         flush_state.soft_del_count_on_flush = if let Some(ref mut iter) = soft_deleted_docs {
           let cnt = count_soft_deletes(Some(iter), flush_state.live_docs.as_ref())?;

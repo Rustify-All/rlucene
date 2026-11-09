@@ -50,12 +50,13 @@ pub struct FieldInfo {
   dv_gen: AtomicI64,
   ///  If both of these are positive it means this field indexed points (see
   /// [`PointsFormat`](crate::core::codecs::points_format::PointsFormat)).
-  point_dimension_count: usize,
-  point_index_dimension_count: usize,
-  point_num_bytes: usize,
+  point_dimensions: [u8; 3],
+  // The public constructor also accepts dimensions outside the normal codec limits.
+  wide_point_dimensions: Option<Box<[usize; 3]>>,
   // if it is a positive value, it means this field indexes vectors
   vector_dimension: i32,
-  vector_encoding: VectorEncoding,
+  custom_vector_encoding: Option<Box<VectorEncoding>>,
+  float_vector_encoding: bool,
   vector_similarity_function: VectorSimilarityFunction,
   // whether this field is used as the soft-deletes field
   soft_deletes_field: bool,
@@ -104,7 +105,21 @@ impl FieldInfo {
       (false, false, false)
     };
     let attributes = Mutex::new(attributes.into());
+    let (custom_vector_encoding, float_vector_encoding) = match vector_encoding {
+      VectorEncoding::BYTE(1) => (None, false),
+      VectorEncoding::FLOAT32(4) => (None, true),
+      encoding => (Some(Box::new(encoding)), false),
+    };
 
+    let dimensions = [
+      point_dimension_count,
+      point_index_dimension_count,
+      point_num_bytes,
+    ];
+    let (point_dimensions, wide_point_dimensions) = match dimensions.map(u8::try_from) {
+      [Ok(count), Ok(index_count), Ok(bytes)] => ([count, index_count, bytes], None),
+      _ => ([0; 3], Some(Box::new(dimensions))),
+    };
     let v = FieldInfo {
       name: name.into(),
       number,
@@ -114,11 +129,11 @@ impl FieldInfo {
       index_options,
       attributes,
       dv_gen: AtomicI64::new(dv_gen),
-      point_dimension_count,
-      point_index_dimension_count,
-      point_num_bytes,
+      point_dimensions,
+      wide_point_dimensions,
       vector_dimension,
-      vector_encoding,
+      custom_vector_encoding,
+      float_vector_encoding,
       vector_similarity_function,
       soft_deletes_field,
       is_parent_field,
@@ -189,22 +204,24 @@ impl FieldInfo {
       )));
     }
 
-    if self.point_dimension_count != 0 && self.point_num_bytes == 0 {
+    if self.get_point_dimension_count() != 0 && self.get_point_num_bytes() == 0 {
       return Err(LuceneError::illegal_argument(format!(
         "pointNumBytes must be > 0 when pointDimensionCount={} (field: '{}')",
-        self.point_dimension_count, self.name
+        self.get_point_dimension_count(),
+        self.name
       )));
     }
-    if self.point_index_dimension_count != 0 && self.point_dimension_count == 0 {
+    if self.get_point_index_dimension_count() != 0 && self.get_point_dimension_count() == 0 {
       return Err(LuceneError::illegal_argument(format!(
         "pointIndexDimensionCount must be 0 when pointDimensionCount=0 (field: '{}')",
         self.name
       )));
     }
-    if self.point_num_bytes != 0 && self.point_dimension_count == 0 {
+    if self.get_point_num_bytes() != 0 && self.get_point_dimension_count() == 0 {
       return Err(LuceneError::illegal_argument(format!(
         "pointDimensionCount must be > 0 when pointNumBytes={} (field: '{}')",
-        self.point_num_bytes, self.name
+        self.get_point_num_bytes(),
+        self.name
       )));
     }
 
@@ -251,20 +268,20 @@ impl FieldInfo {
     )?;
     Self::verify_same_points_options(
       field_name,
-      self.point_dimension_count,
-      self.point_index_dimension_count,
-      self.point_num_bytes,
-      other.point_dimension_count,
-      other.point_index_dimension_count,
-      other.point_num_bytes,
+      self.get_point_dimension_count(),
+      self.get_point_index_dimension_count(),
+      self.get_point_num_bytes(),
+      other.get_point_dimension_count(),
+      other.get_point_index_dimension_count(),
+      other.get_point_num_bytes(),
     )?;
     Self::verify_same_vector_options(
       field_name,
       self.vector_dimension,
-      &self.vector_encoding,
+      self.get_vector_encoding(),
       &self.vector_similarity_function,
       other.vector_dimension,
-      &other.vector_encoding,
+      other.get_vector_encoding(),
       &other.vector_similarity_function,
     )?;
 
@@ -418,46 +435,72 @@ impl FieldInfo {
         MAX_NUM_BYTES, num_bytes, self.name
       )));
     }
-    if self.point_dimension_count != 0 && self.point_dimension_count != dimension_count {
+    if self.get_point_dimension_count() != 0 && self.get_point_dimension_count() != dimension_count
+    {
       return Err(LuceneError::illegal_argument(format!(
         "cannot change point dimension count from {} to {} for field=\"{}\"",
-        self.point_dimension_count, dimension_count, self.name
+        self.get_point_dimension_count(),
+        dimension_count,
+        self.name
       )));
     }
-    if self.point_index_dimension_count != 0
-      && self.point_index_dimension_count != index_dimension_count
+    if self.get_point_index_dimension_count() != 0
+      && self.get_point_index_dimension_count() != index_dimension_count
     {
       return Err(LuceneError::illegal_argument(format!(
         "cannot change point index dimension count from {} to {} for field=\"{}\"",
-        self.point_index_dimension_count, index_dimension_count, self.name
+        self.get_point_index_dimension_count(),
+        index_dimension_count,
+        self.name
       )));
     }
-    if self.point_num_bytes != 0 && self.point_num_bytes != num_bytes {
+    if self.get_point_num_bytes() != 0 && self.get_point_num_bytes() != num_bytes {
       return Err(LuceneError::illegal_argument(format!(
         "cannot change point numBytes from {} to {} for field=\"{}\"",
-        self.point_num_bytes, num_bytes, self.name
+        self.get_point_num_bytes(),
+        num_bytes,
+        self.name
       )));
     }
 
-    self.point_dimension_count = dimension_count;
-    self.point_index_dimension_count = index_dimension_count;
-    self.point_num_bytes = num_bytes;
+    // The bounds checked above all fit in the compact representation.
+    self.point_dimensions = [
+      dimension_count as u8,
+      index_dimension_count as u8,
+      num_bytes as u8,
+    ];
+    self.wide_point_dimensions = None;
 
     self.check_consistency()
   }
   /// Return point data dimension count
   pub fn get_point_dimension_count(&self) -> usize {
-    self.point_dimension_count
+    self
+      .wide_point_dimensions
+      .as_ref()
+      .map_or(usize::from(self.point_dimensions[0]), |dimensions| {
+        dimensions[0]
+      })
   }
 
   /// Return point data dimension count
   pub fn get_point_index_dimension_count(&self) -> usize {
-    self.point_index_dimension_count
+    self
+      .wide_point_dimensions
+      .as_ref()
+      .map_or(usize::from(self.point_dimensions[1]), |dimensions| {
+        dimensions[1]
+      })
   }
 
   /// Return number of bytes per dimension
   pub fn get_point_num_bytes(&self) -> usize {
-    self.point_num_bytes
+    self
+      .wide_point_dimensions
+      .as_ref()
+      .map_or(usize::from(self.point_dimensions[2]), |dimensions| {
+        dimensions[2]
+      })
   }
 
   /// Returns the number of dimensions of the vector value
@@ -467,7 +510,14 @@ impl FieldInfo {
 
   /// Returns the number of dimensions of the vector value
   pub fn get_vector_encoding(&self) -> &VectorEncoding {
-    &self.vector_encoding
+    self
+      .custom_vector_encoding
+      .as_deref()
+      .unwrap_or(if self.float_vector_encoding {
+        &VectorEncoding::FLOAT32(4)
+      } else {
+        &VectorEncoding::BYTE(1)
+      })
   }
 
   /// Returns the VectorSimilarityFunction for the field

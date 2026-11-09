@@ -223,7 +223,7 @@ where
     &self,
     field_info: Arc<FieldInfo>,
   ) -> Result<FreqProxTermsWriterPerField> {
-    let next_per_field = self.next_terms_hash.add_field(field_info.clone())?;
+    let next_per_field = self.next_terms_hash.add_field(field_info.as_ref())?;
     FreqProxTermsWriterPerField::new(self, field_info, Some(next_per_field))
   }
 }
@@ -506,6 +506,8 @@ where
         .to_int()
         >= 0;
 
+      // Release the previous term's blocks before buffering the next term.
+      wrap_reuse.posting_input = None;
       wrap_reuse.reset(
         &self.doc_map,
         in_docs_and_positions,
@@ -923,7 +925,8 @@ impl<P> SortingPostingsEnum<P> {
     );
     sorter.sort(0, self.upto)?;
 
-    self.posting_input = Some(self.buffer.get_data_input_owner(true)?);
+    // Preallocating the next write blocks would keep two sets live for this term.
+    self.posting_input = Some(self.buffer.get_data_input_owner(false)?);
 
     Ok(())
   }

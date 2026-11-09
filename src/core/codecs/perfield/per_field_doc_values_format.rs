@@ -30,7 +30,7 @@ use crate::core::store::directory::Directory;
 use crate::core::store::{IndexInput, IndexOutput};
 use crate::core::util::close::{Closeable, CloseableRef};
 use crate::core::util::error::lucene_error::{LuceneError, Result};
-use crate::core::util::{HasIdentity, IOUtils};
+use crate::core::util::{HasIdentity, IOUtils, TryIntoInt};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::fmt::{Display, Formatter};
@@ -421,8 +421,9 @@ fn get_full_segment_suffix<T: Display>(
 }
 
 pub struct FieldsReader<DVP> {
-  fields: HashMap<i32, Arc<DVP>>,
-  formats: HashMap<String, Arc<DVP>>,
+  fields: Arc<HashMap<i32, u32>>,
+  formats: Arc<HashMap<String, u32>>,
+  producers: Vec<Arc<DVP>>,
 }
 
 impl<DVP> FieldsReader<DVP>
@@ -435,76 +436,45 @@ where
     T: DocValuesProducer,
     F: FnMut(DVP) -> T,
   {
-    let field_formats: HashMap<i32, *const DVP> = self
-      .fields
+    let producers = self
+      .producers
       .into_iter()
-      .map(|(field_number, producer)| (field_number, Arc::as_ptr(&producer)))
-      .collect();
-    let mut old_to_new = HashMap::with_capacity(self.formats.len());
-    let mut formats = HashMap::with_capacity(self.formats.len());
-    for (segment_suffix, producer) in self.formats {
-      let old_ptr = Arc::as_ptr(&producer);
-      let producer = Arc::try_unwrap(producer).map_err(|_| {
-        LuceneError::illegal_state(format!(
-          "doc values producer for segment suffix {segment_suffix} is still shared"
-        ))
-      })?;
-      let producer = Arc::new(mapper(producer));
-      old_to_new.insert(old_ptr, Arc::clone(&producer));
-      formats.insert(segment_suffix, producer);
-    }
-    let mut fields = HashMap::with_capacity(field_formats.len());
-    for (field_number, old_ptr) in field_formats {
-      let producer = old_to_new.get(&old_ptr).ok_or_else(|| {
-        LuceneError::illegal_state(format!(
-          "missing doc values producer for field number: {field_number}"
-        ))
-      })?;
-      fields.insert(field_number, Arc::clone(producer));
-    }
-    Ok(FieldsReader { fields, formats })
+      .enumerate()
+      .map(|(slot, producer)| {
+        let producer = Arc::try_unwrap(producer).map_err(|_| {
+          let suffix = self
+            .formats
+            .iter()
+            .find_map(|(suffix, &index)| (index as usize == slot).then_some(suffix.as_str()))
+            .unwrap_or_default();
+          LuceneError::illegal_state(format!(
+            "doc values producer for segment suffix {suffix} is still shared"
+          ))
+        })?;
+        Ok(Arc::new(mapper(producer)))
+      })
+      .collect::<Result<Vec<_>>>()?;
+    Ok(FieldsReader {
+      fields: self.fields,
+      formats: self.formats,
+      producers,
+    })
   }
 
-  // Clone for merge.
+  // Clone each distinct producer for merge. Both readers use the same immutable slot maps.
   fn from_other(other: &Self) -> Result<Self> {
-    let mut fields = HashMap::with_capacity(other.fields.len());
-    let mut formats = HashMap::with_capacity(other.formats.len());
-    // First clone all formats.
-    for (segment_suffix, format) in &other.formats {
-      let values = match format.as_ref().get_merge_instance()? {
-        Some(format) => Arc::new(format),
-        None => Arc::clone(format),
-      };
-      formats.insert(segment_suffix.clone(), values);
-    }
-
-    let single = if other.formats.len() == 1 {
-      other.formats.values().next().zip(formats.values().next())
-    } else {
-      None
-    };
-    let mut old_to_new = HashMap::new();
-    if single.is_none() {
-      old_to_new.reserve(other.formats.len());
-      for (segment_suffix, format) in &other.formats {
-        old_to_new.insert(Arc::as_ptr(format), &formats[segment_suffix]);
+    let mut producers = other.producers.clone();
+    for &slot in other.formats.values() {
+      let slot = slot as usize;
+      if let Some(producer) = other.producers[slot].as_ref().get_merge_instance()? {
+        producers[slot] = Arc::new(producer);
       }
     }
-
-    for (field_number, format) in &other.fields {
-      let producer = match single {
-        Some((old, new)) => Arc::ptr_eq(old, format).then_some(new),
-        None => old_to_new.get(&Arc::as_ptr(format)).copied(),
-      };
-      let producer = producer.ok_or_else(|| {
-        LuceneError::illegal_state(format!(
-          "missing merge instance for field number: {field_number}"
-        ))
-      })?;
-      fields.insert(*field_number, Arc::clone(producer));
-    }
-
-    Ok(Self { fields, formats })
+    Ok(Self {
+      fields: Arc::clone(&other.fields),
+      formats: Arc::clone(&other.formats),
+      producers,
+    })
   }
 
   fn new<PF, D1, D2>(
@@ -516,7 +486,8 @@ where
     D1: Directory,
   {
     let mut fields = HashMap::new();
-    let mut formats: HashMap<String, Arc<DVP>> = HashMap::new();
+    let mut formats = HashMap::new();
+    let mut producers = Vec::new();
 
     let mut success = false;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
@@ -538,27 +509,36 @@ where
         })?;
         let segment_suffix =
           get_full_segment_suffix(&read_state.segment_suffix, format_name, suffix);
-        let producer = match formats.entry(segment_suffix) {
-          Entry::Occupied(entry) => Arc::clone(entry.get()),
+        let slot = match formats.entry(segment_suffix) {
+          Entry::Occupied(entry) => *entry.get(),
           Entry::Vacant(entry) => {
             let format = PF::for_name(format_name)?;
             let state = SegmentReadState::copy_with_suffix(read_state, entry.key());
-            let producer = Arc::new(format.fields_producer(&state, segment_info)?);
-            Arc::clone(entry.insert(producer))
+            let slot: u32 = producers.len().try_convert()?;
+            producers.push(Arc::new(format.fields_producer(&state, segment_info)?));
+            entry.insert(slot);
+            slot
           },
         };
-        fields.insert(field_info.number, producer);
+        fields.insert(field_info.number, slot);
       }
       success = true;
       Ok(())
     }));
 
     if !success {
-      IOUtils::close_while_handling_exception_with(formats.values(), |format| format.close());
+      IOUtils::close_while_handling_exception_with(
+        formats.values().map(|&slot| &producers[slot as usize]),
+        |format| format.close(),
+      );
     }
     unwrap_caught_result!(result)?;
 
-    Ok(Self { fields, formats })
+    Ok(Self {
+      fields: Arc::new(fields),
+      formats: Arc::new(formats),
+      producers,
+    })
   }
 }
 
@@ -573,7 +553,13 @@ where
   DVP: CloseableRef,
 {
   fn close(&self) -> Result<()> {
-    IOUtils::close_with(self.formats.values(), |format| format.close())
+    IOUtils::close_with(
+      self
+        .formats
+        .values()
+        .map(|&slot| &self.producers[slot as usize]),
+      |format| format.close(),
+    )
   }
 }
 
@@ -587,6 +573,7 @@ where
     self
       .fields
       .get(&field.number)
+      .map(|&slot| &self.producers[slot as usize])
       .ok_or_else(|| {
         LuceneError::illegal_state(format!(
           "missing doc values producer for field: {}",
@@ -602,6 +589,7 @@ where
     self
       .fields
       .get(&field.number)
+      .map(|&slot| &self.producers[slot as usize])
       .ok_or_else(|| {
         LuceneError::illegal_state(format!(
           "missing doc values producer for field: {}",
@@ -617,6 +605,7 @@ where
     self
       .fields
       .get(&field.number)
+      .map(|&slot| &self.producers[slot as usize])
       .ok_or_else(|| {
         LuceneError::illegal_state(format!(
           "missing doc values producer for field: {}",
@@ -632,6 +621,7 @@ where
     self
       .fields
       .get(&field.number)
+      .map(|&slot| &self.producers[slot as usize])
       .ok_or_else(|| {
         LuceneError::illegal_state(format!(
           "missing doc values producer for field: {}",
@@ -647,6 +637,7 @@ where
     self
       .fields
       .get(&field.number)
+      .map(|&slot| &self.producers[slot as usize])
       .ok_or_else(|| {
         LuceneError::illegal_state(format!(
           "missing doc values producer for field: {}",
@@ -660,14 +651,14 @@ where
 
   fn get_skipper(&self, field: &Arc<FieldInfo>) -> Result<Option<Self::DocValuesSkipper>> {
     match self.fields.get(&field.number) {
-      Some(producer) => producer.get_skipper(field),
+      Some(&slot) => self.producers[slot as usize].get_skipper(field),
       None => Ok(None),
     }
   }
 
   fn check_integrity(&self) -> Result<()> {
-    for format in self.formats.values() {
-      format.check_integrity()?;
+    for &slot in self.formats.values() {
+      self.producers[slot as usize].check_integrity()?;
     }
     Ok(())
   }

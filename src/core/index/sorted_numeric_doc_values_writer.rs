@@ -171,8 +171,8 @@ impl<P: Borrow<PackedLongValues>, V: Borrow<LongValues>> SortedNumericDocValues
 
 /// Buffers up pending `[i64]` per doc, sorts, then flushes when segment flushes.
 pub(crate) struct SortedNumericDocValuesWriter {
-  pending: Builder,                // stream of all values
-  pending_counts: Option<Builder>, // count of values per doc
+  values: SortedNumericValues,         // stream of all values
+  counts: Option<SortedNumericCounts>, // count of values per doc
   docs_with_field: DocsWithFieldSet,
   iw_bytes_used: SharedCounter,
   bytes_used: i64, // this only tracks differences in 'pending' and 'pendingCounts'
@@ -180,9 +180,16 @@ pub(crate) struct SortedNumericDocValuesWriter {
   current_doc: i32,
   current_values: smallvec::SmallVec<[i64; 4]>,
   current_upto: usize,
+}
 
-  final_values: Option<PackedLongValues>,
-  final_values_count: Option<PackedLongValues>,
+enum SortedNumericCounts {
+  Pending(Builder),
+  Finished(PackedLongValues),
+}
+
+enum SortedNumericValues {
+  Pending(Builder),
+  Finished(PackedLongValues),
 }
 
 impl SortedNumericDocValuesWriter {
@@ -202,8 +209,8 @@ impl SortedNumericDocValuesWriter {
     iw_bytes_used.add_and_get(bytes_used);
 
     Ok(Self {
-      pending,
-      pending_counts: None,
+      values: SortedNumericValues::Pending(pending),
+      counts: None,
       docs_with_field,
       iw_bytes_used,
       bytes_used,
@@ -211,8 +218,6 @@ impl SortedNumericDocValuesWriter {
       current_doc: -1,
       current_values,
       current_upto: 0,
-      final_values: None,
-      final_values_count: None,
     })
   }
 
@@ -231,15 +236,22 @@ impl SortedNumericDocValuesWriter {
     if self.current_doc == -1 {
       return Ok(());
     }
-    if self.current_upto > 1 {
-      self.current_values[..self.current_upto].sort_unstable();
+    let current_values = &mut self.current_values[..self.current_upto];
+    if current_values.len() > 1 {
+      current_values.sort_unstable();
     }
-    for i in 0..self.current_upto {
-      self.pending.add(self.current_values[i])?;
+    for &value in current_values.iter() {
+      let SortedNumericValues::Pending(pending) = &mut self.values else {
+        return Err(LuceneError::illegal_state("Cannot be reused after build()"));
+      };
+      pending.add(value)?;
     }
     // record the number of values for this doc
-    if let Some(pending_counts) = self.pending_counts.as_mut() {
-      pending_counts.add(self.current_upto as i64)?;
+    if let Some(counts) = self.counts.as_mut() {
+      let SortedNumericCounts::Pending(counts) = counts else {
+        return Err(LuceneError::illegal_state("Cannot be reused after build()"));
+      };
+      counts.add(self.current_upto as i64)?;
     } else if self.current_upto != 1 {
       let mut pending_counts =
         PackedLongValues::delta_packed_long_values_builder_default(PackedInts::COMPACT)?;
@@ -247,7 +259,7 @@ impl SortedNumericDocValuesWriter {
         pending_counts.add(1)?;
       }
       pending_counts.add(self.current_upto as i64)?;
-      self.pending_counts = Some(pending_counts);
+      self.counts = Some(SortedNumericCounts::Pending(pending_counts));
     }
     self.current_upto = 0;
     self.docs_with_field.add(self.current_doc)?;
@@ -271,11 +283,14 @@ impl SortedNumericDocValuesWriter {
   }
 
   fn update_bytes_used(&mut self) -> Result<()> {
-    let pending_counts_usage = match &self.pending_counts {
-      Some(c) => c.ram_bytes_used()?,
-      None => 0,
+    let pending_counts_usage = match &self.counts {
+      Some(SortedNumericCounts::Pending(counts)) => counts.ram_bytes_used()?,
+      _ => 0,
     };
-    let new_bytes_used = self.pending.ram_bytes_used()?
+    let SortedNumericValues::Pending(pending) = &self.values else {
+      return Err(LuceneError::illegal_state("Cannot be reused after build()"));
+    };
+    let new_bytes_used = pending.ram_bytes_used()?
       + pending_counts_usage
       + self.docs_with_field.ram_bytes_used()?
       + size_of_array_capacity::<i64>(if self.current_values.spilled() {
@@ -334,17 +349,25 @@ impl DocValuesWriter for SortedNumericDocValuesWriter {
     DM: DocMap,
     DC: DocValuesConsumer,
   {
-    // `final_values` should always be `Some` here, because finish() runs before flush().
+    // finish() normally provides the values before flush().
+    if matches!(self.values, SortedNumericValues::Pending(_)) {
+      self.finish_current_doc()?;
+    }
     let built_values;
     let built_value_counts;
-    let (values, value_counts) = match self.final_values.as_ref() {
-      Some(values) => (values, self.final_values_count.as_ref()),
-      None => {
-        self.finish_current_doc()?;
-        built_values = self.pending.build()?;
-        built_value_counts = match &mut self.pending_counts {
-          Some(p) => Some(p.build()?),
-          None => None,
+    let (values, value_counts) = match &mut self.values {
+      SortedNumericValues::Finished(values) => {
+        let counts = match &self.counts {
+          Some(SortedNumericCounts::Finished(counts)) => Some(counts),
+          _ => None,
+        };
+        (&*values, counts)
+      },
+      SortedNumericValues::Pending(pending) => {
+        built_values = pending.build()?;
+        built_value_counts = match &mut self.counts {
+          Some(SortedNumericCounts::Pending(counts)) => Some(counts.build()?),
+          _ => None,
         };
         (&built_values, built_value_counts.as_ref())
       },
@@ -395,27 +418,35 @@ impl DocValuesWriter for SortedNumericDocValuesWriter {
   type DocIdSetIterator = SortedNumericDocValuesWriterValues;
 
   fn get_doc_values(&self) -> Result<Self::DocIdSetIterator> {
-    let Some(final_values) = self.final_values.as_ref() else {
+    let SortedNumericValues::Finished(final_values) = &self.values else {
       return Err(LuceneError::illegal_state(
         "must be finished before getting doc values",
       ));
     };
     SortedNumericDocValuesWriter::get_values(
       final_values,
-      self.final_values_count.as_ref(),
+      match &self.counts {
+        Some(SortedNumericCounts::Finished(counts)) => Some(counts),
+        _ => None,
+      },
       &self.docs_with_field,
     )
   }
 
   fn finish(&mut self, _pool: &Arc<ByteBlockPool>) -> Result<()> {
-    if self.final_values.is_none() {
-      debug_assert!(self.final_values_count.is_none());
+    if matches!(self.values, SortedNumericValues::Pending(_)) {
+      debug_assert!(!matches!(
+        self.counts,
+        Some(SortedNumericCounts::Finished(_))
+      ));
       self.finish_current_doc()?;
-      self.final_values = Option::from(self.pending.build()?);
-      self.final_values_count = match &mut self.pending_counts {
-        Some(p) => Some(p.build()?),
-        None => None,
+      let SortedNumericValues::Pending(pending) = &mut self.values else {
+        return Err(LuceneError::illegal_state("missing pending numeric values"));
       };
+      self.values = SortedNumericValues::Finished(pending.build()?);
+      if let Some(SortedNumericCounts::Pending(counts)) = &mut self.counts {
+        self.counts = Some(SortedNumericCounts::Finished(counts.build()?));
+      }
     }
     self.docs_with_field.finish();
     Ok(())

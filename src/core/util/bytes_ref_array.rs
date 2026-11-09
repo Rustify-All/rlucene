@@ -40,26 +40,40 @@ use crate::core::util::{
 /// This is an internal and experimental component.
 #[derive(Debug)]
 pub struct BytesRefArray {
-  pool: ByteBlockPool,
+  storage: ByteStorage,
   offsets: smallvec::SmallVec<[usize; 1]>,
   last_element: usize,
   current_offset: usize,
   byte_used: SharedCounter,
 }
 
+#[derive(Debug)]
+enum ByteStorage {
+  Blocks(ByteBlockPool),
+  Compact(Vec<u8>),
+}
+
 impl BytesRefArray {
   pub fn new(byte_used: SharedCounter) -> Result<BytesRefArray> {
     let allocator = DirectTrackingAllocatorByte::new(byte_used.clone());
-    let pool = ByteBlockPool::new(allocator);
+    let storage = ByteStorage::Blocks(ByteBlockPool::new(allocator));
+    Ok(Self::with_storage(byte_used, storage))
+  }
+
+  pub(crate) fn new_compact(byte_used: SharedCounter) -> Self {
+    Self::with_storage(byte_used, ByteStorage::Compact(Vec::new()))
+  }
+
+  fn with_storage(byte_used: SharedCounter, storage: ByteStorage) -> Self {
     let offsets = smallvec::SmallVec::with_capacity(1);
     byte_used.add_and_get(size_of_array_capacity::<usize>(offsets.capacity()));
-    Ok(BytesRefArray {
-      pool,
+    Self {
+      storage,
       offsets,
       last_element: 0,
       current_offset: 0,
       byte_used,
-    })
+    }
   }
   /// Returns the nth element of this [`BytesRefArray`].
   ///
@@ -97,11 +111,21 @@ impl BytesRefArray {
         length: 0,
       }));
     }
+    let pool = match &self.storage {
+      ByteStorage::Compact(bytes) => {
+        return Ok(BytesRefValueEnum::Slice(BytesRef {
+          bytes: &bytes[offset..offset + length],
+          offset: 0,
+          length,
+        }));
+      },
+      ByteStorage::Blocks(pool) => pool,
+    };
     let block_index = offset >> BYTE_BLOCK_SHIFT;
     let block_offset = offset & BYTE_BLOCK_MASK as usize;
     if length <= BYTE_BLOCK_SIZE as usize - block_offset {
       return Ok(BytesRefValueEnum::Slice(BytesRef {
-        bytes: &self.pool.get_buffer(block_index)[block_offset..block_offset + length],
+        bytes: &pool.get_buffer(block_index)[block_offset..block_offset + length],
         offset: 0,
         length,
       }));
@@ -115,7 +139,7 @@ impl BytesRefArray {
     let mut remaining = length;
     while remaining > 0 {
       let chunk = std::cmp::min(BYTE_BLOCK_SIZE as usize - pos, remaining);
-      bytes.extend_from_slice(&self.pool.get_buffer(buffer_index)[pos..pos + chunk]);
+      bytes.extend_from_slice(&pool.get_buffer(buffer_index)[pos..pos + chunk]);
       remaining -= chunk;
       buffer_index += 1;
       pos = 0;
@@ -154,9 +178,14 @@ impl BytesRefArray {
       self.offsets[index + 1] - offset
     };
 
-    self
-      .pool
-      .set_bytes_ref(spare, result, offset as i64, length)?;
+    match &self.storage {
+      ByteStorage::Compact(bytes) => {
+        result.bytes = Cow::Borrowed(bytes);
+        result.offset = offset;
+        result.length = length;
+      },
+      ByteStorage::Blocks(pool) => pool.set_bytes_ref(spare, result, offset as i64, length)?,
+    }
     Ok(())
   }
 
@@ -250,10 +279,38 @@ impl<'a> SortableBytesRefArray<'a> for BytesRefArray {
         .byte_used
         .add_and_get(size_of_array_capacity::<usize>(self.offsets.capacity()) - old_size);
     }
-    if self.pool.buffer_upto.is_none() {
-      self.pool.next_buffer()?;
+    match &mut self.storage {
+      ByteStorage::Compact(bytes) => {
+        // Keep the same representable end offsets as the block pool.
+        let end = bytes
+          .len()
+          .checked_add(view.len())
+          .filter(|&end| i32::try_from(end).is_ok());
+        if end.is_none() {
+          return Err(LuceneError::number_overflow(
+            "Overflow when calculating byte offset.",
+          ));
+        }
+        let old_capacity = bytes.capacity();
+        bytes.extend_from_slice(view);
+        if bytes.capacity() != old_capacity {
+          self.byte_used.add_and_get(
+            size_of_array_capacity::<u8>(bytes.capacity())
+              - if old_capacity == 0 {
+                0
+              } else {
+                size_of_array_capacity::<u8>(old_capacity)
+              },
+          );
+        }
+      },
+      ByteStorage::Blocks(pool) => {
+        if pool.buffer_upto.is_none() {
+          pool.next_buffer()?;
+        }
+        pool.append(view)?;
+      },
     }
-    self.pool.append(view)?;
     self.offsets.push(self.current_offset);
     self.last_element += 1;
     self.current_offset += view.len();
@@ -264,8 +321,10 @@ impl<'a> SortableBytesRefArray<'a> for BytesRefArray {
     self.last_element = 0;
     self.current_offset = 0;
     self.offsets.clear();
-    self.pool.reset(false, true) // no need to 0 fill the buffers we control
-    // the allocator
+    match &mut self.storage {
+      ByteStorage::Compact(bytes) => bytes.clear(),
+      ByteStorage::Blocks(pool) => pool.reset(false, true),
+    }
   }
 
   fn size(&self) -> usize {
@@ -376,6 +435,18 @@ impl<S: Borrow<SortState>> IndexedBytesRefIterator for IndexedBytesRefIteratorIm
       if self.result.bytes.len() < length {
         ArrayUtil::oversize(length, size_of::<u8>())?;
       }
+      let pool = match &array.storage {
+        ByteStorage::Compact(bytes) => {
+          self.pos += 1;
+          let value = BytesRef {
+            bytes: &bytes[offset..offset + length],
+            offset: 0,
+            length,
+          };
+          return Ok(Some((self.ord, BytesRefValueEnum::Slice(value))));
+        },
+        ByteStorage::Blocks(pool) => pool,
+      };
       let offset = offset as i64;
       let pos = (offset & BYTE_BLOCK_MASK as i64) as usize;
       if pos + length > BYTE_BLOCK_SIZE as usize {
@@ -384,7 +455,7 @@ impl<S: Borrow<SortState>> IndexedBytesRefIterator for IndexedBytesRefIteratorIm
       self.result.length = length;
       let buffer_index: i32 = (offset >> BYTE_BLOCK_SHIFT).try_convert()?;
       let value = if pos + length <= BYTE_BLOCK_SIZE as usize {
-        let bytes = &array.pool.get_buffer(buffer_index as usize)[pos..pos + length];
+        let bytes = &pool.get_buffer(buffer_index as usize)[pos..pos + length];
         self.result.offset = 0;
         BytesRefValueEnum::Slice(BytesRef {
           bytes,
@@ -393,9 +464,7 @@ impl<S: Borrow<SortState>> IndexedBytesRefIterator for IndexedBytesRefIteratorIm
         })
       } else {
         self.result.offset = 0;
-        array
-          .pool
-          .read_bytes(offset, &mut self.result.bytes, 0, length)?;
+        pool.read_bytes(offset, &mut self.result.bytes, 0, length)?;
         BytesRefValueEnum::Buffer(Cow::Borrowed(&self.result))
       };
       self.pos += 1;

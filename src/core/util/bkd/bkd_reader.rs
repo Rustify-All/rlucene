@@ -48,7 +48,8 @@ where
   index_in: Option<Arc<I>>,
   data_in: Arc<Mutex<I>>,
   min_packed_value: Box<[u8]>,
-  max_packed_value: Box<[u8]>,
+  // Reuse the minimum when both packed bounds are equal.
+  max_packed_value: Option<Box<[u8]>>,
   point_count: usize,
   doc_count: i32,
   version: i32,
@@ -148,6 +149,8 @@ where
       }
     }
 
+    let max_packed_value =
+      (min_packed_value != max_packed_value).then(|| max_packed_value.into_boxed_slice());
     let point_count = meta_in.read_vlong()?.try_convert()?;
     let doc_count = meta_in.read_vint()?;
     let num_index_bytes = meta_in.read_vint()?.try_convert()?;
@@ -158,7 +161,7 @@ where
         index_in: None,
         data_in,
         min_packed_value: min_packed_value.into_boxed_slice(),
-        max_packed_value: max_packed_value.into_boxed_slice(),
+        max_packed_value,
         point_count,
         doc_count,
         version,
@@ -218,7 +221,11 @@ where
   }
 
   fn get_max_packed_value(&self) -> Result<Option<Cow<'_, [u8]>>> {
-    Ok(Some(Cow::Borrowed(&self.max_packed_value)))
+    let max_packed_value = self
+      .max_packed_value
+      .as_deref()
+      .unwrap_or(&self.min_packed_value);
+    Ok(Some(Cow::Borrowed(max_packed_value)))
   }
 
   fn get_num_dimensions(&self) -> Result<usize> {
@@ -279,7 +286,10 @@ where
       self.version,
       self.point_count,
       &self.min_packed_value,
-      &self.max_packed_value,
+      self
+        .max_packed_value
+        .as_deref()
+        .unwrap_or(&self.min_packed_value),
       self.is_tree_balanced,
     )
   }

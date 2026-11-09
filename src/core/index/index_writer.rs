@@ -1711,8 +1711,8 @@ where
       };
 
       let name = match f {
-        Fields::NumericDocValues(field) => field.parent_field.name,
-        Fields::BinaryDocValues(field) => field.parent_field.name,
+        Fields::NumericDocValues(field) => field.parent_field.name.into_string(),
+        Fields::BinaryDocValues(field) => field.parent_field.name.into_string(),
         field => field.name().to_owned(),
       };
       let update_term = if dv_updates.is_empty() {

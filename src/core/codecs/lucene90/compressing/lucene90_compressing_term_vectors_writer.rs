@@ -564,7 +564,7 @@ where
 
     for doc in &self.pending_docs {
       for field in &doc.fields {
-        let lengths = &field.term_lengths[..field.num_terms];
+        let lengths = field.prefix_lengths();
         if lengths.len() >= 8 {
           self
             .writer
@@ -583,7 +583,7 @@ where
 
     for doc in &self.pending_docs {
       for field in &doc.fields {
-        let lengths = &field.term_lengths[field.num_terms..];
+        let lengths = field.suffix_lengths();
         if lengths.len() >= 8 {
           self
             .writer
@@ -603,12 +603,12 @@ where
 
     for doc in &self.pending_docs {
       for field in &doc.fields {
-        if !cfg!(debug_assertions) && field.freqs.len() >= 8 {
+        if !cfg!(debug_assertions) && field.freqs().len() >= 8 {
           self
             .writer
-            .add_term_freqs(&field.freqs, &mut self.vectors_stream)?;
+            .add_term_freqs(field.freqs(), &mut self.vectors_stream)?;
         } else {
-          for &freq in &field.freqs {
+          for &freq in field.freqs() {
             self
               .writer
               .add((freq - 1) as i64, &mut self.vectors_stream)?;
@@ -627,7 +627,7 @@ where
         if fd.has_positions {
           let mut pos = 0;
           for i in 0..fd.num_terms {
-            let freq = fd.freqs[i];
+            let freq = fd.freqs()[i];
             if !cfg!(debug_assertions) && freq >= 8 {
               let end = pos + freq as usize;
               self.writer.add_position_deltas(
@@ -679,7 +679,7 @@ where
 
           let mut pos = 0;
           for i in 0..field.num_terms {
-            let freq = field.freqs[i] as usize;
+            let freq = field.freqs()[i] as usize;
             let position_idx = field.pos_start + pos + freq - 1;
             let offset_idx = field.off_start + pos + freq - 1;
             sums[field_index][0] += self.positions_buf[position_idx] as u64;
@@ -727,7 +727,7 @@ where
           let has_positions = field.has_positions;
           let mut pos = 0;
           for i in 0..field.num_terms {
-            let freq = field.freqs[i];
+            let freq = field.freqs()[i];
             if !cfg!(debug_assertions) && has_positions && freq >= 8 {
               let end = pos + freq as usize;
               self.writer.add_start_offset_residuals(
@@ -772,12 +772,12 @@ where
         if field.flags & OFFSETS != 0 {
           let mut pos = 0;
           for i in 0..field.num_terms {
-            let prefix = field.term_lengths[i];
-            let suffix = field.term_lengths[field.num_terms + i];
-            for _ in 0..field.freqs[i] {
+            let prefix = field.prefix_lengths()[i];
+            let suffix = field.suffix_lengths()[i];
+            for _ in 0..field.freqs()[i] {
               let length = self.offsets_buf[field.off_start + pos][1];
               self.writer.add(
-                (length - prefix as i32 - suffix as i32) as i64,
+                i64::from(length - prefix - suffix),
                 &mut self.vectors_stream,
               )?;
               pos += 1;
@@ -1110,7 +1110,7 @@ where
         )));
       },
     };
-    cur_field.add_term(freq, prefix, suffix_len);
+    cur_field.add_term(freq, prefix.try_convert()?, suffix_len.try_convert()?);
 
     debug_assert!((term.offset + prefix) <= i32::MAX as usize);
     self
@@ -1479,8 +1479,8 @@ pub(crate) struct FieldData {
   pub field_num: i32,
   pub flags: i32,
   pub num_terms: usize,
-  pub freqs: smallvec::SmallVec<[i32; 4]>,
-  pub term_lengths: smallvec::SmallVec<[usize; 4]>,
+  // Frequencies, prefix lengths and suffix lengths occupy consecutive ranges.
+  term_metadata: smallvec::SmallVec<[i32; 6]>,
   pub pos_start: usize,
   pub off_start: usize,
   pub pay_start: usize,
@@ -1510,8 +1510,7 @@ impl FieldData {
       field_num,
       flags,
       num_terms,
-      freqs: smallvec::smallvec![0; num_terms],
-      term_lengths: smallvec::smallvec![0; num_terms * 2],
+      term_metadata: smallvec::smallvec![0; num_terms * 3],
       pos_start,
       off_start,
       pay_start,
@@ -1519,10 +1518,22 @@ impl FieldData {
       ord: 0,
     }
   }
-  pub(crate) fn add_term(&mut self, freq: i32, prefix_length: usize, suffix_length: usize) {
-    self.freqs[self.ord] = freq;
-    self.term_lengths[self.ord] = prefix_length;
-    self.term_lengths[self.num_terms + self.ord] = suffix_length;
+  fn freqs(&self) -> &[i32] {
+    &self.term_metadata[..self.num_terms]
+  }
+
+  fn prefix_lengths(&self) -> &[i32] {
+    &self.term_metadata[self.num_terms..2 * self.num_terms]
+  }
+
+  fn suffix_lengths(&self) -> &[i32] {
+    &self.term_metadata[2 * self.num_terms..]
+  }
+
+  pub(crate) fn add_term(&mut self, freq: i32, prefix_length: i32, suffix_length: i32) {
+    self.term_metadata[self.ord] = freq;
+    self.term_metadata[self.num_terms + self.ord] = prefix_length;
+    self.term_metadata[2 * self.num_terms + self.ord] = suffix_length;
     self.ord += 1;
   }
   #[allow(clippy::too_many_arguments)]

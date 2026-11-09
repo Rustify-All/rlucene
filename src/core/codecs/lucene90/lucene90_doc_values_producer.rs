@@ -70,7 +70,7 @@ use crate::core::util::packed::direct_monotonic_reader::{DirectMonotonicReader, 
 use crate::core::util::packed::direct_reader::{DirectPackedEnum, DirectReader, FromSlice};
 use crate::core::util::{SliceCopyOps, ToInt, TryIntoInt};
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, hash_map::Entry};
 use std::sync::Arc;
 
 pub struct Lucene90DocValuesProducer<I> {
@@ -82,7 +82,8 @@ pub struct Lucene90DocValuesProducer<I> {
 }
 
 struct DocValuesEntries {
-  numerics: HashMap<i32, NumericEntry>,
+  numerics: HashMap<i32, usize>,
+  numeric_entries: Box<[NumericEntry]>,
   binaries: HashMap<i32, BinaryEntry>,
   sorted: HashMap<i32, SortedEntry>,
   sorted_sets: HashMap<i32, SortedSetEntry>,
@@ -109,6 +110,7 @@ where
     let mut version = -1;
 
     let mut numerics = HashMap::new();
+    let mut numeric_entries = Vec::new();
     let mut binaries = HashMap::new();
     let mut sorted = HashMap::new();
     let mut sorted_sets = HashMap::new();
@@ -134,6 +136,7 @@ where
               &mut input,
               &state.field_infos,
               &mut numerics,
+              &mut numeric_entries,
               &mut binaries,
               &mut sorted,
               &mut sorted_sets,
@@ -196,6 +199,7 @@ where
       Ok(Self {
         entries: Arc::new(DocValuesEntries {
           numerics,
+          numeric_entries: numeric_entries.into_boxed_slice(),
           binaries,
           sorted,
           sorted_sets,
@@ -232,7 +236,8 @@ where
   fn read_fields<II>(
     meta: &mut II,
     infos: &Arc<FieldInfos>,
-    numerics: &mut HashMap<i32, NumericEntry>,
+    numerics: &mut HashMap<i32, usize>,
+    numeric_entries: &mut Vec<NumericEntry>,
     binaries: &mut HashMap<i32, BinaryEntry>,
     sorted: &mut HashMap<i32, SortedEntry>,
     sorted_sets: &mut HashMap<i32, SortedSetEntry>,
@@ -263,7 +268,17 @@ where
       match type_byte {
         t if t == Lucene90DocValuesFormat::NUMERIC => {
           let entry = Self::read_numeric(meta)?;
-          numerics.insert(info.number, entry);
+          match numerics.entry(info.number) {
+            Entry::Occupied(slot) => numeric_entries[*slot.get()] = entry,
+            Entry::Vacant(slot) => {
+              let index = numeric_entries.len();
+              if index == numeric_entries.capacity() {
+                numeric_entries.reserve_exact((index / 2).max(4));
+              }
+              slot.insert(index);
+              numeric_entries.push(entry);
+            },
+          }
         },
         t if t == Lucene90DocValuesFormat::BINARY => {
           let entry = Self::read_binary(meta)?;
@@ -810,10 +825,10 @@ where
   type NumericDocValues = Lucene90NumericDocValuesEnum<I>;
 
   fn get_numeric(&self, field: &Arc<FieldInfo>) -> Result<Lucene90NumericDocValuesEnum<I>> {
-    let entry = self.entries.numerics.get(&field.number).ok_or_else(|| {
+    let slot = self.entries.numerics.get(&field.number).ok_or_else(|| {
       LuceneError::illegal_state(format!("Missing numeric entry for field {}", field.number))
     })?;
-    self.get_numeric(entry)
+    self.get_numeric(&self.entries.numeric_entries[*slot])
   }
 
   type BinaryDocValues = Lucene90BinaryDocValuesEnum<I>;

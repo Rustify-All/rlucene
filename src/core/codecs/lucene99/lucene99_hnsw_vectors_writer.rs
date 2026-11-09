@@ -686,6 +686,8 @@ where
 
     CodecUtil::write_footer(&mut self.vector_index)?;
 
+    // The encoded graph no longer needs the field builders or their buffered vectors.
+    self.fields.clear();
     Ok(())
   }
 

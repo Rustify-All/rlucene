@@ -42,15 +42,30 @@ pub struct FieldType {
   frozen: bool,
   doc_values_type: DocValuesType,
   doc_values_skip_index: DocValuesSkipIndexType,
-  dimension_count: usize,
-  index_dimension_count: usize,
-  dimension_num_bytes: usize,
-  vector_dimension: i32,
-  vector_encoding: VectorEncoding,
-  vector_similarity_function: VectorSimilarityFunction,
+  point_dimensions: PointDimensions,
+  vectors: Option<Arc<VectorOptions>>,
   // Most fields have no attributes. Share populated maps until a clone is changed.
   attributes: Option<Arc<HashMap<String, String>>>,
 }
+
+#[derive(Clone, Debug, Default)]
+struct PointDimensions {
+  inline: [u8; 3],
+  wide: Option<Arc<[usize; 3]>>,
+}
+
+#[derive(Clone, Debug)]
+struct VectorOptions {
+  dimension: i32,
+  encoding: VectorEncoding,
+  similarity: VectorSimilarityFunction,
+}
+
+const DEFAULT_VECTORS: VectorOptions = VectorOptions {
+  dimension: 0,
+  encoding: VectorEncoding::FLOAT32(4),
+  similarity: VectorSimilarityFunction::Euclidean,
+};
 
 impl Default for FieldType {
   fn default() -> Self {
@@ -59,6 +74,10 @@ impl Default for FieldType {
 }
 
 impl FieldType {
+  fn vectors(&self) -> &VectorOptions {
+    self.vectors.as_deref().unwrap_or(&DEFAULT_VECTORS)
+  }
+
   /// Creates a new FieldType with default properties.
   pub fn new() -> Self {
     Self {
@@ -73,12 +92,8 @@ impl FieldType {
       frozen: false,
       doc_values_type: DocValuesType::None,
       doc_values_skip_index: DocValuesSkipIndexType::None,
-      dimension_count: 0,
-      index_dimension_count: 0,
-      dimension_num_bytes: 0,
-      vector_dimension: 0,
-      vector_encoding: VectorEncoding::FLOAT32(4),
-      vector_similarity_function: VectorSimilarityFunction::Euclidean,
+      point_dimensions: PointDimensions::default(),
+      vectors: None,
       attributes: None,
     }
   }
@@ -101,12 +116,40 @@ impl FieldType {
       frozen: false,
       doc_values_type: *ref_field.doc_values_type(),
       doc_values_skip_index: *ref_field.doc_values_skip_index_type(),
-      dimension_count: ref_field.point_dimension_count(),
-      index_dimension_count: ref_field.point_index_dimension_count(),
-      dimension_num_bytes: ref_field.point_num_bytes(),
-      vector_dimension: ref_field.vector_dimension(),
-      vector_encoding: *ref_field.vector_encoding(),
-      vector_similarity_function: *ref_field.vector_similarity_function(),
+      point_dimensions: {
+        let dimensions = [
+          ref_field.point_dimension_count(),
+          ref_field.point_index_dimension_count(),
+          ref_field.point_num_bytes(),
+        ];
+        match dimensions.map(u8::try_from) {
+          [Ok(count), Ok(index_count), Ok(bytes)] => PointDimensions {
+            inline: [count, index_count, bytes],
+            wide: None,
+          },
+          _ => PointDimensions {
+            inline: [0; 3],
+            wide: Some(Arc::new(dimensions)),
+          },
+        }
+      },
+      vectors: {
+        let dimension = ref_field.vector_dimension();
+        let encoding = *ref_field.vector_encoding();
+        let similarity = *ref_field.vector_similarity_function();
+        if dimension == 0
+          && matches!(encoding, VectorEncoding::FLOAT32(4))
+          && similarity == VectorSimilarityFunction::Euclidean
+        {
+          None
+        } else {
+          Some(Arc::new(VectorOptions {
+            dimension,
+            encoding,
+            similarity,
+          }))
+        }
+      },
       attributes: ref_field.get_attributes().cloned().map(Arc::new),
     })
   }
@@ -280,9 +323,14 @@ impl FieldType {
       )));
     }
 
-    self.dimension_count = dimension_count;
-    self.index_dimension_count = index_dimension_count;
-    self.dimension_num_bytes = dimension_num_bytes;
+    self.point_dimensions = PointDimensions {
+      inline: [
+        dimension_count as u8,
+        index_dimension_count as u8,
+        dimension_num_bytes as u8,
+      ],
+      wide: None,
+    };
     Ok(())
   }
 
@@ -300,9 +348,16 @@ impl FieldType {
         "vector numDimensions must be > 0; got {num_dimensions}"
       )));
     }
-    self.vector_dimension = num_dimensions;
-    self.vector_similarity_function = similarity;
-    self.vector_encoding = encoding;
+    let values = VectorOptions {
+      dimension: num_dimensions,
+      encoding,
+      similarity,
+    };
+    if let Some(existing) = &mut self.vectors {
+      *Arc::make_mut(existing) = values;
+    } else {
+      self.vectors = Some(Arc::new(values));
+    }
     Ok(())
   }
 
@@ -417,31 +472,49 @@ impl IndexableFieldType for FieldType {
 
   /// Returns the number of point dimensions.
   fn point_dimension_count(&self) -> usize {
-    self.dimension_count
+    self
+      .point_dimensions
+      .wide
+      .as_deref()
+      .map_or(usize::from(self.point_dimensions.inline[0]), |dimensions| {
+        dimensions[0]
+      })
   }
 
   /// Returns the number of dimensions used for the index key.
   fn point_index_dimension_count(&self) -> usize {
-    self.index_dimension_count
+    self
+      .point_dimensions
+      .wide
+      .as_deref()
+      .map_or(usize::from(self.point_dimensions.inline[1]), |dimensions| {
+        dimensions[1]
+      })
   }
 
   /// Returns the number of bytes in each dimension's values.
   fn point_num_bytes(&self) -> usize {
-    self.dimension_num_bytes
+    self
+      .point_dimensions
+      .wide
+      .as_deref()
+      .map_or(usize::from(self.point_dimensions.inline[2]), |dimensions| {
+        dimensions[2]
+      })
   }
 
   /// Returns the number of dimensions of the field's vector value.
   fn vector_dimension(&self) -> i32 {
-    self.vector_dimension
+    self.vectors().dimension
   }
 
   /// Returns the VectorEncoding of the field's vector value.
   fn vector_encoding(&self) -> &VectorEncoding {
-    &self.vector_encoding
+    &self.vectors().encoding
   }
   /// Returns the VectorSimilarityFunction of the field's vector value.
   fn vector_similarity_function(&self) -> &VectorSimilarityFunction {
-    &self.vector_similarity_function
+    &self.vectors().similarity
   }
 
   /// Returns the attributes for the field type.
@@ -451,9 +524,9 @@ impl IndexableFieldType for FieldType {
 }
 impl PartialEq for FieldType {
   fn eq(&self, other: &Self) -> bool {
-    self.dimension_count == other.dimension_count
-      && self.index_dimension_count == other.index_dimension_count
-      && self.dimension_num_bytes == other.dimension_num_bytes
+    self.point_dimension_count() == other.point_dimension_count()
+      && self.point_index_dimension_count() == other.point_index_dimension_count()
+      && self.point_num_bytes() == other.point_num_bytes()
       && self.doc_values_type == other.doc_values_type
       && self.doc_values_skip_index == other.doc_values_skip_index
       && self.index_options == other.index_options
@@ -474,9 +547,9 @@ impl Hash for FieldType {
   where
     H: Hasher,
   {
-    self.dimension_count.hash(state);
-    self.index_dimension_count.hash(state);
-    self.dimension_num_bytes.hash(state);
+    self.point_dimension_count().hash(state);
+    self.point_index_dimension_count().hash(state);
+    self.point_num_bytes().hash(state);
     self.doc_values_type.hash(state);
     self.doc_values_skip_index.hash(state);
     self.index_options.hash(state);
@@ -527,16 +600,16 @@ impl fmt::Display for FieldType {
       }
     }
 
-    if self.dimension_count != 0 {
+    if self.point_dimension_count() != 0 {
       if !result.is_empty() {
         result.push(',');
       }
       result.push_str("pointDimensionCount=");
-      write!(result, "{}", self.dimension_count)?;
+      write!(result, "{}", self.point_dimension_count())?;
       result.push_str(",pointIndexDimensionCount=");
-      write!(result, "{}", self.index_dimension_count)?;
+      write!(result, "{}", self.point_index_dimension_count())?;
       result.push_str(",pointNumBytes=");
-      write!(result, "{}", self.dimension_num_bytes)?;
+      write!(result, "{}", self.point_num_bytes())?;
     }
 
     if self.doc_values_type != DocValuesType::None {

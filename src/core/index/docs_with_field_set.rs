@@ -27,10 +27,9 @@ use std::sync::Arc;
 /// Accumulator for documents that have a value for a field.
 /// This is optimized for the case where all documents have a value.
 pub struct DocsWithFieldSet {
-  set: Option<FixedBitSet>,
+  set: Option<Arc<FixedBitSet>>,
   cardinality: i32,
   last_doc_id: i32,
-  set_iter: Option<Arc<FixedBitSet>>,
   finish: bool,
 }
 impl Default for DocsWithFieldSet {
@@ -45,7 +44,6 @@ impl DocsWithFieldSet {
       set: None,
       cardinality: 0,
       last_doc_id: -1,
-      set_iter: None,
       finish: false,
     }
   }
@@ -67,12 +65,14 @@ impl DocsWithFieldSet {
     }
     let doc_index = doc_id as usize;
     if let Some(set) = self.set.as_mut() {
+      let set = Arc::get_mut(set)
+        .ok_or_else(|| LuceneError::illegal_state("cannot modify a shared document set"))?;
       set.ensure_capacity(doc_index)?;
       set.set(doc_index)?;
     } else if doc_id != self.cardinality {
       let mut set = FixedBitSet::with_set_prefix((doc_id + 1) as usize, self.cardinality as usize);
       set.set(doc_index)?;
-      self.set = Some(set);
+      self.set = Some(Arc::new(set));
     }
 
     self.last_doc_id = doc_id;
@@ -88,12 +88,12 @@ impl DocsWithFieldSet {
 impl Accountable for DocsWithFieldSet {
   fn ram_bytes_used(&self) -> Result<i64> {
     if let Some(set) = self.set.as_ref() {
-      return set.ram_bytes_used();
-    }
-    if let Some(set) = self.set_iter.as_ref() {
-      return Ok(
-        (std::mem::size_of_val(set.as_ref()) as i64).saturating_add(set.ram_bytes_used()?),
-      );
+      let bytes = set.ram_bytes_used()?;
+      return if self.finish {
+        Ok((std::mem::size_of_val(set.as_ref()) as i64).saturating_add(bytes))
+      } else {
+        Ok(bytes)
+      };
     }
     Ok(0)
   }
@@ -111,11 +111,10 @@ impl DocIdSet for DocsWithFieldSet {
         "DocsWithFieldSet must be call finish() before creating an iterator",
       ));
     }
-    if let Some(set_iter) = self.set_iter.as_ref() {
-      debug_assert!(self.set.is_none());
+    if let Some(set) = self.set.as_ref() {
       debug_assert!(self.cardinality > 0);
       Ok(DocIdSetIteratorEnum2::B(BitSetIterator::new(
-        set_iter.clone(),
+        set.clone(),
         self.cardinality as i64,
       )?))
     } else {
@@ -131,9 +130,5 @@ impl DocIdSet for DocsWithFieldSet {
 
   fn finish(&mut self) {
     self.finish = true;
-    // not all documents are contiguous
-    if let Some(set) = self.set.take() {
-      self.set_iter = Some(Arc::new(set));
-    }
   }
 }

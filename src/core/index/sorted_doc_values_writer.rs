@@ -362,18 +362,22 @@ impl<V: Borrow<PackedLongValues>, M: Borrow<Vec<i32>>> SortedDocValues
 pub(crate) struct SortedDocValuesWriter {
   hash: Option<DirectBytesRefHash>,
   frozen_hash: Option<Arc<DirectBytesRefHash>>,
-  pending: Builder,
+  ords: SortedOrdinals,
   docs_with_field: DocsWithFieldSet,
   iw_bytes_used: SharedCounter,
   bytes_used: i64, // this currently only tracks differences in 'pending'
   field_info: Arc<FieldInfo>,
   last_doc_id: i32,
 
-  final_ords: Option<PackedLongValues>,
   // Sorted term IDs remain in BytesRefHash; is_sorted tracks whether sort has been called.
   is_sorted: bool,
   final_ord_map: Option<Arc<Vec<i32>>>,
   pool: Option<Arc<ByteBlockPool>>,
+}
+
+enum SortedOrdinals {
+  Pending(Builder),
+  Finished(PackedLongValues),
 }
 
 impl SortedDocValuesWriter {
@@ -389,13 +393,12 @@ impl SortedDocValuesWriter {
     Ok(Self {
       hash: Some(hash),
       frozen_hash: None,
-      pending,
+      ords: SortedOrdinals::Pending(pending),
       docs_with_field,
       iw_bytes_used,
       bytes_used,
       field_info,
       last_doc_id: -1,
-      final_ords: None,
       is_sorted: false,
       final_ord_map: None,
       pool: None,
@@ -446,12 +449,18 @@ impl SortedDocValuesWriter {
         .add_and_get((2 * BitUtil::INT_BYTES) as i64);
     }
 
-    self.pending.add(term_id as i64)?;
+    let SortedOrdinals::Pending(pending) = &mut self.ords else {
+      return Err(LuceneError::illegal_state("Cannot be reused after build()"));
+    };
+    pending.add(term_id as i64)?;
     self.update_bytes_used()
   }
 
   fn update_bytes_used(&mut self) -> Result<()> {
-    let new_bytes_used = self.pending.ram_bytes_used()? + self.docs_with_field.ram_bytes_used()?;
+    let SortedOrdinals::Pending(pending) = &self.ords else {
+      return Err(LuceneError::illegal_state("Cannot be reused after build()"));
+    };
+    let new_bytes_used = pending.ram_bytes_used()? + self.docs_with_field.ram_bytes_used()?;
     let delta = new_bytes_used - self.bytes_used;
     if delta != 0 {
       self.iw_bytes_used.add_and_get(delta);
@@ -512,7 +521,7 @@ impl DocValuesWriter for SortedDocValuesWriter {
         "must be finished before getting doc values",
       ));
     };
-    let Some(final_ords) = self.final_ords.as_ref() else {
+    let SortedOrdinals::Finished(final_ords) = &self.ords else {
       return Err(LuceneError::illegal_state(
         "must be finished before getting doc values",
       ));
@@ -560,7 +569,7 @@ impl DocValuesWriter for SortedDocValuesWriter {
         "must be finished before getting doc values",
       ));
     };
-    let Some(final_ords) = self.final_ords.as_ref() else {
+    let SortedOrdinals::Finished(final_ords) = &self.ords else {
       return Err(LuceneError::illegal_state(
         "must be finished before getting doc values",
       ));
@@ -588,7 +597,7 @@ impl DocValuesWriter for SortedDocValuesWriter {
     self.docs_with_field.finish();
     if !self.is_sorted {
       self.update_bytes_used()?;
-      debug_assert!(self.final_ord_map.is_none() && self.final_ords.is_none());
+      debug_assert!(self.final_ord_map.is_none());
       let hash = self
         .hash
         .as_mut()
@@ -596,7 +605,10 @@ impl DocValuesWriter for SortedDocValuesWriter {
       let value_count = hash.size();
       hash.sort(pool.as_ref())?;
       self.is_sorted = true;
-      let ords = self.pending.build()?;
+      let SortedOrdinals::Pending(pending) = &mut self.ords else {
+        return Err(LuceneError::illegal_state("Cannot be reused after build()"));
+      };
+      let ords = pending.build()?;
 
       let mut ord_map = vec![0i32; value_count];
       for ord in 0..value_count {
@@ -604,7 +616,7 @@ impl DocValuesWriter for SortedDocValuesWriter {
         ord_map[index] = ord as i32;
       }
       self.frozen_hash = self.hash.take().map(Arc::new);
-      self.final_ords = Some(ords);
+      self.ords = SortedOrdinals::Finished(ords);
       self.final_ord_map = Some(Arc::new(ord_map));
     }
     Ok(())

@@ -74,7 +74,7 @@ pub struct Field {
   /// Field's type.
   indexable_field_type: FieldType,
   /// Field's name.
-  pub(crate) name: String,
+  pub(crate) name: Box<str>,
   /// Field's value.
   pub(crate) fields_data: FieldDataEnum,
 }
@@ -93,7 +93,7 @@ impl Field {
     FD: Into<FieldDataEnum>,
   {
     Self {
-      name: name.into(),
+      name: String::into_boxed_str(name.into()),
       fields_data: fields_data.into(),
       indexable_field_type,
     }
@@ -125,7 +125,7 @@ impl Field {
     }
     Ok(Field {
       indexable_field_type,
-      name: name.into(),
+      name: String::into_boxed_str(name.into()),
       fields_data: reader.into().into(),
     })
   }
@@ -163,7 +163,7 @@ impl Field {
     let ts = token_stream.into();
     Ok(Field {
       indexable_field_type,
-      name: name.into(),
+      name: String::into_boxed_str(name.into()),
       fields_data: ts.into(),
     })
   }
@@ -265,7 +265,7 @@ impl Field {
     }
     Ok(Field {
       indexable_field_type,
-      name: name.into(),
+      name: String::into_boxed_str(name.into()),
       fields_data: FieldDataEnum::Binary(bytes.into()),
     })
   }
@@ -294,7 +294,7 @@ impl Field {
     }
     Ok(Field {
       indexable_field_type,
-      name: name.into(),
+      name: String::into_boxed_str(name.into()),
       fields_data: FieldDataEnum::String(value.into()),
     })
   }
@@ -494,7 +494,7 @@ impl Field {
 }
 impl IndexableField for Field {
   fn name(&self) -> &str {
-    self.name.as_str()
+    &self.name
   }
 
   type FieldType<'a>

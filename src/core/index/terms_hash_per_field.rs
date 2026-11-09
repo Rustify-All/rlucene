@@ -50,8 +50,7 @@ pub struct TermsHashPerField<PA: PostingsArray = FreqProxPostingsArray> {
   // either to a brand new per term stream if the term is new or
   // to the addresses where the term stream was written to when we saw it the
   // last time.    term_stream_address_buffer: Vec<i32>,
-  term_stream_address_buffer_index: usize,
-  stream_address_offset: i32,
+  stream_address: i32,
   stream_count: i32,
   // This stores the actual term bytes for postings and offsets into the
   // parent hash in the case that this TermsHashPerField is hashing term
@@ -60,7 +59,8 @@ pub struct TermsHashPerField<PA: PostingsArray = FreqProxPostingsArray> {
   // Sorted term IDs stay in bytes_hash.ids; track whether they are available separately.
   #[cfg(debug_assertions)]
   is_sorted: bool,
-  last_doc_id: i32, // only used with debug/asserts
+  #[cfg(debug_assertions)]
+  last_doc_id: i32,
   pub(crate) index_options: IndexOptions,
 }
 impl<PA: PostingsArray> TermsHashPerField<PA> {
@@ -84,12 +84,12 @@ impl<PA: PostingsArray> TermsHashPerField<PA> {
     };
     Ok(TermsHashPerField {
       slice_pool,
-      term_stream_address_buffer_index: 0,
-      stream_address_offset: 0,
+      stream_address: 0,
       stream_count,
       bytes_hash,
       #[cfg(debug_assertions)]
       is_sorted: false,
+      #[cfg(debug_assertions)]
       last_doc_id: 0,
       index_options,
     })
@@ -181,9 +181,10 @@ impl<PA: PostingsArray> TermsHashPerField<PA> {
     byte_pool: &mut ByteBlockPool,
   ) -> Result<()> {
     let end = offset + len;
-    let stream_address = (self.stream_address_offset + stream) as usize;
+    let stream_address = ((self.stream_address & INT_BLOCK_MASK) + stream) as usize;
+    let buffer_index = (self.stream_address >> INT_BLOCK_SHIFT) as usize;
 
-    let term_stream_address_buffer = int_pool.get_buffer_mut(self.term_stream_address_buffer_index);
+    let term_stream_address_buffer = int_pool.get_buffer_mut(buffer_index);
     let upto = term_stream_address_buffer[stream_address];
     {
       let mut block_index = (upto >> BYTE_BLOCK_SHIFT) as usize;
@@ -227,8 +228,9 @@ impl<PA: PostingsArray> TermsHashPerField<PA> {
     byte_pool: &mut ByteBlockPool,
   ) -> Result<()> {
     debug_assert!(stream < self.stream_count);
-    let stream_address = (self.stream_address_offset + stream) as usize;
-    let term_stream_address_buffer = int_pool.get_buffer_mut(self.term_stream_address_buffer_index);
+    let stream_address = ((self.stream_address & INT_BLOCK_MASK) + stream) as usize;
+    let buffer_index = (self.stream_address >> INT_BLOCK_SHIFT) as usize;
+    let term_stream_address_buffer = int_pool.get_buffer_mut(buffer_index);
     let stream_address = &mut term_stream_address_buffer[stream_address];
     if (i & !0x7F) == 0 {
       let upto = *stream_address;
@@ -330,11 +332,11 @@ impl<PA: PostingsArray> TermsHashPerField<PA> {
         byte_pool.next_buffer()?;
       }
       let byte_offset = byte_pool.byte_offset;
-      self.term_stream_address_buffer_index = int_pool
+      let buffer_index = int_pool
         .buffer_upto
         .ok_or_else(|| LuceneError::illegal_state("term stream has no current int buffer"))?;
-      self.stream_address_offset = int_pool.int_upto;
-      let stream_address_index = self.stream_address_offset as usize;
+      let stream_address_index = int_pool.int_upto as usize;
+      self.stream_address = int_pool.int_offset + int_pool.int_upto;
       int_pool.int_upto += self.stream_count;
       let postings_array_wrapper = &mut self.bytes_hash.bytes_start_array.per_field;
       debug_assert!(postings_array_wrapper.postings_array.is_some());
@@ -342,10 +344,9 @@ impl<PA: PostingsArray> TermsHashPerField<PA> {
         .postings_array
         .as_mut()
         .ok_or_else(|| LuceneError::illegal_state("postings array is missing"))?
-        .set_address_offset(term_id, self.stream_address_offset + int_pool.int_offset);
+        .set_address_offset(term_id, self.stream_address);
 
-      let term_stream_address_buffer =
-        int_pool.get_buffer_mut(self.term_stream_address_buffer_index);
+      let term_stream_address_buffer = int_pool.get_buffer_mut(buffer_index);
       if let Some(addresses) = term_stream_address_buffer
         .get_mut(stream_address_index..)
         .and_then(|buffer| buffer.get_mut(..self.stream_count as usize))
@@ -373,6 +374,7 @@ impl<PA: PostingsArray> TermsHashPerField<PA> {
     Ok(())
   }
 
+  #[cfg(debug_assertions)]
   pub(crate) fn assert_doc_id(&mut self, doc_id: i32) -> bool {
     debug_assert!(
       doc_id >= self.last_doc_id,
@@ -394,8 +396,7 @@ impl<PA: PostingsArray> TermsHashPerField<PA> {
       .as_ref()
       .ok_or_else(|| LuceneError::illegal_state("postings array is missing"))?
       .get_address_offset()[term_id][1];
-    self.term_stream_address_buffer_index = (int_start >> INT_BLOCK_SHIFT) as usize;
-    self.stream_address_offset = int_start & INT_BLOCK_MASK;
+    self.stream_address = int_start;
     Ok(term_id)
   }
 }

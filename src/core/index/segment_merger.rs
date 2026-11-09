@@ -269,7 +269,8 @@ where
       }
     }
 
-    self.merge_state.merge_field_infos = Arc::new(self.field_infos_builder.finish()?);
+    self.merge_state.merge_field_infos =
+      Arc::new(self.field_infos_builder.finish_and_take_names()?);
     Ok(())
   }
   /// Merge stored fields from each of the segments into the new one.
@@ -433,6 +434,9 @@ where
       num_merged,
       self.merge_state.segment_info.max_doc()?
     );
+
+    // Subsequent merge stages no longer use these readers or their decompression buffers.
+    drop(std::mem::take(&mut self.merge_state.stored_fields_readers));
 
     let directory = self.directory;
     let segment_write_state = SegmentWriteState::new(
