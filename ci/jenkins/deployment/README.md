@@ -180,7 +180,7 @@ selection, persistent caches, resource requirements and timeout settings.
 
 | Component | Source |
 | --- | --- |
-| Jenkins 2.568.3 / Java 21 | Version and image digest in `Dockerfile` and `.env.example` |
+| Jenkins 2.580.2 / Java 21 | Version and image digest in `Dockerfile` and `.env.example` |
 | Linux amd64 runtime | Compose `platform`, matching the original build host |
 | Rust toolchain and components | Repository-root `rust-toolchain.toml`, copied during the image build |
 | cargo-nextest 0.9.143 | Exact version in `Dockerfile` |
@@ -242,10 +242,11 @@ recreating the container.
 
 ## Optional public read-only access
 
-The deployment pins Jenkins 2.568.3 and the fixed plugin versions from the
-[2026-09-02 Jenkins security advisory](https://www.jenkins.io/security/advisory/2026-09-02/).
-Do not publish a controller still running Jenkins 2.568.2 or the older plugin
-set, including one created from a previously built local image.
+The deployment pins Jenkins 2.580.2 and plugin versions resolved against that
+LTS line after the
+[2026-10-28 Jenkins security advisory](https://www.jenkins.io/security/advisory/2026-10-28/).
+Do not publish a controller still running Jenkins 2.580.1 or earlier, or the
+older plugin set, including one created from a previously built local image.
 
 After completing the setup wizard and creating the administrator accounts, set
 these values in the deployment's untracked `.env` file:

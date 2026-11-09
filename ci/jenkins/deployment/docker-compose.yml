@@ -13,13 +13,13 @@ services:
       context: ../../..
       dockerfile: ci/jenkins/deployment/Dockerfile
       args:
-        JENKINS_BASE_IMAGE: ${JENKINS_BASE_IMAGE:-jenkins/jenkins:2.568.3-jdk21@sha256:c1e4c349365f6d16d88595b2c5f7e8ff39b8ae1d061f62420bac193b4b9616d0}
+        JENKINS_BASE_IMAGE: ${JENKINS_BASE_IMAGE:-jenkins/jenkins:2.580.2-jdk21@sha256:74401de6a6f92e1afe1b02d1c8e3d0c33f263bfb5275dd8813f9150355f2367b}
         DEBIAN_MIRROR: ${DEBIAN_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/debian}
         DEBIAN_SECURITY_MIRROR: ${DEBIAN_SECURITY_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/debian-security}
         RUSTUP_DIST_SERVER: ${RUSTUP_DIST_SERVER:-https://rsproxy.cn}
         RUSTUP_UPDATE_ROOT: ${RUSTUP_UPDATE_ROOT:-https://rsproxy.cn/rustup}
         CARGO_REGISTRY: ${CARGO_REGISTRY:-sparse+https://rsproxy.cn/index/}
-    image: ${JENKINS_IMAGE:-local-jenkins-rust:2.568.3}
+    image: ${JENKINS_IMAGE:-local-jenkins-rust:2.580.2}
     container_name: ${JENKINS_CONTAINER_NAME:-jenkins}
     restart: unless-stopped
     depends_on:

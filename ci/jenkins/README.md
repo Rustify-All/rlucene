@@ -76,7 +76,7 @@ normal non-release behavior.
 
 ## Jenkins prerequisites
 
-- Jenkins 2.568.2 with Java 21, as pinned in the controller image.
+- Jenkins 2.580.2 with Java 21, as pinned in the controller image.
 - The plugin versions in `deployment/plugins.txt`, installed by the image.
 - No Git credential is needed for the scheduled job's default public HTTPS
   checkout. The member-only PR job is intentionally fixed to

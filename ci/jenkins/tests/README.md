@@ -7,7 +7,7 @@ It requires a fresh home under a `mktemp -d` directory named
 `RLUCENE_GLOBAL_LOCK_SMOKE=1` opt-in. Bind its HTTP listener to loopback only.
 Do not copy credentials, secrets, job data, or production configuration into it.
 
-Prerequisites: Jenkins 2.568.3 WAR, Java 21 or 25, all plugins pinned in
+Prerequisites: Jenkins 2.580.2 WAR, Java 21 or 25, all plugins pinned in
 `../deployment/plugins.txt`, and that Jenkins distribution's remoting JAR.
 Install the plugins into the fresh home's `plugins/` directory. For example,
 use the official Jenkins plugin installation manager with `--latest=false`,
