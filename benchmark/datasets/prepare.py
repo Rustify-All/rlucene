@@ -1,4 +1,4 @@
-"""Download and reproduce the pinned benchmark inputs; Python standard library only."""
+"""Download and reproduce the pinned benchmark inputs."""
 import argparse
 import bz2
 from pathlib import Path
@@ -11,6 +11,7 @@ import tarfile
 BENCHMARK = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BENCHMARK))
 from common import runtime as rt
+import indexing_inputs
 from ms_marco_passage import prepare as ms_marco_passage
 from rally_http_logs import prepare as rally_http_logs
 
@@ -103,7 +104,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     datasets = {"wiki": wiki, "sift1m": sift, "rally-http-logs-1m": rally_http_logs,
                 "ms-marco-passage-1m": ms_marco_passage}
-    parser.add_argument("dataset", choices=datasets)
+    parser.add_argument("dataset", choices=[*datasets, *indexing_inputs.DATASETS])
     parser.add_argument("--destination", type=Path)
     parser.add_argument("--archive", type=Path, help="Reuse an existing exact input archive")
     parser.add_argument("--queries-archive", type=Path, help="Reuse the exact MS MARCO queries.tar.gz")
@@ -118,4 +119,8 @@ if __name__ == "__main__":
     if args.queries_archive:
         args.queries_archive = args.queries_archive.expanduser().resolve()
     with rt.Lock():
-        datasets[args.dataset](args)
+        if args.dataset in indexing_inputs.DATASETS:
+            sample, _, _ = indexing_inputs.prepare(args.dataset, args.destination, args.archive)
+            print("READY", sample, flush=True)
+        else:
+            datasets[args.dataset](args)

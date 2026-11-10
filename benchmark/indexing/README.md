@@ -4,6 +4,8 @@ Compare public-API indexing on a fixed million-row sample. Available presets:
 
 - [Rally HTTP logs](../datasets/rally-http-logs/README.md), structured log rows.
 - [MS MARCO Passage Ranking v1](../datasets/ms-marco-passage/README.md), short text passages.
+- [GeoNames](geonames/README.md), geographic points, populations and multilingual aliases.
+- [NYC Yellow Taxi](nyc-yellow-taxi/README.md), trip timestamps, zones and numeric measurements.
 
 ## Rally HTTP logs on macOS
 
@@ -109,6 +111,31 @@ and six formal rounds. The three-way comparison uses all six execution
 orders per batch and 18 formal groups across three batches. Java reopens
 each warmup and formal index for the 37-query check. Verified timed indexes
 are removed, and the preflight indexes and original observations are kept.
+
+## GeoNames and NYC Yellow Taxi on macOS
+
+The [GeoNames guide](geonames/README.md) and [NYC Yellow Taxi guide](nyc-yellow-taxi/README.md)
+cover data preparation, checksums and run commands. Both runners use the RLucene
+commit recorded in the preset. Use a full Git clone so that the runner can extract
+and verify the measured revision even when the checked-out benchmark code is newer.
+The Java runner uses Lucene 10.1.0 on JDK 23 with normal JIT, Parallel GC and a
+fixed 4 GiB heap. The optimized Rust build uses native CPU, ThinLTO, 16 codegen
+units and a profile trained by one process writing four full indexes for that workload.
+
+The full run writes one million documents with one writer thread, mmap,
+Lucene101 BEST_SPEED, 256 MiB buffering, a flush threshold of 65,536 documents,
+and merges, compound files and implicit commit on close disabled. It times the
+write loop, explicit commit and writer close separately. Index initialization,
+input loading, directory close and all verification happen outside those timers.
+
+The fixture and 4,096-row preflights compare Java and ordinary Rust. The million-row
+preflight also includes optimized Rust. Each preflight index passes Java CheckIndex
+level 2 and is reopened by each participating reader for a full field audit and a
+comparison against the independent query oracle. Three batches each launch fresh
+writer processes, warm up twice per engine, and run all six permutations of Java,
+ordinary Rust and optimized Rust. Java and ordinary Rust reopen every warmup and
+formal index for query verification. The runner retains logs and samples and removes
+the temporary timed indexes after verification.
 
 ## Read the results
 

@@ -1,0 +1,10 @@
+[package]
+name = "nyc-taxi-verify"
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
+
+[dependencies]
+rlucene = { path = "../../source" }
+serde_json = "1"

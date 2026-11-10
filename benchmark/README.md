@@ -9,7 +9,7 @@ small Python runners while preserving the inputs, protocol and measurement scope
 |---|---|---|
 | Search Benchmark, the Game | [search-benchmark-game](search-benchmark-game/README.md) | Wikipedia, 962 queries, five modes |
 | Vector Search | [vector-search](vector-search/README.md) | SIFT1M, GloVe100/300, MiniLM384, MPNet768: HNSW build, query and compatibility |
-| Indexing Benchmark | [indexing](indexing/README.md) | Rally HTTP logs 1M and MS MARCO passages 1M, single-writer full indexing |
+| Indexing Benchmark | [indexing](indexing/README.md) | Rally HTTP logs, MS MARCO passages, GeoNames and NYC Yellow Taxi, one million documents each |
 
 See also [中文说明](README.zh-CN.md).
 
@@ -18,7 +18,7 @@ or use the automatic download in the [dataset preparation guide](datasets/rally-
 
 ## Requirements
 
-- macOS, Git, Python 3.9+ (standard library only), Rust **1.98.1** via rustup.
+- macOS, Git, Python 3.9+, Rust **1.98.1** via rustup. NYC Yellow Taxi also uses pinned NumPy and PyArrow.
 - A complete **JDK 23**. Set `JAVA_HOME`, or use `--java-home`; otherwise runners
   use `/usr/libexec/java_home -v 23`. Published reference runs used JDK 23.0.2.
 - Sufficient memory for the selected suite: full-text Java uses a 4 GiB heap;

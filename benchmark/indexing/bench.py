@@ -177,7 +177,7 @@ def main():
     parser.add_argument("--output", type=Path)
     parser.add_argument("--java-home", type=Path)
     parser.add_argument("--jars-dir", type=Path)
-    parser.add_argument("--rust-profile", choices=("ordinary", "tuned", "both"), default="ordinary")
+    parser.add_argument("--rust-profile", choices=("ordinary", "tuned", "both"))
     args = parser.parse_args()
     if args.action == "datasets":
         for name, path in presets.items():
@@ -189,6 +189,16 @@ def main():
         return
     rt.macos()
     preset = rt.load(presets[args.dataset])
+    if preset.get("runner") == "structured":
+        from structured import run as run_structured
+        if args.action == "build-tuned":
+            parser.error("Use run to train and verify the optimized build in the original three-engine protocol")
+        profile = "both" if args.action == "run" else "ordinary"
+        if args.rust_profile not in (None, profile):
+            parser.error(f"{args.action} for {args.dataset} requires --rust-profile {profile}")
+        run_structured(args, preset)
+        return
+    args.rust_profile = args.rust_profile or "ordinary"
     if args.dataset == "ms-marco-passage-1m":
         from ms_marco import run as run_ms_marco
         if args.action == "build-tuned":

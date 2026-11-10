@@ -1,0 +1,38 @@
+{
+  "archive": {
+    "url": "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2025-01.parquet",
+    "bytes": 59158238,
+    "sha256": "9af277e4c0d3f9deb30644da822981e1e7df6af58313170fd3aa8a474485488a",
+    "name": "yellow_tripdata_2025-01.parquet"
+  },
+  "derived": {
+    "distribution.json": {
+      "bytes": 10995,
+      "sha256": "9f047214aec4705f21c5e128972c0a45405853fd7737095af3595c7c50702c65"
+    },
+    "million-expected.json": {
+      "bytes": 13611,
+      "sha256": "79ce2d322dd7a85af20eaaec204958a8180652133ce7a4d902a0208009962035"
+    },
+    "million-queries.json": {
+      "bytes": 5097,
+      "sha256": "0cede221fd5c9e81dece3c6fe8b6dec91176f541021d0ad511ceaa56a8c54280"
+    },
+    "million.bin": {
+      "bytes": 49000004,
+      "sha256": "90dfdb62a9fbf96d9f6a1482729c70d87dac83b2c944c0452b96b656ce656df5"
+    },
+    "small-expected.json": {
+      "bytes": 12357,
+      "sha256": "98aa06811357908c42fb67b1ba2ce9163ca83d78f1082fce111316fcda712e49"
+    },
+    "small-queries.json": {
+      "bytes": 5097,
+      "sha256": "bc2145d93cb39040e7d9a3f9f57bb39ac18ba72efbd6d5a6ee10d3adf9e39a34"
+    },
+    "small.bin": {
+      "bytes": 200708,
+      "sha256": "5a254f296963348fed2ed4463867cebd8060508871011bd816681f9dfb0f4931"
+    }
+  }
+}

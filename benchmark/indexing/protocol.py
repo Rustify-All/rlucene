@@ -21,9 +21,9 @@ def read_rows(path):
     return [json.loads(line) for line in path.read_text().splitlines()]
 
 
-def checked(command, log, env=None):
+def checked(command, log, env=None, cwd=rt.REPOSITORY):
     with log.open("wb") as stream, log.with_suffix(log.suffix + ".err").open("wb") as errors:
-        subprocess.run(list(map(str, command)), cwd=rt.REPOSITORY, env=env or rt.environment(),
+        subprocess.run(list(map(str, command)), cwd=cwd, env=env or rt.environment(),
                        stdout=stream, stderr=errors, check=True)
 
 

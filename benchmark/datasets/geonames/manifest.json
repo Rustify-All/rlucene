@@ -1,0 +1,65 @@
+{
+  "archive": {
+    "url": "https://download.geonames.org/export/dump/allCountries.zip",
+    "bytes": 422532533,
+    "sha256": "c73337b8dde1dec692f3ab6dfff5359147f79b201708cca9efc9b65f0a3aa51d",
+    "name": "allCountries.zip"
+  },
+  "derived": {
+    "distribution.json": {
+      "bytes": 7953,
+      "sha256": "8751fba9684e8f62f180d665ba59056bef8e1d124be06c75c794cb348ce29dd4"
+    },
+    "fixture-expected.json": {
+      "bytes": 4685,
+      "sha256": "3ca1f2ac76140e42d1978c974c8bc8f806cabfdcadfcc997a2f9556b4793557b"
+    },
+    "fixture-queries.json": {
+      "bytes": 1970,
+      "sha256": "bf497650549d194e358312d62184ebfddde046a9a9b68a3b6d369c1ef3f3669f"
+    },
+    "fixture.bin": {
+      "bytes": 635,
+      "sha256": "33e4e29d00850707a3f643d6f15ff4f4c7d7cc8296c83a7539e5aa70a45c8a06"
+    },
+    "fixture.json": {
+      "bytes": 1050,
+      "sha256": "8fec35cf85487e6f98eb7a379e50a7f55270d9153c1de8f44dfaf2386febaeab"
+    },
+    "million-expected.json": {
+      "bytes": 6731,
+      "sha256": "a0bdee589ba9a87f5d96c9b5e50561f51649f4b41d0e9ca05f0434786e4342c9"
+    },
+    "million-queries.json": {
+      "bytes": 1668,
+      "sha256": "e6ee86ded1d1789067c55c099f6b112f5605f622f196c46a37a683f0528cefd9"
+    },
+    "million.bin": {
+      "bytes": 68373536,
+      "sha256": "f4282775725a9c8c6467690be519b66e84d9c6cb4afa28de8fa0201a429f70d5"
+    },
+    "small-expected.json": {
+      "bytes": 4684,
+      "sha256": "96704f49f523ff7c2b4aa11be311cb236ab20ebba289a1429ffba485e6f85baa"
+    },
+    "small-queries.json": {
+      "bytes": 1667,
+      "sha256": "3bc6e49dd1e36e62385cb249a75ddd04e17cf49f7e0900d51fc94eb7f10b7614"
+    },
+    "small.bin": {
+      "bytes": 279324,
+      "sha256": "3dc5a7479f9e42fa0ada03c9435ceec1aaf46148a0e32f5f55933081db6437bb"
+    },
+    "small.tsv": {
+      "bytes": 543251,
+      "sha256": "ffb586b74b9eb3eb6988882a2630b2404d441d3f8745bc016ce5177ade92f49b"
+    }
+  },
+  "snapshot_date": "2026-11-10",
+  "raw_tsv": {
+    "sha256": "09f8fb7b881131266ead95f9cb906ff8d256e267740290b54819f50e6aebb101",
+    "records": 13483763,
+    "bytes": 1790835803
+  },
+  "million_tsv_sha256": "55086be83ee70d2ecee6e0ad8788514144f936f2e64ddc6c82f0d54b2716ae11"
+}
