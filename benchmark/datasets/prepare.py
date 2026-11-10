@@ -11,6 +11,7 @@ import tarfile
 BENCHMARK = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BENCHMARK))
 from common import runtime as rt
+from ms_marco_passage import prepare as ms_marco_passage
 from rally_http_logs import prepare as rally_http_logs
 
 
@@ -100,15 +101,21 @@ def sift(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    datasets = {"wiki": wiki, "sift1m": sift, "rally-http-logs-1m": rally_http_logs}
+    datasets = {"wiki": wiki, "sift1m": sift, "rally-http-logs-1m": rally_http_logs,
+                "ms-marco-passage-1m": ms_marco_passage}
     parser.add_argument("dataset", choices=datasets)
     parser.add_argument("--destination", type=Path)
     parser.add_argument("--archive", type=Path, help="Reuse an existing exact input archive")
+    parser.add_argument("--queries-archive", type=Path, help="Reuse the exact MS MARCO queries.tar.gz")
     args = parser.parse_args()
+    if args.queries_archive and args.dataset != "ms-marco-passage-1m":
+        parser.error("--queries-archive is only for ms-marco-passage-1m")
     rt.macos()
     args.destination = (args.destination or BENCHMARK / "data" / args.dataset).expanduser().resolve()
     args.destination.mkdir(parents=True, exist_ok=True)
     if args.archive:
         args.archive = args.archive.expanduser().resolve()
+    if args.queries_archive:
+        args.queries_archive = args.queries_archive.expanduser().resolve()
     with rt.Lock():
         datasets[args.dataset](args)

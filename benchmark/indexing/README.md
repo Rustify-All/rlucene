@@ -1,11 +1,11 @@
 # Indexing Benchmark
 
-Compare public-API indexing on one selected dataset. The first preset,
-[`rally-http-logs-1m`](../datasets/rally-http-logs/README.md), is a fixed million-row
-sample of the Elastic Rally HTTP logs. Other indexing datasets can use
-separate presets and drivers.
+Compare public-API indexing on a fixed million-row sample. Available presets:
 
-## Run on macOS
+- [Rally HTTP logs](../datasets/rally-http-logs/README.md), structured log rows.
+- [MS MARCO Passage Ranking v1](../datasets/ms-marco-passage/README.md), short text passages.
+
+## Rally HTTP logs on macOS
 
 Use Python 3.9+, Rust 1.98.1 and JDK 23. From the repository root:
 
@@ -42,7 +42,7 @@ both` measures Java, ordinary Rust and optimized Rust in the same batches.
 Use `--rust-profile tuned` to compare Java with the optimized build alone.
 Optimized results apply to the machine and the workload used in training.
 
-## What the preset measures
+## What Rally measures
 
 Both writers reuse their document and field objects. A single `KeywordField`
 provides postings and SortedSet DocValues for `request.raw`. The full schema
@@ -65,14 +65,62 @@ reopened and compared with the 17-case query oracle. Query checks are outside
 the timed write operations. Build, training, validation and timing use the
 shared performance lock.
 
+## MS MARCO Passage Ranking v1 on macOS
+
+Use Python 3.9+, Rust 1.98.1 and JDK 23. From the repository root:
+
+```sh
+python3 -B benchmark/datasets/prepare.py ms-marco-passage-1m
+python3 -B benchmark/run.py indexing smoke --dataset ms-marco-passage-1m
+rustup component add llvm-tools-preview --toolchain 1.98.1
+python3 -B benchmark/run.py indexing run --dataset ms-marco-passage-1m --rust-profile both
+```
+
+The default smoke check builds the two drivers and verifies a 14-row
+boundary fixture and 4,096 source passages. Adding `--rust-profile both`
+to smoke also builds the optimized Rust executable and verifies the million-row
+indexes. The full run builds and validates before timing under one shared
+lock. It uses normal Java JIT, Parallel GC and a fixed 4 GiB heap. The optimized
+Rust build uses native CPU, ThinLTO and a profile trained on four independent
+writes of the same million passages. Only the workload process contributes
+to the merged profile. Training time and raw profile files are recorded
+separately. Use `--data`, `--output`, `--java-home` and `--jars-dir` as needed.
+
+Both writers reuse one document and its fields. The stored `pid` is a
+`StringField` with DOCS postings and omitted norms. The stored `passage` is
+a `TextField` using StandardAnalyzer, with frequencies, positions and norms.
+The [preset](presets/ms-marco-passage-1m.json) uses one writer, mmap, Lucene101
+BEST_SPEED, 256 MiB buffering, a 65,536-document flush, no merges and 16
+segments. The write, explicit commit and writer close boundaries match Rally.
+Full refers to the selected million passages. Use a fresh output directory
+and allow at least 15 GB for the live indexes and build files.
+
+Preflight compares Unicode tokens, position increments and UTF-16 offsets
+on the fixture and a subset of the small sample. It checks all stored values
+against the input and compares the complete postings and norms across
+engines. Java CheckIndex level 2 and cross-engine reopen cover each preflight
+index. Queries compare exact counts and ordered BM25 Top 10 external pids,
+docIDs and f32 score bits. Ties use ascending docID. The query set contains
+exact pid, term and phrase checks and 32 official dev queries analyzed into
+SHOULD term clauses. These checks run outside timing.
+
+Every full batch starts fresh processes, with two warmup writes per engine
+and six formal rounds. The three-way comparison uses all six execution
+orders per batch and 18 formal groups across three batches. Java reopens
+each warmup and formal index for the 37-query check. Verified timed indexes
+are removed, and the preflight indexes and original observations are kept.
+
 ## Read the results
 
 The default result directory is `benchmark/runs/indexing/`. Keep `RUN.json`,
-`samples.jsonl`, `verification.jsonl`, the build receipts in
-`benchmark/.cache/indexing/`, and any logs or indexes needed for auditing.
-`RESULT.json` contains per-batch and combined paired statistics, and
-`REPORT.md` gives the measured phase medians. Both can be regenerated from a
-complete run:
+`samples.jsonl`, `verification.jsonl` and any logs or indexes needed for
+auditing. Rally build receipts live in `benchmark/.cache/indexing/`.
+MS MARCO keeps the build logs, binary fingerprints and optional PGO
+training receipts with each run.
+
+`RESULT.json` contains per-batch and combined paired ratios and absolute
+differences. `REPORT.md` gives the measured phase medians. Both can be
+regenerated from a complete run:
 
 ```sh
 python3 -B benchmark/run.py indexing summarize --output /path/to/completed-run

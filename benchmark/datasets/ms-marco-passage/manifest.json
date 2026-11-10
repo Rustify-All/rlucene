@@ -1,0 +1,81 @@
+{
+  "id": "ms-marco-passage-1m",
+  "version": "MS MARCO Passage Ranking v1",
+  "upstream": "https://github.com/microsoft/msmarco/blob/master/Datasets.md#passage-ranking-dataset",
+  "archives": {
+    "collection.tar.gz": {
+      "source": "https://msmarco.z22.web.core.windows.net/msmarcoranking/collection.tar.gz",
+      "etag": "\"0x8DBE166D3DC101A\"",
+      "bytes": 1035009698,
+      "sha256": "70667529e474322327d6441c8f7b621f2a805a7f6220897d9f80e5a8294bd62e",
+      "md5": "87dd01826da3e2ad45447ba5af577628"
+    },
+    "queries.tar.gz": {
+      "source": "https://msmarco.z22.web.core.windows.net/msmarcoranking/queries.tar.gz",
+      "etag": "\"0x8DBE166DF74CA0C\"",
+      "bytes": 18882551,
+      "sha256": "05e4c62c9c8520cd695725340d4c990627fd1a92eb8a71b88e3c746031ba6de8"
+    }
+  },
+  "collection_tsv": {
+    "member": "collection.tsv",
+    "rows": 8841823,
+    "bytes": 3061567852,
+    "sha256": "86e0c5820be6b22280337a67e54cbb626645453d9ac3c377bac45abb81c5653d",
+    "non_ascii_passages": 2025452,
+    "passages_with_additional_tabs": 0,
+    "max_passage_utf8_bytes": 2287,
+    "pid_equals_zero_based_source_row": true
+  },
+  "sample": {
+    "full_rows": 1000000,
+    "small_rows": 4096,
+    "selection": "1 + floor(i * 8841823 / N), i=0..N-1, ascending original row",
+    "tsv": "first TAB only; remove the terminating LF only; strict UTF-8; no text normalization",
+    "binary": "u32be row count, then u32be pid bytes, u32be passage bytes, pid UTF-8, passage UTF-8"
+  },
+  "dev_queries": {
+    "member": "queries.dev.tsv",
+    "rows": 101093,
+    "selected": 32,
+    "selection": "zero-based floor(i * 101093 / 32), original dev order"
+  },
+  "files": {
+    "million-queries.json": {
+      "bytes": 2934,
+      "sha256": "6712741ebdbe3824396f2078f5b5349f86e8b1d12df6ec6bc0753593b0a4eeb7"
+    },
+    "million.bin": {
+      "bytes": 352339108,
+      "sha256": "95f3563a51db6abc1ee3177cc64f530d3413260373f26a0160c57b2c20fd5dfc"
+    },
+    "queries.dev.tsv": {
+      "bytes": 4449602,
+      "sha256": "757b7e935ff46728be84cbf7d195c3e6ae479d6449d92bbb87b09fe56bebf5ee"
+    },
+    "small-queries.json": {
+      "bytes": 2934,
+      "sha256": "6712741ebdbe3824396f2078f5b5349f86e8b1d12df6ec6bc0753593b0a4eeb7"
+    },
+    "small-tokens.json": {
+      "bytes": 16663,
+      "sha256": "7da52e5d69190e598104033203790896c08c69ca0dabb06e72d9d7c2257f1fd4"
+    },
+    "small.bin": {
+      "bytes": 1426010,
+      "sha256": "c0125f8426edd6b37e99c4a5b17be429adf7d14884ff67c125ab320d05fda27d"
+    },
+    "fixture-queries.json": {
+      "bytes": 659,
+      "sha256": "6bd3510612ec460419fe6b237f0d8edb363f6f5d6d9e64ce1b3a88abb9728bef"
+    },
+    "fixture-tokens.json": {
+      "bytes": 1740,
+      "sha256": "2b2dc33fc75612e6da35a1218fae8ed5b8544d74fdd97e710375868f9bbc47f8"
+    },
+    "fixture.bin": {
+      "bytes": 1858,
+      "sha256": "0facffa0774420b7f4e51ce7ca733a78b4feed9d9f2788214cdd3bbd1f6fc92d"
+    }
+  }
+}

@@ -4,9 +4,11 @@
 
 - `search-benchmark-game/`：Wikipedia 962 条查询、五种模式。
 - `vector-search/`：SIFT1M、GloVe/Wiki 100/300维、MiniLM/Wiki384维、MPNet/Wiki768维的完整构图、Top100查询与双向索引验证。
-- [`indexing/`](indexing/README.md)：索引写入基准，首个可选数据集是 Rally HTTP Logs 百万条。
+- [`indexing/`](indexing/README.md)：索引写入基准，支持 Rally HTTP Logs 和 MS MARCO Passage Ranking v1 的固定百万条样本。
 
 Rally 写入数据集可直接下载[官方原始分片](https://rally-tracks.elastic.co/http_logs/documents-181998.json.bz2)，也可按[数据准备说明](datasets/rally-http-logs/README.md)自动下载并核对 SHA-256。
+
+MS MARCO 的[数据准备说明](datasets/ms-marco-passage/README.md)提供官方归档校验、等距抽样和本地归档复用方法。
 
 官方运行环境为 **macOS + Rust 1.98.1 + JDK 23 + Python 3.9+**。Python 只用标准库。
 模型向量生成另需固定的 Python3.12 虚拟环境和模型依赖，详见
