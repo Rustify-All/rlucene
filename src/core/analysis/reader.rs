@@ -219,6 +219,7 @@ impl StringReader {
     Ok(end)
   }
 
+  #[inline]
   pub(crate) fn read_range_with_units<const COUNT_UTF16: bool>(
     &mut self,
     buf: &mut [char],

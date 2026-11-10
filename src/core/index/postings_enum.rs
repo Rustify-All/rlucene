@@ -49,6 +49,24 @@ pub trait PostingsEnum: DocIdSetIterator {
   /// Returns the payload at this position, or None if no payload was indexed.
   /// Do not modify the returned bytes.
   fn get_payload(&self) -> Result<Option<BytesRefValueEnum<'_>>>;
+
+  /// Visits this borrowed cursor while retaining its concrete type.
+  /// The default preserves wrapper behavior. Overrides must preserve cursor
+  /// state, values, errors and capabilities, including mutations by the visitor.
+  fn visit<V: PostingsEnumVisitor>(&mut self, visitor: V) -> V::Output
+  where
+    Self: Sized,
+  {
+    visitor.visit(self)
+  }
+}
+
+/// An operation over a borrowed concrete postings cursor.
+/// Its result cannot retain the cursor borrow.
+pub trait PostingsEnumVisitor {
+  type Output;
+
+  fn visit<P: PostingsEnum>(self, postings: &mut P) -> Self::Output;
 }
 
 pub const NONE: i16 = 0;
@@ -146,6 +164,12 @@ macro_rules! define_postings_enum_enum {
             fn get_payload(&self) -> Result<Option<BytesRefValueEnum<'_>>> {
                 match self {
                     $(Self::$V(t) => t.get_payload(),)+
+                }
+            }
+
+            fn visit<V: PostingsEnumVisitor>(&mut self, visitor: V) -> V::Output {
+                match self {
+                    $(Self::$V(t) => t.visit(visitor),)+
                 }
             }
         }

@@ -19,7 +19,9 @@ use crate::core::codecs::postings_writer_base::PostingsWriterBase;
 use crate::core::index::field_info::FieldInfo;
 use crate::core::index::index_options::IndexOptions;
 use crate::core::index::numeric_doc_values::{NumericDocValues, NumericDocValuesVisitor};
-use crate::core::index::postings_enum::{FREQS, OFFSETS, PAYLOADS, POSITIONS, PostingsEnum};
+use crate::core::index::postings_enum::{
+  FREQS, OFFSETS, PAYLOADS, POSITIONS, PostingsEnum, PostingsEnumVisitor,
+};
 use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::segment_write_state::SegmentWriteState;
 use crate::core::index::terms_enum::TermsEnum;
@@ -101,10 +103,40 @@ where
   type Output = Result<(i32, i64)>;
 
   fn visit<D: NumericDocValues>(self, norm_values: Option<&mut D>) -> Self::Output {
+    self.postings_enum.visit(WriteTermPostingsVisitor {
+      sub: self.sub,
+      options: self.options,
+      docs_seen: self.docs_seen,
+      norm_values,
+    })
+  }
+}
+
+struct WriteTermPostingsVisitor<'a, S, D> {
+  sub: &'a mut S,
+  options: &'a FieldWriteOptions,
+  docs_seen: &'a mut FixedBitSet,
+  norm_values: Option<&'a mut D>,
+}
+
+impl<S, D> PostingsEnumVisitor for WriteTermPostingsVisitor<'_, S, D>
+where
+  S: PushPostingsWriterBaseAbstract,
+  D: NumericDocValues,
+{
+  type Output = Result<(i32, i64)>;
+
+  fn visit<PE: PostingsEnum>(self, postings_enum: &mut PE) -> Self::Output {
+    let visitor = WriteTermNormsVisitor {
+      sub: self.sub,
+      options: self.options,
+      postings_enum,
+      docs_seen: self.docs_seen,
+    };
     if !self.options.write_payloads && !self.options.write_offsets {
-      self.visit_with_position_mode::<D, true>(norm_values)
+      visitor.visit_with_position_mode::<D, true>(self.norm_values)
     } else {
-      self.visit_with_position_mode::<D, false>(norm_values)
+      visitor.visit_with_position_mode::<D, false>(self.norm_values)
     }
   }
 }

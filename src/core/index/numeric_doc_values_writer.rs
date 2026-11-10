@@ -137,13 +137,26 @@ impl DocValuesWriter for NumericDocValuesWriter {
       ));
     };
     let sorted = get_sorted_values(final_values, &self.docs_with_field, sort_map)?;
-    let producer = DocValuesProducerImpl::new(
-      sorted.as_ref(),
-      &self.docs_with_field,
-      final_values,
-      &self.field_info,
-    );
-    dv_consumer.add_numeric_field(write_state, segment_info, &self.field_info, &producer)?;
+    match sorted.as_ref() {
+      Some(sorted) => {
+        let producer = DocValuesProducerImpl::new(&self.field_info, || {
+          Ok(SortingNumericDocValues::new(sorted))
+        });
+        dv_consumer.add_numeric_field(write_state, segment_info, &self.field_info, &producer)?;
+      },
+      None if self.docs_with_field.is_dense() => {
+        let producer = DocValuesProducerImpl::new(&self.field_info, || {
+          BufferedNumericDocValues::new(final_values, self.docs_with_field.dense_iterator()?)
+        });
+        dv_consumer.add_numeric_field(write_state, segment_info, &self.field_info, &producer)?;
+      },
+      None => {
+        let producer = DocValuesProducerImpl::new(&self.field_info, || {
+          BufferedNumericDocValues::new(final_values, self.docs_with_field.sparse_iterator()?)
+        });
+        dv_consumer.add_numeric_field(write_state, segment_info, &self.field_info, &producer)?;
+      },
+    }
     Ok(())
   }
 
@@ -168,50 +181,37 @@ impl DocValuesWriter for NumericDocValuesWriter {
   }
 }
 
-pub(crate) struct DocValuesProducerImpl<'a> {
-  sorted: Option<&'a NumericDVs<FixedBitSet>>,
-  docs_with_field: &'a DocsWithFieldSet,
-  values: &'a PackedLongValues,
+pub(crate) struct DocValuesProducerImpl<'a, F> {
   writer_field_info: &'a Arc<FieldInfo>,
+  make_values: F,
 }
 
-impl CloseableRef for DocValuesProducerImpl<'_> {
+impl<F> CloseableRef for DocValuesProducerImpl<'_, F> {
   fn close(&self) -> Result<()> {
     Err(LuceneError::unsupported_operation(""))
   }
 }
 
-impl<'a> DocValuesProducerImpl<'a> {
-  pub(crate) fn new(
-    sorted: Option<&'a NumericDVs<FixedBitSet>>,
-    docs_with_field: &'a DocsWithFieldSet,
-    values: &'a PackedLongValues,
-    writer_field_info: &'a Arc<FieldInfo>,
-  ) -> Self {
+impl<'a, F> DocValuesProducerImpl<'a, F> {
+  pub(crate) fn new(writer_field_info: &'a Arc<FieldInfo>, make_values: F) -> Self {
     Self {
-      sorted,
-      docs_with_field,
-      values,
       writer_field_info,
+      make_values,
     }
   }
 }
-impl<'a> DocValuesProducer for DocValuesProducerImpl<'a> {
-  type NumericDocValues =
-    BufferedSortingNumericDocValues<&'a PackedLongValues, &'a NumericDVs<FixedBitSet>>;
+impl<F, V> DocValuesProducer for DocValuesProducerImpl<'_, F>
+where
+  F: Fn() -> Result<V>,
+  V: NumericDocValues,
+{
+  type NumericDocValues = V;
 
   fn get_numeric(&self, field_info: &Arc<FieldInfo>) -> Result<Self::NumericDocValues> {
     if !Arc::ptr_eq(field_info, self.writer_field_info) {
       return Err(LuceneError::illegal_argument("wrong fieldInfo"));
     }
-    match self.sorted {
-      Some(sorted) => Ok(BufferedSortingNumericDocValues::Sorting(
-        SortingNumericDocValues::new(sorted),
-      )),
-      None => Ok(BufferedSortingNumericDocValues::Buffered(
-        BufferedNumericDocValues::new(self.values, self.docs_with_field.iterator()?)?,
-      )),
-    }
+    (self.make_values)()
   }
 
   type BinaryDocValues = DummyBinaryDocValues;
@@ -222,13 +222,13 @@ impl<'a> DocValuesProducer for DocValuesProducerImpl<'a> {
 }
 
 // iterates over the values we have in ram
-pub(crate) struct BufferedNumericDocValues<V = PackedLongValues> {
+pub(crate) struct BufferedNumericDocValues<V = PackedLongValues, D = DocsWithFieldSetDISI> {
   iter: PackedLongValuesIterator<V>,
-  doc_with_field: DocsWithFieldSetDISI,
+  doc_with_field: D,
   value: i64,
 }
-impl<V: Borrow<PackedLongValues>> BufferedNumericDocValues<V> {
-  pub(crate) fn new(values: V, doc_with_field: DocsWithFieldSetDISI) -> Result<Self> {
+impl<V: Borrow<PackedLongValues>, D: DocIdSetIterator> BufferedNumericDocValues<V, D> {
+  pub(crate) fn new(values: V, doc_with_field: D) -> Result<Self> {
     Ok(Self {
       iter: PackedLongValuesIterator::new(values)?,
       doc_with_field,
@@ -237,23 +237,28 @@ impl<V: Borrow<PackedLongValues>> BufferedNumericDocValues<V> {
   }
 }
 
-impl<V: Borrow<PackedLongValues>> DocValuesIterator for BufferedNumericDocValues<V> {
+impl<V: Borrow<PackedLongValues>, D: DocIdSetIterator> DocValuesIterator
+  for BufferedNumericDocValues<V, D>
+{
   fn advance_exact(&mut self, _target: i32) -> Result<bool> {
     Err(LuceneError::unsupported_operation(""))
   }
 }
 
-impl<V: Borrow<PackedLongValues>>
+impl<V: Borrow<PackedLongValues>, D: DocIdSetIterator>
   crate::core::search::doc_id_set_iterator::DocIdSetIteratorExtensions
-  for BufferedNumericDocValues<V>
+  for BufferedNumericDocValues<V, D>
 {
 }
-impl<V: Borrow<PackedLongValues>> crate::core::search::doc_id_set_iterator::BitSetIteratorAccess
-  for BufferedNumericDocValues<V>
+impl<V: Borrow<PackedLongValues>, D: DocIdSetIterator>
+  crate::core::search::doc_id_set_iterator::BitSetIteratorAccess
+  for BufferedNumericDocValues<V, D>
 {
 }
 
-impl<V: Borrow<PackedLongValues>> DocIdSetIterator for BufferedNumericDocValues<V> {
+impl<V: Borrow<PackedLongValues>, D: DocIdSetIterator> DocIdSetIterator
+  for BufferedNumericDocValues<V, D>
+{
   fn doc_id(&self) -> i32 {
     self.doc_with_field.doc_id()
   }
@@ -275,7 +280,9 @@ impl<V: Borrow<PackedLongValues>> DocIdSetIterator for BufferedNumericDocValues<
   }
 }
 
-impl<V: Borrow<PackedLongValues>> NumericDocValues for BufferedNumericDocValues<V> {
+impl<V: Borrow<PackedLongValues>, D: DocIdSetIterator> NumericDocValues
+  for BufferedNumericDocValues<V, D>
+{
   fn long_value(&mut self) -> Result<i64> {
     Ok(self.value)
   }
@@ -363,86 +370,6 @@ where
 {
   fn long_value(&mut self) -> Result<i64> {
     Ok(self.dvs.borrow().values[self.doc_id as usize])
-  }
-}
-
-pub(crate) enum BufferedSortingNumericDocValues<
-  V = PackedLongValues,
-  D = Arc<NumericDVs<FixedBitSet>>,
-> {
-  Buffered(BufferedNumericDocValues<V>),
-  Sorting(SortingNumericDocValues<FixedBitSet, D>),
-}
-
-impl<V: Borrow<PackedLongValues>, D: Borrow<NumericDVs<FixedBitSet>>> DocValuesIterator
-  for BufferedSortingNumericDocValues<V, D>
-{
-  fn advance_exact(&mut self, target: i32) -> Result<bool> {
-    match self {
-      Self::Buffered(inner) => inner.advance_exact(target),
-      Self::Sorting(inner) => inner.advance_exact(target),
-    }
-  }
-}
-
-impl<V: Borrow<PackedLongValues>, D: Borrow<NumericDVs<FixedBitSet>>>
-  crate::core::search::doc_id_set_iterator::DocIdSetIteratorExtensions
-  for BufferedSortingNumericDocValues<V, D>
-{
-}
-impl<V: Borrow<PackedLongValues>, D: Borrow<NumericDVs<FixedBitSet>>>
-  crate::core::search::doc_id_set_iterator::BitSetIteratorAccess
-  for BufferedSortingNumericDocValues<V, D>
-{
-}
-
-impl<V: Borrow<PackedLongValues>, D: Borrow<NumericDVs<FixedBitSet>>> DocIdSetIterator
-  for BufferedSortingNumericDocValues<V, D>
-{
-  fn doc_id(&self) -> i32 {
-    match self {
-      Self::Buffered(inner) => inner.doc_id(),
-      Self::Sorting(inner) => inner.doc_id(),
-    }
-  }
-
-  fn next_doc(&mut self) -> Result<i32> {
-    match self {
-      Self::Buffered(inner) => inner.next_doc(),
-      Self::Sorting(inner) => inner.next_doc(),
-    }
-  }
-
-  fn advance(&mut self, target: i32) -> Result<i32> {
-    match self {
-      Self::Buffered(inner) => inner.advance(target),
-      Self::Sorting(inner) => inner.advance(target),
-    }
-  }
-
-  fn slow_advance(&mut self, target: i32) -> Result<i32> {
-    match self {
-      Self::Buffered(inner) => inner.slow_advance(target),
-      Self::Sorting(inner) => inner.slow_advance(target),
-    }
-  }
-
-  fn cost(&self) -> Result<i64> {
-    match self {
-      Self::Buffered(inner) => inner.cost(),
-      Self::Sorting(inner) => inner.cost(),
-    }
-  }
-}
-
-impl<V: Borrow<PackedLongValues>, D: Borrow<NumericDVs<FixedBitSet>>> NumericDocValues
-  for BufferedSortingNumericDocValues<V, D>
-{
-  fn long_value(&mut self) -> Result<i64> {
-    match self {
-      Self::Buffered(inner) => inner.long_value(),
-      Self::Sorting(inner) => inner.long_value(),
-    }
   }
 }
 

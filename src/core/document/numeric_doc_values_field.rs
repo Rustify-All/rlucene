@@ -196,8 +196,12 @@ impl IndexableField for NumericDocValuesField {
     self.parent_field.take_reader_value()
   }
 
+  #[inline]
   fn numeric_value(&self) -> Result<Option<Number>> {
-    self.parent_field.numeric_value()
+    match &self.parent_field.fields_data {
+      FieldDataEnum::Number(Number::I64(value)) => Ok(Some(Number::I64(*value))),
+      _ => Ok(None),
+    }
   }
 
   type StoredValue<'a>

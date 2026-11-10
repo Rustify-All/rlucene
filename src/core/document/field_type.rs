@@ -471,6 +471,7 @@ impl IndexableFieldType for FieldType {
   }
 
   /// Returns the number of point dimensions.
+  #[inline]
   fn point_dimension_count(&self) -> usize {
     self
       .point_dimensions
@@ -482,6 +483,7 @@ impl IndexableFieldType for FieldType {
   }
 
   /// Returns the number of dimensions used for the index key.
+  #[inline]
   fn point_index_dimension_count(&self) -> usize {
     self
       .point_dimensions
@@ -493,6 +495,7 @@ impl IndexableFieldType for FieldType {
   }
 
   /// Returns the number of bytes in each dimension's values.
+  #[inline]
   fn point_num_bytes(&self) -> usize {
     self
       .point_dimensions

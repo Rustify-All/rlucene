@@ -18,6 +18,7 @@ use crate::core::codecs::stored_fields_format::StoredFieldsFormat;
 use crate::core::codecs::stored_fields_writer::StoredFieldsWriter;
 use crate::core::codecs::{Codec, CodecStoredFieldsWriter, Codecs};
 use crate::core::document::field::FieldDataEnum;
+use crate::core::index::BytesRef;
 use crate::core::index::field_info::FieldInfo;
 use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::segment_write_state::SegmentWriteState;
@@ -74,7 +75,7 @@ impl<D> StoredFieldsConsumerHook<D>
 where
   D: Directory,
 {
-  fn write_field(&mut self, info: &FieldInfo, value: &FieldDataEnum) -> Result<()> {
+  fn write_field<V: StoredFieldValue>(&mut self, info: &FieldInfo, value: &V) -> Result<()> {
     match self {
       Self::Default { writer } => StoredFieldsConsumerDefaults::write_field(writer, info, value),
       Self::Sorting(hook) => {
@@ -132,7 +133,11 @@ where
     self.hook.start_document(&mut self.last_doc, doc_id)
   }
 
-  pub(crate) fn write_field(&mut self, info: &FieldInfo, value: &FieldDataEnum) -> Result<()> {
+  pub(crate) fn write_field<V: StoredFieldValue>(
+    &mut self,
+    info: &FieldInfo,
+    value: &V,
+  ) -> Result<()> {
     self.hook.write_field(info, value)
   }
 
@@ -219,36 +224,15 @@ impl StoredFieldsConsumerDefaults {
     writer.start_document()
   }
 
-  pub(crate) fn write_field<TW>(
-    writer: &mut Option<TW>,
-    info: &FieldInfo,
-    value: &FieldDataEnum,
-  ) -> Result<()>
+  fn write_field<TW, V>(writer: &mut Option<TW>, info: &FieldInfo, value: &V) -> Result<()>
   where
     TW: StoredFieldsWriter,
+    V: StoredFieldValue,
   {
     let writer = writer
       .as_mut()
       .ok_or_else(|| LuceneError::illegal_state("writer must be initialized"))?;
-    match value {
-      FieldDataEnum::Binary(bytes) => {
-        writer.write_field_bytes(info, bytes)?;
-      },
-      FieldDataEnum::String(s) => {
-        writer.write_field_str(info, s)?;
-      },
-      FieldDataEnum::Number(num) => {
-        match num {
-          Number::I32(n) => writer.write_field_i32(info, *n),
-          Number::I64(n) => writer.write_field_i64(info, *n),
-          Number::F32(n) => writer.write_field_f32(info, *n),
-          Number::F64(n) => writer.write_field_f64(info, *n),
-          _ => return Err(LuceneError::illegal_argument("unsupported number type")),
-        }
-      }?,
-      _ => return Err(LuceneError::illegal_argument("unsupported field type")),
-    }
-    Ok(())
+    value.write_to(writer, info)
   }
 
   pub(crate) fn finish_document<TW>(writer: &mut Option<TW>) -> Result<()>
@@ -286,6 +270,33 @@ impl StoredFieldsConsumerDefaults {
   {
     IOUtils::close_while_handling_exception(writer.as_mut());
     Ok(())
+  }
+}
+
+pub(crate) trait StoredFieldValue {
+  fn write_to<W: StoredFieldsWriter>(&self, writer: &mut W, info: &FieldInfo) -> Result<()>;
+}
+
+impl StoredFieldValue for BytesRef<Vec<u8>> {
+  fn write_to<W: StoredFieldsWriter>(&self, writer: &mut W, info: &FieldInfo) -> Result<()> {
+    writer.write_field_bytes(info, self)
+  }
+}
+
+impl StoredFieldValue for FieldDataEnum {
+  fn write_to<W: StoredFieldsWriter>(&self, writer: &mut W, info: &FieldInfo) -> Result<()> {
+    match self {
+      Self::Binary(bytes) => bytes.write_to(writer, info),
+      Self::String(s) => writer.write_field_str(info, s),
+      Self::Number(num) => match num {
+        Number::I32(n) => writer.write_field_i32(info, *n),
+        Number::I64(n) => writer.write_field_i64(info, *n),
+        Number::F32(n) => writer.write_field_f32(info, *n),
+        Number::F64(n) => writer.write_field_f64(info, *n),
+        _ => Err(LuceneError::illegal_argument("unsupported number type")),
+      },
+      _ => Err(LuceneError::illegal_argument("unsupported field type")),
+    }
   }
 }
 

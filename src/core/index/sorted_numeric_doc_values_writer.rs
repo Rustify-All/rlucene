@@ -27,8 +27,7 @@ use crate::core::index::doc_values_writer::DocValuesWriter;
 use crate::core::index::docs_with_field_set::{DocsWithFieldSet, DocsWithFieldSetDISI};
 use crate::core::index::field_info::FieldInfo;
 use crate::core::index::numeric_doc_values_writer::{
-  BufferedNumericDocValues, BufferedSortingNumericDocValues, DocValuesProducerImpl, NumericDVs,
-  get_sorted_values,
+  BufferedNumericDocValues, DocValuesProducerImpl, SortingNumericDocValues, get_sorted_values,
 };
 use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::segment_write_state::SegmentWriteState;
@@ -374,19 +373,44 @@ impl DocValuesWriter for SortedNumericDocValuesWriter {
     };
     let Some(value_counts) = value_counts else {
       let sorted = get_sorted_values(values, &self.docs_with_field, sort_map)?;
-      let single_value_producer = DocValuesProducerImpl::new(
-        sorted.as_ref(),
-        &self.docs_with_field,
-        values,
-        &self.field_info,
-      );
-      let producer = DocValuesProducerImpl1::new(single_value_producer)?;
-      dv_consumer.add_sorted_numeric_field(
-        write_state,
-        segment_info,
-        &self.field_info,
-        &producer,
-      )?;
+      match sorted.as_ref() {
+        Some(sorted) => {
+          let single_value_producer = DocValuesProducerImpl::new(&self.field_info, || {
+            Ok(SortingNumericDocValues::new(sorted))
+          });
+          let producer = DocValuesProducerImpl1::new(single_value_producer)?;
+          dv_consumer.add_sorted_numeric_field(
+            write_state,
+            segment_info,
+            &self.field_info,
+            &producer,
+          )?;
+        },
+        None if self.docs_with_field.is_dense() => {
+          let single_value_producer = DocValuesProducerImpl::new(&self.field_info, || {
+            BufferedNumericDocValues::new(values, self.docs_with_field.dense_iterator()?)
+          });
+          let producer = DocValuesProducerImpl1::new(single_value_producer)?;
+          dv_consumer.add_sorted_numeric_field(
+            write_state,
+            segment_info,
+            &self.field_info,
+            &producer,
+          )?;
+        },
+        None => {
+          let single_value_producer = DocValuesProducerImpl::new(&self.field_info, || {
+            BufferedNumericDocValues::new(values, self.docs_with_field.sparse_iterator()?)
+          });
+          let producer = DocValuesProducerImpl1::new(single_value_producer)?;
+          dv_consumer.add_sorted_numeric_field(
+            write_state,
+            segment_info,
+            &self.field_info,
+            &producer,
+          )?;
+        },
+      }
       return Ok(());
     };
     let sorted = if let Some(sort_map) = sort_map {
@@ -452,34 +476,29 @@ impl DocValuesWriter for SortedNumericDocValuesWriter {
     Ok(())
   }
 }
-pub(crate) struct DocValuesProducerImpl1<'a> {
-  single_value_producer: DocValuesProducerImpl<'a>,
+pub(crate) struct DocValuesProducerImpl1<P> {
+  single_value_producer: P,
 }
 
-impl CloseableRef for DocValuesProducerImpl1<'_> {
+impl<P> CloseableRef for DocValuesProducerImpl1<P> {
   fn close(&self) -> Result<()> {
     Err(LuceneError::unsupported_operation(""))
   }
 }
 
-impl<'a> DocValuesProducerImpl1<'a> {
-  pub(crate) fn new(single_value_producer: DocValuesProducerImpl<'a>) -> Result<Self> {
+impl<P> DocValuesProducerImpl1<P> {
+  pub(crate) fn new(single_value_producer: P) -> Result<Self> {
     Ok(Self {
       single_value_producer,
     })
   }
 }
 
-impl<'a> DocValuesProducer for DocValuesProducerImpl1<'a> {
+impl<P: DocValuesProducer> DocValuesProducer for DocValuesProducerImpl1<P> {
   type NumericDocValues = DummyNumericDocValues;
   type BinaryDocValues = DummyBinaryDocValues;
   type SortedDocValues = DummySortedDocValues;
-  type SortedNumericDocValues = SingletonSortedNumericDocValues<
-    BufferedSortingNumericDocValues<
-      &'a PackedLongValues,
-      &'a NumericDVs<crate::core::util::fixed_bit_set::FixedBitSet>,
-    >,
-  >;
+  type SortedNumericDocValues = SingletonSortedNumericDocValues<P::NumericDocValues>;
 
   fn get_sorted_numeric(
     &self,

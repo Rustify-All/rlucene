@@ -161,6 +161,7 @@ impl<T> CaughtResultExt for CaughtResult<T> {
     }
   }
 
+  #[inline]
   fn clone_caught_failure(&self, panic_message: &str) -> Option<CaughtResult> {
     match self {
       Ok(Ok(_)) => None,

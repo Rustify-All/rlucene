@@ -20,9 +20,7 @@ use crate::core::index::doc_values_iterator::DocValuesIterator;
 use crate::core::index::docs_with_field_set::{DocsWithFieldSet, DocsWithFieldSetDISI};
 use crate::core::index::field_info::FieldInfo;
 use crate::core::index::numeric_doc_values::NumericDocValues;
-use crate::core::index::numeric_doc_values_writer::{
-  NumericDVs, SortingNumericDocValues, sort_doc_values,
-};
+use crate::core::index::numeric_doc_values_writer::{SortingNumericDocValues, sort_doc_values};
 use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::sorter::DocMap;
 use crate::core::search::doc_id_set::DocIdSet;
@@ -31,7 +29,6 @@ use crate::core::search::doc_id_set_iterator::NO_MORE_DOCS;
 use crate::core::util::accountable::Accountable;
 use crate::core::util::close::CloseableRef;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
-use crate::core::util::fixed_bit_set::FixedBitSet;
 use crate::core::util::packed::PackedInts;
 use crate::core::util::packed::packed_long_values::{
   Builder, PackedLongValues, PackedLongValuesIterator,
@@ -100,60 +97,42 @@ impl NormValuesWriter {
   {
     let values = self.pending.build()?;
     self.docs_with_field.finish();
-    let sorted = match sort_map {
-      Some(sort_map) => {
-        let dense = sort_map.size() == self.docs_with_field.cardinality();
-        let iter = self.docs_with_field.iterator()?;
-        let mut buffer_norms = BufferedNorms::new(&values, iter)?;
-        let sorted = sort_doc_values(segment_info.max_doc()?, sort_map, &mut buffer_norms, dense)?;
-        Some(sorted)
-      },
-      None => None,
-    };
-
-    let mut norms_producer =
-      NormsProducerImpl::new(sorted.as_ref(), &self.docs_with_field, &values)?;
-    norms_consumer.add_norms_field(&self.field_info, &mut norms_producer)?;
+    if let Some(sort_map) = sort_map {
+      let dense = sort_map.size() == self.docs_with_field.cardinality();
+      let iter = self.docs_with_field.iterator()?;
+      let mut buffer_norms = BufferedNorms::new(&values, iter)?;
+      let sorted = sort_doc_values(segment_info.max_doc()?, sort_map, &mut buffer_norms, dense)?;
+      let mut norms_producer = NormsProducerImpl {
+        make_values: || Ok(SortingNumericDocValues::new(&sorted)),
+      };
+      norms_consumer.add_norms_field(&self.field_info, &mut norms_producer)?;
+    } else {
+      let mut norms_producer = NormsProducerImpl {
+        make_values: || BufferedNorms::new(&values, self.docs_with_field.iterator()?),
+      };
+      norms_consumer.add_norms_field(&self.field_info, &mut norms_producer)?;
+    }
 
     Ok(())
   }
 }
 
-struct NormsProducerImpl<'a> {
-  sorted: Option<&'a NumericDVs<FixedBitSet>>,
-  docs_with_field: &'a DocsWithFieldSet,
-  values: &'a PackedLongValues,
-}
-impl<'a> NormsProducerImpl<'a> {
-  pub(crate) fn new(
-    sorted: Option<&'a NumericDVs<FixedBitSet>>,
-    docs_with_field: &'a DocsWithFieldSet,
-    values: &'a PackedLongValues,
-  ) -> Result<Self> {
-    Ok(Self {
-      sorted,
-      docs_with_field,
-      values,
-    })
-  }
+struct NormsProducerImpl<F> {
+  make_values: F,
 }
 
-impl CloseableRef for NormsProducerImpl<'_> {}
+impl<F> CloseableRef for NormsProducerImpl<F> {}
 
-impl<'a> NormsProducer for NormsProducerImpl<'a> {
+impl<F, V> NormsProducer for NormsProducerImpl<F>
+where
+  F: Fn() -> Result<V>,
+  V: NumericDocValues,
+{
   type MergeInstance = Self;
-  type NumericDocValues = BufferedSortingNorms<&'a PackedLongValues, &'a NumericDVs<FixedBitSet>>;
+  type NumericDocValues = V;
 
   fn get_norms(&self, _field_info2: &Arc<FieldInfo>) -> Result<Self::NumericDocValues> {
-    match self.sorted {
-      Some(sorted) => Ok(BufferedSortingNorms::Sorting(SortingNumericDocValues::new(
-        sorted,
-      ))),
-      None => Ok(BufferedSortingNorms::Buffered(BufferedNorms::new(
-        self.values,
-        self.docs_with_field.iterator()?,
-      )?)),
-    }
+    (self.make_values)()
   }
 
   fn check_integrity(&self) -> Result<()> {
@@ -174,82 +153,6 @@ impl<V: Borrow<PackedLongValues>> BufferedNorms<V> {
       doc_with_field,
       value: 0,
     })
-  }
-}
-
-pub(crate) enum BufferedSortingNorms<V = PackedLongValues, D = Arc<NumericDVs<FixedBitSet>>> {
-  Buffered(BufferedNorms<V>),
-  Sorting(SortingNumericDocValues<FixedBitSet, D>),
-}
-
-impl<V: Borrow<PackedLongValues>, D: Borrow<NumericDVs<FixedBitSet>>> DocValuesIterator
-  for BufferedSortingNorms<V, D>
-{
-  fn advance_exact(&mut self, target: i32) -> Result<bool> {
-    match self {
-      Self::Buffered(inner) => inner.advance_exact(target),
-      Self::Sorting(inner) => inner.advance_exact(target),
-    }
-  }
-}
-
-impl<V: Borrow<PackedLongValues>, D: Borrow<NumericDVs<FixedBitSet>>>
-  crate::core::search::doc_id_set_iterator::DocIdSetIteratorExtensions
-  for BufferedSortingNorms<V, D>
-{
-}
-impl<V: Borrow<PackedLongValues>, D: Borrow<NumericDVs<FixedBitSet>>>
-  crate::core::search::doc_id_set_iterator::BitSetIteratorAccess for BufferedSortingNorms<V, D>
-{
-}
-
-impl<V: Borrow<PackedLongValues>, D: Borrow<NumericDVs<FixedBitSet>>> DocIdSetIterator
-  for BufferedSortingNorms<V, D>
-{
-  fn doc_id(&self) -> i32 {
-    match self {
-      Self::Buffered(inner) => inner.doc_id(),
-      Self::Sorting(inner) => inner.doc_id(),
-    }
-  }
-
-  fn next_doc(&mut self) -> Result<i32> {
-    match self {
-      Self::Buffered(inner) => inner.next_doc(),
-      Self::Sorting(inner) => inner.next_doc(),
-    }
-  }
-
-  fn advance(&mut self, target: i32) -> Result<i32> {
-    match self {
-      Self::Buffered(inner) => inner.advance(target),
-      Self::Sorting(inner) => inner.advance(target),
-    }
-  }
-
-  fn slow_advance(&mut self, target: i32) -> Result<i32> {
-    match self {
-      Self::Buffered(inner) => inner.slow_advance(target),
-      Self::Sorting(inner) => inner.slow_advance(target),
-    }
-  }
-
-  fn cost(&self) -> Result<i64> {
-    match self {
-      Self::Buffered(inner) => inner.cost(),
-      Self::Sorting(inner) => inner.cost(),
-    }
-  }
-}
-
-impl<V: Borrow<PackedLongValues>, D: Borrow<NumericDVs<FixedBitSet>>> NumericDocValues
-  for BufferedSortingNorms<V, D>
-{
-  fn long_value(&mut self) -> Result<i64> {
-    match self {
-      Self::Buffered(inner) => inner.long_value(),
-      Self::Sorting(inner) => inner.long_value(),
-    }
   }
 }
 

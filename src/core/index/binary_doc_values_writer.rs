@@ -29,7 +29,7 @@ use crate::core::index::field_info::FieldInfo;
 use crate::core::index::segment_info::SegmentInfo;
 use crate::core::index::segment_write_state::SegmentWriteState;
 use crate::core::index::sorter::DocMap;
-use crate::core::index::{BytesRef, BytesRefBuilder, BytesRefValue, BytesRefValueEnum};
+use crate::core::index::{BytesRef, BytesRefBuilder, BytesRefValue};
 use crate::core::search::doc_id_set::DocIdSet;
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
 use crate::core::search::doc_id_set_iterator::NO_MORE_DOCS;
@@ -180,15 +180,24 @@ impl DocValuesWriter for BinaryDocValuesWriter {
       },
       None => None,
     };
-    let producer = DocValuesProducerImpl::new(
-      &self.field_info,
-      final_lengths,
-      self.max_length,
-      &self.bytes_out.paged_bytes,
-      &self.docs_with_field,
-      sorted.as_ref(),
-    )?;
-    dv_consumer.add_binary_field(write_state, segment_info, &self.field_info, &producer)
+    match sorted.as_ref() {
+      Some(sorted) => {
+        let producer =
+          DocValuesProducerImpl::new(&self.field_info, || Ok(SortingBinaryDocValues::new(sorted)))?;
+        dv_consumer.add_binary_field(write_state, segment_info, &self.field_info, &producer)
+      },
+      None => {
+        let producer = DocValuesProducerImpl::new(&self.field_info, || {
+          BufferedBinaryDocValues::new(
+            || final_lengths,
+            self.max_length,
+            get_data_input(&self.bytes_out.paged_bytes)?,
+            self.docs_with_field.iterator()?,
+          )
+        })?;
+        dv_consumer.add_binary_field(write_state, segment_info, &self.field_info, &producer)
+      },
+    }
   }
 
   type DocIdSetIterator = BufferedBinaryDocValues<DocsWithFieldSetDISI, PagedBytesDataInput>;
@@ -216,139 +225,39 @@ impl DocValuesWriter for BinaryDocValuesWriter {
   }
 }
 
-pub(crate) struct DocValuesProducerImpl<'a> {
+pub(crate) struct DocValuesProducerImpl<'a, F> {
   field_info: &'a Arc<FieldInfo>,
-  final_lengths: &'a PackedLongValues,
-  max_length: usize,
-  paged_bytes: &'a PagedBytes,
-  docs_with_field: &'a DocsWithFieldSet,
-  sorted: Option<&'a BinaryDVs>,
+  make_values: F,
 }
 
-impl CloseableRef for DocValuesProducerImpl<'_> {
+impl<F> CloseableRef for DocValuesProducerImpl<'_, F> {
   fn close(&self) -> Result<()> {
     Err(LuceneError::unsupported_operation(""))
   }
 }
 
-impl<'a> DocValuesProducerImpl<'a> {
-  pub(crate) fn new(
-    field_info: &'a Arc<FieldInfo>,
-    final_lengths: &'a PackedLongValues,
-    max_length: usize,
-    paged_bytes: &'a PagedBytes,
-    docs_with_field: &'a DocsWithFieldSet,
-    sorted: Option<&'a BinaryDVs>,
-  ) -> Result<Self> {
+impl<'a, F> DocValuesProducerImpl<'a, F> {
+  pub(crate) fn new(field_info: &'a Arc<FieldInfo>, make_values: F) -> Result<Self> {
     Ok(Self {
       field_info,
-      final_lengths,
-      max_length,
-      paged_bytes,
-      docs_with_field,
-      sorted,
+      make_values,
     })
   }
 }
 
-pub(crate) enum BufferedSortingBinaryDocValues<V = PackedLongValues, D = Arc<BinaryDVs>> {
-  Buffered(BufferedBinaryDocValues<DocsWithFieldSetDISI, PagedBytesDataInput, V>),
-  Sorting(SortingBinaryDocValues<D>),
-}
-
-impl<V: Borrow<PackedLongValues>, D: Borrow<BinaryDVs>> DocValuesIterator
-  for BufferedSortingBinaryDocValues<V, D>
+impl<F, V> DocValuesProducer for DocValuesProducerImpl<'_, F>
+where
+  F: Fn() -> Result<V>,
+  V: BinaryDocValues,
 {
-  fn advance_exact(&mut self, _target: i32) -> Result<bool> {
-    match self {
-      Self::Buffered(inner) => inner.advance_exact(_target),
-      Self::Sorting(inner) => inner.advance_exact(_target),
-    }
-  }
-}
-
-impl<V: Borrow<PackedLongValues>, D: Borrow<BinaryDVs>>
-  crate::core::search::doc_id_set_iterator::DocIdSetIteratorExtensions
-  for BufferedSortingBinaryDocValues<V, D>
-{
-}
-impl<V: Borrow<PackedLongValues>, D: Borrow<BinaryDVs>>
-  crate::core::search::doc_id_set_iterator::BitSetIteratorAccess
-  for BufferedSortingBinaryDocValues<V, D>
-{
-}
-
-impl<V: Borrow<PackedLongValues>, D: Borrow<BinaryDVs>> DocIdSetIterator
-  for BufferedSortingBinaryDocValues<V, D>
-{
-  fn doc_id(&self) -> i32 {
-    match self {
-      Self::Buffered(inner) => inner.doc_id(),
-      Self::Sorting(inner) => inner.doc_id(),
-    }
-  }
-
-  fn next_doc(&mut self) -> Result<i32> {
-    match self {
-      Self::Buffered(inner) => inner.next_doc(),
-      Self::Sorting(inner) => inner.next_doc(),
-    }
-  }
-
-  fn advance(&mut self, _target: i32) -> Result<i32> {
-    match self {
-      Self::Buffered(inner) => inner.advance(_target),
-      Self::Sorting(inner) => inner.advance(_target),
-    }
-  }
-
-  fn cost(&self) -> Result<i64> {
-    match self {
-      Self::Buffered(inner) => inner.cost(),
-      Self::Sorting(inner) => inner.cost(),
-    }
-  }
-}
-
-impl<V: Borrow<PackedLongValues>, D: Borrow<BinaryDVs>> BinaryDocValues
-  for BufferedSortingBinaryDocValues<V, D>
-{
-  type Value<'a>
-    = BytesRefValueEnum<'a>
-  where
-    Self: 'a;
-
-  fn binary_value(&self) -> Result<Self::Value<'_>> {
-    match self {
-      Self::Buffered(inner) => inner
-        .binary_value()
-        .map(|value| BytesRefValueEnum::Buffer(std::borrow::Cow::Borrowed(value))),
-      Self::Sorting(inner) => inner.binary_value(),
-    }
-  }
-}
-
-impl<'a> DocValuesProducer for DocValuesProducerImpl<'a> {
   type NumericDocValues = DummyNumericDocValues;
-  type BinaryDocValues = BufferedSortingBinaryDocValues<&'a PackedLongValues, &'a BinaryDVs>;
+  type BinaryDocValues = V;
 
   fn get_binary(&self, field_info: &Arc<FieldInfo>) -> Result<Self::BinaryDocValues> {
     if !Arc::ptr_eq(field_info, self.field_info) {
       return Err(LuceneError::illegal_argument("wrong fieldInfo"));
     }
-    match self.sorted {
-      Some(sorted) => Ok(BufferedSortingBinaryDocValues::Sorting(
-        SortingBinaryDocValues::new(sorted),
-      )),
-      None => Ok(BufferedSortingBinaryDocValues::Buffered(
-        BufferedBinaryDocValues::new(
-          || self.final_lengths,
-          self.max_length,
-          get_data_input(self.paged_bytes)?,
-          self.docs_with_field.iterator()?,
-        )?,
-      )),
-    }
+    (self.make_values)()
   }
 
   type SortedDocValues = DummySortedDocValues;

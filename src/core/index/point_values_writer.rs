@@ -40,6 +40,8 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering::Relaxed;
 
+const POINT_PAGE_BITS: usize = 12;
+
 /// Buffers pending byte values per document, then writes them during a segment flush.
 pub(crate) struct PointValuesWriter {
   field_info: Arc<FieldInfo>,
@@ -52,7 +54,7 @@ pub(crate) struct PointValuesWriter {
 
 impl PointValuesWriter {
   pub(crate) fn new(iw_bytes_used: SharedCounter, field_info: Arc<FieldInfo>) -> Result<Self> {
-    let bytes = PagedBytes::new(12);
+    let bytes = PagedBytes::new(POINT_PAGE_BITS);
     let bytes_out = get_data_output(bytes)?;
     let doc_ids = Vec::with_capacity(16);
     iw_bytes_used.add_and_get((16 * BitUtil::INT_BYTES) as i64);
@@ -120,7 +122,31 @@ impl PointValuesWriter {
   {
     let bytes_reader = self.bytes_out.paged_bytes.freeze(false)?;
     let doc_ids = std::mem::take(&mut self.doc_ids);
-    let points = MutablePointTreeImpl::new(
+    // Consecutive fixed-width values cannot straddle a page when their
+    // positive width divides the page size.
+    if sort_map.is_none()
+      && self.packed_bytes_length.is_power_of_two()
+      && self.packed_bytes_length <= 1 << POINT_PAGE_BITS
+    {
+      macro_rules! write_width {
+        ($width:expr) => {{
+          let points = MutablePointTreeImpl::<true, $width>::new(
+            doc_ids.len(),
+            doc_ids,
+            bytes_reader,
+            self.packed_bytes_length,
+          )?;
+          self.write_unsorted_points(points, writer, state, segment_info)
+        }};
+      }
+      return match self.packed_bytes_length {
+        4 => write_width!(4),
+        8 => write_width!(8),
+        16 => write_width!(16),
+        _ => write_width!(0),
+      };
+    }
+    let points = MutablePointTreeImpl::<false>::new(
       doc_ids.len(),
       doc_ids,
       bytes_reader,
@@ -131,20 +157,32 @@ impl PointValuesWriter {
         let values = MutableSortingPointValues::new(points, doc_map);
         let mut reader = PointsReaderImpl::new(
           values,
-          move || MutableSortingPointValues::new(MutablePointTreeImpl::default(), doc_map),
+          move || MutableSortingPointValues::new(MutablePointTreeImpl::<false>::default(), doc_map),
           self.field_info.as_ref(),
         );
         writer.write_field(&self.field_info, &mut reader, state, segment_info)
       },
-      None => {
-        let mut reader = PointsReaderImpl::new(
-          points,
-          MutablePointTreeImpl::default,
-          self.field_info.as_ref(),
-        );
-        writer.write_field(&self.field_info, &mut reader, state, segment_info)
-      },
+      None => self.write_unsorted_points(points, writer, state, segment_info),
     }
+  }
+
+  fn write_unsorted_points<const SINGLE_PAGE: bool, const PACKED_BYTES: usize, D1, D2, PW>(
+    &self,
+    points: MutablePointTreeImpl<SINGLE_PAGE, PACKED_BYTES>,
+    writer: &mut PW,
+    state: &D1,
+    segment_info: &SegmentInfo<D2>,
+  ) -> Result<()>
+  where
+    D1: Directory,
+    PW: PointsWriter,
+  {
+    let mut reader = PointsReaderImpl::new(
+      points,
+      MutablePointTreeImpl::<SINGLE_PAGE, PACKED_BYTES>::default,
+      self.field_info.as_ref(),
+    );
+    writer.write_field(&self.field_info, &mut reader, state, segment_info)
   }
 }
 struct PointsReaderImpl<'a, M, F> {
@@ -361,7 +399,7 @@ where
 }
 
 #[derive(Default)]
-struct MutablePointTreeImpl {
+struct MutablePointTreeImpl<const SINGLE_PAGE: bool, const PACKED_BYTES: usize = 0> {
   num_points: usize,
   ords: Vec<u32>,
   temp: Option<Vec<u32>>,
@@ -369,7 +407,17 @@ struct MutablePointTreeImpl {
   packed_bytes_length: usize,
   bytes_reader: Reader,
 }
-impl MutablePointTreeImpl {
+impl<const SINGLE_PAGE: bool, const PACKED_BYTES: usize>
+  MutablePointTreeImpl<SINGLE_PAGE, PACKED_BYTES>
+{
+  fn value_length(&self) -> usize {
+    if PACKED_BYTES == 0 {
+      self.packed_bytes_length
+    } else {
+      PACKED_BYTES
+    }
+  }
+
   pub(crate) fn new(
     num_points: usize,
     doc_ids: Vec<i32>,
@@ -389,7 +437,9 @@ impl MutablePointTreeImpl {
   }
 }
 
-impl PointTree for MutablePointTreeImpl {
+impl<const SINGLE_PAGE: bool, const PACKED_BYTES: usize> PointTree
+  for MutablePointTreeImpl<SINGLE_PAGE, PACKED_BYTES>
+{
   type MutablePointTree = Self;
 
   fn into_mutable(self) -> PointTreeEnum<Self::MutablePointTree, Self> {
@@ -416,7 +466,9 @@ impl PointTree for MutablePointTreeImpl {
     Ok(())
   }
 }
-impl TryClone for MutablePointTreeImpl {
+impl<const SINGLE_PAGE: bool, const PACKED_BYTES: usize> TryClone
+  for MutablePointTreeImpl<SINGLE_PAGE, PACKED_BYTES>
+{
   fn try_clone(&self) -> Result<Self>
   where
     Self: Sized,
@@ -425,7 +477,9 @@ impl TryClone for MutablePointTreeImpl {
   }
 }
 
-impl Clone for MutablePointTreeImpl {
+impl<const SINGLE_PAGE: bool, const PACKED_BYTES: usize> Clone
+  for MutablePointTreeImpl<SINGLE_PAGE, PACKED_BYTES>
+{
   fn clone(&self) -> Self {
     let ords = self.ords.clone();
     let temp = self.temp.clone();
@@ -442,20 +496,29 @@ impl Clone for MutablePointTreeImpl {
   }
 }
 
-impl MutablePointTree for MutablePointTreeImpl {
+impl<const SINGLE_PAGE: bool, const PACKED_BYTES: usize> MutablePointTree
+  for MutablePointTreeImpl<SINGLE_PAGE, PACKED_BYTES>
+{
   fn get_value<'a>(
     &'a self,
     i: usize,
     packed_value: &'a mut BytesRef<Vec<u8>>,
   ) -> Result<BytesRef<&'a [u8]>> {
-    let offset = self.packed_bytes_length * self.ords[i] as usize;
-    self
-      .bytes_reader
-      .fill_slice(packed_value, offset, self.packed_bytes_length)
+    let length = self.value_length();
+    let offset = length * self.ords[i] as usize;
+    if SINGLE_PAGE {
+      Ok(
+        self
+          .bytes_reader
+          .fill_slice_in_page(packed_value, offset, length),
+      )
+    } else {
+      self.bytes_reader.fill_slice(packed_value, offset, length)
+    }
   }
 
   fn get_byte_at(&self, i: usize, k: usize) -> u8 {
-    let offset = self.packed_bytes_length * self.ords[i] as usize + k;
+    let offset = self.value_length() * self.ords[i] as usize + k;
     self.bytes_reader.get_byte(offset)
   }
 

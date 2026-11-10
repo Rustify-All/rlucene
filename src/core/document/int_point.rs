@@ -111,11 +111,16 @@ impl IntPoint {
         point.len()
       )));
     }
-    let mut bytes = [0; MAX_INDEX_DIMENSIONS * BitUtil::INT_BYTES];
+    #[expect(
+      clippy::unnecessary_lazy_evaluations,
+      reason = "Keep packed-buffer initialization on the first setter call"
+    )]
+    let bytes = self
+      .packed
+      .get_or_insert_with(|| [0; MAX_INDEX_DIMENSIONS * BitUtil::INT_BYTES]);
     for (i, &dim) in point.iter().enumerate() {
-      Self::encode_dimension(dim, &mut bytes, i * BitUtil::INT_BYTES);
+      Self::encode_dimension(dim, bytes, i * BitUtil::INT_BYTES);
     }
-    self.packed = Some(bytes);
     Ok(())
   }
 
@@ -338,6 +343,7 @@ impl IndexableField for IntPoint {
     Ok(None)
   }
 
+  #[inline]
   fn binary_value(&self) -> Result<Option<BinaryValueEnum<'_>>> {
     Ok(self.packed.as_ref().map(|bytes| {
       let length = self.field_type.point_dimension_count() * BitUtil::INT_BYTES;

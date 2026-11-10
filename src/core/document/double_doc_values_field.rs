@@ -98,6 +98,7 @@ impl IndexableField for DoubleDocValuesField {
     self.parent_field.take_reader_value()
   }
 
+  #[inline]
   fn numeric_value(&self) -> Result<Option<Number>> {
     self.parent_field.numeric_value()
   }

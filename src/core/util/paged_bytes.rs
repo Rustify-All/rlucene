@@ -381,6 +381,25 @@ impl Reader {
       })
     }
   }
+  // The point writer selects this path only for positive widths that divide
+  // the page size. Preserve the scratch length update of fill_slice.
+  pub(crate) fn fill_slice_in_page<'a>(
+    &'a self,
+    b: &mut BytesRef<Vec<u8>>,
+    start: usize,
+    length: usize,
+  ) -> BytesRef<&'a [u8]> {
+    let index = start >> self.block_bits;
+    let offset = start & self.block_mask;
+    debug_assert!(length > 0 && length <= self.block_size - offset);
+    b.length = length;
+    BytesRef {
+      bytes: self.blocks[index].as_slice(),
+      offset,
+      length,
+    }
+  }
+
   /// Get the byte at the given offset.
   pub fn get_byte(&self, o: usize) -> u8 {
     let index = o >> self.block_bits;

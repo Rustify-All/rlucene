@@ -64,7 +64,7 @@ use crate::core::index::index_writer::{MAX_POSITION, MAX_STORED_STRING_LENGTH, M
 use crate::core::index::indexable_field::{
   IndexableField, IndexingTokenStream, ReusedIndexingTokenStream,
 };
-use crate::core::index::indexable_field_type::{IndexableFieldType, IndexableFieldTypeEnum};
+use crate::core::index::indexable_field_type::IndexableFieldType;
 use crate::core::index::leaf_metadata::LeafMetaData;
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
@@ -856,12 +856,12 @@ where
       document.reserve(document_fields.size_hint().0.saturating_sub(1));
       while let Some(field_value) = document_fields.next().transpose()? {
         let field = field_value.borrow();
-        let metadata = dispatch_fields!(field, |field| (
-          field.field_type().into(),
-          field.is_reserved(),
-          field.name(),
-        ));
-        self.process_field_schema(metadata, doc_id, &mut field_count, &mut doc_field_idx)?;
+        dispatch_fields!(field, |field| self.process_field_schema(
+          (field.field_type(), field.is_reserved(), field.name()),
+          doc_id,
+          &mut field_count,
+          &mut doc_field_idx,
+        ))?;
         if first_field.is_none() {
           first_field = Some(field_value);
         } else {
@@ -1118,31 +1118,41 @@ where
         .stored_value()?
         .ok_or_else(|| LuceneError::illegal_argument("Cannot store a null value"))?;
       let stored_value: &FieldDataEnum = stored_value.borrow();
-      if let FieldDataEnum::String(s) = stored_value
-        && s.len() > MAX_STORED_STRING_LENGTH
-      {
-        // UTF-8 byte length bounds UTF-16 length from above. Only count units
-        // when the byte length alone cannot prove that the string fits.
-        let length: usize = s.chars().map(char::len_utf16).sum();
-        if length > MAX_STORED_STRING_LENGTH {
-          return Err(LuceneError::illegal_argument(format!(
-            "stored field \"{}\" is too large ({} characters) to store",
-            field.name(),
-            length
-          )));
-        }
-      };
-      catch_aborting_exception!(
-        &mut self.has_hit_aborting_exception,
-        aborting_exception,
-        "panic while writing stored field",
-        self.stored_fields_consumer.write_field(
-          pf.schema
-            .field_info()
-            .ok_or_else(|| LuceneError::illegal_state("field info is missing"))?,
-          stored_value,
-        )
-      )?;
+      macro_rules! write_stored_value {
+        ($value:expr) => {
+          catch_aborting_exception!(
+            &mut self.has_hit_aborting_exception,
+            aborting_exception,
+            "panic while writing stored field",
+            self.stored_fields_consumer.write_field(
+              pf.schema
+                .field_info()
+                .ok_or_else(|| LuceneError::illegal_state("field info is missing"))?,
+              $value,
+            )
+          )
+        };
+      }
+      match stored_value {
+        FieldDataEnum::Binary(bytes) => write_stored_value!(bytes)?,
+        value => {
+          if let FieldDataEnum::String(s) = value
+            && s.len() > MAX_STORED_STRING_LENGTH
+          {
+            // UTF-8 byte length bounds UTF-16 length from above. Only count units
+            // when the byte length alone cannot prove that the string fits.
+            let length: usize = s.chars().map(char::len_utf16).sum();
+            if length > MAX_STORED_STRING_LENGTH {
+              return Err(LuceneError::illegal_argument(format!(
+                "stored field \"{}\" is too large ({} characters) to store",
+                field.name(),
+                length
+              )));
+            }
+          }
+          write_stored_value!(value)?;
+        },
+      }
     }
 
     let dv_type = *field.field_type().doc_values_type();
@@ -1174,9 +1184,9 @@ where
     Ok(indexed_field)
   }
   // Keep the concrete field and field type through the first schema pass.
-  fn process_field_schema(
+  fn process_field_schema<IFT: IndexableFieldType>(
     &mut self,
-    (field_type, is_reserved, field_name): (IndexableFieldTypeEnum<'_>, bool, &str),
+    (field_type, is_reserved, field_name): (IFT, bool, &str),
     doc_id: i32,
     field_count: &mut usize,
     doc_field_idx: &mut usize,
@@ -1223,17 +1233,8 @@ where
     }
     *doc_field_idx += 1;
     let pf = &mut self.per_fields[pf_idx];
-    let attributes = match field_type {
-      IndexableFieldTypeEnum::FieldType(field_type) => {
-        Self::update_doc_field_schema(field_name, &mut pf.schema, field_type)?;
-        field_type.get_attributes()
-      },
-      IndexableFieldTypeEnum::Custom(field_type) => {
-        Self::update_doc_field_schema(field_name, &mut pf.schema, field_type)?;
-        field_type.get_attributes()
-      },
-    };
-    if let Some(attrs) = attributes
+    Self::update_doc_field_schema(field_name, &mut pf.schema, &field_type)?;
+    if let Some(attrs) = field_type.get_attributes()
       && pf.field_info().is_none()
       && !attrs.is_empty()
     {
@@ -1405,12 +1406,13 @@ where
     match fp.doc_values_writer.as_mut() {
       Some(DocValuesWriterEnum::Numeric(writer)) => {
         debug_assert_eq!(dv_type, DocValuesType::Numeric);
-        let num = field
-          .numeric_value()?
-          .ok_or_else(|| {
-            LuceneError::illegal_argument(format!("field=\"{field_name}\": null value not allowed"))
-          })?
-          .to_i64();
+        let value = field.numeric_value()?.ok_or_else(|| {
+          LuceneError::illegal_argument(format!("field=\"{field_name}\": null value not allowed"))
+        })?;
+        let num = match value {
+          Number::I64(value) => Some(value),
+          other => other.to_i64(),
+        };
         match num {
           Some(num) => {
             writer.add_value(doc_id, num)?;
@@ -1438,12 +1440,13 @@ where
       },
       Some(DocValuesWriterEnum::SortedNumeric(writer)) => {
         debug_assert_eq!(dv_type, DocValuesType::SortedNumeric);
-        let num = field
-          .numeric_value()?
-          .ok_or_else(|| {
-            LuceneError::illegal_argument(format!("field=\"{field_name}\": null value not allowed"))
-          })?
-          .to_i64();
+        let value = field.numeric_value()?.ok_or_else(|| {
+          LuceneError::illegal_argument(format!("field=\"{field_name}\": null value not allowed"))
+        })?;
+        let num = match value {
+          Number::I64(value) => Some(value),
+          other => other.to_i64(),
+        };
 
         match num {
           Some(num) => {

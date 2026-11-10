@@ -83,6 +83,28 @@ impl DocsWithFieldSet {
   pub fn cardinality(&self) -> i32 {
     self.cardinality
   }
+
+  pub(crate) fn is_dense(&self) -> bool {
+    self.set.is_none()
+  }
+
+  pub(crate) fn dense_iterator(&self) -> Result<AllDISI> {
+    match self.iterator()? {
+      DocsWithFieldSetDISI::A(iter) => Ok(iter),
+      DocsWithFieldSetDISI::B(_) => {
+        Err(LuceneError::illegal_state("expected a dense document set"))
+      },
+    }
+  }
+
+  pub(crate) fn sparse_iterator(&self) -> Result<BitSetIterator<Arc<FixedBitSet>>> {
+    match self.iterator()? {
+      DocsWithFieldSetDISI::B(iter) => Ok(iter),
+      DocsWithFieldSetDISI::A(_) => {
+        Err(LuceneError::illegal_state("expected a sparse document set"))
+      },
+    }
+  }
 }
 
 impl Accountable for DocsWithFieldSet {

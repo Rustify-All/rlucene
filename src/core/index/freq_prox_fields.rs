@@ -429,8 +429,10 @@ impl<'data> TermsEnum for FreqProxTermsEnum<'data> {
     Err(LuceneError::unsupported_operation(""))
   }
 
-  type PostingsEnum =
-    PostingsEnumEnum2<Box<FreqProxPostingsEnum<'data>>, Box<FreqProxDocsEnum<'data>>>;
+  type PostingsEnum = PostingsEnumEnum2<
+    Box<FreqProxPostingsEnum<'data>>,
+    PostingsEnumEnum2<Box<FreqProxDocsEnum<'data, true>>, Box<FreqProxDocsEnum<'data, false>>>,
+  >;
 
   fn postings_with_flags(
     &mut self,
@@ -478,20 +480,33 @@ impl<'data> TermsEnum for FreqProxTermsEnum<'data> {
       // don't lie:
       return Err(LuceneError::illegal_argument("did not index freq"));
     };
-    let mut docs_enum = match reuse {
-      Some(PostingsEnumEnum2::B(p)) if std::ptr::eq(p.terms, self.terms) => p,
-      _ => Box::new(FreqProxDocsEnum::new(
-        self.terms,
-        self.int_pool,
-        self.byte_pool,
-      )),
-    };
-    docs_enum.reset(
-      sorted_term_ids[self
-        .ord
-        .ok_or_else(|| LuceneError::illegal_state("terms enum has no current term"))?],
-    )?;
-    Ok(PostingsEnumEnum2::B(docs_enum))
+    macro_rules! docs_postings {
+      ($read_term_freq:literal, $variant:ident) => {{
+        let mut docs_enum = match reuse {
+          Some(PostingsEnumEnum2::B(PostingsEnumEnum2::$variant(p)))
+            if std::ptr::eq(p.terms, self.terms) =>
+          {
+            p
+          },
+          _ => Box::new(FreqProxDocsEnum::<$read_term_freq>::new(
+            self.terms,
+            self.int_pool,
+            self.byte_pool,
+          )),
+        };
+        docs_enum.reset(
+          sorted_term_ids[self
+            .ord
+            .ok_or_else(|| LuceneError::illegal_state("terms enum has no current term"))?],
+        )?;
+        Ok(PostingsEnumEnum2::B(PostingsEnumEnum2::$variant(docs_enum)))
+      }};
+    }
+    if has_freq {
+      docs_postings!(true, A)
+    } else {
+      docs_postings!(false, B)
+    }
   }
 
   type ImpactsEnum = DummyImpactsEnum;
@@ -505,28 +520,26 @@ impl<'data> TermsEnum for FreqProxTermsEnum<'data> {
   }
 }
 
-pub(crate) struct FreqProxDocsEnum<'a> {
+pub(crate) struct FreqProxDocsEnum<'a, const READ_TERM_FREQ: bool> {
   pub(crate) terms: &'a FreqProxTermsWriterPerField,
   int_pool: &'a IntBlockPool,
   pub(crate) reader: ByteSliceReader<'a>,
-  pub(crate) read_term_freq: bool,
   pub(crate) doc_id: i32,
   pub(crate) freq: i32,
   pub(crate) ended: bool,
   pub(crate) term_id: Option<usize>,
 }
-impl<'data> FreqProxDocsEnum<'data> {
+impl<'data, const READ_TERM_FREQ: bool> FreqProxDocsEnum<'data, READ_TERM_FREQ> {
   pub fn new(
     terms: &'data FreqProxTermsWriterPerField,
     int_pool: &'data IntBlockPool,
     byte_pool: &'data ByteBlockPool,
   ) -> Self {
-    let read_term_freq = terms.has_freq;
+    debug_assert_eq!(terms.has_freq, READ_TERM_FREQ);
     Self {
       terms,
       int_pool,
       reader: ByteSliceReader::new(byte_pool),
-      read_term_freq,
       doc_id: -1,
       freq: 0,
       ended: false,
@@ -546,16 +559,20 @@ impl<'data> FreqProxDocsEnum<'data> {
   }
 }
 
-impl<'data> crate::core::search::doc_id_set_iterator::DocIdSetIteratorExtensions
-  for FreqProxDocsEnum<'data>
+impl<'data, const READ_TERM_FREQ: bool>
+  crate::core::search::doc_id_set_iterator::DocIdSetIteratorExtensions
+  for FreqProxDocsEnum<'data, READ_TERM_FREQ>
 {
 }
-impl<'data> crate::core::search::doc_id_set_iterator::BitSetIteratorAccess
-  for FreqProxDocsEnum<'data>
+impl<'data, const READ_TERM_FREQ: bool>
+  crate::core::search::doc_id_set_iterator::BitSetIteratorAccess
+  for FreqProxDocsEnum<'data, READ_TERM_FREQ>
 {
 }
 
-impl<'data> DocIdSetIterator for FreqProxDocsEnum<'data> {
+impl<'data, const READ_TERM_FREQ: bool> DocIdSetIterator
+  for FreqProxDocsEnum<'data, READ_TERM_FREQ>
+{
   fn doc_id(&self) -> i32 {
     self.doc_id
   }
@@ -581,7 +598,7 @@ impl<'data> DocIdSetIterator for FreqProxDocsEnum<'data> {
             .term_id
             .ok_or_else(|| LuceneError::illegal_state("postings enum has no current term"))?;
           self.doc_id = p.last_docs[term_id][0];
-          if self.read_term_freq {
+          if READ_TERM_FREQ {
             self.freq = p
               .term_freqs
               .as_ref()
@@ -591,7 +608,7 @@ impl<'data> DocIdSetIterator for FreqProxDocsEnum<'data> {
       }
     } else {
       let code = self.reader.read_vint()?;
-      if !self.read_term_freq {
+      if !READ_TERM_FREQ {
         self.doc_id += code;
       } else {
         self.doc_id += (code as u32 >> 1) as i32;
@@ -619,11 +636,11 @@ impl<'data> DocIdSetIterator for FreqProxDocsEnum<'data> {
   }
 }
 
-impl<'data> PostingsEnum for FreqProxDocsEnum<'data> {
+impl<'data, const READ_TERM_FREQ: bool> PostingsEnum for FreqProxDocsEnum<'data, READ_TERM_FREQ> {
   fn freq(&mut self) -> Result<i32> {
     // Don't lie here ... don't want codecs writings lots
     // of wasted 1s into the index:
-    if !self.read_term_freq {
+    if !READ_TERM_FREQ {
       return Err(LuceneError::illegal_state("freq was not indexed"));
     }
     Ok(self.freq)
@@ -891,7 +908,7 @@ impl PostingsEnum for Box<FreqProxPostingsEnum<'_>> {
   }
 }
 
-impl PostingsEnum for Box<FreqProxDocsEnum<'_>> {
+impl<const READ_TERM_FREQ: bool> PostingsEnum for Box<FreqProxDocsEnum<'_, READ_TERM_FREQ>> {
   #[inline]
   fn freq(&mut self) -> Result<i32> {
     (**self).freq()

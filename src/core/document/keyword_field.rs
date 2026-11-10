@@ -212,6 +212,7 @@ impl IndexableField for KeywordField {
     self.parent_field.token_stream(analyzer, reuse_token_stream)
   }
 
+  #[inline]
   fn binary_value(&self) -> Result<Option<BinaryValueEnum<'_>>> {
     match &self.parent_field.fields_data {
       FieldDataEnum::String(value) => Ok(Some(BinaryValueEnum::Slice(BytesRef {

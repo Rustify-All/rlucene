@@ -442,6 +442,7 @@ impl ByteBuffersDataOutput {
     ByteBuffersDataInput::new(data, length)
   }
 
+  #[inline(always)]
   fn append_block_if_needed(&mut self) -> Result<usize> {
     if self.blocks.is_empty() {
       self.cached_ram_bytes.store(-1, Ordering::Relaxed);
@@ -509,6 +510,10 @@ impl DataOutput for ByteBuffersDataOutput {
     let mut value = i as u32;
     if value < 0x80 {
       return <Self as DataOutput>::write_byte(self, value as u8);
+    }
+    if value < 0x4000 {
+      let bytes = [(value as u8) | 0x80, (value >> 7) as u8];
+      return self.write_bytes_range(&bytes, 0, bytes.len());
     }
     let mut bytes = [0u8; 5];
     let mut length = 0;

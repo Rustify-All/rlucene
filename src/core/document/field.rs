@@ -320,8 +320,8 @@ impl Field {
   where
     T: Into<String>,
   {
-    match &self.fields_data {
-      FieldDataEnum::String(_) => {},
+    match &mut self.fields_data {
+      FieldDataEnum::String(current) => *current = value.into(),
       _ => {
         return Err(LuceneError::illegal_argument(format!(
           "cannot change value type from {:?} to String",
@@ -329,7 +329,6 @@ impl Field {
         )));
       },
     }
-    self.fields_data = FieldDataEnum::String(value.into());
     Ok(())
   }
   /// Expert: changes the value of this field. See
@@ -367,8 +366,8 @@ impl Field {
   where
     B: Into<BytesRef<Vec<u8>>>,
   {
-    match &self.fields_data {
-      FieldDataEnum::Binary(_) => {},
+    match &mut self.fields_data {
+      FieldDataEnum::Binary(current) => *current = value.into(),
       _ => {
         return Err(LuceneError::illegal_argument(format!(
           "cannot change value type from {:?} to BytesRef",
@@ -376,7 +375,6 @@ impl Field {
         )));
       },
     }
-    self.fields_data = FieldDataEnum::Binary(value.into());
     Ok(())
   }
   /// Expert: changes the value of this field. See
@@ -428,8 +426,8 @@ impl Field {
   /// Expert: changes the value of this field. See
   /// [`set_string_value`](Field::set_string_value).
   pub fn set_long_value(&mut self, value: i64) -> Result<()> {
-    match &self.fields_data {
-      FieldDataEnum::Number(Number::I64(_)) => {},
+    match &mut self.fields_data {
+      FieldDataEnum::Number(Number::I64(current)) => *current = value,
       _ => {
         return Err(LuceneError::illegal_argument(format!(
           "cannot change value type from {:?} to Long",
@@ -437,8 +435,6 @@ impl Field {
         )));
       },
     }
-
-    self.fields_data = value.into();
     Ok(())
   }
   /// Expert: changes the value of this field. See

@@ -153,6 +153,7 @@ impl InetAddressPoint {
   }
 
   /// Change the values of this field.
+  #[inline(always)]
   pub fn set_inet_address_value(&mut self, value: IpAddr) -> Result<()> {
     let encoded = encode_address(value);
     match &mut self.parent_field.fields_data {
@@ -170,6 +171,7 @@ impl InetAddressPoint {
   }
 
   /// Encode InetAddress value into binary encoding.
+  #[inline]
   pub fn encode(value: IpAddr) -> [u8; Self::BYTES] {
     encode_address(value)
   }
@@ -472,6 +474,7 @@ impl fmt::Display for InetAddressPoint {
 }
 
 /// Encode InetAddress value into binary encoding.
+#[inline]
 pub fn encode_address(value: IpAddr) -> [u8; InetAddressPoint::BYTES] {
   match value {
     IpAddr::V4(address) => {
