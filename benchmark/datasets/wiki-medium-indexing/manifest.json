@@ -1,0 +1,17 @@
+{
+  "dataset": "wiki-medium-indexing-1m",
+  "method_url": "https://github.com/mikemccand/luceneutil/tree/c7eeab0ceb661dae8cf4171ceed7761689acc0e0",
+  "archive": {
+    "file": "enwiki-20120502-lines-1k-fixed-utf8-with-random-label.txt.lzma",
+    "url": "https://home.apache.org/~mikemccand/enwiki-20120502-lines-1k-fixed-utf8-with-random-label.txt.lzma",
+    "bytes": 6299260005,
+    "sha256": "f3c18abca52f479ad29b427b6e7f7d453867dfc3e25546922fae855868d2936f"
+  },
+  "corpus": {
+    "file": "corpus.txt",
+    "bytes": 1041509513,
+    "sha256": "c65af783bcf079394de9e4ea13506675099b404cbe2384417c0b5e4399fd37a2",
+    "documents": 1000000
+  },
+  "selection": "The first 1,000,000 source rows after the luceneutil header, in source order, UTF-8 with LF line endings."
+}

@@ -1,0 +1,34 @@
+{
+  "dataset": "wiki-medium-indexing-1m",
+  "runner": "wiki_medium",
+  "manifest": "datasets/wiki-medium-indexing/manifest.json",
+  "old_commit": "534c6d9c0266c1fa94a292bd8bd96964d7be4733",
+  "rust_commit": "c2f2033372049aa8f9ae5ef45a678d13698f03d8",
+  "documents": 1000000,
+  "preflight_documents": 4096,
+  "utf16_units": {"4096": 4141932, "1000000": 1005319893},
+  "logical_sha256": "4866e5f3cdc769c6b137785341e80ffc924bc369cd0f6c8a816173522b3f84aa",
+  "batches": 2,
+  "formal_per_batch": 3,
+  "warmup_min_seconds": 60,
+  "orders": [
+    [["old", "rust", "java"], ["rust", "java", "old"], ["java", "old", "rust"]],
+    [["java", "rust", "old"], ["old", "java", "rust"], ["rust", "old", "java"]]
+  ],
+  "comparisons": [["rust", "java"], ["rust", "old"], ["old", "java"]],
+  "writer": {
+    "threads": 1,
+    "ram_mb": 2048,
+    "max_buffered_docs": -1,
+    "scheduler": "concurrent",
+    "merge_threads": 1,
+    "mode": "full"
+  },
+  "java_flags": [
+    "--add-modules", "jdk.incubator.vector", "--enable-native-access=ALL-UNNAMED",
+    "-Xms4g", "-Xmx4g", "-XX:+UseParallelGC", "-XX:+AlwaysPreTouch",
+    "-XX:+TieredCompilation", "-XX:TieredStopAtLevel=4", "-XX:+UseSuperWord",
+    "-XX:+UseSIMDForMemoryOps", "-XX:+UseSIMDForArrayEquals", "-XX:+UseFMA",
+    "-Duser.timezone=UTC"
+  ]
+}

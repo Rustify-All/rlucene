@@ -1,6 +1,7 @@
 """Download and reproduce the pinned benchmark inputs."""
 import argparse
 import bz2
+import lzma
 from pathlib import Path
 import shutil
 import struct
@@ -61,6 +62,32 @@ def wiki(args):
     print("READY", target, flush=True)
 
 
+def wiki_medium(args):
+    meta = rt.load(BENCHMARK / "datasets/wiki-medium-indexing/manifest.json")
+    corpus = meta["corpus"]
+    target = args.destination / corpus["file"]
+    if ready(target, corpus):
+        print("READY", target, flush=True)
+        return
+    archive_spec = meta["archive"]
+    archive = args.archive or args.destination / archive_spec["file"]
+    if args.archive:
+        rt.require(archive.stat().st_size == archive_spec["bytes"]
+                   and rt.sha(archive) == archive_spec["sha256"], "Wrong Wiki medium archive")
+    else:
+        rt.download(archive_spec["url"], archive, archive_spec["sha256"])
+    partial = target.with_suffix(".txt.partial")
+    header = "FIELDS_HEADER_INDICATOR###\tdoctitle\tdocdate\tbody\tRandomLabel"
+    with lzma.open(archive, "rt", encoding="utf-8", newline=None) as source, partial.open("xb") as output:
+        rt.require(source.readline().rstrip("\n") == header, "Unexpected luceneutil header")
+        for _ in range(corpus["documents"]):
+            line = source.readline()
+            rt.require(len(line.split("\t", 4)) >= 4, "Incomplete Wiki medium input")
+            output.write((line.rstrip("\n") + "\n").encode("utf-8"))
+    finish(partial, target, corpus)
+    print("READY", target, flush=True)
+
+
 def sift(args):
     meta = rt.load(BENCHMARK / "datasets/sift1m/manifest.json")
     archive = args.archive or args.destination / "sift.tar.gz"
@@ -102,7 +129,8 @@ def sift(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    datasets = {"wiki": wiki, "sift1m": sift, "rally-http-logs-1m": rally_http_logs,
+    datasets = {"wiki": wiki, "wiki-medium-indexing-1m": wiki_medium,
+                "sift1m": sift, "rally-http-logs-1m": rally_http_logs,
                 "ms-marco-passage-1m": ms_marco_passage}
     parser.add_argument("dataset", choices=[*datasets, *indexing_inputs.DATASETS])
     parser.add_argument("--destination", type=Path)

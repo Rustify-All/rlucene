@@ -1,0 +1,20 @@
+# Rust edition used to parse source files when invoking rustfmt directly
+edition = "2024"
+# Rust style edition used to keep rustfmt and cargo fmt consistent
+style_edition = "2024"
+# Maximum width of each line
+max_width = 100
+# Use tab characters for indentation, spaces for alignment
+hard_tabs = false
+# Reorder import and extern crate statements alphabetically in groups (a group is separated by a newline).
+reorder_imports = true
+# Put a trailing comma after a block based match arm (non-block arms are not affected)
+match_block_trailing_comma = true
+# Unix or Windows line endings
+newline_style = "Unix"
+# Merge multiple derives into a single one.
+merge_derives = true
+# Maximum line length for single line let-else statements.
+single_line_let_else_max_width=0
+# Number of spaces per tab
+tab_spaces = 2

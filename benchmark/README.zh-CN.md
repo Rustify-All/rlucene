@@ -4,7 +4,7 @@
 
 - `search-benchmark-game/`：Wikipedia 962 条查询、五种模式。
 - `vector-search/`：SIFT1M、GloVe/Wiki 100/300维、MiniLM/Wiki384维、MPNet/Wiki768维的完整构图、Top100查询与双向索引验证。
-- [`indexing/`](indexing/README.md)：索引写入基准，支持 Rally HTTP Logs、MS MARCO Passage Ranking v1、GeoNames 和 NYC Yellow Taxi 的固定百万条样本。
+- [`indexing/`](indexing/README.md)：索引写入基准，支持 Rally HTTP Logs、MS MARCO Passage Ranking v1、GeoNames、NYC Yellow Taxi 和 Wikipedia medium 的固定百万条样本。
 
 Rally 写入数据集可直接下载[官方原始分片](https://rally-tracks.elastic.co/http_logs/documents-181998.json.bz2)，也可按[数据准备说明](datasets/rally-http-logs/README.md)自动下载并核对 SHA-256。
 

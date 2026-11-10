@@ -91,13 +91,14 @@ def summarize(out):
     preset = receipt["preset"]
     rt.require(len(samples) == preset["batches"] * preset["formal_per_batch"], "Incomplete samples")
     engines = tuple(receipt["commands"])
+    pairs_to_compare = preset.get("comparisons", (("rust", "java"), ("tuned", "java"), ("tuned", "rust")))
 
     def stats(block):
         result = {}
         for metric in METRICS:
             values = {e: [r["engines"][e][metric] for r in block] for e in engines}
             comparisons = {}
-            for candidate, reference in (("rust", "java"), ("tuned", "java"), ("tuned", "rust")):
+            for candidate, reference in pairs_to_compare:
                 if candidate in values and reference in values:
                     pairs = list(zip(values[candidate], values[reference]))
                     changes = [100 * (a / b - 1) for a, b in pairs]

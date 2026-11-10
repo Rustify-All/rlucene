@@ -9,7 +9,7 @@ small Python runners while preserving the inputs, protocol and measurement scope
 |---|---|---|
 | Search Benchmark, the Game | [search-benchmark-game](search-benchmark-game/README.md) | Wikipedia, 962 queries, five modes |
 | Vector Search | [vector-search](vector-search/README.md) | SIFT1M, GloVe100/300, MiniLM384, MPNet768: HNSW build, query and compatibility |
-| Indexing Benchmark | [indexing](indexing/README.md) | Rally HTTP logs, MS MARCO passages, GeoNames and NYC Yellow Taxi, one million documents each |
+| Indexing Benchmark | [indexing](indexing/README.md) | Rally HTTP logs, MS MARCO passages, GeoNames, NYC Yellow Taxi and Wikipedia medium, one million documents each |
 
 See also [中文说明](README.zh-CN.md).
 

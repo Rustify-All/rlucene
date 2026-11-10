@@ -6,6 +6,7 @@ Compare public-API indexing on a fixed million-row sample. Available presets:
 - [MS MARCO Passage Ranking v1](../datasets/ms-marco-passage/README.md), short text passages.
 - [GeoNames](geonames/README.md), geographic points, populations and multilingual aliases.
 - [NYC Yellow Taxi](nyc-yellow-taxi/README.md), trip timestamps, zones and numeric measurements.
+- [Wikipedia medium](wiki-medium/README.md), one million luceneutil line documents flushed as a single segment.
 
 ## Rally HTTP logs on macOS
 
@@ -136,6 +137,12 @@ writer processes, warm up twice per engine, and run all six permutations of Java
 ordinary Rust and optimized Rust. Java and ordinary Rust reopen every warmup and
 formal index for query verification. The runner retains logs and samples and removes
 the temporary timed indexes after verification.
+
+## Wikipedia medium on macOS
+
+The [Wikipedia medium guide](wiki-medium/README.md) records the pinned input,
+the exact Rust and Java drivers, and the six-order comparison between
+RLucene `534c6d9c0`, RLucene `c2f203337`, and Apache Lucene 10.1.0.
 
 ## Read the results
 

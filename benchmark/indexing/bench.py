@@ -189,6 +189,12 @@ def main():
         return
     rt.macos()
     preset = rt.load(presets[args.dataset])
+    if preset.get("runner") == "wiki_medium":
+        from wiki_medium import run as run_wiki_medium
+        if args.action == "build-tuned" or args.rust_profile is not None:
+            parser.error("Wiki medium uses its pinned native CPU + fat LTO builds")
+        run_wiki_medium(args, preset)
+        return
     if preset.get("runner") == "structured":
         from structured import run as run_structured
         if args.action == "build-tuned":

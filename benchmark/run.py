@@ -7,7 +7,7 @@ import sys
 ROOT = Path(__file__).resolve().parent
 SUITES = {"search-benchmark-game": "Wikipedia / five search modes",
           "vector-search": "SIFT1M + Wiki 100/300/384/768D / HNSW build, query, compatibility",
-          "indexing": "Indexing / Rally HTTP logs, MS MARCO passages, GeoNames and NYC Yellow Taxi"}
+          "indexing": "Indexing / Rally HTTP logs, MS MARCO passages, GeoNames, NYC Yellow Taxi and Wikipedia medium"}
 
 if len(sys.argv) < 2 or sys.argv[1] in {"list", "-h", "--help"}:
     print(__doc__)
