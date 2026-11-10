@@ -11,6 +11,7 @@ import tarfile
 BENCHMARK = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BENCHMARK))
 from common import runtime as rt
+from rally_http_logs import prepare as rally_http_logs
 
 
 def finish(partial, destination, expected):
@@ -99,7 +100,8 @@ def sift(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("dataset", choices=["wiki", "sift1m"])
+    datasets = {"wiki": wiki, "sift1m": sift, "rally-http-logs-1m": rally_http_logs}
+    parser.add_argument("dataset", choices=datasets)
     parser.add_argument("--destination", type=Path)
     parser.add_argument("--archive", type=Path, help="Reuse an existing exact input archive")
     args = parser.parse_args()
@@ -109,4 +111,4 @@ if __name__ == "__main__":
     if args.archive:
         args.archive = args.archive.expanduser().resolve()
     with rt.Lock():
-        (wiki if args.dataset == "wiki" else sift)(args)
+        datasets[args.dataset](args)

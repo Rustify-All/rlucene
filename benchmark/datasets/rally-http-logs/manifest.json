@@ -1,0 +1,35 @@
+{
+  "id": "rally-http-logs-1m",
+  "track_commit": "61ecbf17e4d198d22f1ef05c1198212939c40921",
+  "source": "https://rally-tracks.elastic.co/http_logs/documents-181998.json.bz2",
+  "archive": {
+    "file": "documents-181998.json.bz2",
+    "bytes": 13843641,
+    "sha256": "c791a8b86b4017fc3ca59ca0f4a858459e955795eb3973cb93725601a903535d",
+    "uncompressed_bytes": 363512754,
+    "uncompressed_sha256": "4dd5b56e8ef1e10667d0e3119a542b72c642fca866a9bfc2cf1add6f69ccdd2d",
+    "records": 2708746
+  },
+  "sample": {
+    "records": 1000000,
+    "selection": "1 + floor(i * 2708746 / 1000000), i=0..999999, ascending original row"
+  },
+  "files": {
+    "million.bin": {
+      "bytes": 201309018,
+      "sha256": "28b2a796cb492bcf64da465641f7bacdadc1ce99166aaa359dbc54ef9fbb6484"
+    },
+    "million.tsv": {
+      "bytes": 141780192,
+      "sha256": "65a19d529b4809e2322fc6f6f0d6984c34cd593cbfc2c3925c0ba46b30e98c83"
+    },
+    "input.json": {
+      "bytes": 1687,
+      "sha256": "66e06c5c705c8fae55ba285b5397cbe45af6c175050a1fa74275fbaaaeab6567"
+    },
+    "oracle.json": {
+      "bytes": 8416,
+      "sha256": "c18e6e7cc10250132dd628e642a99527a30b2f9127643073debbb92c3b8e5758"
+    }
+  }
+}

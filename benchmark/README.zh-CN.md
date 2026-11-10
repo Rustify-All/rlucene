@@ -4,7 +4,9 @@
 
 - `search-benchmark-game/`：Wikipedia 962 条查询、五种模式。
 - `vector-search/`：SIFT1M、GloVe/Wiki 100/300维、MiniLM/Wiki384维、MPNet/Wiki768维的完整构图、Top100查询与双向索引验证。
-- `indexing/`：完整索引写入方法准备中，当前不提供这一类的正式跑分入口。
+- [`indexing/`](indexing/README.md)：索引写入基准，首个可选数据集是 Rally HTTP Logs 百万条。
+
+Rally 写入数据集可直接下载[官方原始分片](https://rally-tracks.elastic.co/http_logs/documents-181998.json.bz2)，也可按[数据准备说明](datasets/rally-http-logs/README.md)自动下载并核对 SHA-256。
 
 官方运行环境为 **macOS + Rust 1.98.1 + JDK 23 + Python 3.9+**。Python 只用标准库。
 模型向量生成另需固定的 Python3.12 虚拟环境和模型依赖，详见
@@ -16,6 +18,7 @@ JDK 路径使用 `JAVA_HOME` 或 `--java-home`，索引和输出路径通过参�
 
 ```sh
 python3 -B benchmark/run.py list
+python3 -B benchmark/run.py indexing datasets
 python3 -B benchmark/run.py vector-search presets
 python3 -B benchmark/run.py vector-search plan --preset mpnet-wiki-768
 python3 -B benchmark/run.py search-benchmark-game build
@@ -40,7 +43,7 @@ python3 -B benchmark/run.py vector-search run --index /path/to/sift-index --data
 
 数据准备命令见各套件 README。大语料、索引、JAR、target、运行结果留在忽略目录或
 外部指定位置；Git 保存测试代码、完整查询集、参数、锁文件、上游版本和校验清单。
-已有索引只读复用，只有显式 `prepare-index`（旧入口）或预设 `build-index`/`all` 才建索引。重建索引会记录新的文件身份，
+已有索引只读复用。全文与向量套件用各自的显式建索引命令，写入套件的 `smoke` 和 `run` 每次创建新索引。重建索引会记录新的文件身份，
 全文套件可用 `--require-published-index` 强制要求原发布索引；没有伪造原索引下载地址。
 
 默认五模式先做每端 4,810 次完整有序输出校验，再做每端/模式/批次至少 60 秒实际混合

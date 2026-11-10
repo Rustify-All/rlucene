@@ -1,0 +1,11 @@
+[package]
+name = "rally-http-logs-verify"
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
+
+[dependencies]
+rlucene = { path = "../../.." }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

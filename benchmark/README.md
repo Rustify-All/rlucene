@@ -9,9 +9,12 @@ small Python runners while preserving the inputs, protocol and measurement scope
 |---|---|---|
 | Search Benchmark, the Game | [search-benchmark-game](search-benchmark-game/README.md) | Wikipedia, 962 queries, five modes |
 | Vector Search | [vector-search](vector-search/README.md) | SIFT1M, GloVe100/300, MiniLM384, MPNet768: HNSW build, query and compatibility |
-| Indexing Benchmark | [indexing](indexing/README.md) | In preparation |
+| Indexing Benchmark | [indexing](indexing/README.md) | Rally HTTP logs 1M, single-writer full indexing |
 
 See also [中文说明](README.zh-CN.md).
+
+For the Rally indexing preset, download the [official source shard](https://rally-tracks.elastic.co/http_logs/documents-181998.json.bz2),
+or use the automatic download in the [dataset preparation guide](datasets/rally-http-logs/README.md).
 
 ## Requirements
 
@@ -30,6 +33,7 @@ configuration; they do not execute a benchmark.
 ```sh
 rustup toolchain install 1.98.1 --profile minimal
 python3 -B benchmark/run.py list
+python3 -B benchmark/run.py indexing datasets
 python3 -B benchmark/run.py search-benchmark-game build
 python3 -B benchmark/run.py search-benchmark-game smoke --index /path/to/wiki-index
 python3 -B benchmark/run.py search-benchmark-game run --index /path/to/wiki-index
@@ -42,7 +46,8 @@ Java main. Each consumer has its own `[workspace]`, tracked `Cargo.lock` and a
 
 Each suite documents data preparation and index construction. Existing indexes
 can be reused read-only through `--index`. New indexes are created only by the
-explicit `prepare-index` (legacy), or preset `build-index`/`all` actions.
+explicit index-building actions. The indexing suite creates fresh indexes for
+its `smoke` and `run` actions.
 Downloads, indexes and large outputs stay in
 ignored `data/`, `.cache/` and `runs/` directories, or user-selected paths.
 
