@@ -643,6 +643,7 @@ impl DataOutput for ByteBuffersDataOutput {
 }
 
 impl Accountable for ByteBuffersDataOutput {
+  #[inline]
   fn ram_bytes_used(&self) -> Result<i64> {
     let cached = self.cached_ram_bytes.load(Ordering::Relaxed);
     if cached >= 0 {
