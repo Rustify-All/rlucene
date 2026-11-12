@@ -195,7 +195,11 @@ impl FreqProxTermsWriterPerField {
   where
     AS: AttributeSource,
   {
-    let freq = attribute_source.get_term_frequency().unwrap_or(1);
+    let freq = if AS::TERM_FREQUENCY_IS_ABSENT {
+      1
+    } else {
+      attribute_source.get_term_frequency().unwrap_or(1)
+    };
 
     if freq != 1 && self.has_prox {
       return Err(LuceneError::illegal_state(format!(

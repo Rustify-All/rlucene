@@ -32,6 +32,10 @@ use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 
 pub trait AttributeSource {
+  /// True only when this type guarantees that no term-frequency attribute exists.
+  /// The default preserves getter calls, including those of custom sources.
+  const TERM_FREQUENCY_IS_ABSENT: bool = false;
+
   // CharTermAttribute
   fn length(&self) -> Result<usize> {
     Err(LuceneError::unsupported_operation(""))
@@ -173,6 +177,8 @@ impl<T> AttributeSource for &T
 where
   T: AttributeSource,
 {
+  const TERM_FREQUENCY_IS_ABSENT: bool = T::TERM_FREQUENCY_IS_ABSENT;
+
   fn length(&self) -> Result<usize> {
     (**self).length()
   }
@@ -240,6 +246,8 @@ impl<T> AttributeSource for &mut T
 where
   T: AttributeSource,
 {
+  const TERM_FREQUENCY_IS_ABSENT: bool = T::TERM_FREQUENCY_IS_ABSENT;
+
   fn length(&self) -> Result<usize> {
     (**self).length()
   }
@@ -855,6 +863,8 @@ impl Default for EmptyAttributeSource {
 }
 
 impl AttributeSource for EmptyAttributeSource {
+  const TERM_FREQUENCY_IS_ABSENT: bool = true;
+
   fn end_attributes(&mut self) {}
 
   fn clear_attributes(&mut self) -> Result<()> {
