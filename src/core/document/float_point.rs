@@ -322,9 +322,9 @@ impl BytesRefIterator for FloatPointSetBytesRefIterator {
 }
 
 impl FieldBase for FloatPoint {
-  fn set_bytes_value<B>(&mut self, _value: B) -> Result<()>
+  fn set_bytes_value<'a, B>(&mut self, _value: B) -> Result<()>
   where
-    B: Into<BytesRef<Vec<u8>>>,
+    B: Into<BinaryValueEnum<'a>>,
   {
     Err(LuceneError::illegal_argument(
       "cannot change value type from float to BytesRef".to_string(),

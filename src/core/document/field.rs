@@ -366,14 +366,29 @@ impl Field {
   /// [`set_string_value`](Field::set_string_value).
   ///
   /// Accepts text, byte arrays, vectors, slices, and `BytesRef` values.
-  /// Owned buffers are moved; borrowed inputs are copied. `BytesRef` offsets
+  /// Owned buffers are moved; borrowed inputs reuse the current buffer. `BytesRef` offsets
   /// and lengths are preserved.
-  pub fn set_bytes_value<B>(&mut self, value: B) -> Result<()>
+  pub fn set_bytes_value<'a, B>(&mut self, value: B) -> Result<()>
   where
-    B: Into<BytesRef<Vec<u8>>>,
+    B: Into<BinaryValueEnum<'a>>,
   {
     match &mut self.fields_data {
-      FieldDataEnum::Binary(current) => *current = value.into(),
+      FieldDataEnum::Binary(current) => match value.into() {
+        BinaryValueEnum::Owned(value) => *current = value,
+        BinaryValueEnum::Borrowed(value) => {
+          current.copy_from_slice(&value.bytes);
+          current.offset = value.offset;
+          current.length = value.length;
+        },
+        BinaryValueEnum::Slice(value) => {
+          current.copy_from_slice(value.bytes);
+          current.offset = value.offset;
+          current.length = value.length;
+        },
+        BinaryValueEnum::Inline { bytes, length } => {
+          current.copy_from_slice(&bytes[..length]);
+        },
+      },
       _ => {
         return Err(LuceneError::illegal_argument(format!(
           "cannot change value type from {:?} to BytesRef",
@@ -722,10 +737,10 @@ impl Display for Field {
 
 pub trait FieldBase {
   /// Updates binary content from text, byte arrays, vectors, slices, or `BytesRef`.
-  /// Supporting fields move owned buffers and copy borrowed inputs.
-  fn set_bytes_value<B>(&mut self, _value: B) -> Result<()>
+  /// Supporting fields move owned buffers and reuse storage for borrowed inputs.
+  fn set_bytes_value<'a, B>(&mut self, _value: B) -> Result<()>
   where
-    B: Into<BytesRef<Vec<u8>>>,
+    B: Into<BinaryValueEnum<'a>>,
   {
     Err(LuceneError::not_implemented(
       "set_bytes_value not implement",

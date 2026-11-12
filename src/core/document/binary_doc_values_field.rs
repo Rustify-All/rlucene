@@ -79,9 +79,9 @@ impl Display for BinaryDocValuesField {
   }
 }
 impl FieldBase for BinaryDocValuesField {
-  fn set_bytes_value<B>(&mut self, value: B) -> Result<()>
+  fn set_bytes_value<'a, B>(&mut self, value: B) -> Result<()>
   where
-    B: Into<BytesRef<Vec<u8>>>,
+    B: Into<BinaryValueEnum<'a>>,
   {
     self.parent_field.set_bytes_value(value)
   }

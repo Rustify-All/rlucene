@@ -162,6 +162,85 @@ pub enum BinaryValueEnum<'a> {
   },
 }
 
+impl From<BytesRef<Vec<u8>>> for BinaryValueEnum<'_> {
+  #[inline]
+  fn from(value: BytesRef<Vec<u8>>) -> Self {
+    Self::Owned(value)
+  }
+}
+
+impl<'a> From<&'a BytesRef<Vec<u8>>> for BinaryValueEnum<'a> {
+  #[inline]
+  fn from(value: &'a BytesRef<Vec<u8>>) -> Self {
+    Self::Borrowed(value)
+  }
+}
+
+impl From<Vec<u8>> for BinaryValueEnum<'_> {
+  #[inline]
+  fn from(value: Vec<u8>) -> Self {
+    let length = value.len();
+    Self::Owned(BytesRef {
+      bytes: value,
+      offset: 0,
+      length,
+    })
+  }
+}
+
+impl From<String> for BinaryValueEnum<'_> {
+  #[inline]
+  fn from(value: String) -> Self {
+    Self::from(value.into_bytes())
+  }
+}
+
+impl<'a> From<&'a [u8]> for BinaryValueEnum<'a> {
+  #[inline]
+  fn from(value: &'a [u8]) -> Self {
+    Self::Slice(BytesRef {
+      bytes: value,
+      offset: 0,
+      length: value.len(),
+    })
+  }
+}
+
+impl<'a> From<&'a Vec<u8>> for BinaryValueEnum<'a> {
+  #[inline]
+  fn from(value: &'a Vec<u8>) -> Self {
+    Self::from(value.as_slice())
+  }
+}
+
+impl<'a> From<&'a str> for BinaryValueEnum<'a> {
+  #[inline]
+  fn from(value: &'a str) -> Self {
+    Self::from(value.as_bytes())
+  }
+}
+
+impl<'a> From<&'a String> for BinaryValueEnum<'a> {
+  #[inline]
+  fn from(value: &'a String) -> Self {
+    Self::from(value.as_bytes())
+  }
+}
+
+impl<const N: usize> From<[u8; N]> for BinaryValueEnum<'_> {
+  #[inline]
+  fn from(value: [u8; N]) -> Self {
+    Self::from(Vec::from(value))
+  }
+}
+
+impl<'a, const N: usize> From<&'a [u8; N]> for BinaryValueEnum<'a> {
+  #[inline]
+  fn from(value: &'a [u8; N]) -> Self {
+    Self::from(value.as_slice())
+  }
+}
+
 impl<'a> BinaryValueEnum<'a> {
   /// Adapt to an API requiring Vec-backed BytesRef, copying slice and inline values.
   pub fn into_cow(self) -> Cow<'a, BytesRef<Vec<u8>>> {
