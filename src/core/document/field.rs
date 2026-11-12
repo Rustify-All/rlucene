@@ -316,12 +316,18 @@ impl Field {
   /// # Note
   /// Each [`Field`] instance should only be used once within a single
   /// [`Document`](crate::core::document::document::Document) instance. See [ImproveIndexingSpeed](http://wiki.apache.org/lucene-java/ImproveIndexingSpeed) for details.
-  pub fn set_string_value<T>(&mut self, value: T) -> Result<()>
+  ///
+  /// Borrowed text reuses the current string's allocation. Owned strings are
+  /// moved into the field. Custom inputs must convert to [`Cow<'a, str>`](Cow).
+  pub fn set_string_value<'a, T>(&mut self, value: T) -> Result<()>
   where
-    T: Into<String>,
+    T: Into<Cow<'a, str>>,
   {
     match &mut self.fields_data {
-      FieldDataEnum::String(current) => *current = value.into(),
+      FieldDataEnum::String(current) => match value.into() {
+        Cow::Borrowed(value) => value.clone_into(current),
+        Cow::Owned(value) => *current = value,
+      },
       _ => {
         return Err(LuceneError::illegal_argument(format!(
           "cannot change value type from {:?} to String",
@@ -757,9 +763,9 @@ pub trait FieldBase {
       "set_token_stream not implement",
     ))
   }
-  fn set_string_value<T>(&mut self, _value: T) -> Result<()>
+  fn set_string_value<'a, T>(&mut self, _value: T) -> Result<()>
   where
-    T: Into<String>,
+    T: Into<Cow<'a, str>>,
   {
     Err(LuceneError::not_implemented(
       "set_string_value not implement",

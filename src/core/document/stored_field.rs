@@ -236,9 +236,9 @@ impl FieldBase for StoredField {
     self.parent_field.set_double_value(value)
   }
 
-  fn set_string_value<T>(&mut self, value: T) -> Result<()>
+  fn set_string_value<'a, T>(&mut self, value: T) -> Result<()>
   where
-    T: Into<String>,
+    T: Into<Cow<'a, str>>,
   {
     self.parent_field.set_string_value(value)
   }
