@@ -288,6 +288,7 @@ impl StoredFieldValue for FieldDataEnum {
     match self {
       Self::Binary(bytes) => bytes.write_to(writer, info),
       Self::String(s) => writer.write_field_str(info, s),
+      Self::SharedString(s) => writer.write_field_str(info, s),
       Self::Number(num) => match num {
         Number::I32(n) => writer.write_field_i32(info, *n),
         Number::I64(n) => writer.write_field_i64(info, *n),

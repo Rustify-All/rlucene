@@ -1136,7 +1136,12 @@ where
       match stored_value {
         FieldDataEnum::Binary(bytes) => write_stored_value!(bytes)?,
         value => {
-          if let FieldDataEnum::String(s) = value
+          let text = match value {
+            FieldDataEnum::String(s) => Some(s),
+            FieldDataEnum::SharedString(s) => Some(s.as_ref()),
+            _ => None,
+          };
+          if let Some(s) = text
             && s.len() > MAX_STORED_STRING_LENGTH
           {
             // UTF-8 byte length bounds UTF-16 length from above. Only count units

@@ -38,6 +38,31 @@ use thread_local::ThreadLocal;
 // use independent reader storage that is released on EOF or close.
 const MAX_REUSABLE_TEXT_BYTES: usize = 64 * 1024;
 
+/// Text supplied to an analyzer. Shared input keeps an immutable snapshot
+/// without copying the UTF-8 contents; borrowed input uses the reusable buffer.
+pub enum AnalyzerText<'a> {
+  Borrowed(&'a str),
+  Shared(Arc<String>),
+}
+
+impl<'a> From<&'a str> for AnalyzerText<'a> {
+  fn from(text: &'a str) -> Self {
+    Self::Borrowed(text)
+  }
+}
+
+impl<'a> From<&'a String> for AnalyzerText<'a> {
+  fn from(text: &'a String) -> Self {
+    Self::Borrowed(text)
+  }
+}
+
+impl From<Arc<String>> for AnalyzerText<'_> {
+  fn from(text: Arc<String>) -> Self {
+    Self::Shared(text)
+  }
+}
+
 pub struct AnalyzerStoredValue {
   reuse_strategy: ReuseStrategyFactory,
   stored_value: ThreadLocal<RefCell<ReuseStrategyEnum>>,
@@ -75,7 +100,11 @@ impl AnalyzerStoredValue {
     self.get().borrow_mut()
   }
 
-  fn reader_for_text(&self, text: &str) -> ReaderEnum {
+  fn reader_for_text(&self, text: AnalyzerText<'_>) -> ReaderEnum {
+    let text = match text {
+      AnalyzerText::Shared(text) => return ReaderEnum::from(text),
+      AnalyzerText::Borrowed(text) => text,
+    };
     if text.len() > MAX_REUSABLE_TEXT_BYTES {
       return ReaderEnum::from(text);
     }
@@ -194,15 +223,15 @@ pub trait Analyzer: Closeable + Send + Sync {
     }))
   }
 
-  /// Analyzes borrowed text using a reusable, thread-local input buffer.
-  /// The text is copied, but subsequent calls reuse the allocation after the
-  /// previous token stream and any cloned readers have released it.
-  /// Inputs up to 64 KiB use the buffer, whose capacity is retained until this
-  /// analyzer is closed. Larger inputs use independent reader storage.
+  /// Analyzes text supplied with `.into()` or an explicit [`AnalyzerText`].
+  /// Shared input is retained without copying its contents. Borrowed input
+  /// up to 64 KiB is copied into a reusable thread-local buffer; larger borrowed
+  /// input uses independent reader storage. A retained reader keeps its own
+  /// immutable snapshot in either case.
   fn token_stream_from_text(
     &self,
     field_name: &str,
-    text: &str,
+    text: AnalyzerText<'_>,
   ) -> Result<RefMut<'_, AnalyzerTokenStreams>> {
     self.token_stream(field_name, self.stored_value().reader_for_text(text))
   }
@@ -339,7 +368,7 @@ where
   fn token_stream_from_text(
     &self,
     field_name: &str,
-    text: &str,
+    text: AnalyzerText<'_>,
   ) -> Result<RefMut<'_, AnalyzerTokenStreams>> {
     (**self).token_stream_from_text(field_name, text)
   }
@@ -460,7 +489,7 @@ impl Analyzer for AnalyzerEnum {
   fn token_stream_from_text(
     &self,
     field_name: &str,
-    text: &str,
+    text: AnalyzerText<'_>,
   ) -> Result<RefMut<'_, AnalyzerTokenStreams>> {
     match self {
       AnalyzerEnum::Whitespace(v) => v.token_stream_from_text(field_name, text),

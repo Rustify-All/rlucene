@@ -38,6 +38,7 @@ use crate::{either_token_stream, impl_from_for_enum};
 use std::borrow::Cow;
 use std::fmt;
 use std::fmt::{Debug, Display};
+use std::sync::Arc;
 
 /// Expert: directly creates a field for a document. Most users should use one
 /// of the convenience implementations:
@@ -94,7 +95,15 @@ impl Field {
   {
     Self {
       name: String::into_boxed_str(name.into()),
-      fields_data: fields_data.into(),
+      fields_data: match fields_data.into() {
+        FieldDataEnum::String(text)
+          if indexable_field_type.tokenized()
+            && *indexable_field_type.index_options() != IndexOptions::None =>
+        {
+          FieldDataEnum::SharedString(Arc::new(text))
+        },
+        value => value,
+      },
       indexable_field_type,
     }
   }
@@ -292,10 +301,16 @@ impl Field {
         "it doesn't make sense to have a field that is neither indexed nor stored",
       ));
     }
+    let shared_text = indexable_field_type.tokenized()
+      && *indexable_field_type.index_options() != IndexOptions::None;
     Ok(Field {
       indexable_field_type,
       name: String::into_boxed_str(name.into()),
-      fields_data: FieldDataEnum::String(value.into()),
+      fields_data: if shared_text {
+        FieldDataEnum::SharedString(Arc::new(value.into()))
+      } else {
+        FieldDataEnum::String(value.into())
+      },
     })
   }
   /// Returns the [`TokenStream`] for this field to be used when indexing, or
@@ -327,6 +342,18 @@ impl Field {
       FieldDataEnum::String(current) => match value.into() {
         Cow::Borrowed(value) => value.clone_into(current),
         Cow::Owned(value) => *current = value,
+      },
+      FieldDataEnum::SharedString(current) => {
+        let value = value.into();
+        if let Some(current) = Arc::get_mut(current) {
+          match value {
+            Cow::Borrowed(value) => value.clone_into(current),
+            Cow::Owned(value) => *current = value,
+          }
+        } else {
+          // A retained reader must continue to see the previous value.
+          *current = Arc::new(value.into_owned());
+        }
       },
       _ => {
         return Err(LuceneError::illegal_argument(format!(
@@ -589,9 +616,13 @@ impl IndexableField for Field {
       Ok(Some(IndexingTokenStreamEnum3::AnalyzerTokenStream(
         analyzer.token_stream(self.name(), reader)?,
       )))
+    } else if let FieldDataEnum::SharedString(text) = &self.fields_data {
+      Ok(Some(IndexingTokenStreamEnum3::AnalyzerTokenStream(
+        analyzer.token_stream_from_text(self.name(), Arc::clone(text).into())?,
+      )))
     } else if let Some(v) = self.string_value()? {
       let token_stream = match v {
-        Cow::Borrowed(text) => analyzer.token_stream_from_text(self.name(), text)?,
+        Cow::Borrowed(text) => analyzer.token_stream_from_text(self.name(), text.into())?,
         Cow::Owned(text) => analyzer.token_stream(self.name(), ReaderEnum::from(text))?,
       };
       Ok(Some(IndexingTokenStreamEnum3::AnalyzerTokenStream(
@@ -634,19 +665,25 @@ impl IndexableField for Field {
   fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
     match &self.fields_data {
       FieldDataEnum::String(s) => Ok(Some(Cow::Borrowed(s))),
+      FieldDataEnum::SharedString(s) => Ok(Some(Cow::Borrowed(s.as_ref()))),
       FieldDataEnum::Number(n) => Ok(Some(Cow::Owned(n.to_string()))),
       _ => Ok(None),
     }
   }
 
   fn take_string_value(&mut self) -> Result<Option<String>> {
-    if !matches!(self.fields_data, FieldDataEnum::String(_))
-      && !matches!(self.fields_data, FieldDataEnum::Number(_))
+    if !matches!(
+      self.fields_data,
+      FieldDataEnum::String(_) | FieldDataEnum::SharedString(_)
+    ) && !matches!(self.fields_data, FieldDataEnum::Number(_))
     {
       return Ok(None);
     }
     match std::mem::replace(&mut self.fields_data, FieldDataEnum::Dummy(())) {
       FieldDataEnum::String(s) => Ok(Some(s)),
+      FieldDataEnum::SharedString(s) => Ok(Some(
+        Arc::try_unwrap(s).unwrap_or_else(|s| s.as_ref().clone()),
+      )),
       FieldDataEnum::Number(n) => Ok(Some(n.to_string())),
       _ => Ok(None),
     }
@@ -697,9 +734,10 @@ impl IndexableField for Field {
     }
 
     match &self.fields_data {
-      FieldDataEnum::Number(_) | FieldDataEnum::Binary(_) | FieldDataEnum::String(_) => {
-        Ok(Some(&self.fields_data))
-      },
+      FieldDataEnum::Number(_)
+      | FieldDataEnum::Binary(_)
+      | FieldDataEnum::String(_)
+      | FieldDataEnum::SharedString(_) => Ok(Some(&self.fields_data)),
       _ => Err(LuceneError::illegal_state(
         "stored field data must be numeric, binary, or a string",
       )),
@@ -813,16 +851,31 @@ impl From<Store> for bool {
   }
 }
 
-#[derive(Debug)]
 pub enum FieldDataEnum {
   Number(Number),
   Binary(BytesRef<Vec<u8>>),
   String(String),
+  /// Immutable string storage shared with readers by analyzed fields.
+  SharedString(Arc<String>),
   Reader(ReaderEnum),
   TokenStream(FieldTokenStreamEnum),
   // used to std::mem::replace(FieldDataEnum)
   Dummy(()),
   VectorValue(VectorValueEnum),
+}
+impl Debug for FieldDataEnum {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      Self::Number(v) => f.debug_tuple("Number").field(v).finish(),
+      Self::Binary(v) => f.debug_tuple("Binary").field(v).finish(),
+      Self::String(v) => f.debug_tuple("String").field(v).finish(),
+      Self::SharedString(v) => f.debug_tuple("String").field(v.as_ref()).finish(),
+      Self::Reader(v) => f.debug_tuple("Reader").field(v).finish(),
+      Self::TokenStream(v) => f.debug_tuple("TokenStream").field(v).finish(),
+      Self::Dummy(v) => f.debug_tuple("Dummy").field(v).finish(),
+      Self::VectorValue(v) => f.debug_tuple("VectorValue").field(v).finish(),
+    }
+  }
 }
 impl FieldDataEnum {
   /// Clones field data when its value supports independent ownership.
@@ -833,6 +886,7 @@ impl FieldDataEnum {
       Self::Number(n) => Ok(Self::Number(n.clone())),
       Self::Binary(b) => Ok(Self::Binary(b.clone())),
       Self::String(s) => Ok(Self::String(s.clone())),
+      Self::SharedString(s) => Ok(Self::SharedString(Arc::new(s.as_ref().clone()))),
       Self::Reader(r) => Ok(Self::Reader(r.clone())),
       Self::TokenStream(_) => Err(LuceneError::illegal_state("token stream cannot be cloned")),
       Self::Dummy(d) => {
@@ -900,6 +954,7 @@ impl Display for FieldDataEnum {
       FieldDataEnum::Number(n) => write!(f, "{}", n),
       FieldDataEnum::Binary(b) => write!(f, "{}", b),
       FieldDataEnum::String(s) => write!(f, "{}", s),
+      FieldDataEnum::SharedString(s) => write!(f, "{}", s),
       FieldDataEnum::Reader(r) => write!(f, "{:?}", r),
       FieldDataEnum::TokenStream(t) => write!(f, "{:?}", t),
       FieldDataEnum::Dummy(s) => write!(f, "{:?}", s),
