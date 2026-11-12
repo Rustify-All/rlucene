@@ -248,6 +248,7 @@ impl TermVectorsConsumerPerField {
     }
     Ok(())
   }
+  #[inline(always)]
   pub(crate) fn start(
     &mut self,
     field_info: &FieldInfo,

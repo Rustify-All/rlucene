@@ -390,6 +390,7 @@ impl FreqProxTermsWriterPerField {
     }
     Ok(())
   }
+  #[inline(always)]
   pub(crate) fn start(
     &mut self,
     vector_options: TermVectorOptions,
