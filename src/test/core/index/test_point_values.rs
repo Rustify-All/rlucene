@@ -896,13 +896,13 @@ fn test_sparse_points() -> Result<()> {
 
       if random.random_range(0..100) == 17 {
         let v = random.random();
-        doc.add(IntPoint::new(&field_name, vec![v])?);
+        doc.add(IntPoint::new(field_name.clone(), vec![v])?);
         field_doc_counts[field] += 1;
         field_sizes[field] += 1;
 
         if random.random_range(0..10) == 5 {
           let v2 = random.random();
-          doc.add(IntPoint::new(&field_name, vec![v2])?);
+          doc.add(IntPoint::new(field_name.clone(), vec![v2])?);
           field_sizes[field] += 1;
         }
       }

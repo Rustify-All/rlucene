@@ -91,11 +91,11 @@ where
   match random.random_range(0..4) {
     0 => {
       let value = random.random::<i64>();
-      Box::new(move || Ok(LongPoint::new(&field_name, [value])?.into()))
+      Box::new(move || Ok(LongPoint::new(field_name.clone(), [value])?.into()))
     },
     1 => {
       let value = random.random::<i32>();
-      Box::new(move || Ok(IntPoint::new(&field_name, [value])?.into()))
+      Box::new(move || Ok(IntPoint::new(field_name.clone(), [value])?.into()))
     },
     2 => {
       let value = random.random::<f64>();

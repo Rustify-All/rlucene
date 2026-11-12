@@ -54,13 +54,15 @@ use std::fmt;
 ///
 /// See also [`PointValues`](crate::core::index::point_values::PointValues).
 pub struct IntPoint {
-  name: String,
+  name: Cow<'static, str>,
   field_type: FieldType,
   packed: Option<[u8; MAX_INDEX_DIMENSIONS * BitUtil::INT_BYTES]>,
 }
 
 impl IntPoint {
   /// Creates a new [`IntPoint`], indexing the provided N-dimensional integer point.
+  /// Static names are borrowed; owned strings are moved. Convert a non-static
+  /// borrowed name to an owned string before passing it to this constructor.
   ///
   /// # Arguments
   ///
@@ -68,7 +70,7 @@ impl IntPoint {
   /// * `point` - Integer point value.
   pub fn new<T, P>(name: T, point: P) -> Result<IntPoint>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
     P: AsRef<[i32]>,
   {
     let point = point.as_ref();

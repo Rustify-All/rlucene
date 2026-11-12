@@ -809,7 +809,7 @@ where
   let field = field.into();
   let mut doc = Document::new();
   doc.add(SortedNumericDocValuesField::new(&field, value));
-  doc.add(LongPoint::new(&field, [value])?);
+  doc.add(LongPoint::new(field, [value])?);
   Ok(doc)
 }
 
@@ -1055,7 +1055,7 @@ where
   for _ in 0..repeat {
     let mut doc = Document::new();
     doc.add(SortedNumericDocValuesField::new(field, value));
-    doc.add(LongPoint::new(field, [value])?);
+    doc.add(LongPoint::new(field.to_owned(), [value])?);
     index_writer.add_document(random, doc)?;
   }
   Ok(())

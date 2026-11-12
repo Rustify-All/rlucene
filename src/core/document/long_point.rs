@@ -39,16 +39,18 @@ use std::borrow::Cow;
 use std::fmt;
 
 pub struct LongPoint {
-  name: String,
+  name: Cow<'static, str>,
   field_type: FieldType,
   packed: Option<[u8; MAX_INDEX_DIMENSIONS * BitUtil::LONG_BYTES]>,
 }
 
 impl LongPoint {
   /// Creates a new [`LongPoint`] with the given name and `i64` values.
+  /// Static names are borrowed; owned strings are moved. Convert a non-static
+  /// borrowed name to an owned string before passing it to this constructor.
   pub fn new<T, P>(name: T, point: P) -> Result<LongPoint>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
     P: AsRef<[i64]>,
   {
     let point = point.as_ref();

@@ -486,7 +486,7 @@ fn test_ram_usage_indexed() -> Result<()> {
 
 #[test]
 fn test_ram_usage_point() -> Result<()> {
-  do_test_ram_usage(|field| Ok(IntPoint::new(field, [42])?.into()))
+  do_test_ram_usage(|field| Ok(IntPoint::new(field.to_owned(), [42])?.into()))
 }
 
 #[test]
