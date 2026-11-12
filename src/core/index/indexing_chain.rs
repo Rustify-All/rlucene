@@ -60,7 +60,9 @@ use crate::core::codecs::knn_vectors_format::KnnVectorsFormat;
 use crate::core::codecs::knn_vectors_writer::KnnVectorsWriter;
 use crate::core::document::field::{FieldDataEnum, IndexingTokenStreamEnum3};
 use crate::core::index::BytesRefValue;
-use crate::core::index::index_writer::{MAX_POSITION, MAX_STORED_STRING_LENGTH, MAX_TERM_LENGTH};
+use crate::core::index::index_writer::{
+  IndexingDocument, IndexingFields, MAX_POSITION, MAX_STORED_STRING_LENGTH, MAX_TERM_LENGTH,
+};
 use crate::core::index::indexable_field::{
   IndexableField, IndexingTokenStream, ReusedIndexingTokenStream,
 };
@@ -163,6 +165,7 @@ where
   fields: smallvec::SmallVec<[u32; 1]>,
   per_fields: Vec<PerField>,
   doc_fields: smallvec::SmallVec<[u32; 2]>,
+  field_buffer: Vec<Fields>,
   info_stream: InfoStreamMT,
   index_created_version_major: i32,
   has_hit_aborting_exception: bool,
@@ -256,6 +259,7 @@ where
       fields: smallvec::SmallVec::new(),
       per_fields: vec![],
       doc_fields: smallvec::SmallVec::new(),
+      field_buffer: Vec::new(),
       info_stream,
       index_created_version_major,
       has_hit_aborting_exception: false,
@@ -811,10 +815,11 @@ where
     clippy::too_many_arguments,
     reason = "The per-operation similarity is borrowed separately from the persistent writer configuration."
   )]
-  pub(crate) fn process_document<DF, F, D1, T, S>(
+  pub(crate) fn process_document<DF, D1, T, S>(
     &mut self,
     doc_id: i32,
     document: DF,
+    mut parent_field: Option<&mut Fields>,
     info: &mut SegmentInfo<D1>,
     field_infos: &mut Builder,
     index_writer_config: &T,
@@ -823,10 +828,10 @@ where
   ) -> Result<()>
   where
     S: Similarity,
-    DF: IntoIterator<Item = Result<F>>,
-    F: BorrowMut<Fields>,
+    DF: IndexingDocument,
     T: LiveIndexWriterConfig,
   {
+    let mut document_fields = document.into_indexing_fields();
     // number of unique fields by names (collapses multiple field instances by the same name)
     let mut field_count = 0;
     // number of unique fields indexed with postings
@@ -842,31 +847,52 @@ where
     self.terms_hash.start_document()?;
     self.start_stored_fields(doc_id, info, aborting_exception_consumer)?;
 
-    let mut document_fields = document.into_iter();
-    let mut document = Vec::new();
+    let mut document = DF::take_field_buffer(&mut self.field_buffer);
     // Keep the first field inline while retaining both schema and indexing passes.
     let mut first_field = None;
     // 1st pass over doc fields – verify that doc schema matches the index schema
     // build schema for each unique doc field
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
-      // Reserve for the remaining fields using the iterator's lower bound.
-      // The first field stays in first_field, so empty/single-field documents
-      // need no Vec allocation. This does not consume any iterator items.
-      document.reserve(document_fields.size_hint().0.saturating_sub(1));
-      while let Some(field_value) = document_fields.next().transpose()? {
-        let field = field_value.borrow();
-        dispatch_fields!(field, |field| self.process_field_schema(
-          (field.field_type(), field.is_reserved(), field.name()),
-          doc_id,
-          &mut field_count,
-          &mut doc_field_idx,
-        ))?;
-        if first_field.is_none() {
-          first_field = Some(field_value);
-        } else {
-          document.push(field_value);
-        }
+      // Preserve the iterable's size_hint callback before inspecting any fields.
+      if let IndexingFields::Iterable(fields) = &mut document_fields {
+        document.reserve(
+          fields
+            .size_hint()
+            .0
+            .saturating_add(usize::from(parent_field.is_some()))
+            .saturating_sub(1),
+        );
+      }
+      macro_rules! check_schema {
+        ($field:expr) => {
+          dispatch_fields!($field, |field| self.process_field_schema(
+            (field.field_type(), field.is_reserved(), field.name()),
+            doc_id,
+            &mut field_count,
+            &mut doc_field_idx,
+          ))?
+        };
+      }
+      if let Some(field) = parent_field.as_deref() {
+        check_schema!(field);
+      }
+      match &mut document_fields {
+        IndexingFields::Borrowed(fields) => {
+          for field in fields.iter() {
+            check_schema!(field);
+          }
+        },
+        IndexingFields::Iterable(fields) => {
+          while let Some(field_value) = fields.next().transpose()? {
+            check_schema!(field_value.borrow());
+            if first_field.is_none() && parent_field.is_none() {
+              first_field = Some(field_value);
+            } else {
+              document.push(field_value);
+            }
+          }
+        },
       }
 
       self.doc_fields.truncate(doc_field_idx);
@@ -896,21 +922,31 @@ where
       doc_field_idx = 0;
       self.fields.clear();
 
-      for field in first_field.iter_mut().chain(document.iter_mut()) {
-        let field = field.borrow_mut();
-        let per_field_idx = self.doc_fields[doc_field_idx] as usize;
-        // Keep the concrete field type through all accesses in process_field.
-        if dispatch_fields!(field, |field| self.process_field(
-          doc_id,
-          field,
-          per_field_idx,
-          index_writer_config,
-          aborting_exception_consumer,
-        ))? {
-          self.fields.push(self.doc_fields[doc_field_idx]);
-          indexed_field_count += 1;
-        }
-        doc_field_idx += 1;
+      macro_rules! index_fields {
+        ($fields:expr) => {
+          for field in $fields {
+            let field: &mut Fields = field.borrow_mut();
+            let per_field_idx = self.doc_fields[doc_field_idx] as usize;
+            if dispatch_fields!(field, |field| self.process_field(
+              doc_id,
+              field,
+              per_field_idx,
+              index_writer_config,
+              aborting_exception_consumer,
+            ))? {
+              self.fields.push(self.doc_fields[doc_field_idx]);
+              indexed_field_count += 1;
+            }
+            doc_field_idx += 1;
+          }
+        };
+      }
+      index_fields!(parent_field.iter_mut());
+      match &mut document_fields {
+        IndexingFields::Borrowed(fields) => index_fields!(fields.iter_mut()),
+        IndexingFields::Iterable(_) => {
+          index_fields!(first_field.iter_mut().chain(document.iter_mut()));
+        },
       }
       Ok(())
     }));
@@ -945,7 +981,13 @@ where
         )
       )?;
     }
-    unwrap_caught_result!(result)
+    let result = unwrap_caught_result!(result);
+    // Keep owners alive through all finish callbacks and preserve their drop order.
+    drop(first_field);
+    document.clear();
+    DF::recycle_field_buffer(&mut self.field_buffer, document);
+    drop(document_fields);
+    result
   }
   pub(crate) fn initialize_field_info<D1, T>(
     &mut self,
@@ -1546,6 +1588,7 @@ where
       self
         .bytes_used
         .get()
+        .saturating_add((self.field_buffer.capacity() * std::mem::size_of::<Fields>()) as i64)
         .saturating_add(self.stored_fields_consumer.ram_bytes_used()?)
         .saturating_add(self.terms_hash.next_terms_hash.ram_bytes_used()?)
         .saturating_add(

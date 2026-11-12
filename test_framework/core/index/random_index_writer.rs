@@ -48,7 +48,6 @@ use crate::test_framework::core::util::test_util::TestUtil;
 use parking_lot::Mutex;
 use rand::prelude::StdRng;
 use rand::{Rng, RngExt, SeedableRng};
-use std::borrow::BorrowMut;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
@@ -329,9 +328,7 @@ where
   pub fn add_documents<R, DI>(&self, r: &mut R, docs: DI) -> Result<i64>
   where
     R: Rng + ?Sized,
-    DI: IntoFallibleIterator,
-    DI::Item: IntoFallibleIterator,
-    <DI::Item as IntoFallibleIterator>::Item: BorrowMut<Fields>,
+    DI: IntoFallibleIterator<Item: IndexingDocument>,
   {
     self.add_documents_with_similarity(
       r,
@@ -348,9 +345,7 @@ where
   where
     S: crate::core::search::similarities_impl::similarities::Similarity,
     R: Rng + ?Sized,
-    DI: IntoFallibleIterator,
-    DI::Item: IntoFallibleIterator,
-    <DI::Item as IntoFallibleIterator>::Item: BorrowMut<Fields>,
+    DI: IntoFallibleIterator<Item: IndexingDocument>,
   {
     maybe_change_live_index_writer_config(r, self.w.get_config_mut())?;
     let seq_no = self.w.add_documents_with_similarity(docs, similarity)?;
@@ -367,9 +362,7 @@ where
   where
     R: Rng + ?Sized,
     T: Into<Term>,
-    DI: IntoFallibleIterator,
-    DI::Item: IntoFallibleIterator,
-    <DI::Item as IntoFallibleIterator>::Item: BorrowMut<Fields>,
+    DI: IntoFallibleIterator<Item: IndexingDocument>,
   {
     self.update_documents_with_term_and_similarity(
       r,
@@ -389,9 +382,7 @@ where
     S: crate::core::search::similarities_impl::similarities::Similarity,
     R: Rng + ?Sized,
     T: Into<Term>,
-    DI: IntoFallibleIterator,
-    DI::Item: IntoFallibleIterator,
-    <DI::Item as IntoFallibleIterator>::Item: BorrowMut<Fields>,
+    DI: IntoFallibleIterator<Item: IndexingDocument>,
   {
     maybe_change_live_index_writer_config(r, self.w.get_config_mut())?;
     let del_term = del_term.into();

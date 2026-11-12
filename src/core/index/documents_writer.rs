@@ -14,13 +14,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::core::document::fields::Fields;
 use crate::core::index::doc_values_update::DocValuesUpdate;
 use crate::core::index::documents_writer_delete_queue::{DocumentsWriterDeleteQueue, Node};
 use crate::core::index::documents_writer_flush_control::DocumentsWriterFlushControl;
 use crate::core::index::documents_writer_flush_queue::{DocumentsWriterFlushQueue, FlushTicket};
 use crate::core::index::documents_writer_per_thread_pool::DwptWrapper;
-use crate::core::index::index_writer::{IndexWriter, IntoFallibleIterator};
+use crate::core::index::index_writer::{IndexWriter, IndexingDocument, IntoFallibleIterator};
 use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
 use crate::core::index::lockable_concurrent_approximate_priority_queue::Lock;
 use crate::core::index::segment_info::SegmentInfo;
@@ -35,7 +34,6 @@ use crate::core::util::error::lucene_error::{CaughtResult, LuceneError};
 use crate::core::util::info_stream::{InfoStream, InfoStreamMT};
 use crate::core::util::io_utils::IOUtils;
 use parking_lot::{Mutex, MutexGuard};
-use std::borrow::BorrowMut;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicI64, Ordering};
@@ -502,9 +500,7 @@ where
   ) -> Result<i64>
   where
     S: Similarity,
-    DI: IntoFallibleIterator,
-    DI::Item: IntoFallibleIterator,
-    <DI::Item as IntoFallibleIterator>::Item: BorrowMut<Fields>,
+    DI: IntoFallibleIterator<Item: IndexingDocument>,
   {
     let has_events = self.pre_update(writer)?;
 

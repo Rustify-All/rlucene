@@ -86,15 +86,64 @@ where
   }
 }
 
+/// Field storage used by the two indexing passes.
+#[doc(hidden)]
+pub enum IndexingFields<'a, I> {
+  Borrowed(&'a mut [Fields]),
+  Iterable(I),
+}
+
 /// A document accepted by [`IndexWriter::add_document`].
 ///
 /// Owned fallible field iterables and `&mut Document` are supported. Keeping the
 /// owned iterable's item type fixed preserves type inference for `field.into()`.
-pub trait IndexingDocument: IntoFallibleIterator<Item: BorrowMut<Fields>> {}
+pub trait IndexingDocument: IntoFallibleIterator<Item: BorrowMut<Fields>> {
+  #[doc(hidden)]
+  fn into_indexing_fields<'a>(self) -> IndexingFields<'a, Self::IntoIter>
+  where
+    Self: Sized + 'a,
+  {
+    IndexingFields::Iterable(self.into_fallible_iter())
+  }
 
-impl<T> IndexingDocument for T where T: IntoFallibleIterator<Item = Fields> {}
+  #[doc(hidden)]
+  fn take_field_buffer(_buffer: &mut Vec<Fields>) -> Vec<Self::Item> {
+    Vec::new()
+  }
 
-impl IndexingDocument for &mut Document {}
+  #[doc(hidden)]
+  fn recycle_field_buffer(_buffer: &mut Vec<Fields>, _fields: Vec<Self::Item>) {}
+}
+
+impl<T> IndexingDocument for T
+where
+  T: IntoFallibleIterator<Item = Fields>,
+{
+  fn take_field_buffer(buffer: &mut Vec<Fields>) -> Vec<Fields> {
+    std::mem::take(buffer)
+  }
+
+  fn recycle_field_buffer(buffer: &mut Vec<Fields>, fields: Vec<Fields>) {
+    // Retain a bounded, empty allocation; unusually wide documents must not
+    // permanently increase the writer's memory footprint.
+    if fields
+      .capacity()
+      .saturating_mul(std::mem::size_of::<Fields>())
+      <= 64 * 1024
+    {
+      *buffer = fields;
+    }
+  }
+}
+
+impl IndexingDocument for &mut Document {
+  fn into_indexing_fields<'a>(self) -> IndexingFields<'a, Self::IntoIter>
+  where
+    Self: 'a,
+  {
+    IndexingFields::Borrowed(self.into_iter().into_slice())
+  }
+}
 
 /// An [`IndexWriter`] creates and maintains an index.
 ///
@@ -993,9 +1042,7 @@ where
   /// - Returns an `io::Error` if there is a low-level I/O error.
   pub fn add_documents<DI>(&self, docs: DI) -> Result<i64>
   where
-    DI: IntoFallibleIterator,
-    DI::Item: IntoFallibleIterator,
-    <DI::Item as IntoFallibleIterator>::Item: BorrowMut<Fields>,
+    DI: IntoFallibleIterator<Item: IndexingDocument>,
     D: 'static,
   {
     self.add_documents_with_similarity(docs, get_default_similarity().as_ref())
@@ -1008,9 +1055,7 @@ where
   pub fn add_documents_with_similarity<DI, S>(&self, docs: DI, similarity: &S) -> Result<i64>
   where
     S: Similarity,
-    DI: IntoFallibleIterator,
-    DI::Item: IntoFallibleIterator,
-    <DI::Item as IntoFallibleIterator>::Item: BorrowMut<Fields>,
+    DI: IntoFallibleIterator<Item: IndexingDocument>,
     D: 'static,
   {
     self.update_documents(None, docs, similarity)
@@ -1078,9 +1123,7 @@ where
   pub fn update_documents_with_term<T, DI>(&self, del_term: T, docs: DI) -> Result<i64>
   where
     T: Into<Option<Term>>,
-    DI: IntoFallibleIterator,
-    DI::Item: IntoFallibleIterator,
-    <DI::Item as IntoFallibleIterator>::Item: BorrowMut<Fields>,
+    DI: IntoFallibleIterator<Item: IndexingDocument>,
     D: 'static,
   {
     self.update_documents_with_term_and_similarity(
@@ -1103,9 +1146,7 @@ where
   where
     S: Similarity,
     T: Into<Option<Term>>,
-    DI: IntoFallibleIterator,
-    DI::Item: IntoFallibleIterator,
-    <DI::Item as IntoFallibleIterator>::Item: BorrowMut<Fields>,
+    DI: IntoFallibleIterator<Item: IndexingDocument>,
     D: 'static,
   {
     let del_node = del_term
@@ -1119,9 +1160,7 @@ where
   pub fn update_documents_with_query<T, DI>(&self, del_query: T, docs: DI) -> Result<i64>
   where
     T: Into<Option<Query>>,
-    DI: IntoFallibleIterator,
-    DI::Item: IntoFallibleIterator,
-    <DI::Item as IntoFallibleIterator>::Item: BorrowMut<Fields>,
+    DI: IntoFallibleIterator<Item: IndexingDocument>,
     D: 'static,
   {
     self.update_documents_with_query_and_similarity(
@@ -1144,9 +1183,7 @@ where
   where
     S: Similarity,
     T: Into<Option<Query>>,
-    DI: IntoFallibleIterator,
-    DI::Item: IntoFallibleIterator,
-    <DI::Item as IntoFallibleIterator>::Item: BorrowMut<Fields>,
+    DI: IntoFallibleIterator<Item: IndexingDocument>,
     D: 'static,
   {
     let del_node = del_query
@@ -1164,9 +1201,7 @@ where
   ) -> Result<i64>
   where
     S: Similarity,
-    DI: IntoFallibleIterator,
-    DI::Item: IntoFallibleIterator,
-    <DI::Item as IntoFallibleIterator>::Item: BorrowMut<Fields>,
+    DI: IntoFallibleIterator<Item: IndexingDocument>,
     D: 'static,
   {
     #[cfg(test)]
@@ -1230,9 +1265,7 @@ where
   ) -> Result<i64>
   where
     T: Into<Arc<Term>>,
-    DF: IntoFallibleIterator,
-    DF::Item: IntoFallibleIterator,
-    <DF::Item as IntoFallibleIterator>::Item: BorrowMut<Fields>,
+    DF: IntoFallibleIterator<Item: IndexingDocument>,
     D: 'static,
     Updates: IntoIterator<Item = Fields>,
   {
@@ -1258,9 +1291,7 @@ where
   where
     S: Similarity,
     T: Into<Arc<Term>>,
-    DF: IntoFallibleIterator,
-    DF::Item: IntoFallibleIterator,
-    <DF::Item as IntoFallibleIterator>::Item: BorrowMut<Fields>,
+    DF: IntoFallibleIterator<Item: IndexingDocument>,
     D: 'static,
     Updates: IntoIterator<Item = Fields>,
   {

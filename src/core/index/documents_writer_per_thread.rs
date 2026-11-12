@@ -30,8 +30,8 @@ use crate::core::index::frozen_buffered_updates::FrozenBufferedUpdates;
 use crate::core::search::similarities_impl::similarities::Similarity;
 
 use crate::core::index::index_writer::{
-  IndexWriter, IndexWriterDir, IntoFallibleIterator, SOURCE_FLUSH, create_compound_file,
-  get_actual_max_docs, set_diagnostics,
+  IndexWriter, IndexWriterDir, IndexingDocument, IntoFallibleIterator, SOURCE_FLUSH,
+  create_compound_file, get_actual_max_docs, set_diagnostics,
 };
 use crate::core::index::indexing_chain::{IndexingChain, ReservedField};
 use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
@@ -61,7 +61,6 @@ use crate::test_framework::core::util::failure_context::{
   ExecutionMethod, ExecutionOwner, ExecutionScope,
 };
 use parking_lot::{Condvar, Mutex};
-use std::borrow::{Borrow, BorrowMut};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::sync::atomic::Ordering::SeqCst;
@@ -70,31 +69,6 @@ use std::sync::{Arc, OnceLock};
 use std::{fmt, thread};
 
 const INFO_VERBOSE: bool = false;
-
-// The document can yield owned fields or mutable references, while the injected
-// parent is borrowed from the current DWPT call. Neither case needs boxing.
-enum IndexingField<'a, F> {
-  Parent(&'a mut Fields),
-  Document(F),
-}
-
-impl<F: BorrowMut<Fields>> Borrow<Fields> for IndexingField<'_, F> {
-  fn borrow(&self) -> &Fields {
-    match self {
-      Self::Parent(field) => field,
-      Self::Document(field) => field.borrow(),
-    }
-  }
-}
-
-impl<F: BorrowMut<Fields>> BorrowMut<Fields> for IndexingField<'_, F> {
-  fn borrow_mut(&mut self) -> &mut Fields {
-    match self {
-      Self::Parent(field) => field,
-      Self::Document(field) => field.borrow_mut(),
-    }
-  }
-}
 
 pub struct DocumentsWriterPerThread<D>
 where
@@ -393,9 +367,7 @@ where
   ) -> Result<i64>
   where
     S: Similarity,
-    DI: IntoFallibleIterator,
-    DI::Item: IntoFallibleIterator,
-    <DI::Item as IntoFallibleIterator>::Item: BorrowMut<Fields>,
+    DI: IntoFallibleIterator<Item: IndexingDocument>,
     FN: FlushNotifications,
   {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<i64> {
@@ -446,20 +418,14 @@ where
           let doc_id = self.state.num_docs_in_ram.fetch_add(1, Ordering::SeqCst);
           let process_result =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
-              let doc_fields = self
+              let parent_field = self
                 .parent_field
                 .as_deref_mut()
-                .filter(|_| use_parent_field)
-                .into_iter()
-                .map(|field| Ok(IndexingField::Parent(field)))
-                .chain(
-                  doc
-                    .into_fallible_iter()
-                    .map(|field| field.map(IndexingField::Document)),
-                );
+                .filter(|_| use_parent_field);
               self.indexing_chain.process_document(
                 doc_id,
-                doc_fields,
+                doc,
+                parent_field,
                 &mut self.segment_info,
                 &mut self.field_infos,
                 index_writer_config,
