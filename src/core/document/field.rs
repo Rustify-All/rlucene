@@ -35,7 +35,7 @@ use crate::core::util::close::Closeable;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::number::Number;
 use crate::{either_token_stream, impl_from_for_enum};
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 use std::fmt;
 use std::fmt::{Debug, Display};
 use std::sync::Arc;
@@ -74,15 +74,15 @@ use std::sync::Arc;
 /// The field type is an [`IndexableFieldType`]. Modifying the state of the
 /// [`IndexableFieldType`] will affect any field using it. It is strongly
 /// recommended not to make changes after field instantiation.
-pub struct Field {
+pub struct Field<FT = FieldType> {
   /// Field's type.
-  indexable_field_type: FieldType,
+  indexable_field_type: FT,
   /// Static names are borrowed; owned names retain the former tight allocation.
   pub(crate) name: Cow<'static, str>,
   /// Field's value.
   pub(crate) fields_data: FieldDataEnum,
 }
-impl Field {
+impl<FT: Borrow<FieldType>> Field<FT> {
   /// Expert: creates a field with no initial value. This is intended to be
   /// used by custom [`Field`] implementations with preconfigured
   /// [`IndexableFieldType`].
@@ -91,7 +91,7 @@ impl Field {
   /// - `name`: Field name.
   /// - `field_type`: Field type.
   ///
-  pub fn new<T, FD>(name: T, fields_data: FD, indexable_field_type: FieldType) -> Self
+  pub fn new<T, FD>(name: T, fields_data: FD, indexable_field_type: FT) -> Self
   where
     T: Into<Cow<'static, str>>,
     FD: Into<FieldDataEnum>,
@@ -103,8 +103,8 @@ impl Field {
       },
       fields_data: match fields_data.into() {
         FieldDataEnum::String(text)
-          if indexable_field_type.tokenized()
-            && *indexable_field_type.index_options() != IndexOptions::None =>
+          if indexable_field_type.borrow().tokenized()
+            && *indexable_field_type.borrow().index_options() != IndexOptions::None =>
         {
           FieldDataEnum::SharedString(Arc::new(text))
         },
@@ -123,17 +123,17 @@ impl Field {
   /// # Errors
   /// - Returns an error if the field's type is `stored()`, or if
   ///   `tokenized()` is `false`.
-  pub fn from_reader<T, R>(name: T, reader: R, indexable_field_type: FieldType) -> Result<Self>
+  pub fn from_reader<T, R>(name: T, reader: R, indexable_field_type: FT) -> Result<Self>
   where
     T: Into<Cow<'static, str>>,
     R: Into<ReaderEnum>,
   {
-    if indexable_field_type.stored() {
+    if indexable_field_type.borrow().stored() {
       return Err(LuceneError::illegal_argument(
         "fields with a Reader value cannot be stored",
       ));
     }
-    if !indexable_field_type.tokenized() {
+    if !indexable_field_type.borrow().tokenized() {
       return Err(LuceneError::illegal_argument(
         "non-tokenized fields must use String values",
       ));
@@ -157,23 +157,19 @@ impl Field {
   /// # Errors
   /// - Returns an error if the field's type is `stored()`, `tokenized()` is
   ///   `false`, or `indexed()` is `false`.
-  pub fn from_token_stream<T, V>(
-    name: T,
-    token_stream: V,
-    indexable_field_type: FieldType,
-  ) -> Result<Self>
+  pub fn from_token_stream<T, V>(name: T, token_stream: V, indexable_field_type: FT) -> Result<Self>
   where
     T: Into<Cow<'static, str>>,
     V: Into<FieldTokenStreamEnum>,
   {
-    if !indexable_field_type.tokenized()
-      || indexable_field_type.index_options() == &IndexOptions::None
+    if !indexable_field_type.borrow().tokenized()
+      || indexable_field_type.borrow().index_options() == &IndexOptions::None
     {
       return Err(LuceneError::illegal_argument(
         "TokenStream fields must be indexed and tokenized",
       ));
     }
-    if indexable_field_type.stored() {
+    if indexable_field_type.borrow().stored() {
       return Err(LuceneError::illegal_argument(
         "TokenStream fields cannot be stored",
       ));
@@ -201,7 +197,7 @@ impl Field {
   ///
   /// # Errors
   /// - Returns an error if the field's type is `indexed()`.
-  pub fn from_binary<T, V>(name: T, value: V, indexable_field_type: FieldType) -> Result<Self>
+  pub fn from_binary<T, V>(name: T, value: V, indexable_field_type: FT) -> Result<Self>
   where
     T: Into<Cow<'static, str>>,
     V: Into<Vec<u8>>,
@@ -230,7 +226,7 @@ impl Field {
     value: V,
     offset: usize,
     length: usize,
-    indexable_field_type: FieldType,
+    indexable_field_type: FT,
   ) -> Result<Self>
   where
     T: Into<Cow<'static, str>>,
@@ -253,32 +249,33 @@ impl Field {
   ///
   /// # Errors
   /// - Returns an error if the field's type is `indexed()`.
-  pub fn from_bytes_ref<T, B>(name: T, bytes: B, indexable_field_type: FieldType) -> Result<Self>
+  pub fn from_bytes_ref<T, B>(name: T, bytes: B, indexable_field_type: FT) -> Result<Self>
   where
     T: Into<Cow<'static, str>>,
     B: Into<BytesRef<Vec<u8>>>,
   {
     if indexable_field_type
+      .borrow()
       .index_options()
       .cmp(&IndexOptions::DocsAndFreqsAndPositionsAndOffsets)
       != std::cmp::Ordering::Less
-      || indexable_field_type.store_term_vector_offsets()
+      || indexable_field_type.borrow().store_term_vector_offsets()
     {
       return Err(LuceneError::illegal_argument(
         "It doesn't make sense to index offsets on binary fields",
       ));
     }
-    if indexable_field_type.index_options() != &IndexOptions::None
-      && indexable_field_type.tokenized()
+    if indexable_field_type.borrow().index_options() != &IndexOptions::None
+      && indexable_field_type.borrow().tokenized()
     {
       return Err(LuceneError::illegal_argument(
         "cannot set a BytesRef value on a tokenized field",
       ));
     }
-    if indexable_field_type.index_options() == &IndexOptions::None
-      && indexable_field_type.point_dimension_count() == 0
-      && indexable_field_type.doc_values_type() == &DocValuesType::None
-      && !indexable_field_type.stored()
+    if indexable_field_type.borrow().index_options() == &IndexOptions::None
+      && indexable_field_type.borrow().point_dimension_count() == 0
+      && indexable_field_type.borrow().doc_values_type() == &DocValuesType::None
+      && !indexable_field_type.borrow().stored()
     {
       return Err(LuceneError::illegal_argument(
         "it doesn't make sense to have a field that is neither indexed, nor doc-valued, nor stored",
@@ -306,23 +303,20 @@ impl Field {
   ///   `stored()`.
   /// - Returns an error if `indexed()` is `false` but `store_term_vectors()`
   ///   is `true`.
-  pub fn from_string<'a, T1, T2>(
-    name: T1,
-    value: T2,
-    indexable_field_type: FieldType,
-  ) -> Result<Self>
+  pub fn from_string<'a, T1, T2>(name: T1, value: T2, indexable_field_type: FT) -> Result<Self>
   where
     T1: Into<Cow<'static, str>>,
     T2: Into<Cow<'a, str>>,
   {
-    if !indexable_field_type.stored() && *indexable_field_type.index_options() == IndexOptions::None
+    if !indexable_field_type.borrow().stored()
+      && *indexable_field_type.borrow().index_options() == IndexOptions::None
     {
       return Err(LuceneError::illegal_argument(
         "it doesn't make sense to have a field that is neither indexed nor stored",
       ));
     }
-    let shared_text = indexable_field_type.tokenized()
-      && *indexable_field_type.index_options() != IndexOptions::None;
+    let shared_text = indexable_field_type.borrow().tokenized()
+      && *indexable_field_type.borrow().index_options() != IndexOptions::None;
     Ok(Field {
       indexable_field_type,
       name: match name.into() {
@@ -567,7 +561,7 @@ impl Field {
     Ok(())
   }
 }
-impl IndexableField for Field {
+impl<FT: Borrow<FieldType>> IndexableField for Field<FT> {
   fn name(&self) -> &str {
     &self.name
   }
@@ -579,7 +573,7 @@ impl IndexableField for Field {
 
   /// Returns the [`FieldType`] for this field.
   fn field_type(&self) -> Self::FieldType<'_> {
-    &self.indexable_field_type
+    self.indexable_field_type.borrow()
   }
   fn token_stream<'a, A>(
     &'a mut self,
@@ -766,7 +760,7 @@ impl IndexableField for Field {
     Self: 'a;
 
   fn stored_value(&self) -> Result<Option<Self::StoredValue<'_>>> {
-    if !self.indexable_field_type.stored() {
+    if !self.indexable_field_type.borrow().stored() {
       return Ok(None);
     }
 
@@ -800,10 +794,10 @@ impl IndexableField for Field {
     }
   }
 }
-impl FieldBase for Field {}
-impl Display for Field {
+impl<FT: Borrow<FieldType>> FieldBase for Field<FT> {}
+impl<FT: Borrow<FieldType>> Display for Field<FT> {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    write!(f, "{}<{}:", self.indexable_field_type, self.name)?;
+    write!(f, "{}<{}:", self.indexable_field_type.borrow(), self.name)?;
 
     write!(f, "{}", self.fields_data)?;
 

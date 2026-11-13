@@ -1213,10 +1213,12 @@ where
       let binary_value = field
         .binary_value()?
         .ok_or_else(|| LuceneError::illegal_argument("point field missing binary value"))?;
-      pf.point_values_writer
+      let point_values_writer = pf
+        .point_values_writer
         .as_mut()
-        .ok_or_else(|| LuceneError::illegal_state("point values writer is missing"))?
-        .add_packed_value(doc_id, &binary_value.as_bytes_ref())?;
+        .ok_or_else(|| LuceneError::illegal_state("point values writer is missing"))?;
+      let value = binary_value.as_bytes_ref();
+      point_values_writer.add_packed_value(doc_id, value.bytes, value.offset, value.length)?;
     }
 
     if field.field_type().vector_dimension() != 0 {

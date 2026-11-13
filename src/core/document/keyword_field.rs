@@ -79,7 +79,7 @@ pub mod keyword {
 }
 
 pub struct KeywordField {
-  parent_field: Field,
+  parent_field: Field<&'static FieldType>,
   has_stored_value: bool,
 }
 
@@ -93,9 +93,9 @@ impl KeywordField {
   {
     let store = store.into();
     let (ft, has_stored_value) = if store {
-      (keyword::FIELD_TYPE_STORED.clone(), true)
+      (&*keyword::FIELD_TYPE_STORED, true)
     } else {
-      (keyword::FIELD_TYPE.clone(), false)
+      (&*keyword::FIELD_TYPE, false)
     };
 
     let parent_field = Field::from_bytes_ref(name, value, ft)?;
@@ -113,9 +113,9 @@ impl KeywordField {
   {
     let store = store.into();
     let (ft, has_stored_value) = if store {
-      (keyword::FIELD_TYPE_STORED.clone(), true)
+      (&*keyword::FIELD_TYPE_STORED, true)
     } else {
-      (keyword::FIELD_TYPE.clone(), false)
+      (&*keyword::FIELD_TYPE, false)
     };
 
     let v: String = value.into();

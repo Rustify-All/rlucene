@@ -37,10 +37,15 @@ use crate::core::util::number::Number;
 use crate::core::util::numeric_utils::NumericUtils;
 use std::borrow::Cow;
 use std::fmt;
+use std::sync::OnceLock;
+
+// A point type is frozen and depends only on its number of dimensions.
+static FIELD_TYPES: [OnceLock<FieldType>; MAX_INDEX_DIMENSIONS] =
+  [const { OnceLock::new() }; MAX_INDEX_DIMENSIONS];
 
 pub struct LongPoint {
   name: Cow<'static, str>,
-  field_type: FieldType,
+  field_type: &'static FieldType,
   packed: Option<[u8; MAX_INDEX_DIMENSIONS * BitUtil::LONG_BYTES]>,
 }
 
@@ -71,11 +76,21 @@ impl LongPoint {
     })
   }
 
-  fn get_type(num_dims: usize) -> Result<FieldType> {
-    let mut field_type = FieldType::new();
-    field_type.set_dimensions(num_dims, BitUtil::LONG_BYTES)?;
-    field_type.freeze();
-    Ok(field_type)
+  fn get_type(num_dims: usize) -> Result<&'static FieldType> {
+    // new() rejects zero dimensions before reaching this method. Keep invalid
+    // dimensions on the original validation path, before accessing the cache.
+    if num_dims > MAX_INDEX_DIMENSIONS {
+      FieldType::new().set_dimensions(num_dims, BitUtil::LONG_BYTES)?;
+    }
+    Ok(FIELD_TYPES[num_dims - 1].get_or_init(|| {
+      let mut field_type = FieldType::new();
+      expect_invariant!(
+        field_type.set_dimensions(num_dims, BitUtil::LONG_BYTES),
+        "the cached point dimension count and byte width are valid"
+      );
+      field_type.freeze();
+      field_type
+    }))
   }
 
   /// Change the values of this field
@@ -276,7 +291,7 @@ impl IndexableField for LongPoint {
     Self: 'a;
 
   fn field_type(&self) -> Self::FieldType<'_> {
-    &self.field_type
+    self.field_type
   }
   fn token_stream<'a, A>(
     &'a mut self,
