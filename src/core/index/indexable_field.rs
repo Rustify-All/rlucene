@@ -68,11 +68,12 @@ pub trait IndexableField: Display {
   fn binary_value(&self) -> Result<Option<BinaryValueEnum<'_>>>;
   fn take_binary_value(&mut self) -> Result<Option<BytesRef<Vec<u8>>>>;
 
-  /// present if this field has a string value.
-  fn string_value(&self) -> Result<Option<Cow<'_, String>>>;
+  /// Returns a borrowed string slice when the field owns text, or an owned
+  /// string when conversion is required (for example, a numeric value).
+  fn string_value(&self) -> Result<Option<Cow<'_, str>>>;
   fn take_string_value(&mut self) -> Result<Option<String>>;
   /// present if this field has a string value.
-  fn get_char_sequence_value(&self) -> Result<Option<Cow<'_, String>>> {
+  fn get_char_sequence_value(&self) -> Result<Option<Cow<'_, str>>> {
     self.string_value()
   }
 

@@ -1021,7 +1021,7 @@ pub trait BasePostingsFormatTestCase:
       let mut just_body_doc = Document::new();
       just_body_doc.add(TextField::from_string(
         "body",
-        body_value.as_str(),
+        body_value.as_ref(),
         Store::No,
       )?);
       writer.add_document(random, just_body_doc)?;

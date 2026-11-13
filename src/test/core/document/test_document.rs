@@ -87,7 +87,7 @@ fn test_binary_field() -> Result<()> {
   }
   match doc.get("string")? {
     Some(sf) => {
-      assert_eq!(sf.as_str(), binary_val);
+      assert_eq!(sf.as_ref(), binary_val);
     },
     None => {
       unreachable!()
@@ -247,7 +247,7 @@ fn test_get_values() -> Result<()> {
   assert!(
     keyword_values
       .iter()
-      .map(|s| s.as_str())
+      .map(|s| s.as_ref())
       .eq(["test1", "test2"]),
     "unexpected keyword values: {keyword_values:?}"
   );
@@ -256,7 +256,7 @@ fn test_get_values() -> Result<()> {
   assert!(
     text_values
       .iter()
-      .map(|s| s.as_str())
+      .map(|s| s.as_ref())
       .eq(["test1", "test2"]),
     "unexpected text values: {text_values:?}"
   );
@@ -265,7 +265,7 @@ fn test_get_values() -> Result<()> {
   assert!(
     unindexed_values
       .iter()
-      .map(|s| s.as_str())
+      .map(|s| s.as_ref())
       .eq(["test1", "test2"]),
     "unexpected unindexed values: {unindexed_values:?}"
   );
@@ -426,7 +426,7 @@ fn test_field_set_value() -> Result<()> {
       .ok_or_else(|| LuceneError::illegal_state("missing id field"))?;
 
     let string_value = f.string_value()?.unwrap();
-    let val = string_value.as_ref().as_str();
+    let val = string_value.as_ref();
 
     match val {
       "id1" => result |= 1,
@@ -471,7 +471,7 @@ fn test_numeric_field_as_string() -> Result<()> {
   doc.add(StoredField::from_i32("int", 4)?);
 
   let values = doc.get_values("int")?;
-  assert!(values.iter().map(|v| v.as_ref().as_str()).eq(["5", "4"]));
+  assert!(values.iter().map(|v| v.as_ref()).eq(["5", "4"]));
 
   // index it
   let mut random = random();
@@ -486,7 +486,7 @@ fn test_numeric_field_as_string() -> Result<()> {
   assert_eq!(None, sdoc.get("somethingElse")?);
 
   let svalues = sdoc.get_values("int")?;
-  assert!(svalues.iter().map(|v| v.as_ref().as_str()).eq(["5", "4"]));
+  assert!(svalues.iter().map(|v| v.as_ref()).eq(["5", "4"]));
 
   iw.close(&mut random)?;
   Ok(())

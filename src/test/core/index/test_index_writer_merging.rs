@@ -91,7 +91,7 @@ where
     let temp = stored_fields.document(i)?;
     let field = temp.get_field("count").expect("count field should exist");
     let value = field.string_value()?.expect("count should be stored");
-    if value.as_str() != (i + start_at).to_string() {
+    if value.as_ref() != (i + start_at).to_string() {
       fail = true;
       println!(
         "Document {} is returning document {}",

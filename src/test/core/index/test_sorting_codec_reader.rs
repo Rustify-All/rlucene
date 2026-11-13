@@ -451,7 +451,7 @@ fn test_sort_on_add_indices_random() -> Result<()> {
         .document(id_next)?
         .get("string_id")?
         .expect("string_id must be stored")
-        .as_str()
+        .as_ref()
     );
 
     let result = searcher.search(

@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 use crate::analysis::common::analysis_impl::core::whitespace_analyzer::WhitespaceAnalyzer;
-use crate::core::analysis::reader::{Reader, ReaderEnum};
+use crate::core::analysis::reader::{Reader, ReaderEnum, StringReader};
 use crate::core::analysis::reusable_string_reader::ReusableStringReader;
 use crate::core::analysis::standard::standard_analyzer::StandardAnalyzer;
 use crate::core::analysis::token_stream::{
@@ -43,6 +43,8 @@ const MAX_REUSABLE_TEXT_BYTES: usize = 64 * 1024;
 pub enum AnalyzerText<'a> {
   Borrowed(&'a str),
   Shared(Arc<String>),
+  /// Immutable borrowed field input stored with a single allocation.
+  SharedText(Arc<str>),
 }
 
 impl<'a> From<&'a str> for AnalyzerText<'a> {
@@ -103,6 +105,12 @@ impl AnalyzerStoredValue {
   fn reader_for_text(&self, text: AnalyzerText<'_>) -> ReaderEnum {
     let text = match text {
       AnalyzerText::Shared(text) => return ReaderEnum::from(text),
+      AnalyzerText::SharedText(text) => {
+        return ReaderEnum::SharedText(StringReader {
+          source: Some(text),
+          next: 0,
+        });
+      },
       AnalyzerText::Borrowed(text) => text,
     };
     if text.len() > MAX_REUSABLE_TEXT_BYTES {

@@ -146,7 +146,7 @@ fn test_arbitrary_fields() -> Result<()> {
           }
         } else {
           let actual = f.string_value()?.unwrap();
-          assert_eq!(string_value.unwrap().as_str(), actual.as_ref().as_str());
+          assert_eq!(string_value.unwrap().as_str(), actual.as_ref());
         }
       }
 

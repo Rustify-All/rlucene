@@ -279,7 +279,7 @@ impl IndexableField for KnnByteVectorField {
     self.binary_value().map(|v| v.map(|c| c.into_owned()))
   }
 
-  fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
+  fn string_value(&self) -> Result<Option<Cow<'_, str>>> {
     Ok(None)
   }
 

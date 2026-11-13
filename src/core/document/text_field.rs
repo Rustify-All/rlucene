@@ -96,10 +96,10 @@ impl TextField {
   /// - `name`: Field name.
   /// - `value`: String value.
   /// - `store`: [`Store::Yes`] if the content should also be stored.
-  pub fn from_string<T1, T2>(name: T1, value: T2, store: Store) -> Result<Self>
+  pub fn from_string<'a, T1, T2>(name: T1, value: T2, store: Store) -> Result<Self>
   where
     T1: Into<Cow<'static, str>>,
-    T2: Into<String>,
+    T2: Into<Cow<'a, str>>,
   {
     let store = store.into();
     let (field_type, has_stored_value) = if store {
@@ -179,7 +179,7 @@ impl IndexableField for TextField {
     self.parent_field.take_binary_value()
   }
 
-  fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
+  fn string_value(&self) -> Result<Option<Cow<'_, str>>> {
     self.parent_field.string_value()
   }
 
@@ -187,7 +187,7 @@ impl IndexableField for TextField {
     self.parent_field.take_string_value()
   }
 
-  fn get_char_sequence_value(&self) -> Result<Option<Cow<'_, String>>> {
+  fn get_char_sequence_value(&self) -> Result<Option<Cow<'_, str>>> {
     self.parent_field.get_char_sequence_value()
   }
 

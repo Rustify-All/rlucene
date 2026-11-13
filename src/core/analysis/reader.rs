@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 use std::borrow::Cow;
+use std::ops::Deref;
 use std::sync::Arc;
 
 #[cfg(test)]
@@ -54,6 +55,8 @@ pub enum ReaderEnum {
   ReusedString(ReusableStringReader),
   IllegalState(IllegalStateReader),
   String(StringReader),
+  /// A string reader backed by one immutable shared text allocation.
+  SharedText(StringReader<Arc<str>>),
   #[cfg(test)]
   CharFilter1(CharFilter1),
   #[cfg(test)]
@@ -89,6 +92,7 @@ impl Reader for ReaderEnum {
       ReaderEnum::ReusedString(r) => r.read(),
       ReaderEnum::IllegalState(r) => r.read(),
       ReaderEnum::String(r) => r.read(),
+      ReaderEnum::SharedText(r) => r.read(),
       #[cfg(test)]
       ReaderEnum::CharFilter1(r) => r.read(),
       #[cfg(test)]
@@ -105,6 +109,7 @@ impl Reader for ReaderEnum {
       ReaderEnum::ReusedString(r) => r.read_buf(cbuf),
       ReaderEnum::IllegalState(r) => r.read_buf(cbuf),
       ReaderEnum::String(r) => r.read_buf(cbuf),
+      ReaderEnum::SharedText(r) => r.read_buf(cbuf),
       #[cfg(test)]
       ReaderEnum::CharFilter1(r) => r.read_buf(cbuf),
       #[cfg(test)]
@@ -121,6 +126,7 @@ impl Reader for ReaderEnum {
       ReaderEnum::ReusedString(r) => r.read_range(buf, off, len),
       ReaderEnum::IllegalState(r) => r.read_range(buf, off, len),
       ReaderEnum::String(r) => r.read_range(buf, off, len),
+      ReaderEnum::SharedText(r) => r.read_range(buf, off, len),
       #[cfg(test)]
       ReaderEnum::CharFilter1(r) => r.read_range(buf, off, len),
       #[cfg(test)]
@@ -137,6 +143,7 @@ impl Reader for ReaderEnum {
       ReaderEnum::ReusedString(r) => r.close(),
       ReaderEnum::IllegalState(r) => r.close(),
       ReaderEnum::String(r) => r.close(),
+      ReaderEnum::SharedText(r) => r.close(),
       #[cfg(test)]
       ReaderEnum::CharFilter1(r) => CharFilter::close(r),
       #[cfg(test)]
@@ -194,9 +201,9 @@ impl From<StringReader> for ReaderEnum {
 ///
 /// Input is stored as UTF-8; reads produce Unicode scalar values (`char`).
 #[derive(Debug, Clone)]
-pub struct StringReader {
-  source: Option<Arc<String>>,
-  next: usize,
+pub struct StringReader<S = Arc<String>> {
+  pub(crate) source: Option<S>,
+  pub(crate) next: usize,
 }
 
 impl StringReader {
@@ -217,36 +224,6 @@ impl StringReader {
       ));
     }
     Ok(end)
-  }
-
-  #[inline]
-  pub(crate) fn read_range_with_units<const COUNT_UTF16: bool>(
-    &mut self,
-    buf: &mut [char],
-    off: usize,
-    len: usize,
-  ) -> Result<(i32, usize)> {
-    let s = self
-      .source
-      .as_ref()
-      .ok_or_else(|| LuceneError::illegal_state("Stream closed"))?;
-    Self::check_range(buf.len(), off, len)?;
-    if self.next >= s.len() {
-      return Ok((if len == 0 { 0 } else { -1 }, 0));
-    }
-    let bytes = &s.as_bytes()[self.next..];
-    let to_read = len.min(bytes.len());
-    if to_read >= 16 && (bytes[0] | bytes[to_read - 1]) < 0x80 && bytes[..to_read].is_ascii() {
-      for (dest, &byte) in buf[off..off + to_read].iter_mut().zip(bytes) {
-        *dest = byte as char;
-      }
-      self.next += to_read;
-      return Ok((to_read as i32, to_read));
-    }
-    let (read, units, consumed) =
-      Self::read_utf8::<COUNT_UTF16>(&s[self.next..], &mut buf[off..off + len]);
-    self.next += consumed;
-    Ok((read, units))
   }
 
   #[inline(never)]
@@ -335,6 +312,43 @@ impl StringReader {
   }
 }
 
+impl<S> StringReader<S>
+where
+  S: Deref,
+  S::Target: AsRef<str>,
+{
+  #[inline]
+  pub(crate) fn read_range_with_units<const COUNT_UTF16: bool>(
+    &mut self,
+    buf: &mut [char],
+    off: usize,
+    len: usize,
+  ) -> Result<(i32, usize)> {
+    let s: &str = self
+      .source
+      .as_deref()
+      .map(AsRef::as_ref)
+      .ok_or_else(|| LuceneError::illegal_state("Stream closed"))?;
+    StringReader::check_range(buf.len(), off, len)?;
+    if self.next >= s.len() {
+      return Ok((if len == 0 { 0 } else { -1 }, 0));
+    }
+    let bytes = &s.as_bytes()[self.next..];
+    let to_read = len.min(bytes.len());
+    if to_read >= 16 && (bytes[0] | bytes[to_read - 1]) < 0x80 && bytes[..to_read].is_ascii() {
+      for (dest, &byte) in buf[off..off + to_read].iter_mut().zip(bytes) {
+        *dest = byte as char;
+      }
+      self.next += to_read;
+      return Ok((to_read as i32, to_read));
+    }
+    let (read, units, consumed) =
+      StringReader::read_utf8::<COUNT_UTF16>(&s[self.next..], &mut buf[off..off + len]);
+    self.next += consumed;
+    Ok((read, units))
+  }
+}
+
 impl From<Arc<String>> for StringReader {
   fn from(text: Arc<String>) -> Self {
     Self {
@@ -350,11 +364,16 @@ impl From<String> for StringReader {
   }
 }
 
-impl Reader for StringReader {
+impl<S> Reader for StringReader<S>
+where
+  S: Deref,
+  S::Target: AsRef<str>,
+{
   fn read(&mut self) -> Result<i32> {
-    let s = self
+    let s: &str = self
       .source
-      .as_ref()
+      .as_deref()
+      .map(AsRef::as_ref)
       .ok_or_else(|| LuceneError::illegal_state("Stream closed"))?;
     if self.next >= s.len() {
       return Ok(-1);

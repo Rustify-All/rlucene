@@ -85,7 +85,7 @@ fn test_demo() -> Result<()> {
       let mut stored_fields = searcher.stored_fields()?;
       for hit in hits.score_docs() {
         let hit_doc = stored_fields.document(hit.doc)?;
-        assert_eq!(text.as_str(), hit_doc.get("fieldname")?.unwrap().as_str());
+        assert_eq!(text.as_str(), hit_doc.get("fieldname")?.unwrap().as_ref());
       }
 
       let phrase_query = PhraseQuery::from_terms_no_slop("fieldname", ["to", "be"])?;

@@ -253,7 +253,7 @@ impl IndexableField for FloatField {
     Ok(Some(BytesRef::from_bytes(encode_point)))
   }
 
-  fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
+  fn string_value(&self) -> Result<Option<Cow<'_, str>>> {
     self.parent_field.string_value()
   }
 

@@ -319,7 +319,7 @@ impl IndexableField for XYDocValuesField {
     self.parent_field.take_binary_value()
   }
 
-  fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
+  fn string_value(&self) -> Result<Option<Cow<'_, str>>> {
     self.parent_field.string_value()
   }
 

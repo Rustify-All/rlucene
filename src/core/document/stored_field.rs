@@ -141,10 +141,10 @@ impl StoredField {
   /// # Parameters
   /// - `name`: Field name.
   /// - `value`: String value.
-  pub fn from_string<T1, T2>(name: T1, value: T2) -> Result<Self>
+  pub fn from_string<'a, T1, T2>(name: T1, value: T2) -> Result<Self>
   where
     T1: Into<Cow<'static, str>>,
-    T2: Into<String>,
+    T2: Into<Cow<'a, str>>,
   {
     let parent_field = Field::from_string(name, value, stored_field_type::TYPE.clone())?;
     Ok(Self { parent_field })
@@ -155,10 +155,10 @@ impl StoredField {
   /// - `name`: Field name.
   /// - `value`: String value.
   /// - `field_type`: Custom [`FieldType`] for this field.
-  pub fn from_string_and_type<T1, T2>(name: T1, value: T2, file_type: FieldType) -> Result<Self>
+  pub fn from_string_and_type<'a, T1, T2>(name: T1, value: T2, file_type: FieldType) -> Result<Self>
   where
     T1: Into<Cow<'static, str>>,
-    T2: Into<String>,
+    T2: Into<Cow<'a, str>>,
   {
     let parent_field = Field::from_string(name, value, file_type)?;
     Ok(Self { parent_field })
@@ -282,7 +282,7 @@ impl IndexableField for StoredField {
     self.parent_field.take_binary_value()
   }
 
-  fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
+  fn string_value(&self) -> Result<Option<Cow<'_, str>>> {
     self.parent_field.string_value()
   }
 
@@ -290,7 +290,7 @@ impl IndexableField for StoredField {
     self.parent_field.take_string_value()
   }
 
-  fn get_char_sequence_value(&self) -> Result<Option<Cow<'_, String>>> {
+  fn get_char_sequence_value(&self) -> Result<Option<Cow<'_, str>>> {
     self.parent_field.get_char_sequence_value()
   }
 

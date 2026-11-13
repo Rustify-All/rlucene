@@ -1073,7 +1073,7 @@ fn test_common_prefix_terms() -> Result<()> {
       assert_ne!(doc_id, NO_MORE_DOCS);
       assert_eq!(doc_id, pk_lookup.lookup(&term_bytes_ref)?);
       let doc = stored_fields.document(doc_id)?;
-      assert_eq!(term.as_ref(), doc.get("id")?.unwrap().as_str());
+      assert_eq!(term.as_ref(), doc.get("id")?.unwrap().as_ref());
 
       if random.random_range(0..7) == 1 {
         terms_enum.next()?;

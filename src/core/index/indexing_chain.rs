@@ -1179,8 +1179,9 @@ where
         FieldDataEnum::Binary(bytes) => write_stored_value!(bytes)?,
         value => {
           let text = match value {
-            FieldDataEnum::String(s) => Some(s),
-            FieldDataEnum::SharedString(s) => Some(s.as_ref()),
+            FieldDataEnum::String(s) => Some(s.as_str()),
+            FieldDataEnum::SharedString(s) => Some(s.as_str()),
+            FieldDataEnum::SharedText(s) => Some(s.as_ref()),
             _ => None,
           };
           if let Some(s) = text
@@ -3137,7 +3138,7 @@ where
     self.delegate.take_binary_value()
   }
 
-  fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
+  fn string_value(&self) -> Result<Option<Cow<'_, str>>> {
     self.delegate.string_value()
   }
 
@@ -3145,7 +3146,7 @@ where
     self.delegate.take_string_value()
   }
 
-  fn get_char_sequence_value(&self) -> Result<Option<Cow<'_, String>>> {
+  fn get_char_sequence_value(&self) -> Result<Option<Cow<'_, str>>> {
     self.delegate.get_char_sequence_value()
   }
 

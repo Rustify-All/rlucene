@@ -2531,7 +2531,7 @@ fn test_iterable_field_throws_exception() -> Result<()> {
         let id = document
           .get("id")?
           .ok_or_else(|| LuceneError::illegal_state("missing id field"))?;
-        assert!(live_ids.remove(id.as_str()));
+        assert!(live_ids.remove(id.as_ref()));
       }
     }
   }
@@ -2600,7 +2600,7 @@ fn test_iterable_throws_exception() -> Result<()> {
         let id = document
           .get("id")?
           .ok_or_else(|| LuceneError::illegal_state("missing id field"))?;
-        assert!(live_ids.remove(id.as_str()));
+        assert!(live_ids.remove(id.as_ref()));
       }
     }
   }

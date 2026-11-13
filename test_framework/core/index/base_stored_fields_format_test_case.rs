@@ -221,20 +221,11 @@ pub trait BaseStoredFieldsFormatTestCase:
 
     assert_eq!(3, fields.len());
     assert_eq!("zzz", fields[0].name());
-    assert_eq!(
-      Some("a b c"),
-      fields[0].string_value()?.as_deref().map(|s| s.as_str())
-    );
+    assert_eq!(Some("a b c"), fields[0].string_value()?.as_deref());
     assert_eq!("aaa", fields[1].name());
-    assert_eq!(
-      Some("a b c"),
-      fields[1].string_value()?.as_deref().map(|s| s.as_str())
-    );
+    assert_eq!(Some("a b c"), fields[1].string_value()?.as_deref());
     assert_eq!("zzz", fields[2].name());
-    assert_eq!(
-      Some("1 2 3"),
-      fields[2].string_value()?.as_deref().map(|s| s.as_str())
-    );
+    assert_eq!(Some("1 2 3"), fields[2].string_value()?.as_deref());
 
     reader.close()?;
     writer.close(random)?;
@@ -461,10 +452,7 @@ pub trait BaseStoredFieldsFormatTestCase:
           assert_eq!(bytes.as_slice(), actual);
         },
         "string" => {
-          assert_eq!(
-            Some(string.as_str()),
-            field.string_value()?.as_deref().map(|s| s.as_str())
-          );
+          assert_eq!(Some(string.as_str()), field.string_value()?.as_deref());
         },
         "long" => assert_eq!(Some(Number::I64(long_value)), field.numeric_value()?),
         "int" => assert_eq!(Some(Number::I32(int_value)), field.numeric_value()?),
@@ -569,7 +557,7 @@ pub trait BaseStoredFieldsFormatTestCase:
                 "Could not find document {q}"
               ))
             })?;
-            if actual.as_ref() != &q.to_string() {
+            if actual.as_ref() != q.to_string() {
               return Err(
                 crate::core::util::error::lucene_error::LuceneError::illegal_state(format!(
                   "Expected {q}, but got {}",
@@ -1005,10 +993,7 @@ pub trait BaseStoredFieldsFormatTestCase:
       assert_eq!(10, doc.get_fields().len());
       for j in 0..10 {
         let name = j.to_string();
-        assert_eq!(
-          Some(name.as_str()),
-          doc.get(&name)?.as_deref().map(String::as_str)
-        );
+        assert_eq!(Some(name.as_str()), doc.get(&name)?.as_deref());
       }
     }
 

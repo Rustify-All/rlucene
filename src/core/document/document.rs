@@ -202,7 +202,7 @@ impl Document {
   /// # Returns
   /// A `Vec<Arc<String>`, which is an empty vector if no matching fields are
   /// found.
-  pub fn get_values(&self, name: &str) -> Result<Vec<Cow<'_, String>>> {
+  pub fn get_values(&self, name: &str) -> Result<Vec<Cow<'_, str>>> {
     let mut result = Vec::new();
     for field in &self.fields {
       if field.name() == name {
@@ -226,9 +226,9 @@ impl Document {
   /// - `name`: the name of the field.
   ///
   /// # Returns
-  /// An `Option<Arc<String>>`,  `None` means no string value is found (e.g.,
+  /// An `Option<Cow<str>>`,  `None` means no string value is found (e.g.,
   /// for binary fields).
-  pub fn get(&self, name: &str) -> Result<Option<Cow<'_, String>>> {
+  pub fn get(&self, name: &str) -> Result<Option<Cow<'_, str>>> {
     for field in &self.fields {
       if field.name() == name {
         return match field.string_value() {

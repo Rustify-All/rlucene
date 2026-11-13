@@ -81,7 +81,7 @@ fn test_binary() -> Result<()> {
     assert_eq!(docs.total_hits().value(), 1);
     let stored_doc = is.stored_fields()?.document(docs.score_docs[0].doc)?;
     let v = stored_doc.get("id")?.unwrap();
-    assert_eq!(v.as_str(), i.to_string().as_str());
+    assert_eq!(v.as_ref(), i.to_string().as_str());
   }
 
   Ok(())

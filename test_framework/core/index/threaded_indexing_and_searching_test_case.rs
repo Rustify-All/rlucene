@@ -799,7 +799,7 @@ where
               document
                 .get("packID")?
                 .expect("packID must be stored")
-                .as_str()
+                .as_ref()
             );
           }
 

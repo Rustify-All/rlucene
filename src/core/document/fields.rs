@@ -284,7 +284,7 @@ impl IndexableField for Fields {
     dispatch_fields!(self, |field| field.take_binary_value())
   }
 
-  fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
+  fn string_value(&self) -> Result<Option<Cow<'_, str>>> {
     dispatch_fields!(self, |field| field.string_value())
   }
 
@@ -292,7 +292,7 @@ impl IndexableField for Fields {
     dispatch_fields!(self, |field| field.take_string_value())
   }
 
-  fn get_char_sequence_value(&self) -> Result<Option<Cow<'_, String>>> {
+  fn get_char_sequence_value(&self) -> Result<Option<Cow<'_, str>>> {
     dispatch_fields!(self, |field| field.get_char_sequence_value())
   }
 

@@ -69,7 +69,7 @@ impl IndexableField for DummyIndexableField {
     dummy_unreachable!()
   }
 
-  fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
+  fn string_value(&self) -> Result<Option<Cow<'_, str>>> {
     dummy_unreachable!()
   }
 
@@ -77,7 +77,7 @@ impl IndexableField for DummyIndexableField {
     dummy_unreachable!()
   }
 
-  fn get_char_sequence_value(&self) -> Result<Option<Cow<'_, String>>> {
+  fn get_char_sequence_value(&self) -> Result<Option<Cow<'_, str>>> {
     dummy_unreachable!()
   }
 

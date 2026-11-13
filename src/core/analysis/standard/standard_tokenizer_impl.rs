@@ -570,6 +570,14 @@ impl StandardTokenizerImpl {
             )?;
             (read, Some(units))
           },
+          ReaderEnum::SharedText(reader) => {
+            let (read, units) = reader.read_range_with_units::<true>(
+              &mut self.zz_buffer,
+              self.zz_end_read,
+              requested,
+            )?;
+            (read, Some(units))
+          },
           reader => (
             reader.read_range(&mut self.zz_buffer, self.zz_end_read, requested)?,
             None,

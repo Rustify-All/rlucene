@@ -1337,7 +1337,7 @@ pub trait BaseKnnVectorQueryTestCase {
   {
     let document = reader.stored_fields()?.document(score_doc.doc)?;
     let actual_id = document.get("id")?;
-    assert_eq!(Some(expected_id), actual_id.as_deref().map(String::as_str));
+    assert_eq!(Some(expected_id), actual_id.as_deref());
     Ok(())
   }
 

@@ -95,7 +95,7 @@ impl IndexableField for FloatDocValuesField {
     self.parent_field.take_binary_value()
   }
 
-  fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
+  fn string_value(&self) -> Result<Option<Cow<'_, str>>> {
     self.parent_field.string_value()
   }
 
@@ -103,7 +103,7 @@ impl IndexableField for FloatDocValuesField {
     self.parent_field.take_string_value()
   }
 
-  fn get_char_sequence_value(&self) -> Result<Option<Cow<'_, String>>> {
+  fn get_char_sequence_value(&self) -> Result<Option<Cow<'_, str>>> {
     self.parent_field.get_char_sequence_value()
   }
 

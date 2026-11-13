@@ -475,7 +475,6 @@ fn test_ignore_stored_fields() -> Result<()> {
       .transpose()?
       .flatten()
       .as_deref()
-      .map(String::as_str)
   );
   assert_eq!(
     Some("v1"),
@@ -486,7 +485,6 @@ fn test_ignore_stored_fields() -> Result<()> {
       .transpose()?
       .flatten()
       .as_deref()
-      .map(String::as_str)
   );
   assert!(pr.stored_fields()?.document(0)?.get_field("f3").is_none());
   assert!(pr.stored_fields()?.document(0)?.get_field("f4").is_none());
@@ -522,7 +520,6 @@ fn test_ignore_stored_fields() -> Result<()> {
       .transpose()?
       .flatten()
       .as_deref()
-      .map(String::as_str)
   );
   assert_eq!(
     Some("v1"),
@@ -533,7 +530,6 @@ fn test_ignore_stored_fields() -> Result<()> {
       .transpose()?
       .flatten()
       .as_deref()
-      .map(String::as_str)
   );
   assert!(pr.stored_fields()?.document(0)?.get_field("f3").is_none());
   assert!(pr.stored_fields()?.document(0)?.get_field("f4").is_none());

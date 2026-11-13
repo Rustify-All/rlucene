@@ -161,7 +161,7 @@ where
         let mut stored_fields = reader.stored_fields()?;
         let previous_iteration_doc = stored_fields.document(n)?;
         let id = previous_iteration_doc.get("id")?;
-        assert_eq!(Some(format!("{k}_{j}")).as_ref(), id.as_deref());
+        assert_eq!(Some(format!("{k}_{j}")).as_deref(), id.as_deref());
       }
     }
     iwriter.commit()?;

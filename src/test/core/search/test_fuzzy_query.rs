@@ -177,7 +177,7 @@ fn test_fuzziness() -> Result<()> {
       .unwrap()
       .string_value()?
       .unwrap();
-    assert_eq!(order[i], term.as_ref().as_str());
+    assert_eq!(order[i], term.as_ref());
   }
 
   query = FuzzyQuery::with_options(
@@ -198,7 +198,7 @@ fn test_fuzziness() -> Result<()> {
       .unwrap()
       .string_value()?
       .unwrap();
-    assert_eq!(order[i], term.as_ref().as_str());
+    assert_eq!(order[i], term.as_ref());
   }
 
   query = FuzzyQuery::with_max_edits_and_prefix(
@@ -231,7 +231,7 @@ fn test_fuzziness() -> Result<()> {
     .unwrap()
     .string_value()?
     .unwrap();
-  assert_eq!("aaaaa", term.as_ref().as_str());
+  assert_eq!("aaaaa", term.as_ref());
 
   let document = stored_fields.document(hits[1].doc)?;
   let term = document
@@ -239,7 +239,7 @@ fn test_fuzziness() -> Result<()> {
     .unwrap()
     .string_value()?
     .unwrap();
-  assert_eq!("aaaab", term.as_ref().as_str());
+  assert_eq!("aaaab", term.as_ref());
 
   let document = stored_fields.document(hits[2].doc)?;
   let term = document
@@ -247,7 +247,7 @@ fn test_fuzziness() -> Result<()> {
     .unwrap()
     .string_value()?
     .unwrap();
-  assert_eq!("aaabb", term.as_ref().as_str());
+  assert_eq!("aaabb", term.as_ref());
 
   query = FuzzyQuery::with_max_edits_and_prefix(
     Term::from_text("field", "aaaac"),
@@ -263,7 +263,7 @@ fn test_fuzziness() -> Result<()> {
     .unwrap()
     .string_value()?
     .unwrap();
-  assert_eq!("aaaaa", term.as_ref().as_str());
+  assert_eq!("aaaaa", term.as_ref());
 
   let document = stored_fields.document(hits[1].doc)?;
   let term = document
@@ -271,7 +271,7 @@ fn test_fuzziness() -> Result<()> {
     .unwrap()
     .string_value()?
     .unwrap();
-  assert_eq!("aaaab", term.as_ref().as_str());
+  assert_eq!("aaaab", term.as_ref());
 
   let document = stored_fields.document(hits[2].doc)?;
   let term = document
@@ -279,7 +279,7 @@ fn test_fuzziness() -> Result<()> {
     .unwrap()
     .string_value()?
     .unwrap();
-  assert_eq!("aaabb", term.as_ref().as_str());
+  assert_eq!("aaabb", term.as_ref());
 
   query = FuzzyQuery::with_max_edits_and_prefix(
     Term::from_text("field", "aaaac"),
@@ -295,7 +295,7 @@ fn test_fuzziness() -> Result<()> {
     .unwrap()
     .string_value()?
     .unwrap();
-  assert_eq!("aaaaa", term.as_ref().as_str());
+  assert_eq!("aaaaa", term.as_ref());
 
   let document = stored_fields.document(hits[1].doc)?;
   let term = document
@@ -303,7 +303,7 @@ fn test_fuzziness() -> Result<()> {
     .unwrap()
     .string_value()?
     .unwrap();
-  assert_eq!("aaaab", term.as_ref().as_str());
+  assert_eq!("aaaab", term.as_ref());
 
   let document = stored_fields.document(hits[2].doc)?;
   let term = document
@@ -311,7 +311,7 @@ fn test_fuzziness() -> Result<()> {
     .unwrap()
     .string_value()?
     .unwrap();
-  assert_eq!("aaabb", term.as_ref().as_str());
+  assert_eq!("aaabb", term.as_ref());
 
   query = FuzzyQuery::with_max_edits_and_prefix(
     Term::from_text("field", "aaaac"),
@@ -327,7 +327,7 @@ fn test_fuzziness() -> Result<()> {
     .unwrap()
     .string_value()?
     .unwrap();
-  assert_eq!("aaaaa", term.as_ref().as_str());
+  assert_eq!("aaaaa", term.as_ref());
 
   let document = stored_fields.document(hits[1].doc)?;
   let term = document
@@ -335,7 +335,7 @@ fn test_fuzziness() -> Result<()> {
     .unwrap()
     .string_value()?
     .unwrap();
-  assert_eq!("aaaab", term.as_ref().as_str());
+  assert_eq!("aaaab", term.as_ref());
 
   let document = stored_fields.document(hits[2].doc)?;
   let term = document
@@ -343,7 +343,7 @@ fn test_fuzziness() -> Result<()> {
     .unwrap()
     .string_value()?
     .unwrap();
-  assert_eq!("aaabb", term.as_ref().as_str());
+  assert_eq!("aaabb", term.as_ref());
 
   query = FuzzyQuery::with_max_edits_and_prefix(
     Term::from_text("field", "aaaac"),
@@ -359,7 +359,7 @@ fn test_fuzziness() -> Result<()> {
     .unwrap()
     .string_value()?
     .unwrap();
-  assert_eq!("aaaaa", term.as_ref().as_str());
+  assert_eq!("aaaaa", term.as_ref());
 
   let document = stored_fields.document(hits[1].doc)?;
   let term = document
@@ -367,7 +367,7 @@ fn test_fuzziness() -> Result<()> {
     .unwrap()
     .string_value()?
     .unwrap();
-  assert_eq!("aaaab", term.as_ref().as_str());
+  assert_eq!("aaaab", term.as_ref());
 
   let document = stored_fields.document(hits[2].doc)?;
   let term = document
@@ -375,7 +375,7 @@ fn test_fuzziness() -> Result<()> {
     .unwrap()
     .string_value()?
     .unwrap();
-  assert_eq!("aaabb", term.as_ref().as_str());
+  assert_eq!("aaabb", term.as_ref());
 
   query = FuzzyQuery::with_max_edits_and_prefix(
     Term::from_text("field", "aaaac"),
@@ -391,7 +391,7 @@ fn test_fuzziness() -> Result<()> {
     .unwrap()
     .string_value()?
     .unwrap();
-  assert_eq!("aaaaa", term.as_ref().as_str());
+  assert_eq!("aaaaa", term.as_ref());
 
   let document = stored_fields.document(hits[1].doc)?;
   let term = document
@@ -399,7 +399,7 @@ fn test_fuzziness() -> Result<()> {
     .unwrap()
     .string_value()?
     .unwrap();
-  assert_eq!("aaaab", term.as_ref().as_str());
+  assert_eq!("aaaab", term.as_ref());
 
   query = FuzzyQuery::with_max_edits_and_prefix(
     Term::from_text("field", "aaaac"),
@@ -423,7 +423,7 @@ fn test_fuzziness() -> Result<()> {
     .unwrap()
     .string_value()?
     .unwrap();
-  assert_eq!("ddddd", term.as_ref().as_str());
+  assert_eq!("ddddd", term.as_ref());
 
   query = FuzzyQuery::with_max_edits_and_prefix(
     Term::from_text("field", "ddddX"),
@@ -439,7 +439,7 @@ fn test_fuzziness() -> Result<()> {
     .unwrap()
     .string_value()?
     .unwrap();
-  assert_eq!("ddddd", term.as_ref().as_str());
+  assert_eq!("ddddd", term.as_ref());
 
   query = FuzzyQuery::with_max_edits_and_prefix(
     Term::from_text("field", "ddddX"),
@@ -455,7 +455,7 @@ fn test_fuzziness() -> Result<()> {
     .unwrap()
     .string_value()?
     .unwrap();
-  assert_eq!("ddddd", term.as_ref().as_str());
+  assert_eq!("ddddd", term.as_ref());
 
   query = FuzzyQuery::with_max_edits_and_prefix(
     Term::from_text("field", "ddddX"),
@@ -471,7 +471,7 @@ fn test_fuzziness() -> Result<()> {
     .unwrap()
     .string_value()?
     .unwrap();
-  assert_eq!("ddddd", term.as_ref().as_str());
+  assert_eq!("ddddd", term.as_ref());
 
   query = FuzzyQuery::with_max_edits_and_prefix(
     Term::from_text("field", "ddddX"),
@@ -487,7 +487,7 @@ fn test_fuzziness() -> Result<()> {
     .unwrap()
     .string_value()?
     .unwrap();
-  assert_eq!("ddddd", term.as_ref().as_str());
+  assert_eq!("ddddd", term.as_ref());
 
   query = FuzzyQuery::with_max_edits_and_prefix(
     Term::from_text("field", "ddddX"),
@@ -641,7 +641,7 @@ fn test_single_query_exact_match_scores_highest() -> Result<()> {
       .unwrap()
       .string_value()?
       .unwrap();
-    assert_eq!(search_term, top_match.as_ref().as_str());
+    assert_eq!(search_term, top_match.as_ref());
     if hits.len() > 1 {
       let worst_doc = stored_fields.document(hits[hits.len() - 1].doc)?;
       let worst_match = worst_doc
@@ -649,7 +649,7 @@ fn test_single_query_exact_match_scores_highest() -> Result<()> {
         .unwrap()
         .string_value()?
         .unwrap();
-      assert_ne!(search_term, worst_match.as_ref().as_str());
+      assert_ne!(search_term, worst_match.as_ref());
     }
   }
   drop(stored_fields);
@@ -699,7 +699,7 @@ fn test_multiple_queries_idf_works() -> Result<()> {
     .unwrap()
     .string_value()?
     .unwrap();
-  assert!(top_match.as_ref().as_str().contains(rare_search_term));
+  assert!(top_match.as_ref().contains(rare_search_term));
 
   let runner_up_doc = searcher.stored_fields()?.document(hits[1].doc)?;
   let runner_up_match = runner_up_doc
@@ -707,7 +707,7 @@ fn test_multiple_queries_idf_works() -> Result<()> {
     .unwrap()
     .string_value()?
     .unwrap();
-  assert!(runner_up_match.as_ref().as_str().contains("cuttin"));
+  assert!(runner_up_match.as_ref().contains("cuttin"));
 
   let worst_doc = searcher
     .stored_fields()?
@@ -717,7 +717,7 @@ fn test_multiple_queries_idf_works() -> Result<()> {
     .unwrap()
     .string_value()?
     .unwrap();
-  assert!(worst_match.as_ref().as_str().contains("micheal"));
+  assert!(worst_match.as_ref().contains("micheal"));
 
   searcher.get_index_reader().close()?;
   directory.close()
@@ -792,7 +792,6 @@ fn test_boost_only_rewrite() -> Result<()> {
       .string_value()?
       .unwrap()
       .as_ref()
-      .as_str()
   );
   assert_eq!(
     "Lucene",
@@ -804,7 +803,6 @@ fn test_boost_only_rewrite() -> Result<()> {
       .string_value()?
       .unwrap()
       .as_ref()
-      .as_str()
   );
   assert_eq!(
     "Lucenne",
@@ -816,7 +814,6 @@ fn test_boost_only_rewrite() -> Result<()> {
       .string_value()?
       .unwrap()
       .as_ref()
-      .as_str()
   );
 
   searcher.get_index_reader().close()?;
@@ -878,7 +875,6 @@ fn test_giga() -> Result<()> {
       .string_value()?
       .unwrap()
       .as_ref()
-      .as_str()
   );
   searcher.get_index_reader().close()?;
   w.close(&mut random)?;
@@ -910,7 +906,6 @@ fn test_distance_as_edits_searching() -> Result<()> {
       .string_value()?
       .unwrap()
       .as_ref()
-      .as_str()
   );
 
   q = FuzzyQuery::with_max_edits(Term::from_text("field", "foubara"), 2)?;
@@ -926,7 +921,6 @@ fn test_distance_as_edits_searching() -> Result<()> {
       .string_value()?
       .unwrap()
       .as_ref()
-      .as_str()
   );
 
   let expected = FuzzyQuery::with_max_edits(Term::from_text("field", "t"), 3).unwrap_err();
@@ -1063,7 +1057,6 @@ fn test_random() -> Result<()> {
             .string_value()?
             .unwrap()
             .as_ref()
-            .as_str()
             .to_string(),
         );
       }

@@ -363,7 +363,7 @@ impl IndexableField for IntPoint {
     Ok(value)
   }
 
-  fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
+  fn string_value(&self) -> Result<Option<Cow<'_, str>>> {
     Ok(None)
   }
 

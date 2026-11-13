@@ -465,10 +465,7 @@ pub trait BaseChunkedDirectoryTestCase: BaseDirectoryTestCase {
       let stored_doc = stored_fields.document(doc_id)?;
       let actual = stored_doc.get("docid")?;
       let expected = doc_id.to_string();
-      assert_eq!(
-        Some(expected.as_str()),
-        actual.as_deref().map(String::as_str)
-      );
+      assert_eq!(Some(expected.as_str()), actual.as_deref());
     }
     reader.close()?;
     dir.close()?;

@@ -170,7 +170,7 @@ pub trait LegacyBaseDocValuesFormatTestCase:
 
     for i in 0..hits.score_docs.len() {
       let hit_doc = stored_fields.document(hits.score_docs[i].doc)?;
-      assert_eq!(text.as_str(), hit_doc.get("fieldname")?.unwrap().as_str());
+      assert_eq!(text.as_str(), hit_doc.get("fieldname")?.unwrap().as_ref());
 
       assert_eq!(1, isearcher.get_leaf_contexts()?.len());
       let leaf = &isearcher.get_leaf_contexts()?[0];
@@ -225,7 +225,7 @@ pub trait LegacyBaseDocValuesFormatTestCase:
     for i in 0..hits.score_docs.len() {
       let doc_id = hits.score_docs[i].doc;
       let hit_doc = stored_fields.document(doc_id)?;
-      assert_eq!(text.as_str(), hit_doc.get("fieldname")?.unwrap().as_str());
+      assert_eq!(text.as_str(), hit_doc.get("fieldname")?.unwrap().as_ref());
 
       assert_eq!(1, isearcher.get_leaf_contexts()?.len());
       let leaf = &isearcher.get_leaf_contexts()?[0];
@@ -281,7 +281,7 @@ pub trait LegacyBaseDocValuesFormatTestCase:
     for i in 0..hits.score_docs.len() {
       let doc_id = hits.score_docs[i].doc;
       let hit_doc = stored_fields.document(doc_id)?;
-      assert_eq!(text.as_str(), hit_doc.get("fieldname")?.unwrap().as_str());
+      assert_eq!(text.as_str(), hit_doc.get("fieldname")?.unwrap().as_ref());
 
       assert_eq!(1, isearcher.get_leaf_contexts()?.len());
       let leaf = &isearcher.get_leaf_contexts()?[0];
@@ -347,7 +347,7 @@ pub trait LegacyBaseDocValuesFormatTestCase:
     for i in 0..hits.score_docs.len() {
       let hit_doc_id = hits.score_docs[i].doc;
       let hit_doc = stored_fields.document(hit_doc_id)?;
-      assert_eq!(text.as_str(), hit_doc.get("fieldname")?.unwrap().as_str());
+      assert_eq!(text.as_str(), hit_doc.get("fieldname")?.unwrap().as_ref());
 
       assert_eq!(1, isearcher.get_leaf_contexts()?.len());
       let leaf = &isearcher.get_leaf_contexts()?[0];
@@ -421,7 +421,7 @@ pub trait LegacyBaseDocValuesFormatTestCase:
 
       let hit_doc_id = hits.score_docs[0].doc;
       let hit_doc = stored_fields.document(hit_doc_id)?;
-      assert_eq!(id.as_str(), hit_doc.get("id")?.unwrap().as_str());
+      assert_eq!(id.as_str(), hit_doc.get("id")?.unwrap().as_ref());
 
       assert_eq!(1, isearcher.get_leaf_contexts()?.len());
       let leaf = &isearcher.get_leaf_contexts()?[0];
@@ -482,7 +482,7 @@ pub trait LegacyBaseDocValuesFormatTestCase:
     for i in 0..hits.score_docs.len() {
       let doc_id = hits.score_docs[i].doc;
       let hit_doc = stored_fields.document(doc_id)?;
-      assert_eq!(text.as_str(), hit_doc.get("fieldname")?.unwrap().as_str());
+      assert_eq!(text.as_str(), hit_doc.get("fieldname")?.unwrap().as_ref());
 
       assert_eq!(1, isearcher.get_leaf_contexts()?.len());
       let leaf = &isearcher.get_leaf_contexts()?[0];
@@ -551,7 +551,7 @@ pub trait LegacyBaseDocValuesFormatTestCase:
     for i in 0..hits.score_docs.len() {
       let doc_id = hits.score_docs[i].doc;
       let hit_doc = stored_fields.document(doc_id)?;
-      assert_eq!(text.as_str(), hit_doc.get("fieldname")?.unwrap().as_str());
+      assert_eq!(text.as_str(), hit_doc.get("fieldname")?.unwrap().as_ref());
 
       assert_eq!(1, isearcher.get_leaf_contexts()?.len());
       let leaf = &isearcher.get_leaf_contexts()?[0];
@@ -628,7 +628,7 @@ pub trait LegacyBaseDocValuesFormatTestCase:
     for i in 0..hits.score_docs.len() {
       let doc_id = hits.score_docs[i].doc;
       let hit_doc = stored_fields.document(doc_id)?;
-      assert_eq!(text.as_str(), hit_doc.get("fieldname")?.unwrap().as_str());
+      assert_eq!(text.as_str(), hit_doc.get("fieldname")?.unwrap().as_ref());
 
       assert_eq!(1, isearcher.get_leaf_contexts()?.len());
       let leaf = &isearcher.get_leaf_contexts()?[0];
@@ -863,7 +863,7 @@ pub trait LegacyBaseDocValuesFormatTestCase:
     for i in 0..hits.score_docs.len() {
       let hit_doc_id = hits.score_docs[i].doc;
       let hit_doc = stored_fields.document(hit_doc_id)?;
-      assert_eq!(text.as_str(), hit_doc.get("fieldname")?.unwrap().as_str());
+      assert_eq!(text.as_str(), hit_doc.get("fieldname")?.unwrap().as_ref());
 
       assert_eq!(1, isearcher.get_leaf_contexts()?.len());
       let leaf = &isearcher.get_leaf_contexts()?[0];
@@ -1034,7 +1034,7 @@ pub trait LegacyBaseDocValuesFormatTestCase:
     for i in 0..hits.score_docs.len() {
       let doc_id = hits.score_docs[i].doc;
       let hit_doc = stored_fields.document(doc_id)?;
-      assert_eq!(text.as_str(), hit_doc.get("fieldname")?.unwrap().as_str());
+      assert_eq!(text.as_str(), hit_doc.get("fieldname")?.unwrap().as_ref());
       assert_eq!(1, isearcher.get_leaf_contexts()?.len());
       let leaf = &isearcher.get_leaf_contexts()?[0];
       let mut dv = leaf.reader().get_sorted_doc_values("dv")?.unwrap();
@@ -1998,7 +1998,7 @@ pub trait LegacyBaseDocValuesFormatTestCase:
           let count = doc_values.doc_value_count()? as usize;
           assert_eq!(stored_values.len(), count);
           for expected in stored_values.iter().take(count) {
-            assert_eq!(expected.as_str(), doc_values.next_value()?.to_string());
+            assert_eq!(expected.as_ref(), doc_values.next_value()?.to_string());
           }
         }
       }
@@ -2021,7 +2021,7 @@ pub trait LegacyBaseDocValuesFormatTestCase:
               let count = doc_values.doc_value_count()? as usize;
               assert_eq!(stored_values.len(), count);
               for expected in stored_values.iter().take(count) {
-                assert_eq!(expected.as_str(), doc_values.next_value()?.to_string());
+                assert_eq!(expected.as_ref(), doc_values.next_value()?.to_string());
               }
             }
           } else {
@@ -2062,7 +2062,7 @@ pub trait LegacyBaseDocValuesFormatTestCase:
               let count = doc_values.doc_value_count()? as usize;
               assert_eq!(stored_values.len(), count);
               for expected in stored_values.iter().take(count) {
-                assert_eq!(expected.as_str(), doc_values.next_value()?.to_string());
+                assert_eq!(expected.as_ref(), doc_values.next_value()?.to_string());
               }
             }
 
@@ -3275,7 +3275,7 @@ pub trait LegacyBaseDocValuesFormatTestCase:
           for expected in stored_values.iter().take(count as usize) {
             let ord = doc_values.next_ord()?;
             assert_eq!(
-              expected.as_str(),
+              expected.as_ref(),
               doc_values.lookup_ord(ord)?.utf8_to_string()?
             );
           }
@@ -3301,7 +3301,7 @@ pub trait LegacyBaseDocValuesFormatTestCase:
               for expected in stored_values.iter().take(count as usize) {
                 let ord = doc_values.next_ord()?;
                 assert_eq!(
-                  expected.as_str(),
+                  expected.as_ref(),
                   doc_values.lookup_ord(ord)?.utf8_to_string()?
                 );
               }
@@ -3343,7 +3343,7 @@ pub trait LegacyBaseDocValuesFormatTestCase:
               for expected in stored_values.iter().take(count as usize) {
                 let ord = doc_values.next_ord()?;
                 assert_eq!(
-                  expected.as_str(),
+                  expected.as_ref(),
                   doc_values.lookup_ord(ord)?.utf8_to_string()?
                 );
               }
@@ -4247,7 +4247,7 @@ pub trait LegacyBaseDocValuesFormatTestCase:
                 for value in values {
                   let ord = sorted_set.next_ord()?;
                   let actual = sorted_set.lookup_ord(ord)?;
-                  assert_eq!(value.as_ref().as_str(), actual.utf8_to_string()?);
+                  assert_eq!(value.as_ref(), actual.utf8_to_string()?);
                 }
               }
 
@@ -4260,7 +4260,7 @@ pub trait LegacyBaseDocValuesFormatTestCase:
                 assert_eq!(num_values.len() as i32, sorted_numeric.doc_value_count()?);
                 for num_value in num_values {
                   let value = sorted_numeric.next_value()?;
-                  assert_eq!(num_value.as_ref().as_str(), value.to_string());
+                  assert_eq!(num_value.as_ref(), value.to_string());
                 }
               }
             }

@@ -118,7 +118,7 @@ impl KeywordField {
       (keyword::FIELD_TYPE.clone(), false)
     };
 
-    let v = value.into();
+    let v: String = value.into();
     let parent_field = Field::from_string(name, v, ft)?;
 
     Ok(Self {
@@ -234,7 +234,7 @@ impl IndexableField for KeywordField {
     }
   }
 
-  fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
+  fn string_value(&self) -> Result<Option<Cow<'_, str>>> {
     self.parent_field.string_value()
   }
 

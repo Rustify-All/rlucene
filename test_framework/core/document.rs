@@ -89,7 +89,7 @@ impl IndexableField for FieldImpl {
     self.parent_field.take_binary_value()
   }
 
-  fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
+  fn string_value(&self) -> Result<Option<Cow<'_, str>>> {
     self.parent_field.string_value()
   }
 
@@ -97,7 +97,7 @@ impl IndexableField for FieldImpl {
     self.parent_field.take_string_value()
   }
 
-  fn get_char_sequence_value(&self) -> Result<Option<Cow<'_, String>>> {
+  fn get_char_sequence_value(&self) -> Result<Option<Cow<'_, str>>> {
     self.parent_field.get_char_sequence_value()
   }
 
@@ -178,7 +178,7 @@ impl IndexableField for MockIndexableField {
     Ok(self.value.take())
   }
 
-  fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
+  fn string_value(&self) -> Result<Option<Cow<'_, str>>> {
     Ok(None)
   }
 
@@ -357,7 +357,7 @@ impl IndexableField for MyField {
     Ok(self.binary_value()?.map(|value| value.into_owned()))
   }
 
-  fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
+  fn string_value(&self) -> Result<Option<Cow<'_, str>>> {
     let field_id = self.counter % 10;
     if field_id != 3 && field_id != 7 {
       Ok(Some(Cow::Owned(format!("text {}", self.counter))))
@@ -370,7 +370,7 @@ impl IndexableField for MyField {
     Ok(self.string_value()?.map(|value| value.into_owned()))
   }
 
-  fn get_char_sequence_value(&self) -> Result<Option<Cow<'_, String>>> {
+  fn get_char_sequence_value(&self) -> Result<Option<Cow<'_, str>>> {
     self.string_value()
   }
 
@@ -492,7 +492,7 @@ impl IndexableField for CustomField {
     Ok(None)
   }
 
-  fn string_value(&self) -> Result<Option<Cow<'_, String>>> {
+  fn string_value(&self) -> Result<Option<Cow<'_, str>>> {
     Ok(Some(Cow::Owned("foobar".to_string())))
   }
 
