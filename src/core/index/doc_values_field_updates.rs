@@ -42,7 +42,7 @@ use crate::core::util::packed::mutable_packed64_enum::MutablePacked64Enum;
 use crate::core::util::packed::paged_mutable::PagedMutable;
 use crate::core::util::packed::{Mutable, PackedInts, Reader};
 use crate::core::util::priority_queue::{Compare, PriorityQueue};
-use crate::core::util::ram_usage_estimator::size_of_string;
+use crate::core::util::ram_usage_estimator::size_of_str;
 use crate::core::util::sparse_fixed_bit_set::SparseFixedBitSet;
 use crate::core::util::{Sorter, ToInt};
 use crate::impl_from_for_enum;
@@ -61,7 +61,7 @@ pub(crate) struct DocValuesFieldUpdates<D>
 where
   D: DocValuesFieldUpdatesBase,
 {
-  pub(crate) field: String,
+  pub(crate) field: Arc<str>,
   pub(crate) type_: DocValuesType,
   pub(crate) del_gen: i64,
   max_doc: i32,
@@ -90,7 +90,7 @@ impl DocValuesFieldUpdates<DocValuesFieldUpdatesBaseEnum> {
     sub_update: V,
   ) -> Result<Self>
   where
-    T: Into<String>,
+    T: Into<Arc<str>>,
     V: Into<DocValuesFieldUpdatesBaseEnum>,
   {
     Self::with_sub(max_doc, del_gen, field, doc_values_type, sub_update.into())
@@ -109,7 +109,7 @@ where
     sub_update: D,
   ) -> Result<Self>
   where
-    T: Into<String>,
+    T: Into<Arc<str>>,
   {
     let bits_per_value = PackedInts::bits_required(max_doc as i64 - 1)? + SHIFT;
     let sub_mutable =
@@ -277,7 +277,7 @@ where
       self.docs.ram_bytes_used()?
     };
     Ok(
-      size_of_string(&self.field)
+      size_of_str(&self.field)
         .saturating_add(docs_size)
         .saturating_add(self.sub_update.ram_bytes_used()?),
     )
@@ -1217,16 +1217,24 @@ pub trait AbstractIteratorBase {
 
 pub(crate) struct SingleValueDocValuesFieldUpdates {
   sub_update: SingleValueNumericDocValuesFieldUpdates,
-  bit_set: SparseFixedBitSet,
-  has_no_value: Option<SparseFixedBitSet>,
+  docs: SingleValueUpdateDocs,
   max_doc: usize,
   del_gen: i64,
   has_at_least_one_value: bool,
   dov_values_type: DocValuesType,
+}
 
-  // for reused iterators
-  bit_set_iter: Option<Arc<SparseFixedBitSet>>,
-  has_no_value_iter: Option<Arc<SparseFixedBitSet>>,
+enum SingleValueUpdateDocs {
+  Pending(Box<PendingSingleValueUpdateDocs>),
+  Finished {
+    updated: Arc<SparseFixedBitSet>,
+    cleared: Option<Arc<SparseFixedBitSet>>,
+  },
+}
+
+struct PendingSingleValueUpdateDocs {
+  updated: SparseFixedBitSet,
+  cleared: Option<Box<SparseFixedBitSet>>,
 }
 
 impl SingleValueDocValuesFieldUpdates {
@@ -1239,14 +1247,14 @@ impl SingleValueDocValuesFieldUpdates {
     let max_doc = max_doc as usize;
     Ok(Self {
       sub_update: sub,
-      bit_set: SparseFixedBitSet::new(max_doc)?,
-      has_no_value: None,
+      docs: SingleValueUpdateDocs::Pending(Box::new(PendingSingleValueUpdateDocs {
+        updated: SparseFixedBitSet::new(max_doc)?,
+        cleared: None,
+      })),
       max_doc,
       del_gen,
       has_at_least_one_value: false,
       dov_values_type,
-      bit_set_iter: None,
-      has_no_value_iter: None,
     })
   }
   pub fn binary_value(&self) -> Result<&BytesRef<Vec<u8>>> {
@@ -1255,24 +1263,47 @@ impl SingleValueDocValuesFieldUpdates {
   pub fn long_value(&self) -> Result<i64> {
     self.sub_update.long_value()
   }
+
+  fn mark_update(&mut self, doc: usize, has_value: bool) -> Result<()> {
+    let SingleValueUpdateDocs::Pending(pending) = &mut self.docs else {
+      return Err(LuceneError::illegal_argument("already finished"));
+    };
+    pending.updated.set(doc)?;
+    self.has_at_least_one_value = true;
+    if has_value {
+      if let Some(cleared) = &mut pending.cleared {
+        cleared.clear_with_index(doc)?;
+      }
+    } else {
+      let cleared = match &mut pending.cleared {
+        Some(cleared) => cleared,
+        slot @ None => slot.insert(Box::new(SparseFixedBitSet::new(self.max_doc)?)),
+      };
+      cleared.set(doc)?;
+    }
+    Ok(())
+  }
 }
 
 impl Accountable for SingleValueDocValuesFieldUpdates {
   fn ram_bytes_used(&self) -> Result<i64> {
-    let mut size = 0i64;
-    if let Some(bit_set) = &self.bit_set_iter {
+    let (updated, cleared, owner_bytes) = match &self.docs {
+      SingleValueUpdateDocs::Pending(pending) => (
+        &pending.updated,
+        pending.cleared.as_deref(),
+        size_of::<PendingSingleValueUpdateDocs>() as i64,
+      ),
+      SingleValueUpdateDocs::Finished { updated, cleared } => (
+        updated.as_ref(),
+        cleared.as_deref(),
+        size_of::<SparseFixedBitSet>() as i64,
+      ),
+    };
+    let mut size = owner_bytes.saturating_add(updated.ram_bytes_used()?);
+    if let Some(cleared) = cleared {
       size = size
-        .saturating_add(size_of_val(bit_set.as_ref()) as i64)
-        .saturating_add(bit_set.ram_bytes_used()?);
-    } else {
-      size = size.saturating_add(self.bit_set.ram_bytes_used()?);
-    }
-    if let Some(has_no_value) = &self.has_no_value_iter {
-      size = size
-        .saturating_add(size_of_val(has_no_value.as_ref()) as i64)
-        .saturating_add(has_no_value.ram_bytes_used()?);
-    } else if let Some(has_no_value) = &self.has_no_value {
-      size = size.saturating_add(has_no_value.ram_bytes_used()?);
+        .saturating_add(size_of::<SparseFixedBitSet>() as i64)
+        .saturating_add(cleared.ram_bytes_used()?);
     }
     Ok(size)
   }
@@ -1280,23 +1311,16 @@ impl Accountable for SingleValueDocValuesFieldUpdates {
 
 impl DocValuesFieldUpdatesBase for SingleValueDocValuesFieldUpdates {
   fn finish(&mut self) {
-    self.bit_set_iter = Some(Arc::new(std::mem::take(&mut self.bit_set)));
-    if let Some(has_no_value) = self.has_no_value.take() {
-      self.has_no_value_iter = Some(Arc::new(has_no_value));
+    if let SingleValueUpdateDocs::Pending(pending) = &mut self.docs {
+      let updated = Arc::new(std::mem::take(&mut pending.updated));
+      let cleared = pending.cleared.take().map(|cleared| Arc::new(*cleared));
+      self.docs = SingleValueUpdateDocs::Finished { updated, cleared };
     }
   }
 
   fn add_value(&mut self, doc: i32, value: i64, _index: usize) -> Result<()> {
     debug_assert!(self.long_value()? == value);
-    let doc = doc as usize;
-    self.bit_set.set(doc)?;
-
-    self.has_at_least_one_value = true;
-    if let Some(has_no_value) = self.has_no_value.as_mut() {
-      has_no_value.clear_with_index(doc)?;
-    }
-
-    Ok(())
+    self.mark_update(doc as usize, true)
   }
 
   fn add_byte_ref<B: ByteSource>(
@@ -1306,13 +1330,7 @@ impl DocValuesFieldUpdatesBase for SingleValueDocValuesFieldUpdates {
     _index: usize,
   ) -> Result<()> {
     debug_assert!(self.binary_value()?.compare_to(value).is_eq());
-    let doc = doc as usize;
-    self.bit_set.set(doc)?;
-    self.has_at_least_one_value = true;
-    if let Some(has_no_value) = self.has_no_value.as_mut() {
-      has_no_value.clear_with_index(doc)?;
-    }
-    Ok(())
+    self.mark_update(doc as usize, true)
   }
 
   fn add_iterator<T>(&mut self, _doc_id: i32, _iterator: &T, _index: usize) -> Result<()>
@@ -1329,30 +1347,22 @@ impl DocValuesFieldUpdatesBase for SingleValueDocValuesFieldUpdates {
     _inner: DocValuesFieldInnerIter,
     _del_gen: i64,
   ) -> Result<DocValuesFieldIteratorEnum> {
-    let bit_set_iter = self.bit_set_iter.as_ref().ok_or_else(|| {
-      LuceneError::illegal_state("finished single-value updates have no bit-set iterator")
-    })?;
-    let iterator = BitSetIterator::new(bit_set_iter.clone(), self.max_doc as i64)?;
+    let SingleValueUpdateDocs::Finished { updated, cleared } = &self.docs else {
+      return Err(LuceneError::illegal_state("call finish first"));
+    };
+    let iterator = BitSetIterator::new(updated.clone(), self.max_doc as i64)?;
     Ok(DocValuesFieldIteratorEnum::SingleValue(
       SingleValueDocValuesFieldUpdatesIterator::new(
         iterator,
         self.del_gen,
-        self.has_no_value_iter.clone(),
+        cleared.clone(),
         self.sub_update,
       )?,
     ))
   }
 
   fn reset(&mut self, doc: i32) -> Result<()> {
-    let doc = doc as usize;
-    self.bit_set.set(doc)?;
-    self.has_at_least_one_value = true;
-    let has_no_value = match &mut self.has_no_value {
-      Some(has_no_value) => has_no_value,
-      slot @ None => slot.insert(SparseFixedBitSet::new(self.max_doc)?),
-    };
-    has_no_value.set(doc)?;
-    Ok(())
+    self.mark_update(doc as usize, false)
   }
 
   fn need_reset(&self) -> bool {

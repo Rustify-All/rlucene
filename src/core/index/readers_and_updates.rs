@@ -70,6 +70,8 @@ use std::fmt::{Display, Formatter};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI32, AtomicI64, Ordering};
 
+type DocValuesUpdateList = smallvec::SmallVec<[Arc<DocValuesFieldUpdatesEnum>; 1]>;
+
 /// Used by IndexWriter to hold open SegmentReaders (for
 /// searching or merging), plus pending deletes and updates,
 /// for a given segment
@@ -106,11 +108,11 @@ where
   is_merging: bool,
   // Holds resolved (to docIDs) doc values updates that have not yet been
   // written to the index
-  pending_dv_updates: HashMap<String, Vec<Arc<DocValuesFieldUpdatesEnum>>>,
+  pending_dv_updates: HashMap<Arc<str>, DocValuesUpdateList>,
   // Holds resolved (to docIDs) doc values updates that were resolved while
   // this segment was being merged; at the end of the merge we carry over
   // these updates (remapping their docIDs) to the newly merged segment
-  merging_dv_updates: HashMap<String, Vec<Arc<DocValuesFieldUpdatesEnum>>>,
+  merging_dv_updates: HashMap<Arc<str>, DocValuesUpdateList>,
 }
 
 impl<D> ReadersAndUpdates<D>
@@ -200,16 +202,16 @@ where
       return Err(LuceneError::illegal_argument("call finish first"));
     }
 
-    let field = update.field.as_str();
+    let field = &update.field;
     let update_bytes = update.ram_bytes_used()?;
     let is_merging = inner.is_merging;
 
-    let field_updates = if let Some(updates) = inner.pending_dv_updates.get_mut(field) {
+    let field_updates = if let Some(updates) = inner.pending_dv_updates.get_mut(field.as_ref()) {
       updates
     } else {
       inner
         .pending_dv_updates
-        .entry(field.to_owned())
+        .entry(Arc::clone(field))
         .or_default()
     };
 
@@ -220,12 +222,13 @@ where
 
     if is_merging {
       field_updates.push(update.clone());
-      let merging_updates = if let Some(updates) = inner.merging_dv_updates.get_mut(field) {
+      let merging_updates = if let Some(updates) = inner.merging_dv_updates.get_mut(field.as_ref())
+      {
         updates
       } else {
         inner
           .merging_dv_updates
-          .entry(field.to_owned())
+          .entry(Arc::clone(field))
           .or_default()
       };
       merging_updates.push(update);
@@ -792,7 +795,7 @@ where
         },
         None => merging_dv_updates
           .entry(field.clone())
-          .or_insert_with(|| Vec::with_capacity(updates.len())),
+          .or_insert_with(|| DocValuesUpdateList::with_capacity(updates.len())),
       };
       entry.extend(updates.iter().cloned());
     }
@@ -831,7 +834,7 @@ where
     inner.merging_dv_updates.clear();
     inner.is_merging = false;
   }
-  pub fn get_merging_dv_updates(&self) -> HashMap<String, Vec<Arc<DocValuesFieldUpdatesEnum>>> {
+  pub fn get_merging_dv_updates(&self) -> HashMap<Arc<str>, DocValuesUpdateList> {
     // We must atomically (in single sync'd block) clear isMerging when we return the DV updates
     // otherwise we can lose updates:
     let mut inner = self.inner.lock();

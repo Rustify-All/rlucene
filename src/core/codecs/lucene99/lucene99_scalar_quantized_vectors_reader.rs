@@ -55,13 +55,14 @@ use crate::core::util::hnsw::random_vector_scorer::RandomVectorScorerEnum2;
 use crate::core::util::quantization::quantized_byte_vector_values::QuantizedByteVectorValues;
 use crate::core::util::quantization::quantized_vectors_reader::QuantizedVectorsReader;
 use crate::core::util::quantization::scalar_quantizer::ScalarQuantizer;
+use crate::core::util::ram_usage_estimator::size_of_hash_map;
 use std::collections::HashMap;
 use std::mem;
 use std::sync::Arc;
 
 /// Reads scalar quantized vectors from the index segments.
 pub struct Lucene99ScalarQuantizedVectorsReader<I, R, F> {
-  fields: HashMap<i32, FieldEntry>,
+  fields: HashMap<i32, Box<FieldEntry>>,
   quantized_vector_data: Arc<I>,
   raw_vectors_reader: R,
   field_infos: Arc<FieldInfos>,
@@ -175,7 +176,7 @@ where
     meta: &mut M,
     version_meta: i32,
     infos: &FieldInfos,
-    fields: &mut HashMap<i32, FieldEntry>,
+    fields: &mut HashMap<i32, Box<FieldEntry>>,
   ) -> Result<()>
   where
     M: ChecksumIndexInput,
@@ -187,7 +188,7 @@ where
       })?;
       let field_entry = Self::read_field(meta, version_meta, info.as_ref())?;
       Self::validate_field_entry(info.as_ref(), &field_entry)?;
-      fields.insert(info.number, field_entry);
+      fields.insert(info.number, Box::new(field_entry));
       field_number = meta.read_int()?;
     }
     Ok(())
@@ -427,12 +428,13 @@ where
   R: Accountable,
 {
   fn ram_bytes_used(&self) -> Result<i64> {
-    Ok(
-      self
-        .fields
-        .ram_bytes_used()?
-        .saturating_add(self.raw_vectors_reader.ram_bytes_used()?),
-    )
+    let mut size = size_of_hash_map(&self.fields);
+    for entry in self.fields.values() {
+      size = size
+        .saturating_add(mem::size_of_val(entry.as_ref()) as i64)
+        .saturating_add(entry.ram_bytes_used()?);
+    }
+    Ok(size.saturating_add(self.raw_vectors_reader.ram_bytes_used()?))
   }
 }
 

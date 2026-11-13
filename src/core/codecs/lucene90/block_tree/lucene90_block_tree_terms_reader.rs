@@ -18,6 +18,7 @@ use crate::core::codecs::CodecUtil;
 use crate::core::codecs::fields_producer::FieldsProducer;
 use crate::core::codecs::lucene90::block_tree::field_reader::FieldReader;
 use crate::core::codecs::postings_reader_base::PostingsReaderBase;
+use crate::core::index::field_info::FieldInfo;
 use crate::core::index::field_infos::FieldInfos;
 use crate::core::index::fields::Fields;
 use crate::core::index::index_options::IndexOptions;
@@ -64,8 +65,8 @@ where
   terms_reader: Arc<TermsReader<I, PR>>,
   // Open input to the terms index file (_X.tip)
   index_in: Arc<I>,
-  field_map: RwLock<HashMap<i32, FieldReader<I, PR>>>,
-  field_list: Vec<String>,
+  field_map: RwLock<HashMap<i32, Box<FieldReader<I, PR>>>>,
+  field_list: Vec<Arc<FieldInfo>>,
   field_infos: Arc<FieldInfos>,
 }
 pub struct TermsReader<I, PR>
@@ -176,6 +177,8 @@ where
             )));
           }
 
+          // Small dictionaries do not need an extra table to share a few bounds.
+          let mut term_bounds = (num_fields >= 64).then(HashMap::new);
           for _ in 0..num_fields {
             let field = meta_in.read_vint()?;
             let num_terms = meta_in.read_vlong()?;
@@ -203,14 +206,14 @@ where
             };
 
             let doc_count = meta_in.read_vint()?;
-            let min_term = Arc::new(read_bytes_ref(&mut meta_in)?);
+            let min_term = read_term_bound(&mut meta_in, term_bounds.as_mut())?;
             let max_term = if num_terms == 1 {
               let len = read_bytes_ref_len(&mut meta_in)?;
               let bytes = meta_in.get_bytes(len)?;
               debug_assert_eq!(&bytes[..len], &min_term.bytes[..min_term.length]);
               Arc::clone(&min_term)
             } else {
-              Arc::new(read_bytes_ref(&mut meta_in)?)
+              read_term_bound(&mut meta_in, term_bounds.as_mut())?
             };
 
             let max_doc = segment_info.max_doc()?;
@@ -247,7 +250,7 @@ where
             )?;
 
             if field_map
-              .insert(field_info.get_field_number(), field_reader)
+              .insert(field_info.get_field_number(), Box::new(field_reader))
               .is_some()
             {
               return Err(LuceneError::corrupt_index(format!(
@@ -346,13 +349,13 @@ where
   PR: PostingsReaderBase,
 {
   type FieldIter<'a>
-    = VecIter<'a, String>
+    = BlockTreeFieldNames<'a>
   where
     I: 'a,
     PR: 'a;
 
   fn iterator(&self) -> Result<Self::FieldIter<'_>> {
-    Ok(self.field_list.iter_ext())
+    Ok(BlockTreeFieldNames(self.field_list.iter()))
   }
 
   type Terms = FieldReader<I, PR>;
@@ -365,7 +368,7 @@ where
       .field_map
       .read()
       .get(&field_info.number)
-      .map(TryClone::try_clone)
+      .map(|reader| reader.as_ref().try_clone())
       .transpose()
   }
 
@@ -421,7 +424,21 @@ where
 
 use crate::core::index::BytesRef;
 use crate::core::util::TryIntoInt;
-use crate::core::util::iterator::{VecIter, VecIteratorExt};
+use crate::core::util::iterator::IteratorExt;
+
+pub struct BlockTreeFieldNames<'a>(std::slice::Iter<'a, Arc<FieldInfo>>);
+
+impl<'a> IteratorExt for BlockTreeFieldNames<'a> {
+  type Item = &'a String;
+
+  fn next(&mut self) -> Result<Option<Self::Item>> {
+    Ok(self.0.next().map(|field| &field.name))
+  }
+
+  fn has_next(&self) -> Result<bool> {
+    Ok(!self.0.as_slice().is_empty())
+  }
+}
 
 /// Arc outputs in the terms index may be empty; decoded block buffers are ordinary bytes.
 pub(crate) type IndexArc = crate::core::util::fst_impl::fst::Arc<BytesRef<std::sync::Arc<Vec<u8>>>>;
@@ -459,6 +476,33 @@ where
   Ok(BytesRef::from_slice(buffer, 0, num_bytes))
 }
 
+type TermBoundCache = HashMap<Box<[u8]>, Arc<BytesRef<Vec<u8>>>>;
+
+fn read_term_bound<I: IndexInput>(
+  input: &mut I,
+  cache: Option<&mut TermBoundCache>,
+) -> Result<Arc<BytesRef<Vec<u8>>>> {
+  let Some(cache) = cache else {
+    return read_bytes_ref(input).map(Arc::new);
+  };
+  // A segment can have many fields with the same short minimum or maximum term.
+  // Limit the cache so diverse or very long terms cannot enlarge it indefinitely.
+  const MAX_CACHED_BOUNDS: usize = 64;
+  const MAX_BOUND_LENGTH: usize = 64;
+  let length = read_bytes_ref_len(input)?;
+  let bytes = input.get_bytes(length)?;
+  if length <= MAX_BOUND_LENGTH
+    && let Some(bound) = cache.get(&bytes[..length])
+  {
+    return Ok(Arc::clone(bound));
+  }
+  let bound = Arc::new(BytesRef::from_slice(bytes.into_owned(), 0, length));
+  if length <= MAX_BOUND_LENGTH && cache.len() < MAX_CACHED_BOUNDS {
+    cache.insert(bound.as_byte_slice().into(), Arc::clone(&bound));
+  }
+  Ok(bound)
+}
+
 fn read_bytes_ref_len<I: IndexInput>(input: &mut I) -> Result<usize> {
   let num_bytes = input.read_vint()?;
   if num_bytes < 0 {
@@ -469,9 +513,9 @@ fn read_bytes_ref_len<I: IndexInput>(input: &mut I) -> Result<usize> {
   Ok(num_bytes as usize)
 }
 fn sort_field_names<I, PR>(
-  field_map: &HashMap<i32, FieldReader<I, PR>>,
+  field_map: &HashMap<i32, Box<FieldReader<I, PR>>>,
   field_infos: &FieldInfos,
-) -> Result<Vec<String>>
+) -> Result<Vec<Arc<FieldInfo>>>
 where
   I: IndexInput,
   PR: PostingsReaderBase,
@@ -486,9 +530,9 @@ where
           "Missing field info for field number {field_number}"
         ))
       })?;
-    field_names.push(field_info.name.clone());
+    field_names.push(Arc::clone(field_info));
   }
 
-  field_names.sort_unstable();
+  field_names.sort_unstable_by(|left, right| left.name.cmp(&right.name));
   Ok(field_names)
 }

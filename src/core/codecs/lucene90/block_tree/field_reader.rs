@@ -56,7 +56,7 @@ where
   pub(crate) max_term: Arc<BytesRef<Vec<u8>>>,
   pub(crate) parent: Option<Arc<TermsReader<I, PR>>>,
   pub(crate) index: Option<Arc<FST<ByteSequenceOutputs, OffHeapFSTStore<I>>>>,
-  tmp_data: Option<TmpData>,
+  tmp_data: Option<Box<TmpData>>,
 }
 struct TmpData {
   pub(crate) metadata: FSTMetadata<ByteSequenceOutputs>,
@@ -108,12 +108,12 @@ where
       min_term,
       max_term,
       index: None,
-      tmp_data: Some(tmp),
+      tmp_data: Some(Box::new(tmp)),
     })
   }
   pub fn init_field_reader(index_in: Arc<I>, reader: &mut FieldReader<I, PR>) -> Result<()> {
     let tmp_data = match reader.tmp_data.take() {
-      Some(tmp_data) => tmp_data,
+      Some(tmp_data) => *tmp_data,
       None => {
         return Err(LuceneError::illegal_state(
           "TmpData is None, cannot init FieldReader".to_string(),

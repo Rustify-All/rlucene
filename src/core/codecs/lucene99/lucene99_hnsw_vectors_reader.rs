@@ -54,17 +54,17 @@ use crate::core::util::packed::direct_monotonic_reader::Meta;
 use crate::core::util::packed::direct_monotonic_reader::{DirectMonotonicReader, load_meta};
 use crate::core::util::quantization::quantized_vectors_reader::QuantizedVectorsReader;
 use crate::core::util::quantization::scalar_quantizer::ScalarQuantizer;
-use crate::core::util::ram_usage_estimator::size_of_vec;
+use crate::core::util::ram_usage_estimator::{size_of_hash_map, size_of_vec};
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::mem;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 /// Reads vectors from the index segments along with index data structures supporting KNN search.
 pub struct Lucene99HnswVectorsReader<F, I> {
   flat_vectors_reader: F,
   field_infos: Arc<FieldInfos>,
-  fields: Arc<HashMap<i32, FieldEntry>>,
+  fields: Arc<HashMap<i32, Box<FieldEntry>>>,
   vector_index: I,
 }
 
@@ -368,7 +368,7 @@ where
 fn read_fields<M>(
   meta: &mut M,
   field_infos: &FieldInfos,
-  fields: &mut HashMap<i32, FieldEntry>,
+  fields: &mut HashMap<i32, Box<FieldEntry>>,
 ) -> Result<()>
 where
   M: ChecksumIndexInput,
@@ -384,7 +384,7 @@ where
     let field_entry = read_field(meta, info.as_ref())?;
     validate_field_entry(info.as_ref(), &field_entry)?;
 
-    fields.insert(info.number, field_entry);
+    fields.insert(info.number, Box::new(field_entry));
 
     field_number = meta.read_int()?;
   }
@@ -407,12 +407,13 @@ where
   F: Accountable,
 {
   fn ram_bytes_used(&self) -> Result<i64> {
-    Ok(
-      self
-        .fields
-        .ram_bytes_used()?
-        .saturating_add(self.flat_vectors_reader.ram_bytes_used()?),
-    )
+    let mut size = size_of_hash_map(self.fields.as_ref());
+    for entry in self.fields.values() {
+      size = size
+        .saturating_add(mem::size_of_val(entry.as_ref()) as i64)
+        .saturating_add(entry.ram_bytes_used()?);
+    }
+    Ok(size.saturating_add(self.flat_vectors_reader.ram_bytes_used()?))
   }
 }
 
@@ -724,8 +725,21 @@ impl FieldEntry {
         graph_level_node_index_offsets.push(offset);
       }
     }
-    let graph_level_node_index_offsets = Arc::new(graph_level_node_index_offsets);
-    let nodes_by_level = Arc::new(nodes_by_level);
+    // Empty and single-level directories are independent of field size and contents.
+    static EMPTY_NODES: OnceLock<Arc<Vec<Vec<usize>>>> = OnceLock::new();
+    static SINGLE_NODES: OnceLock<Arc<Vec<Vec<usize>>>> = OnceLock::new();
+    static EMPTY_OFFSETS: OnceLock<Arc<Vec<usize>>> = OnceLock::new();
+    static SINGLE_OFFSETS: OnceLock<Arc<Vec<usize>>> = OnceLock::new();
+    let nodes_by_level = match num_levels {
+      0 => Arc::clone(EMPTY_NODES.get_or_init(|| Arc::new(Vec::new()))),
+      1 => Arc::clone(SINGLE_NODES.get_or_init(|| Arc::new(vec![Vec::new()]))),
+      _ => Arc::new(nodes_by_level),
+    };
+    let graph_level_node_index_offsets = match num_levels {
+      0 => Arc::clone(EMPTY_OFFSETS.get_or_init(|| Arc::new(Vec::new()))),
+      1 => Arc::clone(SINGLE_OFFSETS.get_or_init(|| Arc::new(vec![0]))),
+      _ => Arc::new(graph_level_node_index_offsets),
+    };
     Ok(Self {
       similarity_function,
       vector_encoding,
@@ -751,6 +765,14 @@ impl FieldEntry {
 
 impl Accountable for FieldEntry {
   fn ram_bytes_used(&self) -> Result<i64> {
+    // The two trivial directories are process-wide immutable resources.
+    // Do not charge their storage separately for every field referencing them.
+    if self.num_levels <= 1 {
+      return self
+        .offsets_meta
+        .as_ref()
+        .map_or(Ok(0), Accountable::ram_bytes_used);
+    }
     let mut size = (mem::size_of_val(self.nodes_by_level.as_ref()) as i64)
       .saturating_add(size_of_vec(self.nodes_by_level.as_ref()));
     for nodes in self.nodes_by_level.iter().skip(1) {

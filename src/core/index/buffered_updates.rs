@@ -26,7 +26,7 @@ use crate::core::util::bytes_ref_hash::DEFAULT_CAPACITY;
 use crate::core::util::bytes_ref_hash::{BytesRefHash, DirectBytesStartArray};
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::ram_usage_estimator::{
-  size_of_array_capacity, size_of_hash_map, size_of_string,
+  size_of_array_capacity, size_of_hash_map, size_of_str, size_of_string,
 };
 use crate::core::util::{AtomicCounter, ByteBlockPool, Counter, SharedCounter};
 #[cfg(test)]
@@ -55,7 +55,7 @@ pub(crate) struct BufferedUpdates {
   pub(crate) num_field_updates: AtomicI32,
   pub delete_terms: DeletedTerms,
   pub(crate) delete_queries: HashMap<Query, i32>,
-  pub(crate) field_updates: HashMap<String, FieldUpdatesBuffer>,
+  pub(crate) field_updates: HashMap<Box<str>, Box<FieldUpdatesBuffer>>,
   bytes_used: AtomicCounter,
   pub(crate) field_updates_bytes_used: SharedCounter,
   verbose_deletes: bool,
@@ -83,10 +83,10 @@ impl BufferedUpdates {
   ) -> Result<()> {
     let old_map_size = size_of_hash_map(&self.field_updates);
     let result = catch_unwind(AssertUnwindSafe(|| {
-      let buffer = if let Some(buffer) = self.field_updates.get_mut(&update.field) {
+      let buffer = if let Some(buffer) = self.field_updates.get_mut(update.field.as_str()) {
         buffer
       } else {
-        match self.field_updates.entry(update.field.clone()) {
+        match self.field_updates.entry(update.field.as_str().into()) {
           Occupied(entry) => entry.into_mut(),
           Vacant(entry) => {
             let new_buffer = FieldUpdatesBuffer::from_binary_update(
@@ -94,10 +94,10 @@ impl BufferedUpdates {
               update,
               doc_id_upto,
             )?;
-            self
-              .field_updates_bytes_used
-              .add_and_get(size_of_string(entry.key()));
-            entry.insert(new_buffer)
+            self.field_updates_bytes_used.add_and_get(
+              size_of_str(entry.key()).saturating_add(size_of::<FieldUpdatesBuffer>() as i64),
+            );
+            entry.insert(Box::new(new_buffer))
           },
         }
       };
@@ -136,10 +136,10 @@ impl BufferedUpdates {
   ) -> Result<()> {
     let old_map_size = size_of_hash_map(&self.field_updates);
     let result = catch_unwind(AssertUnwindSafe(|| {
-      let buffer = if let Some(buffer) = self.field_updates.get_mut(&update.field) {
+      let buffer = if let Some(buffer) = self.field_updates.get_mut(update.field.as_str()) {
         buffer
       } else {
-        match self.field_updates.entry(update.field.clone()) {
+        match self.field_updates.entry(update.field.as_str().into()) {
           Occupied(entry) => entry.into_mut(),
           Vacant(entry) => {
             let new_buffer = FieldUpdatesBuffer::from_numeric_update(
@@ -147,10 +147,10 @@ impl BufferedUpdates {
               update,
               doc_id_upto,
             )?;
-            self
-              .field_updates_bytes_used
-              .add_and_get(size_of_string(entry.key()));
-            entry.insert(new_buffer)
+            self.field_updates_bytes_used.add_and_get(
+              size_of_str(entry.key()).saturating_add(size_of::<FieldUpdatesBuffer>() as i64),
+            );
+            entry.insert(Box::new(new_buffer))
           },
         }
       };

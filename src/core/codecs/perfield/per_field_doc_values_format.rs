@@ -420,9 +420,36 @@ fn get_full_segment_suffix<T: Display>(
   }
 }
 
+#[derive(Clone)]
+enum DocValuesFieldRoutes {
+  Empty,
+  Single(i32, u32),
+  Multiple(Arc<HashMap<i32, u32>>),
+}
+
+impl DocValuesFieldRoutes {
+  fn from_map(fields: HashMap<i32, u32>) -> Self {
+    if fields.len() > 1 {
+      Self::Multiple(Arc::new(fields))
+    } else {
+      fields
+        .into_iter()
+        .next()
+        .map_or(Self::Empty, |(field, slot)| Self::Single(field, slot))
+    }
+  }
+
+  fn get(&self, number: &i32) -> Option<&u32> {
+    match self {
+      Self::Empty => None,
+      Self::Single(field, slot) => (field == number).then_some(slot),
+      Self::Multiple(fields) => fields.get(number),
+    }
+  }
+}
+
 pub struct FieldsReader<DVP> {
-  fields: Arc<HashMap<i32, u32>>,
-  formats: Arc<HashMap<String, u32>>,
+  fields: DocValuesFieldRoutes,
   producers: Vec<Arc<DVP>>,
 }
 
@@ -442,13 +469,8 @@ where
       .enumerate()
       .map(|(slot, producer)| {
         let producer = Arc::try_unwrap(producer).map_err(|_| {
-          let suffix = self
-            .formats
-            .iter()
-            .find_map(|(suffix, &index)| (index as usize == slot).then_some(suffix.as_str()))
-            .unwrap_or_default();
           LuceneError::illegal_state(format!(
-            "doc values producer for segment suffix {suffix} is still shared"
+            "doc values producer in slot {slot} is still shared"
           ))
         })?;
         Ok(Arc::new(mapper(producer)))
@@ -456,7 +478,6 @@ where
       .collect::<Result<Vec<_>>>()?;
     Ok(FieldsReader {
       fields: self.fields,
-      formats: self.formats,
       producers,
     })
   }
@@ -464,15 +485,13 @@ where
   // Clone each distinct producer for merge. Both readers use the same immutable slot maps.
   fn from_other(other: &Self) -> Result<Self> {
     let mut producers = other.producers.clone();
-    for &slot in other.formats.values() {
-      let slot = slot as usize;
-      if let Some(producer) = other.producers[slot].as_ref().get_merge_instance()? {
-        producers[slot] = Arc::new(producer);
+    for producer in &mut producers {
+      if let Some(instance) = producer.as_ref().get_merge_instance()? {
+        *producer = Arc::new(instance);
       }
     }
     Ok(Self {
-      fields: Arc::clone(&other.fields),
-      formats: Arc::clone(&other.formats),
+      fields: other.fields.clone(),
       producers,
     })
   }
@@ -535,8 +554,7 @@ where
     unwrap_caught_result!(result)?;
 
     Ok(Self {
-      fields: Arc::new(fields),
-      formats: Arc::new(formats),
+      fields: DocValuesFieldRoutes::from_map(fields),
       producers,
     })
   }
@@ -544,7 +562,7 @@ where
 
 impl<DVP> Display for FieldsReader<DVP> {
   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-    write!(f, "PerFieldDocValues(formats={})", self.formats.len())
+    write!(f, "PerFieldDocValues(formats={})", self.producers.len())
   }
 }
 
@@ -553,13 +571,7 @@ where
   DVP: CloseableRef,
 {
   fn close(&self) -> Result<()> {
-    IOUtils::close_with(
-      self
-        .formats
-        .values()
-        .map(|&slot| &self.producers[slot as usize]),
-      |format| format.close(),
-    )
+    IOUtils::close_with(&self.producers, |format| format.close())
   }
 }
 
@@ -657,8 +669,8 @@ where
   }
 
   fn check_integrity(&self) -> Result<()> {
-    for &slot in self.formats.values() {
-      self.producers[slot as usize].check_integrity()?;
+    for producer in &self.producers {
+      producer.check_integrity()?;
     }
     Ok(())
   }

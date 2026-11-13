@@ -283,8 +283,8 @@ impl FieldInfosFormat for Lucene94FieldInfosFormat {
 
             let size = input.read_vint()?;
             let mut field_infos = Vec::with_capacity(size as usize);
-            let mut last_attributes =
-              Arc::clone(&crate::core::index::field_info::EMPTY_FIELD_ATTRIBUTES);
+            let empty = &crate::core::index::field_info::EMPTY_FIELD_ATTRIBUTES;
+            let mut recent_attributes = [Arc::clone(empty), Arc::clone(empty)];
 
             for _ in 0..size {
               let name = input.read_string()?.into_owned();
@@ -334,15 +334,18 @@ impl FieldInfosFormat for Lucene94FieldInfosFormat {
               let dv_gen = input.read_long()?;
               let attributes = input.read_map_of_strings()?;
               let attributes = if attributes.is_empty() {
-                Arc::clone(&crate::core::index::field_info::EMPTY_FIELD_ATTRIBUTES)
-              } else if last_attributes.as_ref() == &attributes {
-                Arc::clone(&last_attributes)
+                Arc::clone(empty)
+              } else if recent_attributes[0].as_ref() == &attributes {
+                Arc::clone(&recent_attributes[0])
+              } else if recent_attributes[1].as_ref() == &attributes {
+                recent_attributes.swap(0, 1);
+                Arc::clone(&recent_attributes[0])
               } else {
-                Arc::new(attributes)
+                let attributes = Arc::new(attributes);
+                recent_attributes[1] =
+                  std::mem::replace(&mut recent_attributes[0], Arc::clone(&attributes));
+                attributes
               };
-              if !Arc::ptr_eq(&last_attributes, &attributes) {
-                last_attributes = Arc::clone(&attributes);
-              }
               let point_data_dimension_count = input.read_vint()?.try_convert()?;
               let (point_index_dimension_count, point_num_bytes) =
                 if point_data_dimension_count != 0 {

@@ -21,7 +21,7 @@ use crate::core::util::long_values::{LongValues, Zeroes};
 use crate::core::util::packed::direct_reader::{
   DirectPackedEnum, DirectReader, FromSlice, FromSliceShared,
 };
-use crate::core::util::ram_usage_estimator::size_of_vec;
+use crate::core::util::ram_usage_estimator::size_of_slice;
 
 /// Retrieves an instance previously written by
 /// [`DirectMonotonicWriter`](crate::core::util::packed::direct_monotonic_writer::DirectMonotonicWriter).
@@ -46,10 +46,7 @@ impl<R> DirectMonotonicReader<R> {
     slice: R,
   ) -> Result<Self> {
     let readers_len = readers.len();
-    if readers_len != meta.mins.len()
-      || readers_len != meta.avgs.len()
-      || readers_len != meta.bpvs.len()
-    {
+    if readers_len != meta.storage_len() {
       return Err(LuceneError::illegal_argument(String::from(
         "Mismatched array lengths",
       )));
@@ -63,12 +60,12 @@ impl<R> DirectMonotonicReader<R> {
       block_mask,
       readers: readers.into_boxed_slice(),
       has_merge_reader,
-      metadata: meta
-        .mins
-        .iter()
-        .zip(&meta.avgs)
-        .zip(&meta.bpvs)
-        .map(|((&min, &avg), &bpv)| (min, avg, bpv))
+      metadata: (0..readers_len)
+        .map(|index| {
+          let block =
+            expect_invariant!(meta.block(index), "reader and metadata block counts match");
+          (block.min, block.avg, block.bits_per_value)
+        })
         .collect(),
       slice,
     })
@@ -142,7 +139,10 @@ where
   pub fn get_instance_with_merging(meta: &Meta, data: R, merging: bool) -> Result<Self> {
     let mut readers = Vec::with_capacity(meta.num_blocks);
     for i in 0..meta.num_blocks {
-      let bpv = meta.bpvs[i];
+      let block = meta
+        .block(i)
+        .ok_or_else(|| LuceneError::illegal_argument("Mismatched array lengths"))?;
+      let bpv = block.bits_per_value;
       if bpv == 0 {
         readers.push(DirectPackedEnum::Zeroes(Zeroes));
       } else if merging
@@ -152,14 +152,14 @@ where
         readers.push(DirectReader::get_merge_instance_with_base_offset(
           None,
           bpv as i32,
-          meta.offsets[i],
+          block.offset,
           1 << meta.block_shift,
         ));
       } else {
         readers.push(DirectReader::get_instance_with_offset(
           None,
           bpv as i32,
-          meta.offsets[i],
+          block.offset,
         )?);
       }
     }
@@ -195,16 +195,36 @@ where
     )
   }
 }
-/// In-memory metadata that needs to be kept around for
-/// [`DirectMonotonicReader`] to read data from disk.
+/// Decoded metadata for one block of monotonic values.
+#[derive(Clone, Copy, Default)]
+pub struct MetaBlock {
+  pub min: i64,
+  pub avg: f32,
+  pub bits_per_value: u8,
+  pub offset: usize,
+}
+
+/// Metadata retained by [`DirectMonotonicReader`]. A single block needs no array allocations.
 #[derive(Clone)]
 pub struct Meta {
   pub block_shift: i32,
   pub num_blocks: usize,
-  pub mins: Vec<i64>,
-  pub avgs: Vec<f32>,
-  pub bpvs: Vec<u8>,
-  pub offsets: Vec<usize>,
+  storage: MetaStorage,
+}
+
+#[derive(Clone)]
+enum MetaStorage {
+  Empty,
+  Single(MetaBlock),
+  Multiple(Box<MetaArrays>),
+}
+
+#[derive(Clone)]
+struct MetaArrays {
+  mins: Box<[i64]>,
+  avgs: Box<[f32]>,
+  bpvs: Box<[u8]>,
+  offsets: Box<[usize]>,
 }
 
 impl Meta {
@@ -217,74 +237,137 @@ impl Meta {
   }
 
   pub fn new(num_values: i64, block_shift: i32) -> Self {
-    let num_blocks_usize = Self::block_count(num_values, block_shift);
-    Meta {
+    let num_blocks = Self::block_count(num_values, block_shift);
+    let storage = match num_blocks {
+      0 => MetaStorage::Empty,
+      1 => MetaStorage::Single(MetaBlock::default()),
+      count => MetaStorage::Multiple(Box::new(MetaArrays {
+        mins: vec![0; count].into_boxed_slice(),
+        avgs: vec![0.0; count].into_boxed_slice(),
+        bpvs: vec![0; count].into_boxed_slice(),
+        offsets: vec![0; count].into_boxed_slice(),
+      })),
+    };
+    Self {
       block_shift,
-      num_blocks: num_blocks_usize,
-      mins: vec![0; num_blocks_usize],
-      avgs: vec![0.0; num_blocks_usize],
-      bpvs: vec![0; num_blocks_usize],
-      offsets: vec![0; num_blocks_usize],
+      num_blocks,
+      storage,
     }
   }
 
-  /// Returns a new object with identical properties.
+  /// Returns the metadata for a block, or `None` if the index is out of range.
+  pub fn block(&self, index: usize) -> Option<MetaBlock> {
+    match &self.storage {
+      MetaStorage::Empty => None,
+      MetaStorage::Single(block) => (index == 0).then_some(*block),
+      MetaStorage::Multiple(arrays) => Some(MetaBlock {
+        min: *arrays.mins.get(index)?,
+        avg: *arrays.avgs.get(index)?,
+        bits_per_value: *arrays.bpvs.get(index)?,
+        offset: *arrays.offsets.get(index)?,
+      }),
+    }
+  }
+
+  /// Replaces the metadata for an existing block.
+  pub fn set_block(&mut self, index: usize, block: MetaBlock) -> Result<()> {
+    if index >= self.storage_len() {
+      return Err(LuceneError::illegal_argument("block index is out of range"));
+    }
+    match &mut self.storage {
+      MetaStorage::Single(value) => *value = block,
+      MetaStorage::Multiple(arrays) => {
+        arrays.mins[index] = block.min;
+        arrays.avgs[index] = block.avg;
+        arrays.bpvs[index] = block.bits_per_value;
+        arrays.offsets[index] = block.offset;
+      },
+      MetaStorage::Empty => {},
+    }
+    Ok(())
+  }
+
+  fn storage_len(&self) -> usize {
+    match &self.storage {
+      MetaStorage::Empty => 0,
+      MetaStorage::Single(_) => 1,
+      MetaStorage::Multiple(arrays) => arrays.mins.len(),
+    }
+  }
+
   pub fn single_zero_block() -> Self {
-    Meta::new(1, 63)
+    Self::new(1, 63)
   }
 }
 
 impl Accountable for Meta {
   fn ram_bytes_used(&self) -> Result<i64> {
-    Ok(
-      size_of_vec(&self.mins)
-        .saturating_add(size_of_vec(&self.avgs))
-        .saturating_add(size_of_vec(&self.bpvs))
-        .saturating_add(size_of_vec(&self.offsets)),
-    )
+    match &self.storage {
+      MetaStorage::Empty | MetaStorage::Single(_) => Ok(0),
+      MetaStorage::Multiple(arrays) => Ok(
+        (size_of::<MetaArrays>() as i64)
+          .saturating_add(size_of_slice(&arrays.mins))
+          .saturating_add(size_of_slice(&arrays.avgs))
+          .saturating_add(size_of_slice(&arrays.bpvs))
+          .saturating_add(size_of_slice(&arrays.offsets)),
+      ),
+    }
   }
 }
 
 use crate::core::store::IndexInput;
 use crate::core::util::TryIntoInt;
 
-/// Load metadata from the given [`IndexInput`].
-///
-/// # See also
-/// [`DirectMonotonicReader::get_instance`]
+/// Loads metadata in the same order as the on-disk monotonic block format.
 pub fn load_meta<II>(meta_in: &mut II, num_values: i64, block_shift: i32) -> Result<Meta>
 where
   II: IndexInput,
 {
-  let mut all_values_zero = true;
   let num_blocks = Meta::block_count(num_values, block_shift);
-  let mut meta = Meta {
-    block_shift,
-    num_blocks,
-    mins: Vec::with_capacity(num_blocks),
-    avgs: Vec::with_capacity(num_blocks),
-    offsets: Vec::with_capacity(num_blocks),
-    bpvs: Vec::with_capacity(num_blocks),
-  };
+  if num_blocks == 1 {
+    let min = meta_in.read_long()?;
+    let avg_int = meta_in.read_int()?;
+    let offset = meta_in.read_long()?.try_convert()?;
+    let bits_per_value = meta_in.read_byte()?;
+    let all_zero = min == 0 && avg_int == 0 && bits_per_value == 0;
+    return Ok(Meta {
+      block_shift: if all_zero { 63 } else { block_shift },
+      num_blocks,
+      storage: MetaStorage::Single(MetaBlock {
+        min,
+        avg: f32::from_bits(avg_int as u32),
+        bits_per_value,
+        offset: if all_zero { 0 } else { offset },
+      }),
+    });
+  }
+  let mut all_values_zero = true;
+  let mut mins = Vec::with_capacity(num_blocks);
+  let mut avgs = Vec::with_capacity(num_blocks);
+  let mut offsets = Vec::with_capacity(num_blocks);
+  let mut bpvs = Vec::with_capacity(num_blocks);
   for _ in 0..num_blocks {
     let min = meta_in.read_long()?;
-    meta.mins.push(min);
+    mins.push(min);
     let avg_int = meta_in.read_int()?;
-    meta.avgs.push(f32::from_bits(avg_int as u32));
-    meta.offsets.push(meta_in.read_long()?.try_convert()?);
+    avgs.push(f32::from_bits(avg_int as u32));
+    offsets.push(meta_in.read_long()?.try_convert()?);
     let bpv = meta_in.read_byte()?;
-    meta.bpvs.push(bpv);
-    all_values_zero = all_values_zero && (min == 0) && (avg_int == 0) && (bpv == 0);
+    bpvs.push(bpv);
+    all_values_zero = all_values_zero && min == 0 && avg_int == 0 && bpv == 0;
   }
   if all_values_zero {
-    if meta.num_blocks == 1 {
-      meta.block_shift = 63;
-      meta.offsets[0] = 0;
-      Ok(meta)
-    } else {
-      Ok(Meta::single_zero_block())
-    }
+    Ok(Meta::single_zero_block())
   } else {
-    Ok(meta)
+    Ok(Meta {
+      block_shift,
+      num_blocks,
+      storage: MetaStorage::Multiple(Box::new(MetaArrays {
+        mins: mins.into_boxed_slice(),
+        avgs: avgs.into_boxed_slice(),
+        offsets: offsets.into_boxed_slice(),
+        bpvs: bpvs.into_boxed_slice(),
+      })),
+    })
   }
 }

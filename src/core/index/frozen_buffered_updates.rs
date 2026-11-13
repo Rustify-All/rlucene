@@ -81,7 +81,7 @@ pub(crate) struct FrozenBufferedUpdates {
   // Counts down once all deletes/updates have been applied
   pub(crate) applied: AtomicBool,
   pub(crate) apply_lock: ReentrantMutex<()>,
-  field_updates: HashMap<String, FieldUpdatesBuffer>,
+  field_updates: HashMap<Box<str>, Box<FieldUpdatesBuffer>>,
   /// How many total documents were deleted/updated.
   pub(crate) total_del_count: AtomicI64,
   field_updates_count: i32,
@@ -277,7 +277,7 @@ impl FrozenBufferedUpdates {
   }
   pub(crate) fn apply_doc_values_updates<D>(
     seg_state: &SegmentState<D>,
-    updates: &HashMap<String, FieldUpdatesBuffer>,
+    updates: &HashMap<Box<str>, Box<FieldUpdatesBuffer>>,
     del_gen: i64,
     segment_private_deletes: bool,
   ) -> Result<i64>
@@ -295,7 +295,7 @@ impl FrozenBufferedUpdates {
         TermsProviderImpl2::new(seg_state.reader.as_ref()),
         iterator.is_sorted_terms(),
       );
-      let mut dv_updates = None;
+      let mut field_update = None;
 
       while let Some(buffered_update) = iterator.next_value()? {
         let term_value = buffered_update.term_value.ok_or_else(|| {
@@ -323,9 +323,11 @@ impl FrozenBufferedUpdates {
             )
           };
 
-          if dv_updates.is_none() {
+          let update = if let Some(update) = &mut field_update {
+            update
+          } else {
             let max_doc = seg_state.reader.max_doc()?;
-            let field = update_field.clone();
+            let field = Arc::<str>::from(update_field.as_ref());
             let v = if is_numeric {
               if value.has_single_value() {
                 let sub = SingleValueNumericDocValuesFieldUpdates::new(value.get_numeric_value(0)?);
@@ -346,21 +348,8 @@ impl FrozenBufferedUpdates {
               let sub_type = sub.sub_type();
               DocValuesFieldUpdates::new(max_doc, del_gen, field, sub_type, sub)?
             };
-            if resolved_updates.is_empty() {
-              resolved_updates.reserve_exact(updates.len());
-            }
-            resolved_updates.push(v);
-            dv_updates = Some(resolved_updates.len() - 1);
-          }
-
-          let update_index = dv_updates.ok_or_else(|| {
-            LuceneError::illegal_state("doc values update slot was not initialized")
-          })?;
-          let update = resolved_updates.get_mut(update_index).ok_or_else(|| {
-            LuceneError::illegal_state(format!(
-              "doc values update index {update_index} is out of bounds"
-            ))
-          })?;
+            field_update.insert(v)
+          };
           let count = if !buffered_update.has_value {
             let mut consumer = ResetDocValuesConsumer { update };
             Self::apply_update_docs(
@@ -395,14 +384,20 @@ impl FrozenBufferedUpdates {
           update_count += count;
         }
       }
+      if let Some(update) = field_update
+        && update.any()
+      {
+        // Use the same allocation while staging and after publishing.
+        resolved_updates.push(Arc::new(update));
+      }
     }
 
-    // now freeze & publish:
+    // Resolve all fields before finishing or publishing any packet.
     for mut update in resolved_updates {
-      if update.any() {
-        update.finish()?;
-        seg_state.rld.add_dv_update(update)?;
-      }
+      Arc::get_mut(&mut update)
+        .ok_or_else(|| LuceneError::illegal_state("staged doc values update is shared"))?
+        .finish()?;
+      seg_state.rld.add_dv_update(update)?;
     }
 
     Ok(update_count)

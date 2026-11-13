@@ -196,7 +196,8 @@ where
   version: i32,
   postings_writer: PW,
   field_infos: Arc<FieldInfos>,
-  fields: Vec<GrowableByteArrayDataOutput>,
+  field_count: usize,
+  field_metadata: ByteBuffersDataOutput,
   closed: bool,
 }
 impl<O, PW> Lucene90BlockTreeTermsWriter<O, PW>
@@ -322,7 +323,8 @@ where
       version,
       postings_writer,
       field_infos: Arc::clone(&state.field_infos),
-      fields: vec![],
+      field_count: 0,
+      field_metadata: ByteBuffersDataOutput::new(),
       closed: false,
     })
   }
@@ -409,10 +411,8 @@ where
             };
             reuse = terms_writer.write(term, &mut terms_enum, norms, reuse)?;
           }
-          if let Some(field_meta) =
-            terms_writer.finish_field(GrowableByteArrayDataOutput::new, &mut self.index_out)?
-          {
-            self.fields.push(field_meta);
+          if terms_writer.finish_field(&mut self.field_metadata, &mut self.index_out)? {
+            self.field_count += 1;
           }
         },
         None => break,
@@ -435,10 +435,8 @@ where
 
     let mut success = false;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
-      self.meta_out.write_vint(self.fields.len() as i32)?;
-      for field_meta in &self.fields {
-        field_meta.write_to_data_output(&mut self.meta_out)?;
-      }
+      self.meta_out.write_vint(self.field_count as i32)?;
+      self.field_metadata.copy_to(&mut self.meta_out)?;
       CodecUtil::write_footer(&mut self.index_out)?;
       self
         .meta_out
@@ -1305,17 +1303,14 @@ where
     O: IndexOutput,
     PW: PostingsWriterBase,
   {
-    if let Some(field_meta) = self.finish_field(ByteBuffersDataOutput::new, index_out)? {
+    let mut field_meta = ByteBuffersDataOutput::new();
+    if self.finish_field(&mut field_meta, index_out)? {
       fields.push(field_meta);
     }
     Ok(())
   }
 
-  fn finish_field<DO: DataOutput>(
-    &mut self,
-    make_metadata: impl FnOnce() -> DO,
-    index_out: &mut O,
-  ) -> Result<Option<DO>>
+  fn finish_field<DO: DataOutput>(&mut self, meta_out: &mut DO, index_out: &mut O) -> Result<bool>
   where
     O: IndexOutput,
     PW: PostingsWriterBase,
@@ -1356,8 +1351,6 @@ where
         .and_then(Option::as_ref)
         .ok_or_else(|| LuceneError::illegal_state("root terms index has no empty output"))?;
 
-      let mut meta_out = make_metadata();
-
       meta_out.write_vint(self.field_info.get_field_number())?;
       meta_out.write_vlong(self.num_terms)?;
 
@@ -1378,18 +1371,18 @@ where
         .first_pending_term_bytes
         .take()
         .ok_or_else(|| LuceneError::illegal_state("first pending term is missing"))?;
-      self.write_bytes_ref(&mut meta_out, &BytesRef::from_bytes(first_term_bytes))?;
+      self.write_bytes_ref(meta_out, &BytesRef::from_bytes(first_term_bytes))?;
       let last_term_bytes = last_pending_term_bytes
         .ok_or_else(|| LuceneError::illegal_state("last pending term is missing"))?;
-      self.write_bytes_ref(&mut meta_out, &BytesRef::from_bytes(last_term_bytes))?;
+      self.write_bytes_ref(meta_out, &BytesRef::from_bytes(last_term_bytes))?;
       meta_out.write_vlong(index_out.get_file_pointer()? as i64)?;
       root
         .index
         .as_mut()
         .ok_or_else(|| LuceneError::illegal_state("root terms index is missing"))?
-        .save(&mut meta_out, index_out)?;
+        .save(meta_out, index_out)?;
 
-      return Ok(Some(meta_out));
+      return Ok(true);
     } else {
       debug_assert!(
         self.sum_total_term_freq == 0
@@ -1403,7 +1396,7 @@ where
       );
     }
 
-    Ok(None)
+    Ok(false)
   }
   fn write_bytes_ref<AV, DO>(&self, out: &mut DO, bytes: &BytesRef<AV>) -> Result<()>
   where

@@ -57,24 +57,21 @@ where
     D: Directory<IndexInput = I>,
     D1: Directory<IndexInput = I>,
   {
-    let num_dv_fields = if all_infos.has_doc_values() {
-      all_infos
-        .iter()
-        .filter(|fi| *fi.get_doc_values_type() != DocValuesType::None)
-        .count()
-    } else {
-      0
-    };
+    let mut num_dv_fields = 0;
+    let mut num_dv_gens = 0;
+    let mut has_base_producer = false;
+    for fi in all_infos {
+      if *fi.get_doc_values_type() != DocValuesType::None {
+        num_dv_fields += 1;
+        if fi.get_doc_values_gen() == -1 {
+          has_base_producer = true;
+        } else {
+          num_dv_gens += 1;
+        }
+      }
+    }
+    num_dv_gens += usize::from(has_base_producer);
     let mut dv_producers_by_field = HashMap::with_capacity(num_dv_fields);
-    let num_dv_gens = all_infos
-      .iter()
-      .filter(|fi| {
-        *fi.get_doc_values_type() != DocValuesType::None && fi.get_doc_values_gen() != -1
-      })
-      .count()
-      + usize::from(all_infos.iter().any(|fi| {
-        *fi.get_doc_values_type() != DocValuesType::None && fi.get_doc_values_gen() == -1
-      }));
     let mut dv_producers = smallvec::SmallVec::with_capacity(num_dv_gens);
     let mut producer_indices = (num_dv_gens > 2).then(|| HashMap::with_capacity(num_dv_gens));
     let mut dv_gens = smallvec::SmallVec::with_capacity(num_dv_gens);

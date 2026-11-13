@@ -48,6 +48,7 @@ use crate::core::util::bits::Bits;
 use crate::core::util::close::CloseableRef;
 use crate::core::util::dummy::dummy_hnsw_graph::DummyHnswGraph;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
+use crate::core::util::ram_usage_estimator::size_of_hash_map;
 use std::collections::HashMap;
 use std::mem;
 use std::sync::Arc;
@@ -55,7 +56,7 @@ use std::sync::Arc;
 /// Reads vectors from the index segments.
 pub struct Lucene99FlatVectorsReader<I, F> {
   field_infos: Arc<FieldInfos>,
-  fields: HashMap<i32, FieldEntry>,
+  fields: HashMap<i32, Box<FieldEntry>>,
   vector_data: Arc<I>,
   vector_scorer: F,
 }
@@ -94,7 +95,7 @@ where
   fn read_metadata<D1, D2>(
     state: &SegmentReadState<D1>,
     segment_info: &SegmentInfo<D2>,
-    fields: &mut HashMap<i32, FieldEntry>,
+    fields: &mut HashMap<i32, Box<FieldEntry>>,
   ) -> Result<i32>
   where
     D1: Directory,
@@ -173,7 +174,7 @@ where
   fn read_fields<II>(
     meta: &mut II,
     infos: &FieldInfos,
-    fields: &mut HashMap<i32, FieldEntry>,
+    fields: &mut HashMap<i32, Box<FieldEntry>>,
   ) -> Result<()>
   where
     II: ChecksumIndexInput,
@@ -191,7 +192,7 @@ where
       };
 
       let field_entry = FieldEntry::create(meta, info)?;
-      fields.insert(info.number, field_entry);
+      fields.insert(info.number, Box::new(field_entry));
 
       field_number = meta.read_int()?;
     }
@@ -344,7 +345,13 @@ where
 
 impl<I, F> Accountable for Lucene99FlatVectorsReader<I, F> {
   fn ram_bytes_used(&self) -> Result<i64> {
-    self.fields.ram_bytes_used()
+    let mut size = size_of_hash_map(&self.fields);
+    for entry in self.fields.values() {
+      size = size
+        .saturating_add(mem::size_of_val(entry.as_ref()) as i64)
+        .saturating_add(entry.ram_bytes_used()?);
+    }
+    Ok(size)
   }
 }
 

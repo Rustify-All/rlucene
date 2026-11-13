@@ -47,9 +47,8 @@ where
   pub(crate) num_leaves: i32,
   index_in: Option<Arc<I>>,
   data_in: Arc<Mutex<I>>,
-  min_packed_value: Box<[u8]>,
-  // Reuse the minimum when both packed bounds are equal.
-  max_packed_value: Option<Box<[u8]>>,
+  // Minimum followed by maximum, or only the minimum when both are equal.
+  packed_bounds: Box<[u8]>,
   point_count: usize,
   doc_count: i32,
   version: i32,
@@ -131,7 +130,7 @@ where
     let num_leaves = meta_in.read_vint()?;
     debug_assert!(num_leaves > 0);
     let packed_index_bytes_length = config.packed_index_bytes_length();
-    let min_packed_value = meta_in.get_bytes(packed_index_bytes_length)?.into_owned();
+    let mut min_packed_value = meta_in.get_bytes(packed_index_bytes_length)?.into_owned();
     let max_packed_value = meta_in.get_bytes(packed_index_bytes_length)?.into_owned();
 
     let bytes_per_dim = config.bytes_per_dim;
@@ -149,8 +148,10 @@ where
       }
     }
 
-    let max_packed_value =
-      (min_packed_value != max_packed_value).then(|| max_packed_value.into_boxed_slice());
+    if min_packed_value != max_packed_value {
+      min_packed_value.extend_from_slice(&max_packed_value);
+    }
+    let packed_bounds = min_packed_value.into_boxed_slice();
     let point_count = meta_in.read_vlong()?.try_convert()?;
     let doc_count = meta_in.read_vint()?;
     let num_index_bytes = meta_in.read_vint()?.try_convert()?;
@@ -160,8 +161,7 @@ where
         num_leaves,
         index_in: None,
         data_in,
-        min_packed_value: min_packed_value.into_boxed_slice(),
-        max_packed_value,
+        packed_bounds,
         point_count,
         doc_count,
         version,
@@ -180,6 +180,15 @@ where
     self.is_tree_balanced = self.num_leaves != 1 && self.is_tree_balanced()?;
     Ok(())
   }
+  fn min_packed_value(&self) -> &[u8] {
+    &self.packed_bounds[..self.config.packed_index_bytes_length()]
+  }
+
+  fn max_packed_value(&self) -> &[u8] {
+    let start = self.packed_bounds.len() - self.config.packed_index_bytes_length();
+    &self.packed_bounds[start..]
+  }
+
   /// Checks if the tree is balanced.
   pub(crate) fn is_tree_balanced(&self) -> Result<bool> {
     if self.version >= VERSION_META_FILE {
@@ -217,15 +226,11 @@ where
   I: IndexInput,
 {
   fn get_min_packed_value(&self) -> Result<Option<Cow<'_, [u8]>>> {
-    Ok(Some(Cow::Borrowed(&self.min_packed_value)))
+    Ok(Some(Cow::Borrowed(self.min_packed_value())))
   }
 
   fn get_max_packed_value(&self) -> Result<Option<Cow<'_, [u8]>>> {
-    let max_packed_value = self
-      .max_packed_value
-      .as_deref()
-      .unwrap_or(&self.min_packed_value);
-    Ok(Some(Cow::Borrowed(max_packed_value)))
+    Ok(Some(Cow::Borrowed(self.max_packed_value())))
   }
 
   fn get_num_dimensions(&self) -> Result<usize> {
@@ -285,11 +290,8 @@ where
       self.num_leaves,
       self.version,
       self.point_count,
-      &self.min_packed_value,
-      self
-        .max_packed_value
-        .as_deref()
-        .unwrap_or(&self.min_packed_value),
+      self.min_packed_value(),
+      self.max_packed_value(),
       self.is_tree_balanced,
     )
   }

@@ -168,10 +168,8 @@ where
     II: IndexInput,
   {
     let count = field_infos.iter().filter(|info| info.has_norms()).count();
-    let mut norms = NormsEntries {
-      by_field: HashMap::with_capacity(count),
-      values: Vec::with_capacity(count),
-    };
+    let mut by_field = HashMap::with_capacity(count);
+    let mut values = Vec::with_capacity(count);
     loop {
       let field_number = meta.read_int()?;
       if field_number == -1 {
@@ -195,7 +193,7 @@ where
       let jump_table_entry_count = meta.read_short()?;
 
       let dense_rank_power = meta.read_byte()? as i8;
-      let num_docs_with_field = meta.read_int()?.try_convert()?;
+      let num_docs_with_field = meta.read_int()?.try_convert()? as u32;
       let bytes_per_norm = meta.read_byte()? as i8;
 
       match bytes_per_norm {
@@ -219,15 +217,19 @@ where
         num_docs_with_field,
         norms_offset,
       };
-      match norms.by_field.entry(info_number) {
-        Entry::Occupied(slot) => norms.values[*slot.get()] = value,
+      match by_field.entry(info_number) {
+        Entry::Occupied(slot) => values[*slot.get() as usize] = value,
         Entry::Vacant(slot) => {
-          slot.insert(norms.values.len());
-          norms.values.push(value);
+          // There is at most one slot per field number.
+          slot.insert(values.len() as u32);
+          values.push(value);
         },
       }
     }
-    Ok(norms)
+    Ok(NormsEntries {
+      by_field: NormsFieldIndex::from_map(by_field),
+      values,
+    })
   }
   fn get_data_input(
     &self,
@@ -238,7 +240,7 @@ where
       return Ok(RandomAccessSliceEnum::Shared(Arc::clone(existing)));
     }
 
-    let length = entry.num_docs_with_field * entry.bytes_per_norm as usize;
+    let length = entry.num_docs_with_field as usize * entry.bytes_per_norm as usize;
     let slice = self
       .data
       .random_access_slice(entry.norms_offset.try_convert()?, length)?;
@@ -369,7 +371,7 @@ where
     write!(
       f,
       "Lucene90NormsProducer(fields={})",
-      self.norms.by_field.len()
+      self.norms.values.len()
     )
   }
 }
@@ -397,7 +399,7 @@ macro_rules! impl_norms_producer {
         let slot = self.norms.by_field.get(&field.number).ok_or_else(|| {
           LuceneError::illegal_state(format!("norms entry is missing for field {}", field.name))
         })?;
-        let entry = &self.norms.values[*slot];
+        let entry = &self.norms.values[*slot as usize];
         if entry.docs_with_field_offset == -2 {
           // empty
           return Ok(Lucene90NormNumericDocValuesEnum::Empty(
@@ -571,8 +573,42 @@ impl_norms_producer!(
 
 #[derive(Default)]
 struct NormsEntries {
-  by_field: HashMap<i32, usize>,
+  by_field: NormsFieldIndex,
   values: Vec<NormsEntry>,
+}
+
+#[derive(Default)]
+enum NormsFieldIndex {
+  #[default]
+  Empty,
+  Dense(Box<[u32]>),
+  Sparse(HashMap<i32, u32>),
+}
+
+impl NormsFieldIndex {
+  fn from_map(fields: HashMap<i32, u32>) -> Self {
+    let max_field = fields.keys().copied().max().unwrap_or(-1);
+    if fields.len() >= 64 && max_field >= 0 && (max_field as usize) < fields.len().saturating_mul(2)
+    {
+      let mut slots = vec![u32::MAX; max_field as usize + 1];
+      for (field, slot) in fields {
+        slots[field as usize] = slot;
+      }
+      Self::Dense(slots.into_boxed_slice())
+    } else {
+      Self::Sparse(fields)
+    }
+  }
+
+  fn get(&self, field: &i32) -> Option<&u32> {
+    match self {
+      Self::Empty => None,
+      Self::Dense(slots) => slots
+        .get(usize::try_from(*field).ok()?)
+        .filter(|&&slot| slot != u32::MAX),
+      Self::Sparse(fields) => fields.get(field),
+    }
+  }
 }
 
 #[derive(Clone)]
@@ -582,7 +618,7 @@ struct NormsEntry {
   pub docs_with_field_offset: i64,
   pub docs_with_field_length: usize,
   pub jump_table_entry_count: i16,
-  pub num_docs_with_field: usize,
+  pub num_docs_with_field: u32,
   pub norms_offset: i64,
 }
 pub struct DenseNormsIterator<R> {

@@ -65,19 +65,47 @@ pub(crate) struct FieldUpdatesBuffer {
   values: FieldUpdateValues,
   docs_upto: smallvec::SmallVec<[i32; 1]>,
   has_values: Option<FixedBitSet>,
-  fields: smallvec::SmallVec<[usize; 1]>,
-  field_names: smallvec::SmallVec<[String; 1]>,
+  first_term_field: String,
+  mixed_term_fields: Option<Box<MixedTermFields>>,
   finished: bool,
+}
+
+#[derive(Debug)]
+struct MixedTermFields {
+  indices: Vec<usize>,
+  other_names: Vec<String>,
+}
+
+impl MixedTermFields {
+  fn field_name<'a>(&'a self, first: &'a String, index: usize) -> &'a String {
+    if index == 0 {
+      first
+    } else {
+      &self.other_names[index - 1]
+    }
+  }
+
+  // Keep the prior Vec<String> accounting for selector names and capacity.
+  fn size_of_fields(&self, first: &String) -> i64 {
+    self.indices.iter().fold(
+      size_of_array_capacity::<String>(self.indices.capacity()),
+      |size, &index| size.saturating_add(ram_size_of_string(self.field_name(first, index))),
+    )
+  }
 }
 
 #[derive(Debug)]
 enum FieldUpdateValues {
   Binary(Option<Box<BytesRefArray>>),
-  Numeric {
-    values: smallvec::SmallVec<[i64; 1]>,
-    max: i64,
-    min: i64,
-  },
+  ConstantNumeric(Option<i64>),
+  MixedNumeric(Box<MixedNumericUpdates>),
+}
+
+#[derive(Debug)]
+struct MixedNumericUpdates {
+  values: Vec<i64>,
+  max: i64,
+  min: i64,
 }
 
 impl FieldUpdatesBuffer {
@@ -105,19 +133,14 @@ impl FieldUpdatesBuffer {
       term_values,
       term_sort_state: None,
       values: if is_numeric {
-        FieldUpdateValues::Numeric {
-          values: smallvec::SmallVec::new(),
-          max: i64::MIN,
-          min: i64::MAX,
-        }
+        FieldUpdateValues::ConstantNumeric(None)
       } else {
         FieldUpdateValues::Binary(None)
       },
       docs_upto: smallvec::smallvec![doc_upto],
       has_values,
-      // TODO: we should estimate the size of the fields array
-      fields: smallvec::smallvec![0],
-      field_names: smallvec::smallvec![term.field.clone()],
+      first_term_field: term.field.clone(),
+      mixed_term_fields: None,
       finished: false,
     };
     buffer.term_values.append(&term.bytes)?;
@@ -132,19 +155,13 @@ impl FieldUpdatesBuffer {
       .sub_update
       .get_numeric()
       .ok_or_else(|| LuceneError::illegal_argument("Missing numeric value"))?;
-    let has_values = numeric.has_value();
-    let (numeric_values, max_numeric, min_numeric) = if has_values {
-      let value = numeric.get_value()?;
-      (smallvec::smallvec![value], value, value)
+    let value = if numeric.has_value() {
+      Some(numeric.get_value()?)
     } else {
-      (smallvec::smallvec![0], i64::MIN, i64::MAX)
+      None
     };
     let mut buffer = Self::new(bytes_used, initial_value, doc_upto, true)?;
-    buffer.values = FieldUpdateValues::Numeric {
-      values: numeric_values,
-      max: max_numeric,
-      min: min_numeric,
-    };
+    buffer.values = FieldUpdateValues::ConstantNumeric(value);
     {
       buffer.bytes_used.add_and_get(BitUtil::LONG_BYTES as i64);
     }
@@ -177,19 +194,11 @@ impl FieldUpdatesBuffer {
     ram_size_of_string(s)
   }
 
-  // Keep the old Vec<String> accounting so RAM-based flush thresholds do not change.
-  fn size_of_fields(fields: &smallvec::SmallVec<[usize; 1]>, field_names: &[String]) -> i64 {
-    let vec_size = (std::mem::size_of::<String>() as i64)
-      .saturating_mul(i64::try_from(fields.capacity()).unwrap_or(i64::MAX));
-    fields.iter().fold(vec_size, |size, field| {
-      size.saturating_add(ram_size_of_string(&field_names[*field]))
-    })
-  }
-
   pub(crate) fn get_max_numeric(&self) -> i64 {
     debug_assert!(self.is_numeric());
     match &self.values {
-      FieldUpdateValues::Numeric { max, min, .. } if *min != i64::MAX || *max != i64::MIN => *max,
+      FieldUpdateValues::ConstantNumeric(value) => value.unwrap_or(0),
+      FieldUpdateValues::MixedNumeric(values) => values.max,
       _ => 0,
     }
   }
@@ -197,7 +206,8 @@ impl FieldUpdatesBuffer {
   pub(crate) fn get_min_numeric(&self) -> i64 {
     debug_assert!(self.is_numeric());
     match &self.values {
-      FieldUpdateValues::Numeric { max, min, .. } if *min != i64::MAX || *max != i64::MIN => *min,
+      FieldUpdateValues::ConstantNumeric(value) => value.unwrap_or(0),
+      FieldUpdateValues::MixedNumeric(values) => values.min,
       _ => 0,
     }
   }
@@ -209,40 +219,42 @@ impl FieldUpdatesBuffer {
     has_value: bool,
   ) -> Result<()> {
     debug_assert!(!self.finished, "buffer was finished already");
-    let fields_len = self.fields.len();
-    let first_field_index = self.fields[0];
-    if self.field_names[first_field_index] != field || fields_len != 1 {
-      let old_size =
-        (fields_len <= ord).then(|| Self::size_of_fields(&self.fields, &self.field_names));
-      let field_index = if self.field_names[first_field_index] == field {
-        first_field_index
-      } else if let Some(index) = self.field_names.iter().position(|name| name == field) {
-        index
+    if self.first_term_field != field || self.mixed_term_fields.is_some() {
+      let first_field = &self.first_term_field;
+      let fields = self.mixed_term_fields.get_or_insert_with(|| {
+        self
+          .bytes_used
+          .add_and_get(size_of::<MixedTermFields>() as i64);
+        Box::new(MixedTermFields {
+          indices: vec![0],
+          other_names: Vec::new(),
+        })
+      });
+      let old_size = (fields.indices.len() <= ord).then(|| fields.size_of_fields(first_field));
+      let field_index = if first_field == field {
+        0
+      } else if let Some(index) = fields.other_names.iter().position(|name| name == field) {
+        index + 1
       } else {
-        self.field_names.push(field.to_owned());
-        self.field_names.len() - 1
+        fields.other_names.push(field.to_owned());
+        fields.other_names.len()
       };
-
       if let Some(old_size) = old_size {
-        let fill = if fields_len == 1 {
-          first_field_index
-        } else {
-          0
-        };
         ArrayUtil::oversize(ord + 1, size_of::<usize>())?;
-        if self.fields.capacity() < ord + 1 {
-          let capacity = (ord + 1).max(self.fields.capacity() * 2).max(4);
-          self.fields.reserve_exact(capacity - self.fields.len());
+        if fields.indices.capacity() < ord + 1 {
+          let capacity = (ord + 1).max(fields.indices.capacity() * 2).max(4);
+          fields
+            .indices
+            .reserve_exact(capacity - fields.indices.len());
         }
-        self.fields.resize(ord + 1, fill);
-        self.fields[ord] = field_index;
-        self.bytes_used.add_and_get(
-          Self::size_of_fields(&self.fields, &self.field_names).saturating_sub(old_size),
-        );
+        fields.indices.resize(ord + 1, 0);
+        self
+          .bytes_used
+          .add_and_get(fields.size_of_fields(first_field).saturating_sub(old_size));
       } else {
         self.bytes_used.add_and_get(ram_size_of_str(field));
-        self.fields[ord] = field_index;
       }
+      fields.indices[ord] = field_index;
     }
 
     let docs_upto_len = self.docs_upto.len();
@@ -299,38 +311,52 @@ impl FieldUpdatesBuffer {
     let ord = self.append(term)?;
     let field = &term.field;
     self.add(field, doc_upto, ord, true)?;
-    let FieldUpdateValues::Numeric {
-      values: numeric_values,
-      max: maximum,
-      min: minimum,
-    } = &mut self.values
-    else {
-      return Err(LuceneError::illegal_state(
-        "numeric_values is missing for numeric updates",
-      ));
-    };
-    *minimum = min(*minimum, value);
-    *maximum = max(*maximum, value);
-    let numeric_values_len = numeric_values.len();
-    if numeric_values[0] != value || numeric_values_len != 1 {
-      if numeric_values_len <= ord {
-        let old_size = (numeric_values.capacity() * BitUtil::LONG_BYTES) as i64;
-        let fill = if numeric_values_len == 1 {
-          numeric_values[0]
+    match &mut self.values {
+      FieldUpdateValues::ConstantNumeric(current) => {
+        // Clear entries used a zero placeholder in the shared value slot.
+        // Preserve the slot until a set operation actually differs from it.
+        let fill = current.unwrap_or(0);
+        if fill == value {
+          *current = Some(value);
         } else {
-          0
-        };
-        ArrayUtil::oversize(ord + 1, BitUtil::LONG_BYTES)?;
-        if numeric_values.capacity() < ord + 1 {
-          let capacity = (ord + 1).max(numeric_values.capacity() * 2).max(4);
-          numeric_values.reserve_exact(capacity - numeric_values.len());
+          ArrayUtil::oversize(ord + 1, BitUtil::LONG_BYTES)?;
+          let mut values = Vec::with_capacity((ord + 1).max(4));
+          values.resize(ord + 1, fill);
+          values[ord] = value;
+          self.bytes_used.add_and_get(
+            (size_of::<MixedNumericUpdates>() + (values.capacity() - 1) * BitUtil::LONG_BYTES)
+              as i64,
+          );
+          self.values = FieldUpdateValues::MixedNumeric(Box::new(MixedNumericUpdates {
+            values,
+            max: current.map_or(value, |previous| max(previous, value)),
+            min: current.map_or(value, |previous| min(previous, value)),
+          }));
         }
-        numeric_values.resize(ord + 1, fill);
-        self.bytes_used.add_and_get(
-          ((numeric_values.capacity() * BitUtil::LONG_BYTES) as i64).saturating_sub(old_size),
-        );
-      }
-      numeric_values[ord] = value;
+      },
+      FieldUpdateValues::MixedNumeric(values) => {
+        values.min = min(values.min, value);
+        values.max = max(values.max, value);
+        let numeric_values = &mut values.values;
+        if numeric_values.len() <= ord {
+          let old_size = size_of_array_capacity::<i64>(numeric_values.capacity());
+          ArrayUtil::oversize(ord + 1, BitUtil::LONG_BYTES)?;
+          if numeric_values.capacity() < ord + 1 {
+            let capacity = (ord + 1).max(numeric_values.capacity() * 2).max(4);
+            numeric_values.reserve_exact(capacity - numeric_values.len());
+          }
+          numeric_values.resize(ord + 1, 0);
+          self.bytes_used.add_and_get(
+            size_of_array_capacity::<i64>(numeric_values.capacity()).saturating_sub(old_size),
+          );
+        }
+        numeric_values[ord] = value;
+      },
+      FieldUpdateValues::Binary(_) => {
+        return Err(LuceneError::illegal_state(
+          "numeric_values is missing for numeric updates",
+        ));
+      },
     }
     Ok(())
   }
@@ -381,8 +407,12 @@ impl FieldUpdatesBuffer {
       return Err(LuceneError::illegal_state("Buffer was finished already"));
     }
     self.finished = true;
-    let sorted_terms =
-      self.has_single_value() && self.has_values.is_none() && self.fields.len() == 1;
+    let sorted_terms = self.has_single_value()
+      && self.has_values.is_none()
+      && self
+        .mixed_term_fields
+        .as_ref()
+        .is_none_or(|fields| fields.indices.len() == 1);
     if sorted_terms {
       self.term_sort_state = Some(self.term_values.sort(NaturalOrder, true)?);
       debug_assert!(self.assert_term_and_doc_in_order()?);
@@ -439,11 +469,11 @@ impl FieldUpdatesBuffer {
     BufferedUpdateIterator::new(self)
   }
   pub(crate) fn is_numeric(&self) -> bool {
-    matches!(self.values, FieldUpdateValues::Numeric { .. })
+    !matches!(self.values, FieldUpdateValues::Binary(_))
   }
   pub(crate) fn has_single_value(&self) -> bool {
     // we only do this optimization for numerics so far.
-    matches!(&self.values, FieldUpdateValues::Numeric { values, .. } if values.len() == 1)
+    matches!(self.values, FieldUpdateValues::ConstantNumeric(_))
   }
   pub(crate) fn get_numeric_value(&self, idx: usize) -> Result<i64> {
     if let Some(ref has_values) = self.has_values
@@ -451,15 +481,17 @@ impl FieldUpdatesBuffer {
     {
       return Ok(0);
     }
-    let FieldUpdateValues::Numeric {
-      values: numeric_values,
-      ..
-    } = &self.values
-    else {
-      return Err(LuceneError::illegal_state("numeric_values is missing"));
-    };
-    let length = numeric_values.len();
-    Ok(numeric_values[Self::get_array_index(length, idx)])
+    self.numeric_value(idx)
+  }
+  fn numeric_value(&self, idx: usize) -> Result<i64> {
+    match &self.values {
+      FieldUpdateValues::ConstantNumeric(value) => Ok(value.unwrap_or(0)),
+      FieldUpdateValues::MixedNumeric(values) => {
+        let values = &values.values;
+        Ok(values[Self::get_array_index(values.len(), idx)])
+      },
+      FieldUpdateValues::Binary(_) => Err(LuceneError::illegal_state("numeric_values is missing")),
+    }
   }
   fn get_array_index(array_length: usize, index: usize) -> usize {
     debug_assert!(
@@ -476,9 +508,7 @@ pub struct BufferedUpdateIterator<'a> {
   byte_values_iterator: Option<IndexedBytesRefIteratorImpl<'a>>,
   buffered_update: BufferedUpdate<'a>,
   updates_with_value: Option<UpdateBits<'a>>,
-  fields_length: usize,
   docs_upto_length: usize,
-  numeric_values_length: usize,
   field_updates_buffer: &'a FieldUpdatesBuffer,
 }
 
@@ -492,16 +522,15 @@ impl<'a> BufferedUpdateIterator<'a> {
       .term_sort_state
       .as_ref()
       .map(|state| field_updates_buffer.term_values.iterator_with_state(state));
-    let (byte_values_iterator, numeric_values_length) = match &field_updates_buffer.values {
-      FieldUpdateValues::Binary(values) => (values.as_deref().map(BytesRefArray::iterator), 0),
-      FieldUpdateValues::Numeric { values, .. } => (None, values.len()),
+    let byte_values_iterator = match &field_updates_buffer.values {
+      FieldUpdateValues::Binary(values) => values.as_deref().map(BytesRefArray::iterator),
+      _ => None,
     };
     let updates_with_value = if let Some(item) = &field_updates_buffer.has_values {
       UpdateBits::B(item)
     } else {
       UpdateBits::A(MatchAllBits::new(field_updates_buffer.num_updates))
     };
-    let fields_length = field_updates_buffer.fields.len();
     let docs_upto_length = field_updates_buffer.docs_upto.len();
     debug_assert!(docs_upto_length <= i32::MAX as usize);
     Ok(BufferedUpdateIterator {
@@ -510,9 +539,7 @@ impl<'a> BufferedUpdateIterator<'a> {
       byte_values_iterator,
       buffered_update: BufferedUpdate::default(),
       updates_with_value: Some(updates_with_value),
-      fields_length,
       docs_upto_length,
-      numeric_values_length,
       field_updates_buffer,
     })
   }
@@ -535,19 +562,23 @@ impl<'a> BufferedUpdateIterator<'a> {
         .as_ref()
         .ok_or_else(|| LuceneError::illegal_state("updates_with_value is missing"))?
         .get(idx)?;
-      let field_index = self.field_updates_buffer.fields
-        [FieldUpdatesBuffer::get_array_index(self.fields_length, idx)];
-      buffered_update.term_field = &self.field_updates_buffer.field_names[field_index];
+      let first_field = &self.field_updates_buffer.first_term_field;
+      buffered_update.term_field = match &self.field_updates_buffer.mixed_term_fields {
+        Some(fields) => {
+          let index =
+            fields.indices[FieldUpdatesBuffer::get_array_index(fields.indices.len(), idx)];
+          fields.field_name(first_field, index)
+        },
+        None => first_field,
+      };
       buffered_update.doc_upto = self.field_updates_buffer.docs_upto
         [FieldUpdatesBuffer::get_array_index(self.docs_upto_length, idx)];
 
       let mut binary_value = None;
       if buffered_update.has_value {
-        if let FieldUpdateValues::Numeric { values, .. } = &self.field_updates_buffer.values {
-          buffered_update.numeric_value =
-            values[FieldUpdatesBuffer::get_array_index(self.numeric_values_length, idx)];
+        if self.field_updates_buffer.is_numeric() {
+          buffered_update.numeric_value = self.field_updates_buffer.numeric_value(idx)?;
         } else {
-          debug_assert!(self.numeric_values_length == 0);
           if let Some(iterator) = &mut self.byte_values_iterator {
             binary_value = match iterator.next()? {
               Some((_, BytesRefValueEnum::Buffer(Cow::Owned(mut value)))) => {

@@ -49,14 +49,15 @@ pub struct BytesRefArray {
 
 #[derive(Debug)]
 enum ByteStorage {
-  Blocks(ByteBlockPool),
+  Blocks(Box<ByteBlockPool>),
   Compact(Vec<u8>),
 }
 
 impl BytesRefArray {
   pub fn new(byte_used: SharedCounter) -> Result<BytesRefArray> {
     let allocator = DirectTrackingAllocatorByte::new(byte_used.clone());
-    let storage = ByteStorage::Blocks(ByteBlockPool::new(allocator));
+    byte_used.add_and_get(size_of::<ByteBlockPool>() as i64);
+    let storage = ByteStorage::Blocks(Box::new(ByteBlockPool::new(allocator)));
     Ok(Self::with_storage(byte_used, storage))
   }
 

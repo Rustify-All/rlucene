@@ -36,7 +36,7 @@ where
 {
   index_in: Arc<I>,
   data_in: Arc<Mutex<I>>,
-  readers: RwLock<HashMap<i32, Arc<BKDReader<I>>>>,
+  readers: RwLock<PointReaders<I>>,
   field_infos: Arc<FieldInfos>,
 }
 
@@ -201,7 +201,7 @@ where
         data_in: data_in
           .take()
           .ok_or_else(|| LuceneError::illegal_state("points data input is missing"))?,
-        readers: RwLock::new(readers),
+        readers: RwLock::new(PointReaders::from_map(readers)),
         field_infos: read_state.field_infos.clone(),
       };
       success = true;
@@ -264,5 +264,43 @@ where
 
   fn is_lucene90_points_reader(&self) -> bool {
     true
+  }
+}
+
+// Keep small and sparse field-number domains in their existing hash table.
+enum PointReaders<I: IndexInput> {
+  Dense(Box<[Option<Arc<BKDReader<I>>>]>),
+  Sparse(HashMap<i32, Arc<BKDReader<I>>>),
+}
+
+impl<I: IndexInput> PointReaders<I> {
+  fn from_map(readers: HashMap<i32, Arc<BKDReader<I>>>) -> Self {
+    let max_field = readers.keys().copied().max().unwrap_or(-1);
+    if readers.len() >= 64
+      && max_field >= 0
+      && (max_field as usize) < readers.len().saturating_mul(2)
+    {
+      let mut slots = vec![None; max_field as usize + 1];
+      for (field, reader) in readers {
+        slots[field as usize] = Some(reader);
+      }
+      Self::Dense(slots.into_boxed_slice())
+    } else {
+      Self::Sparse(readers)
+    }
+  }
+
+  fn get(&self, field: &i32) -> Option<&Arc<BKDReader<I>>> {
+    match self {
+      Self::Dense(slots) => slots.get(usize::try_from(*field).ok()?)?.as_ref(),
+      Self::Sparse(readers) => readers.get(field),
+    }
+  }
+
+  fn clear(&mut self) {
+    match self {
+      Self::Dense(slots) => slots.fill(None),
+      Self::Sparse(readers) => readers.clear(),
+    }
   }
 }

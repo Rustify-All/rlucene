@@ -45,11 +45,11 @@ use std::sync::Arc;
 /// Name of this [`PostingsFormat`].
 pub const PER_FIELD_NAME: &str = "PerField40";
 
-/// [`FieldInfo`](crate::core::index::field_info::FieldInfo) attribute name used to store the format
+/// [`FieldInfo`] attribute name used to store the format
 /// name for each field.
 pub const PER_FIELD_FORMAT_KEY: &str = "PerFieldPostingsFormat.format";
 
-/// [`FieldInfo`](crate::core::index::field_info::FieldInfo) attribute name used to store the segment
+/// [`FieldInfo`] attribute name used to store the segment
 /// suffix name for each field.
 pub const PER_FIELD_SUFFIX_KEY: &str = "PerFieldPostingsFormat.suffix";
 
@@ -395,8 +395,8 @@ where
 }
 
 pub struct FieldsReader<FP> {
-  fields: Vec<(Arc<FieldInfo>, Arc<FP>)>,
-  formats: HashMap<String, Arc<FP>>,
+  fields: Arc<[(Arc<FieldInfo>, u32)]>,
+  formats: Vec<Arc<FP>>,
   segment: Arc<str>,
 }
 
@@ -410,82 +410,32 @@ where
     T: FieldsProducer,
     F: FnMut(FP) -> T,
   {
-    let field_formats: Vec<(Arc<FieldInfo>, *const FP)> = self
-      .fields
-      .into_iter()
-      .map(|(field, producer)| (field, Arc::as_ptr(&producer)))
-      .collect();
-    let mut old_to_new = HashMap::with_capacity(self.formats.len());
-    let mut formats = HashMap::with_capacity(self.formats.len());
-    for (segment_suffix, producer) in self.formats {
-      let old_ptr = Arc::as_ptr(&producer);
-      let producer = Arc::try_unwrap(producer).map_err(|_| {
-        LuceneError::illegal_state(format!(
-          "postings producer for segment suffix {segment_suffix} is still shared"
-        ))
-      })?;
-      let producer = Arc::new(mapper(producer));
-      old_to_new.insert(old_ptr, Arc::clone(&producer));
-      formats.insert(segment_suffix, producer);
+    let mut formats = Vec::with_capacity(self.formats.len());
+    for producer in self.formats {
+      let producer = Arc::try_unwrap(producer)
+        .map_err(|_| LuceneError::illegal_state("postings producer is still shared"))?;
+      formats.push(Arc::new(mapper(producer)));
     }
-    let mut fields = Vec::with_capacity(field_formats.len());
-    for (field, old_ptr) in field_formats {
-      let producer = old_to_new.get(&old_ptr).ok_or_else(|| {
-        LuceneError::illegal_state(format!(
-          "missing postings producer for field: {}",
-          field.name
-        ))
-      })?;
-      fields.push((field, Arc::clone(producer)));
-    }
-    fields.sort_unstable_by(|(left, _), (right, _)| left.name.cmp(&right.name));
     Ok(FieldsReader {
-      fields,
+      fields: self.fields,
       formats,
       segment: self.segment,
     })
   }
 
-  // Clone for merge.
+  // The route indices are stable across merge instances.
   fn from_other(other: &Self) -> Result<Self> {
-    let mut fields = Vec::with_capacity(other.fields.len());
-    let mut formats = HashMap::with_capacity(other.formats.len());
-    // First clone all formats.
-    for (segment_suffix, format) in &other.formats {
+    let mut formats = Vec::with_capacity(other.formats.len());
+    for format in &other.formats {
       let values = match format.as_ref().get_merge_instance()? {
         Some(format) => Arc::new(format),
         None => Arc::clone(format),
       };
-      formats.insert(segment_suffix.clone(), values);
-    }
-
-    let single = if other.formats.len() == 1 {
-      other.formats.values().next().zip(formats.values().next())
-    } else {
-      None
-    };
-    let mut old_to_new = HashMap::new();
-    if single.is_none() {
-      old_to_new.reserve(other.formats.len());
-      for (segment_suffix, format) in &other.formats {
-        old_to_new.insert(Arc::as_ptr(format), &formats[segment_suffix]);
-      }
-    }
-
-    // Then rebuild fields.
-    for (field, format) in &other.fields {
-      let producer = match single {
-        Some((old, new)) => Arc::ptr_eq(old, format).then_some(new),
-        None => old_to_new.get(&Arc::as_ptr(format)).copied(),
-      };
-      let producer = producer.ok_or_else(|| {
-        LuceneError::illegal_state(format!("missing merge instance for field: {}", field.name))
-      })?;
-      fields.push((Arc::clone(field), Arc::clone(producer)));
+      formats.push(values);
     }
 
     Ok(Self {
-      fields,
+      fields: Arc::clone(&other.fields),
       formats,
       segment: other.segment.clone(),
     })
@@ -500,7 +450,8 @@ where
     D1: Directory,
   {
     let mut fields = Vec::new();
-    let mut formats: HashMap<String, Arc<FP>> = HashMap::new();
+    let mut formats = Vec::new();
+    let mut format_slots: HashMap<String, u32> = HashMap::new();
 
     let mut success = false;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
@@ -519,29 +470,33 @@ where
           ))
         })?;
         let segment_suffix = get_suffix(format_name, suffix);
-        let producer = match formats.entry(segment_suffix) {
-          Entry::Occupied(entry) => Arc::clone(entry.get()),
+        let slot = match format_slots.entry(segment_suffix) {
+          Entry::Occupied(entry) => *entry.get(),
           Entry::Vacant(entry) => {
             let format = PF::for_name(format_name)?;
             let state = SegmentReadState::copy_with_suffix(read_state, entry.key());
             let producer = Arc::new(format.fields_producer(&state, segment_info)?);
-            Arc::clone(entry.insert(producer))
+            // Each format is opened on behalf of at least one indexed field.
+            let slot = formats.len() as u32;
+            formats.push(producer);
+            entry.insert(slot);
+            slot
           },
         };
-        fields.push((Arc::clone(field_info), producer));
+        fields.push((Arc::clone(field_info), slot));
       }
       success = true;
       Ok(())
     }));
 
     if !success {
-      IOUtils::close_while_handling_exception_with(formats.values(), |format| format.close());
+      IOUtils::close_while_handling_exception_with(formats.iter(), |format| format.close());
     }
     unwrap_caught_result!(result)?;
     fields.sort_unstable_by(|(left, _), (right, _)| left.name.cmp(&right.name));
 
     Ok(Self {
-      fields,
+      fields: fields.into(),
       formats,
       segment: segment_info.name.clone(),
     })
@@ -549,7 +504,8 @@ where
 }
 
 pub struct FieldsReaderIterator<'a, FP> {
-  fields: std::slice::Iter<'a, (Arc<FieldInfo>, Arc<FP>)>,
+  fields: std::slice::Iter<'a, (Arc<FieldInfo>, u32)>,
+  format: std::marker::PhantomData<fn() -> FP>,
 }
 
 impl<'a, FP> IteratorExt for FieldsReaderIterator<'a, FP> {
@@ -587,6 +543,7 @@ where
   fn iterator(&self) -> Result<Self::FieldIter<'_>> {
     Ok(FieldsReaderIterator {
       fields: self.fields.iter(),
+      format: std::marker::PhantomData,
     })
   }
 
@@ -597,7 +554,7 @@ where
       .fields
       .binary_search_by(|(info, _)| info.name.as_str().cmp(field))
     {
-      Ok(index) => self.fields[index].1.terms(field),
+      Ok(index) => self.formats[self.fields[index].1 as usize].terms(field),
       Err(_) => Ok(None),
     }
   }
@@ -612,7 +569,7 @@ where
   FP: CloseableRef,
 {
   fn close(&self) -> Result<()> {
-    IOUtils::close_with(self.formats.values(), |format| format.close())
+    IOUtils::close_with(self.formats.iter(), |format| format.close())
   }
 }
 
@@ -621,7 +578,7 @@ where
   FP: FieldsProducer,
 {
   fn check_integrity(&self) -> Result<()> {
-    for format in self.formats.values() {
+    for format in &self.formats {
       format.check_integrity()?;
     }
     Ok(())

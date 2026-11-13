@@ -34,6 +34,7 @@ use crate::core::index::doc_values::{DocValues, EmptyBinary, EmptyNumeric};
 use crate::core::index::doc_values_iterator::DocValuesIterator;
 use crate::core::index::doc_values_skip_index_type::DocValuesSkipIndexType;
 use crate::core::index::doc_values_skipper::DocValuesSkipper;
+use crate::core::index::doc_values_type::DocValuesType;
 use crate::core::index::dummy::dummy_impacts_enum::DummyImpactsEnum;
 use crate::core::index::dummy::dummy_postings_enum::DummyPostingsEnum;
 use crate::core::index::dummy::dummy_terms_enum::DummyTermsEnum;
@@ -82,13 +83,43 @@ pub struct Lucene90DocValuesProducer<I> {
 }
 
 struct DocValuesEntries {
-  numerics: HashMap<i32, usize>,
+  numerics: NumericFieldIndex,
   numeric_entries: Box<[NumericEntry]>,
   binaries: HashMap<i32, BinaryEntry>,
   sorted: HashMap<i32, SortedEntry>,
   sorted_sets: HashMap<i32, SortedSetEntry>,
   sorted_numerics: HashMap<i32, SortedNumericEntry>,
   skippers: HashMap<i32, DocValuesSkipperEntry>,
+}
+
+enum NumericFieldIndex {
+  Dense(Box<[u32]>),
+  Sparse(HashMap<i32, u32>),
+}
+
+impl NumericFieldIndex {
+  fn from_map(fields: HashMap<i32, u32>) -> Self {
+    let max_field = fields.keys().copied().max().unwrap_or(-1);
+    if fields.len() >= 64 && max_field >= 0 && (max_field as usize) < fields.len().saturating_mul(2)
+    {
+      let mut slots = vec![u32::MAX; max_field as usize + 1];
+      for (field, slot) in fields {
+        slots[field as usize] = slot;
+      }
+      Self::Dense(slots.into_boxed_slice())
+    } else {
+      Self::Sparse(fields)
+    }
+  }
+
+  fn get(&self, field: &i32) -> Option<&u32> {
+    match self {
+      Self::Dense(slots) => slots
+        .get(usize::try_from(*field).ok()?)
+        .filter(|&&slot| slot != u32::MAX),
+      Self::Sparse(fields) => fields.get(field),
+    }
+  }
 }
 
 impl<I> Lucene90DocValuesProducer<I>
@@ -109,13 +140,29 @@ where
     let max_doc = segment_info.max_doc()?;
     let mut version = -1;
 
+    let mut binary_count = 0;
+    let mut sorted_count = 0;
+    let mut sorted_set_count = 0;
+    let mut sorted_numeric_count = 0;
+    let mut skipper_count = 0;
+    for info in state.field_infos.iter() {
+      match info.get_doc_values_type() {
+        DocValuesType::Binary => binary_count += 1,
+        DocValuesType::Sorted => sorted_count += 1,
+        DocValuesType::SortedSet => sorted_set_count += 1,
+        DocValuesType::SortedNumeric => sorted_numeric_count += 1,
+        _ => {},
+      }
+      skipper_count +=
+        usize::from(info.doc_values_skip_index_type() != &DocValuesSkipIndexType::None);
+    }
     let mut numerics = HashMap::new();
     let mut numeric_entries = Vec::new();
-    let mut binaries = HashMap::new();
-    let mut sorted = HashMap::new();
-    let mut sorted_sets = HashMap::new();
-    let mut sorted_numerics = HashMap::new();
-    let mut skippers = HashMap::new();
+    let mut binaries = HashMap::with_capacity(binary_count);
+    let mut sorted = HashMap::with_capacity(sorted_count);
+    let mut sorted_sets = HashMap::with_capacity(sorted_set_count);
+    let mut sorted_numerics = HashMap::with_capacity(sorted_numeric_count);
+    let mut skippers = HashMap::with_capacity(skipper_count);
 
     {
       let mut input = state.with_file_name(&segment_info.name, meta_extension, |name| {
@@ -198,7 +245,7 @@ where
       success = true;
       Ok(Self {
         entries: Arc::new(DocValuesEntries {
-          numerics,
+          numerics: NumericFieldIndex::from_map(numerics),
           numeric_entries: numeric_entries.into_boxed_slice(),
           binaries,
           sorted,
@@ -236,7 +283,7 @@ where
   fn read_fields<II>(
     meta: &mut II,
     infos: &Arc<FieldInfos>,
-    numerics: &mut HashMap<i32, usize>,
+    numerics: &mut HashMap<i32, u32>,
     numeric_entries: &mut Vec<NumericEntry>,
     binaries: &mut HashMap<i32, BinaryEntry>,
     sorted: &mut HashMap<i32, SortedEntry>,
@@ -247,6 +294,7 @@ where
   where
     II: IndexInput,
   {
+    let mut tables = (infos.size() >= 64).then(HashMap::new);
     loop {
       let field_number = meta.read_int()?;
       if field_number == -1 {
@@ -267,15 +315,17 @@ where
 
       match type_byte {
         t if t == Lucene90DocValuesFormat::NUMERIC => {
-          let entry = Self::read_numeric(meta)?;
+          let mut entry = Self::read_numeric(meta)?;
+          share_numeric_table(&mut entry, tables.as_mut());
           match numerics.entry(info.number) {
-            Entry::Occupied(slot) => numeric_entries[*slot.get()] = entry,
+            Entry::Occupied(slot) => numeric_entries[*slot.get() as usize] = entry,
             Entry::Vacant(slot) => {
               let index = numeric_entries.len();
               if index == numeric_entries.capacity() {
                 numeric_entries.reserve_exact((index / 2).max(4));
               }
-              slot.insert(index);
+              // There is at most one slot per field number.
+              slot.insert(index as u32);
               numeric_entries.push(entry);
             },
           }
@@ -285,15 +335,23 @@ where
           binaries.insert(info.number, entry);
         },
         t if t == Lucene90DocValuesFormat::SORTED => {
-          let entry = Self::read_sorted(meta)?;
+          let mut entry = Self::read_sorted(meta)?;
+          share_numeric_table(&mut entry.ords_entry, tables.as_mut());
           sorted.insert(info.number, entry);
         },
         t if t == Lucene90DocValuesFormat::SORTED_SET => {
-          let entry = Self::read_sorted_set(meta)?;
+          let mut entry = Self::read_sorted_set(meta)?;
+          if let Some(single) = &mut entry.single_value_entry {
+            share_numeric_table(&mut single.ords_entry, tables.as_mut());
+          }
+          if let Some(ords) = &mut entry.ords_entry {
+            share_numeric_table(&mut ords.base, tables.as_mut());
+          }
           sorted_sets.insert(info.number, entry);
         },
         t if t == Lucene90DocValuesFormat::SORTED_NUMERIC => {
-          let entry = Self::read_sorted_numeric(meta)?;
+          let mut entry = Self::read_sorted_numeric(meta)?;
+          share_numeric_table(&mut entry.base, tables.as_mut());
           sorted_numerics.insert(info.number, entry);
         },
         _ => {
@@ -394,7 +452,7 @@ where
       // Old count of uncompressed addresses
       let num_addresses = num_docs_with_field as i64 + 1;
       let block_shift = meta.read_vint()?;
-      addresses_meta = Some(load_meta(meta, num_addresses, block_shift)?);
+      addresses_meta = Some(Box::new(load_meta(meta, num_addresses, block_shift)?));
       addresses_length = meta.read_long()? as usize;
     }
 
@@ -434,7 +492,7 @@ where
     let mut entry = SortedSetEntry::default();
     match multi_valued {
       0 => {
-        entry.single_value_entry = Some(Self::read_sorted(meta)?);
+        entry.single_value_entry = Some(Box::new(Self::read_sorted(meta)?));
         return Ok(entry);
       },
       1 => {},
@@ -449,7 +507,7 @@ where
     let mut terms_dict_entry = TermsDictEntry::default();
     Self::read_term_dict_with_entry(meta, &mut terms_dict_entry)?;
 
-    entry.ords_entry = Some(ords_entry);
+    entry.ords_entry = Some(Box::new(ords_entry));
     entry.terms_dict_entry = Some(Arc::new(terms_dict_entry));
     Ok(entry)
   }
@@ -506,11 +564,11 @@ where
     if entry.num_docs_with_field as usize != entry.base.num_values {
       entry.addresses_offset = meta.read_long()? as usize;
       let block_shift = meta.read_vint()?;
-      entry.addresses_meta = Some(load_meta(
+      entry.addresses_meta = Some(Box::new(load_meta(
         meta,
         entry.num_docs_with_field as i64 + 1,
         block_shift,
-      )?);
+      )?));
       entry.addresses_length = meta.read_long()? as usize;
     }
     Ok(())
@@ -828,7 +886,7 @@ where
     let slot = self.entries.numerics.get(&field.number).ok_or_else(|| {
       LuceneError::illegal_state(format!("Missing numeric entry for field {}", field.number))
     })?;
-    self.get_numeric(&self.entries.numeric_entries[*slot])
+    self.get_numeric(&self.entries.numeric_entries[*slot as usize])
   }
 
   type BinaryDocValues = Lucene90BinaryDocValuesEnum<I>;
@@ -1069,6 +1127,19 @@ where
     )?))
   }
 }
+type NumericTableCache = HashMap<Box<[i64]>, Arc<Vec<i64>>>;
+
+fn share_numeric_table(entry: &mut NumericEntry, cache: Option<&mut NumericTableCache>) {
+  let (Some(table), Some(cache)) = (&mut entry.table, cache) else {
+    return;
+  };
+  if let Some(existing) = cache.get(table.as_slice()) {
+    *table = Arc::clone(existing);
+  } else if cache.len() < 64 {
+    cache.insert(table.as_slice().into(), Arc::clone(table));
+  }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct DocValuesSkipperEntry {
   pub offset: i64,
@@ -1107,7 +1178,7 @@ pub struct BinaryEntry {
   pub max_length: i32,
   pub addresses_offset: usize,
   pub addresses_length: usize,
-  pub addresses_meta: Option<Meta>,
+  pub addresses_meta: Option<Box<Meta>>,
 }
 
 #[derive(Default)]
@@ -1135,15 +1206,15 @@ pub struct SortedEntry {
 
 #[derive(Default)]
 pub struct SortedSetEntry {
-  pub single_value_entry: Option<SortedEntry>,
-  pub ords_entry: Option<SortedNumericEntry>,
+  pub single_value_entry: Option<Box<SortedEntry>>,
+  pub ords_entry: Option<Box<SortedNumericEntry>>,
   pub terms_dict_entry: Option<Arc<TermsDictEntry>>,
 }
 #[derive(Default)]
 pub struct SortedNumericEntry {
   pub base: NumericEntry,
   pub num_docs_with_field: i32,
-  pub addresses_meta: Option<Meta>,
+  pub addresses_meta: Option<Box<Meta>>,
   pub addresses_offset: usize,
   pub addresses_length: usize,
 }
