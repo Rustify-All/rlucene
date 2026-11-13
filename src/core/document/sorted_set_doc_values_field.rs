@@ -80,7 +80,7 @@ impl SortedSetDocValuesField {
   /// Create a new sorted DocValues field.
   pub fn new<T, B>(name: T, bytes: B) -> Self
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
     B: Into<BytesRef<Vec<u8>>>,
   {
     Self::with_type(name, bytes, TYPE.clone())
@@ -90,7 +90,7 @@ impl SortedSetDocValuesField {
   /// doc-values skip index configured on its [`FieldType`].
   pub fn indexed_field<T, B>(name: T, bytes: B) -> Self
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
     B: Into<BytesRef<Vec<u8>>>,
   {
     Self::with_type(name, bytes, INDEXED_TYPE.clone())
@@ -98,7 +98,7 @@ impl SortedSetDocValuesField {
 
   pub fn with_type<T, B>(name: T, bytes: B, field_type: FieldType) -> Self
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
     B: Into<BytesRef<Vec<u8>>>,
   {
     let bytes = bytes.into();

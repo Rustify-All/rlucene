@@ -238,7 +238,7 @@ mod base_xy_point_test_case_tests {
 
 impl BaseXYPointTestCase for TestXYDocValuesQueries {
   fn add_point_to_doc(&self, field: &str, doc: &mut Document, x: f32, y: f32) -> Result<()> {
-    doc.add(XYDocValuesField::new(field, x, y)?);
+    doc.add(XYDocValuesField::new(field.to_owned(), x, y)?);
     Ok(())
   }
 

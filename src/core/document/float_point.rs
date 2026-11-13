@@ -66,7 +66,7 @@ impl FloatPoint {
   /// * `point` - Float point value.
   pub fn new<T, P>(name: T, point: P) -> Result<FloatPoint>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
     P: AsRef<[f32]>,
   {
     let point = point.as_ref();

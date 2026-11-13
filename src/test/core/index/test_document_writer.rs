@@ -473,14 +473,23 @@ where
 #[test]
 fn test_ram_usage_stored() -> Result<()> {
   do_test_ram_usage(|field| {
-    Ok(StoredField::from_binary(field, BytesRef::<Vec<u8>>::from_string("Lucene").bytes)?.into())
+    Ok(
+      StoredField::from_binary(
+        field.to_owned(),
+        BytesRef::<Vec<u8>>::from_string("Lucene").bytes,
+      )?
+      .into(),
+    )
   })
 }
 
 #[test]
 fn test_ram_usage_indexed() -> Result<()> {
   do_test_ram_usage(|field| {
-    Ok(StringField::from_bytes_ref(field, BytesRef::from_string("Lucene"), Store::No)?.into())
+    Ok(
+      StringField::from_bytes_ref(field.to_owned(), BytesRef::from_string("Lucene"), Store::No)?
+        .into(),
+    )
   })
 }
 
@@ -491,32 +500,32 @@ fn test_ram_usage_point() -> Result<()> {
 
 #[test]
 fn test_ram_usage_numeric_doc_value() -> Result<()> {
-  do_test_ram_usage(|field| Ok(NumericDocValuesField::new(field, 42).into()))
+  do_test_ram_usage(|field| Ok(NumericDocValuesField::new(field.to_owned(), 42).into()))
 }
 
 #[test]
 fn test_ram_usage_sorted_doc_value() -> Result<()> {
   do_test_ram_usage(|field| {
-    Ok(SortedDocValuesField::new(field, BytesRef::from_string("Lucene")).into())
+    Ok(SortedDocValuesField::new(field.to_owned(), BytesRef::from_string("Lucene")).into())
   })
 }
 
 #[test]
 fn test_ram_usage_binary_doc_value() -> Result<()> {
   do_test_ram_usage(|field| {
-    Ok(BinaryDocValuesField::new(field, BytesRef::from_string("Lucene")).into())
+    Ok(BinaryDocValuesField::new(field.to_owned(), BytesRef::from_string("Lucene")).into())
   })
 }
 
 #[test]
 fn test_ram_usage_sorted_numeric_doc_value() -> Result<()> {
-  do_test_ram_usage(|field| Ok(SortedNumericDocValuesField::new(field, 42).into()))
+  do_test_ram_usage(|field| Ok(SortedNumericDocValuesField::new(field.to_owned(), 42).into()))
 }
 
 #[test]
 fn test_ram_usage_sorted_set_doc_value() -> Result<()> {
   do_test_ram_usage(|field| {
-    Ok(SortedSetDocValuesField::new(field, BytesRef::from_string("Lucene")).into())
+    Ok(SortedSetDocValuesField::new(field.to_owned(), BytesRef::from_string("Lucene")).into())
   })
 }
 

@@ -64,7 +64,7 @@ impl BinaryDocValuesField {
   /// * `value` - Binary content.
   pub fn new<T, B>(name: T, value: B) -> Self
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
     B: Into<BytesRef<Vec<u8>>>,
   {
     let value = value.into();

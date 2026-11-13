@@ -120,7 +120,7 @@ impl XYPointField {
   /// - `y`: y value.
   pub fn new<T>(name: T, x: f32, y: f32) -> Result<Self>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
   {
     let mut field = Self {
       parent_field: Field::new(

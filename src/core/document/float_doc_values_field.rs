@@ -49,7 +49,7 @@ impl FloatDocValuesField {
   /// * `value` - An `f32` value.
   pub fn new<T>(name: T, value: f32) -> Self
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
   {
     let int_value = value.to_bits() as i32 as i64;
     let parent_field = NumericDocValuesField::new(name, int_value);

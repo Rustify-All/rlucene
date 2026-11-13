@@ -98,7 +98,7 @@ impl StoredFieldVisitor for DocumentStoredFieldVisitor<'_> {
     S: StoredFieldsWriter,
   {
     self.doc.add(StoredField::from_binary(
-      &field_info.name,
+      field_info.name.clone(),
       value.into_owned(),
     )?);
     Ok(())
@@ -118,7 +118,7 @@ impl StoredFieldVisitor for DocumentStoredFieldVisitor<'_> {
     ft.set_omit_norms(field_info.omits_norms())?;
     ft.set_index_options(*field_info.get_index_options())?;
     self.doc.add(StoredField::from_string_and_type(
-      &field_info.name,
+      field_info.name.clone(),
       value.into_owned(),
       ft,
     )?);
@@ -136,7 +136,7 @@ impl StoredFieldVisitor for DocumentStoredFieldVisitor<'_> {
   {
     self
       .doc
-      .add(StoredField::from_i32(&field_info.name, value)?);
+      .add(StoredField::from_i32(field_info.name.clone(), value)?);
     Ok(())
   }
 
@@ -151,7 +151,7 @@ impl StoredFieldVisitor for DocumentStoredFieldVisitor<'_> {
   {
     self
       .doc
-      .add(StoredField::from_i64(&field_info.name, value)?);
+      .add(StoredField::from_i64(field_info.name.clone(), value)?);
     Ok(())
   }
 
@@ -166,7 +166,7 @@ impl StoredFieldVisitor for DocumentStoredFieldVisitor<'_> {
   {
     self
       .doc
-      .add(StoredField::from_f32(&field_info.name, value)?);
+      .add(StoredField::from_f32(field_info.name.clone(), value)?);
     Ok(())
   }
 
@@ -181,7 +181,7 @@ impl StoredFieldVisitor for DocumentStoredFieldVisitor<'_> {
   {
     self
       .doc
-      .add(StoredField::from_f64(&field_info.name, value)?);
+      .add(StoredField::from_f64(field_info.name.clone(), value)?);
     Ok(())
   }
 

@@ -160,12 +160,12 @@ fn test_duel_terms_query() -> Result<()> {
       let mut doc = Document::new();
       let term = &all_terms[random.random_range(0..all_terms.len())];
       doc.add(StringField::from_string(
-        term.field(),
+        term.field().to_owned(),
         term.text()?,
         Store::No,
       )?);
       doc.add(SortedDocValuesField::new(
-        term.field(),
+        term.field().to_owned(),
         term.bytes().clone(),
       ));
       iw.add_document(&mut random, doc)?;
@@ -232,12 +232,12 @@ fn test_approximation() -> Result<()> {
       let mut doc = Document::new();
       let term = &all_terms[random.random_range(0..all_terms.len())];
       doc.add(StringField::from_string(
-        term.field(),
+        term.field().to_owned(),
         term.text()?,
         Store::No,
       )?);
       doc.add(SortedDocValuesField::new(
-        term.field(),
+        term.field().to_owned(),
         term.bytes().clone(),
       ));
       iw.add_document(&mut random, doc)?;

@@ -321,7 +321,7 @@ fn test_random_docs() -> Result<()> {
         *freq += 1;
       }
     }
-    doc.add(Field::new(&field_name, builder, custom_type.clone()));
+    doc.add(Field::new(field_name.clone(), builder, custom_type.clone()));
     writer.add_document(&mut random, doc)?;
   }
 

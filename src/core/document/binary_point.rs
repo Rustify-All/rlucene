@@ -67,7 +67,7 @@ impl BinaryPoint {
   /// * `point` - Binary dimensions supplied as byte arrays, vectors, or slices.
   pub fn new<T, P, B>(name: T, point: P) -> Result<BinaryPoint>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
     P: AsRef<[B]>,
     B: AsRef<[u8]>,
   {
@@ -81,7 +81,7 @@ impl BinaryPoint {
   /// Expert API.
   pub fn with_type<T, V>(name: T, packed_point: V, field_type: FieldType) -> Result<BinaryPoint>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
     V: Into<Vec<u8>>,
   {
     let packed_point = packed_point.into();

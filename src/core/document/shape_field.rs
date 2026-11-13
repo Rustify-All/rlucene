@@ -77,7 +77,7 @@ impl Triangle {
     c_y_encoded: i32,
   ) -> Result<Self> {
     let mut triangle = Self {
-      parent_field: Field::new(name, Dummy(()), TYPE_.clone()),
+      parent_field: Field::new(name.to_owned(), Dummy(()), TYPE_.clone()),
     };
     triangle.set_triangle_value(
       a_x_encoded,
@@ -97,7 +97,7 @@ impl Triangle {
   // /// xtor from a given Tessellated Triangle object
   // pub fn from_tessellated_triangle(name: &str, t: &TessellatorTriangle) -> Self {
   //     let mut triangle = Self {
-  //         parent_field: Field::new(name, TYPE),
+  //         parent_field: Field::new(name.to_owned(), TYPE),
   //     };
   //     triangle.set_triangle_value(
   //         t.get_encoded_x(0),

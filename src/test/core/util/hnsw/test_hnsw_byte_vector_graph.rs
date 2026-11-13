@@ -210,7 +210,11 @@ impl HnswGraphTestCase<Vec<u8>> for TestHnswByteVectorGraph {
   ) -> Result<Field> {
     let field_type =
       KnnByteVectorField::create_field_type(vector.len() as i32, similarity_function)?;
-    Ok(Field::new(name, VectorValueEnum::Byte(vector), field_type))
+    Ok(Field::new(
+      name.to_owned(),
+      VectorValueEnum::Byte(vector),
+      field_type,
+    ))
   }
 
   fn circular_vector_values(&self, n_doc: usize) -> TestsCircularKnnVectorValues {

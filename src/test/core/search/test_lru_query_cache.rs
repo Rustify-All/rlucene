@@ -173,7 +173,7 @@ fn cached_query_set(cache: &TestCache) -> HashSet<Query> {
 
 fn string_doc(field: &str, value: &str, store: Store) -> Result<Document> {
   let mut doc = Document::new();
-  doc.add(StringField::from_string(field, value, store)?);
+  doc.add(StringField::from_string(field.to_owned(), value, store)?);
   Ok(doc)
 }
 

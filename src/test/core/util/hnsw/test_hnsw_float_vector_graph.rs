@@ -303,7 +303,11 @@ impl HnswGraphTestCase<Vec<f32>> for TestHnswFloatVectorGraph {
   ) -> Result<Field> {
     let field_type =
       KnnFloatVectorField::create_field_type(vector.len() as i32, similarity_function)?;
-    Ok(Field::new(name, VectorValueEnum::Float(vector), field_type))
+    Ok(Field::new(
+      name.to_owned(),
+      VectorValueEnum::Float(vector),
+      field_type,
+    ))
   }
 
   fn circular_vector_values(&self, n_doc: usize) -> TestsCircularKnnVectorValues {

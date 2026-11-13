@@ -66,7 +66,7 @@ impl StoredField {
   /// - `field_type`: Custom [`FieldType`] for this field.
   pub fn from_bytes_ref_and_type<T, B>(name: T, bytes: B, file_type: FieldType) -> Result<Self>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
     B: Into<BytesRef<Vec<u8>>>,
   {
     let parent_field = Field::from_bytes_ref(name, bytes, file_type)?;
@@ -83,7 +83,7 @@ impl StoredField {
   /// - `value`: Byte array pointing to binary content.
   pub fn from_binary<T, V>(name: T, value: V) -> Result<Self>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
     V: Into<Vec<u8>>,
   {
     let value = value.into();
@@ -111,7 +111,7 @@ impl StoredField {
     length: usize,
   ) -> Result<Self>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
     V: Into<Vec<u8>>,
   {
     let value = value.into();
@@ -130,7 +130,7 @@ impl StoredField {
   /// - `value`: Binary content convertible to `BytesRef<Vec<u8>>`.
   pub fn from_bytes_ref<T, B>(name: T, value: B) -> Result<Self>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
     B: Into<BytesRef<Vec<u8>>>,
   {
     let parent_field = Field::from_bytes_ref(name, value, stored_field_type::TYPE.clone())?;
@@ -143,7 +143,7 @@ impl StoredField {
   /// - `value`: String value.
   pub fn from_string<T1, T2>(name: T1, value: T2) -> Result<Self>
   where
-    T1: Into<String>,
+    T1: Into<Cow<'static, str>>,
     T2: Into<String>,
   {
     let parent_field = Field::from_string(name, value, stored_field_type::TYPE.clone())?;
@@ -157,7 +157,7 @@ impl StoredField {
   /// - `field_type`: Custom [`FieldType`] for this field.
   pub fn from_string_and_type<T1, T2>(name: T1, value: T2, file_type: FieldType) -> Result<Self>
   where
-    T1: Into<String>,
+    T1: Into<Cow<'static, str>>,
     T2: Into<String>,
   {
     let parent_field = Field::from_string(name, value, file_type)?;
@@ -170,7 +170,7 @@ impl StoredField {
   /// - `value`: i32 value.
   pub fn from_i32<T>(name: T, value: i32) -> Result<Self>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
   {
     let parent_field = Field::new(name, value, stored_field_type::TYPE.clone());
     Ok(Self { parent_field })
@@ -182,7 +182,7 @@ impl StoredField {
   /// - `value`: Long value.
   pub fn from_i64<T>(name: T, value: i64) -> Result<Self>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
   {
     let parent_field = Field::new(name, value, stored_field_type::TYPE.clone());
     Ok(Self { parent_field })
@@ -194,7 +194,7 @@ impl StoredField {
   /// - `value`: f32 value.
   pub fn from_f32<T>(name: T, value: f32) -> Result<Self>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
   {
     let parent_field = Field::new(name, value, stored_field_type::TYPE.clone());
     Ok(Self { parent_field })
@@ -206,7 +206,7 @@ impl StoredField {
   /// - `value`: f64 value.
   pub fn from_f64<T>(name: T, value: f64) -> Result<Self>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
   {
     let parent_field = Field::new(name, value, stored_field_type::TYPE.clone());
     Ok(Self { parent_field })

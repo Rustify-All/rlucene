@@ -59,7 +59,7 @@ impl LongRange {
   /// Lower and upper bounds may independently use arrays, vectors, or slices.
   pub fn new<T, L, U>(name: T, min: L, max: U) -> Result<Self>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
     L: AsRef<[i64]>,
     U: AsRef<[i64]>,
   {

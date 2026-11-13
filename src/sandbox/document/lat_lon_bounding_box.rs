@@ -79,7 +79,7 @@ impl LatLonBoundingBox {
   /// - `max_lon` - Maximum longitude value (in degrees); valid in `[minLon : 180.0]`.
   pub fn new<T>(name: T, min_lat: f64, min_lon: f64, max_lat: f64, max_lon: f64) -> Result<Self>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
   {
     let mut parent_field = Field::new(name, Dummy(()), Self::get_type(2)?);
     Self::set_range_values_internal(&mut parent_field, min_lat, min_lon, max_lat, max_lon)?;

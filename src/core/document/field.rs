@@ -62,6 +62,9 @@ use std::sync::Arc;
 /// - [`StoredField`](crate::core::document::stored_field::StoredField): Stored-only
 ///   value for retrieving in summary results.
 ///
+/// Field constructors borrow static names and move owned strings. Convert a
+/// non-static borrowed name to an owned string before passing it to a constructor.
+///
 /// A field is a section of a document. Each field has three parts: name, type,
 /// and value. Values may be text (`String`, [`ReaderEnum`], or a pre-analyzed
 /// [`TokenStream`]), binary (`&[u8]`), or numeric ([`Number`]). Fields are
@@ -74,8 +77,8 @@ use std::sync::Arc;
 pub struct Field {
   /// Field's type.
   indexable_field_type: FieldType,
-  /// Field's name.
-  pub(crate) name: Box<str>,
+  /// Static names are borrowed; owned names retain the former tight allocation.
+  pub(crate) name: Cow<'static, str>,
   /// Field's value.
   pub(crate) fields_data: FieldDataEnum,
 }
@@ -90,11 +93,14 @@ impl Field {
   ///
   pub fn new<T, FD>(name: T, fields_data: FD, indexable_field_type: FieldType) -> Self
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
     FD: Into<FieldDataEnum>,
   {
     Self {
-      name: String::into_boxed_str(name.into()),
+      name: match name.into() {
+        Cow::Owned(name) => Cow::Owned(name.into_boxed_str().into_string()),
+        name => name,
+      },
       fields_data: match fields_data.into() {
         FieldDataEnum::String(text)
           if indexable_field_type.tokenized()
@@ -119,7 +125,7 @@ impl Field {
   ///   `tokenized()` is `false`.
   pub fn from_reader<T, R>(name: T, reader: R, indexable_field_type: FieldType) -> Result<Self>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
     R: Into<ReaderEnum>,
   {
     if indexable_field_type.stored() {
@@ -134,7 +140,10 @@ impl Field {
     }
     Ok(Field {
       indexable_field_type,
-      name: String::into_boxed_str(name.into()),
+      name: match name.into() {
+        Cow::Owned(name) => Cow::Owned(name.into_boxed_str().into_string()),
+        name => name,
+      },
       fields_data: reader.into().into(),
     })
   }
@@ -154,7 +163,7 @@ impl Field {
     indexable_field_type: FieldType,
   ) -> Result<Self>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
     V: Into<FieldTokenStreamEnum>,
   {
     if !indexable_field_type.tokenized()
@@ -172,7 +181,10 @@ impl Field {
     let ts = token_stream.into();
     Ok(Field {
       indexable_field_type,
-      name: String::into_boxed_str(name.into()),
+      name: match name.into() {
+        Cow::Owned(name) => Cow::Owned(name.into_boxed_str().into_string()),
+        name => name,
+      },
       fields_data: ts.into(),
     })
   }
@@ -191,7 +203,7 @@ impl Field {
   /// - Returns an error if the field's type is `indexed()`.
   pub fn from_binary<T, V>(name: T, value: V, indexable_field_type: FieldType) -> Result<Self>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
     V: Into<Vec<u8>>,
   {
     let value = value.into();
@@ -221,7 +233,7 @@ impl Field {
     indexable_field_type: FieldType,
   ) -> Result<Self>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
     V: Into<Vec<u8>>,
   {
     let value = value.into();
@@ -243,7 +255,7 @@ impl Field {
   /// - Returns an error if the field's type is `indexed()`.
   pub fn from_bytes_ref<T, B>(name: T, bytes: B, indexable_field_type: FieldType) -> Result<Self>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
     B: Into<BytesRef<Vec<u8>>>,
   {
     if indexable_field_type
@@ -274,7 +286,10 @@ impl Field {
     }
     Ok(Field {
       indexable_field_type,
-      name: String::into_boxed_str(name.into()),
+      name: match name.into() {
+        Cow::Owned(name) => Cow::Owned(name.into_boxed_str().into_string()),
+        name => name,
+      },
       fields_data: FieldDataEnum::Binary(bytes.into()),
     })
   }
@@ -292,7 +307,7 @@ impl Field {
   ///   is `true`.
   pub fn from_string<T1, T2>(name: T1, value: T2, indexable_field_type: FieldType) -> Result<Self>
   where
-    T1: Into<String>,
+    T1: Into<Cow<'static, str>>,
     T2: Into<String>,
   {
     if !indexable_field_type.stored() && *indexable_field_type.index_options() == IndexOptions::None
@@ -305,7 +320,10 @@ impl Field {
       && *indexable_field_type.index_options() != IndexOptions::None;
     Ok(Field {
       indexable_field_type,
-      name: String::into_boxed_str(name.into()),
+      name: match name.into() {
+        Cow::Owned(name) => Cow::Owned(name.into_boxed_str().into_string()),
+        name => name,
+      },
       fields_data: if shared_text {
         FieldDataEnum::SharedString(Arc::new(value.into()))
       } else {

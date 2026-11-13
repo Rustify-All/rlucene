@@ -69,7 +69,7 @@ impl SortedNumericDocValuesField {
   /// Creates a new sorted numeric DocValues field.
   pub fn new<T>(name: T, value: i64) -> Self
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
   {
     Self::with_type(name, value, TYPE.clone())
   }
@@ -77,14 +77,14 @@ impl SortedNumericDocValuesField {
   /// Creates a new sorted numeric DocValues field that also creates a skip index.
   pub fn indexed_field<T>(name: T, value: i64) -> Self
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
   {
     Self::with_type(name, value, INDEXED_TYPE.clone())
   }
 
   pub fn with_type<T>(name: T, value: i64, field_type: FieldType) -> Self
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
   {
     let parent_field = Field::new(name, value, field_type);
     Self { parent_field }

@@ -114,7 +114,11 @@ fn test_index_and_merge() -> Result<()> {
 
 fn index_doc(dir: Arc<DirEnum>, file_name: &str, text: &str) -> Result<SegmentCommitInfo<DirEnum>> {
   let mut doc = Document::new();
-  doc.add(TextField::from_string(file_name, text, Store::No)?);
+  doc.add(TextField::from_string(
+    file_name.to_owned(),
+    text,
+    Store::No,
+  )?);
 
   let mut random = random();
   let analyzer = MockAnalyzer::new(&mut random);

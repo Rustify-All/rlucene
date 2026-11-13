@@ -74,7 +74,7 @@ impl NumericDocValuesField {
   /// * `value` - An `i64` value.
   pub fn indexed_field<T>(name: T, value: i64) -> Self
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
   {
     Self::with_type(name, value, INDEXED_TYPE.clone())
   }
@@ -87,14 +87,14 @@ impl NumericDocValuesField {
   /// * `value` - An `i64` value.
   pub fn new<T>(name: T, value: i64) -> Self
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
   {
     Self::with_type(name, value, TYPE.clone())
   }
 
   pub fn with_type<T>(name: T, value: i64, file_type: FieldType) -> Self
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
   {
     let parent_field = Field::new(name, value, file_type);
     Self { parent_field }

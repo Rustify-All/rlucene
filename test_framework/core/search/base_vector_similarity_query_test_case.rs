@@ -829,7 +829,7 @@ pub trait BaseVectorSimilarityQueryTestCase {
     for (id, vector) in vectors.into_iter().enumerate() {
       let mut doc = Document::new();
       doc.add(self.get_vector_field(vector_field, vector, function)?);
-      doc.add(IntField::new(id_field, id as i32, Store::Yes)?);
+      doc.add(IntField::new(id_field.clone(), id as i32, Store::Yes)?);
       writer.add_document(random, doc)?;
     }
     writer.close(random)?;

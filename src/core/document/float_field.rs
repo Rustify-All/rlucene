@@ -92,7 +92,7 @@ impl FloatField {
   /// * `stored` - Whether to store the field.
   pub fn new<T>(name: T, value: f32, stored: Store) -> Result<FloatField>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
   {
     let stored = stored.into();
     let (field_type, stored_value) = if stored {

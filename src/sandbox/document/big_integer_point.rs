@@ -120,7 +120,7 @@ impl BigIntegerPoint {
   /// Returns an error if the field name or value is invalid.
   pub fn new<T, P>(name: T, point: P) -> Result<Self>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
     P: AsRef<[BigInt]>,
   {
     let point = point.as_ref();

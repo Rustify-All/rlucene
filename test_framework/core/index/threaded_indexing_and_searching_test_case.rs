@@ -466,7 +466,7 @@ where
             for field in document {
               match field {
                 Fields::Keyword(field) => clone.add(KeywordField::from_string(
-                  field.name(),
+                  field.name().to_owned(),
                   field
                     .string_value()?
                     .ok_or_else(|| LuceneError::illegal_state("keyword field has no string value"))?
@@ -478,7 +478,7 @@ where
                   },
                 )?),
                 Fields::IntField(field) => clone.add(IntField::new(
-                  field.name(),
+                  field.name().to_owned(),
                   field
                     .numeric_value()?
                     .and_then(|value| value.to_i32())
@@ -490,7 +490,7 @@ where
                   },
                 )?),
                 Fields::NumericDocValues(field) => clone.add(NumericDocValuesField::new(
-                  field.name(),
+                  field.name().to_owned(),
                   field
                     .numeric_value()?
                     .and_then(|value| value.to_i64())
@@ -499,7 +499,7 @@ where
                     })?,
                 )),
                 Fields::String(field) => clone.add(StringField::from_string(
-                  field.name(),
+                  field.name().to_owned(),
                   field
                     .string_value()?
                     .ok_or_else(|| LuceneError::illegal_state("string field has no string value"))?
@@ -511,7 +511,7 @@ where
                   },
                 )?),
                 Fields::Field(field) => clone.add(Field::from_string(
-                  field.name(),
+                  field.name().to_owned(),
                   field
                     .string_value()?
                     .ok_or_else(|| LuceneError::illegal_state("field has no string value"))?

@@ -98,7 +98,7 @@ impl LatLonDocValuesField {
   /// Returns an error if latitude or longitude are out of bounds.
   pub fn new(name: &str, latitude: f64, longitude: f64) -> Result<Self> {
     let mut field = Self {
-      parent_field: Field::new(name, 0i64, TYPE.clone()),
+      parent_field: Field::new(name.to_owned(), 0i64, TYPE.clone()),
     };
     field.set_location_value(latitude, longitude)?;
     Ok(field)

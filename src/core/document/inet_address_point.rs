@@ -133,7 +133,7 @@ impl InetAddressPoint {
   /// Returns an error if the field name or value is invalid.
   pub fn new<T>(name: T, point: IpAddr) -> Result<Self>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
   {
     let field = Self {
       parent_field: Field::from_bytes_ref(

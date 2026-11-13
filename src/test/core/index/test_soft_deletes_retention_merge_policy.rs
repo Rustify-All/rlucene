@@ -1079,7 +1079,7 @@ where
         Term::from_text("id", "0"),
         Document::new(),
         vec![
-          NumericDocValuesField::new(&self.soft_delete, 1).into(),
+          NumericDocValuesField::new(self.soft_delete.clone(), 1).into(),
           NumericDocValuesField::new("keep", 1).into(),
         ],
       )?;

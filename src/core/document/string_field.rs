@@ -92,7 +92,7 @@ impl StringField {
   /// - `stored`: [`Store::Yes`] if the content should also be stored.
   pub fn from_string<T1, T2>(name: T1, value: T2, store: Store) -> Result<Self>
   where
-    T1: Into<String>,
+    T1: Into<Cow<'static, str>>,
     T2: Into<String>,
   {
     let store = store.into();
@@ -116,7 +116,7 @@ impl StringField {
   /// - `stored`: [`Store::Yes`] if the content should also be stored.
   pub fn from_bytes_ref<T, B>(name: T, value: B, store: Store) -> Result<Self>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
     B: Into<BytesRef<Vec<u8>>>,
   {
     let store = store.into();

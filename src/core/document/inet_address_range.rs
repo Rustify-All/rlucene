@@ -68,7 +68,7 @@ impl InetAddressRange {
   /// - `max` - Range maximum value, represented as an [`IpAddr`].
   pub fn new<T>(name: T, min: IpAddr, max: IpAddr) -> Result<Self>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
   {
     let mut parent_field = Field::new(name, Dummy(()), Self::get_type()?);
     Self::set_range_values_internal(&mut parent_field, min, max)?;

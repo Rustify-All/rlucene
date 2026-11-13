@@ -80,7 +80,7 @@ where
   field_type.set_stored(random.random()).unwrap();
   field_type.freeze();
   let field_name = field_name.to_string();
-  Box::new(move || Ok(Field::new(&field_name, "randomValue", field_type.clone()).into()))
+  Box::new(move || Ok(Field::new(field_name.clone(), "randomValue", field_type.clone()).into()))
 }
 
 fn random_point_field<R>(random: &mut R, field_name: &str) -> FieldFactory
@@ -99,11 +99,11 @@ where
     },
     2 => {
       let value = random.random::<f64>();
-      Box::new(move || Ok(DoublePoint::new(&field_name, [value])?.into()))
+      Box::new(move || Ok(DoublePoint::new(field_name.clone(), [value])?.into()))
     },
     _ => {
       let value = random.random::<f32>();
-      Box::new(move || Ok(FloatPoint::new(&field_name, [value])?.into()))
+      Box::new(move || Ok(FloatPoint::new(field_name.clone(), [value])?.into()))
     },
   }
 }
@@ -116,22 +116,28 @@ where
   match random.random_range(0..4) {
     0 => Box::new(move || {
       Ok(
-        BinaryDocValuesField::new(&field_name, BytesRef::from_bytes(b"randomValue".to_vec()))
-          .into(),
+        BinaryDocValuesField::new(
+          field_name.clone(),
+          BytesRef::from_bytes(b"randomValue".to_vec()),
+        )
+        .into(),
       )
     }),
     1 => {
       let value = random.random::<i64>();
-      Box::new(move || Ok(NumericDocValuesField::new(&field_name, value).into()))
+      Box::new(move || Ok(NumericDocValuesField::new(field_name.clone(), value).into()))
     },
     2 => {
       let value = random.random::<f64>();
-      Box::new(move || Ok(DoubleDocValuesField::new(&field_name, value).into()))
+      Box::new(move || Ok(DoubleDocValuesField::new(field_name.clone(), value).into()))
     },
     _ => Box::new(move || {
       Ok(
-        SortedSetDocValuesField::new(&field_name, BytesRef::from_bytes(b"randomValue".to_vec()))
-          .into(),
+        SortedSetDocValuesField::new(
+          field_name.clone(),
+          BytesRef::from_bytes(b"randomValue".to_vec()),
+        )
+        .into(),
       )
     }),
   }
@@ -149,7 +155,7 @@ where
   Box::new(move || {
     Ok(
       KnnFloatVectorField::with_similarity_function(
-        &field_name,
+        field_name.clone(),
         values.clone(),
         similarity_function,
       )?

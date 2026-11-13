@@ -65,7 +65,7 @@ impl DoublePoint {
   /// * `point` - Double point value.
   pub fn new<T, P>(name: T, point: P) -> Result<DoublePoint>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
     P: AsRef<[f64]>,
   {
     let point = point.as_ref();

@@ -96,7 +96,7 @@ impl XYDocValuesField {
   /// Returns an error if `x` or `y` is infinite or NaN.
   pub fn new<T>(name: T, x: f32, y: f32) -> Result<Self>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
   {
     let mut field = Self {
       parent_field: Field::new(name.into(), 0i64, TYPE.clone()),

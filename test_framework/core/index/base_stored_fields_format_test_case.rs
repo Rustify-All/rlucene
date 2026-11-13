@@ -1074,7 +1074,8 @@ pub trait BaseStoredFieldsFormatTestCase:
         doc.add(NumericDocValuesField::new(
           sort_field
             .get_field()
-            .expect("index sort field must have a name"),
+            .expect("index sort field must have a name")
+            .to_owned(),
           TestUtil::next_int(random, 0, 10_000) as i64,
         ));
       }
@@ -1211,11 +1212,14 @@ pub trait BaseStoredFieldsFormatTestCase:
           if field.field_type().stored() {
             if let Some(value) = field.string_value()? {
               // Disable indexing
-              stored_doc.add(StoredField::from_string(field.name(), value.into_owned())?);
+              stored_doc.add(StoredField::from_string(
+                field.name().to_owned(),
+                value.into_owned(),
+              )?);
             } else if let Some(value) = field.binary_value()? {
               let value = value.into_owned();
               stored_doc.add(StoredField::from_binary_with_range(
-                field.name(),
+                field.name().to_owned(),
                 value.bytes,
                 value.offset,
                 value.length,

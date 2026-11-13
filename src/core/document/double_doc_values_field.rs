@@ -36,7 +36,7 @@ pub struct DoubleDocValuesField {
 impl DoubleDocValuesField {
   pub fn new<T>(name: T, value: f64) -> Self
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
   {
     let long_value = value.to_bits() as i64;
     let parent_field = NumericDocValuesField::new(name, long_value);

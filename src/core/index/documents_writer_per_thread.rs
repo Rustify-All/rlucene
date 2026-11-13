@@ -306,7 +306,8 @@ where
       aborted: AtomicBool::new(false),
     };
     let parent_field = if let Some(parent_field) = index_writer_config.get_parent_field() {
-      let field = ReservedField::new(NumericDocValuesField::new(parent_field, -1)).into();
+      let field =
+        ReservedField::new(NumericDocValuesField::new(parent_field.to_owned(), -1)).into();
       indexing_chain.mark_as_reserved(&field)?;
       Some(Box::new(field))
     } else {

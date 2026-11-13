@@ -110,7 +110,7 @@ impl LatLonPoint {
   /// * `longitude` - longitude value: must be within standard +/-180 coordinate bounds.
   pub fn new(name: &str, latitude: f64, longitude: f64) -> Result<Self> {
     let mut point = Self {
-      parent_field: Field::new(name, Dummy(()), TYPE_.clone()),
+      parent_field: Field::new(name.to_owned(), Dummy(()), TYPE_.clone()),
     };
     point.set_location_value(latitude, longitude)?;
     Ok(point)

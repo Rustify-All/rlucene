@@ -114,7 +114,7 @@ impl LongField {
   /// * `stored` - Whether to store the field.
   pub fn new<T>(name: T, value: i64, stored: Store) -> Result<LongField>
   where
-    T: Into<String>,
+    T: Into<Cow<'static, str>>,
   {
     let stored = stored.into();
     let (field_type, stored_value) = if stored {

@@ -43,7 +43,7 @@ pub struct FieldImpl {
 
 impl FieldImpl {
   pub fn new(name: &str, value: BytesRef<Vec<u8>>, field_type: FieldType) -> Self {
-    let parent_field = Field::new(name, value, field_type);
+    let parent_field = Field::new(name.to_owned(), value, field_type);
     FieldImpl { parent_field }
   }
 }
