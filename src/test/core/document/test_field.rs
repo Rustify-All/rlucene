@@ -1795,6 +1795,7 @@ fn test_text_field_string() -> Result<()> {
     if field.field_type().stored() {
       match field.stored_value()? {
         Some(FieldDataEnum::String(v)) => assert_eq!(v.as_str(), "baz"),
+        Some(FieldDataEnum::SharedString(v)) => assert_eq!(v.as_str(), "baz"),
         _ => unreachable!(),
       }
     } else {
