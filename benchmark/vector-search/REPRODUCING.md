@@ -11,6 +11,7 @@ checking compatibility, and timing queries are separate, explicit actions.
 | `sift1m` | 1,000,000 | 128 | 10,000 | Euclidean | 16 / 100 | 2048 |
 | `glove-wiki-100` | 1,000,000 | 100 | 2,641 | Dot product | 16 / 100 | 2048 |
 | `glove-wiki-300` | 1,000,000 | 300 | 2,641 | Dot product | 16 / 100 | 2048 |
+| `minilm-wiki-384-m16-1m` | 1,000,000 | 384 | 2,641 | Dot product | 16 / 100 | 2048 |
 | `minilm-wiki-384` | 500,000 | 384 | 2,641 | Dot product | 64 / 250 | 2048 |
 | `mpnet-wiki-768` | 500,000 | 768 | 2,641 | Dot product | 64 / 250 | 2048 |
 
@@ -20,7 +21,84 @@ and parameterized; a new executable must have its own validation and receipt.
 No large inputs, weights, indices, binaries, or historical result files are
 committed. Cohere is not included in this first set of reproduction presets.
 
-## Inspect the plan without running anything
+## Reproduce the measured Alpha.3 release
+
+The six configurations above were fully measured at
+`v0.1.0-alpha.3`, commit `9406d0fcd491b5d9d31d67b0cc01f9fa89775228`.
+The release workflow freezes that exact source from local Git, the current
+benchmark code, and the measured release-specific Cargo.lock. It does not switch
+the checkout or benchmark whichever library happens to be on `main`.
+`release.json` pins all six preset hashes and the measured Rust/Java drivers,
+sampling implementation and metrics. The additive codec configuration patch is
+still disclosed as `library_modified` in the frozen build receipt.
+
+Inspect without compiling, downloading, locking or creating directories:
+
+```sh
+python3 -B benchmark/run.py vector-search release-plan
+```
+
+For a full reproduction, create the Python3.12 inference environment described
+below, then choose persistent data and fresh result/index directories:
+
+```sh
+python3 -B benchmark/run.py vector-search release-run \
+  --output "$PWD/benchmark/runs/vector-alpha3" \
+  --index-root "$PWD/benchmark/indexing/runs/vector-alpha3" \
+  --data-root /path/to/persistent/benchmark/data \
+  --sources /path/to/persistent/benchmark/data/vector-sources \
+  --java-home /path/to/jdk-23 \
+  --inference-python /path/to/inference-venv/bin/python \
+  --download
+```
+
+Only missing pinned sources are downloaded with `--download`. Exact existing
+base/query vectors and valid truth are reused; no inference environment is needed
+when all six datasets already exist. Missing Wiki truth is generated explicitly
+as a recorded suite stage. The MiniLM500k input is the first500k rows of the
+measured 1M input, with identical query bytes; its own truth is computed for500k.
+No extra normalization or inference changes are introduced.
+
+`release-build` accepts the same options and stops after compiling drivers,
+without constructing a graph or timing queries. It leaves `STATE.json` as
+`READY`; explicitly continue it with:
+
+```sh
+python3 -B benchmark/run.py vector-search release-resume \
+  --output "$PWD/benchmark/runs/vector-alpha3"
+```
+
+Resume uses the saved plan and frozen harness, not later main edits. Completed
+stages and earlier attempt logs are retained. Only a pending/failed preparation,
+build or export stage can resume; a failed/interrupted full performance stage
+is never replayed automatically or by `release-resume`. Inspect and preserve its
+partial `RUN.json`; do not delete or replace observations to obtain better data.
+Ctrl+C stops owned children and releases the lock; it never schedules a resume.
+
+One exclusive performance lock covers source freezing, driver compilation, all
+data/truth preparation, all six comparisons, final identity/compatibility/round
+checks and export. The order matches the completed run: MPNet, SIFT, GloVe100,
+GloVe300, MiniLM1M, MiniLM500k. New indices stay under `--index-root`; complete
+raw evidence is also copied without indices to `--output/results/PRESET/`.
+`FINAL_AUDIT.json` and `SUMMARY.md` are written only after all six complete.
+Never remove shared data as part of routine output cleanup.
+
+Each new run records its own paths, source/consumer hashes, actual crate
+metadata, toolchain, JAR/JDK/classes/binaries and all commands. Different paths,
+hardware or generated code mean new identities and timings; these commands
+reproduce the measured workload and method, not the historical executable or
+identical elapsed times. The build uses the dedicated Alpha.3 lock rather than
+resolving dependencies from today's registry. The generic current-checkout build
+keeps its separate existing lock. No website publication is performed.
+
+The completed Alpha.3 run passed all24 index /48 reader-path structural checks.
+SIFT's cross-engine graph, ordered IDs, f32 bits and visited matched strictly.
+Wiki cross-writer graph digests differed and hot scores differed by at most1ULP,
+with some ordering/visited differences; GloVe300 fanout0 had two different hit
+sets. Average recall matched. Preserve these distinctions in new reports rather
+than equating index compatibility with cross-engine score or graph equality.
+
+## Inspect an individual plan without running anything
 
 ```sh
 python3 -B benchmark/run.py vector-search presets
@@ -37,7 +115,7 @@ python3 -B benchmark/run.py vector-search build --preset mpnet-wiki-768 \
   --java-home /path/to/jdk-23
 ```
 
-One build serves all five presets. `build` **compiles executables**, while
+One build serves all six presets. `build` **compiles executables**, while
 `build-index` measures index construction. Optional `--jars-dir` reuses the exact
 JARs listed in `benchmark/common/java-jars.json`; otherwise those pinned artifacts
 are downloaded. Drivers use published Lucene **10.1.0**, normal JIT/VectorAPI,

@@ -8,6 +8,13 @@
 
 目录与[网站首页卡片](https://benchmark.amazingkoala.com.cn/)对应：
 
+向量搜索已补齐本轮 Alpha.3 的六组实测配置，见
+[发布版向量复现入口](vector-search/REPRODUCING.md#reproduce-the-measured-alpha3-release)。
+`python3 -B benchmark/run.py vector-search release-plan` 只查看计划；
+`release-build` 只冻结精确发布源码并编译驱动；`release-run` 在独占锁下串行完成六组
+数据/真值准备、完整构建、查询和双向索引验证。包含 MiniLM100万条 M16/beam100 和
+50万条 M64/beam250 两配置，使用本轮专用依赖锁；具体命令和失败恢复规则见指南。
+
 - `search-benchmark-game/`：Wikipedia 962 条查询、五种模式。
 - `vector-search/`：SIFT1M、GloVe/Wiki 100/300维、MiniLM/Wiki384维、MPNet/Wiki768维的完整构图、Top100查询与双向索引验证。
 - [`indexing/`](indexing/README.md)：索引写入基准，支持 Rally HTTP Logs、MS MARCO Passage Ranking v1、GeoNames、NYC Yellow Taxi 和 Wikipedia medium 的固定百万条样本。

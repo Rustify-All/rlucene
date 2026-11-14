@@ -1,0 +1,63 @@
+{
+  "id": "minilm-wiki-384-m16-1m",
+  "protocol_version": "luceneutil-adapted-full-v2",
+  "upstream": {
+    "repository": "https://github.com/mikemccand/luceneutil",
+    "commit": "c7eeab0ceb661dae8cf4171ceed7761689acc0e0"
+  },
+  "dataset": "minilm-wiki-384-m16-1m",
+  "documents": 1000000,
+  "dimensions": 384,
+  "queries": 2641,
+  "top_k": 100,
+  "similarity": "DOT_PRODUCT",
+  "field": "knn",
+  "encoding": "float32",
+  "M": 16,
+  "beam_width": 100,
+  "ram_buffer_MiB": 2048,
+  "seed": 42,
+  "segments": 1,
+  "compound": false,
+  "writer_threads": 1,
+  "fanouts": [
+    0,
+    100
+  ],
+  "batches": 2,
+  "rounds": 12,
+  "warmup_seconds_per_engine": 60,
+  "java": {
+    "version": "23",
+    "xms": "512m",
+    "xmx": "6g",
+    "gc": "JDK default"
+  },
+  "score_policy": "report",
+  "input_files": {
+    "base.raw": {
+      "bytes": 1536000000,
+      "sha256": "95619bebc61b02d0fa338c4000cb9225636530bc82e8048365c02306e87861f0"
+    },
+    "query.raw": {
+      "bytes": 4056576,
+      "sha256": "4586fd8ef380433653d3746c44018ccd6945ca748b6df25995a30f96a7704a2c"
+    },
+    "groundtruth.raw": {
+      "bytes": 1056400,
+      "sha256": "dfa47c29656af5be5626268b8840b76a8885614259265b7aac1a6aa9864ff087"
+    },
+    "groundtruth.scores.raw": {
+      "bytes": 1056400,
+      "sha256": "980903ff51d7e44381047e0d4acf9c41e759d507631dc16a3b482e162707f90d"
+    }
+  },
+  "reference_query_count": 10000,
+  "query_count_note": "Use the complete 2641-line pinned Wiki query file; differs from upstream nquery=10000",
+  "upstream_differences": [
+    "RAM2048MiB rather than128MiB",
+    "serial writer/query, no quantization/rerank grid",
+    "two fresh batches with >=60s warmup and 12 balanced rounds",
+    "fanout0 extra; fanout100 matches upstream"
+  ]
+}

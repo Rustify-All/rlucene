@@ -11,6 +11,7 @@ import tarfile
 
 BENCHMARK = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BENCHMARK))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import runtime as rt
 import indexing_inputs
 from ms_marco_passage import prepare as ms_marco_passage

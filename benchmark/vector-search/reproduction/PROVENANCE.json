@@ -54,5 +54,23 @@
       "original_sha256": "4dbe14c09cb2bec5daf5c20744682cf57a97206cb9a8a8de726cb241d457173c",
       "migrated_sha256": "b9bd6bfb6aa059cdd8dbb5526ce747bf767fb2710af7dd98d47f93c5a4b8be60"
     }
+  },
+  "validated_full_run": {
+    "reference_run": "alpha3-web-retest-20261114",
+    "release": "v0.1.0-alpha.3",
+    "commit": "9406d0fcd491b5d9d31d67b0cc01f9fa89775228",
+    "configurations": 6,
+    "complete_builds": 24,
+    "reader_paths": 48,
+    "configuration_and_measurement_hashes": "../release.json",
+    "sampling": "two fresh batches per fanout; >=60 seconds actual warmup per engine; 12 balanced AB/BA rounds",
+    "source_adaptation": "Existing additive codec configuration builder in frozen source only; patch and library_modified recorded",
+    "setup_repairs": [
+      "Git archive source listing through exact commit rather than .git in archive",
+      "Dedicated Cargo.lock from the measured Alpha.3 build",
+      "Dynamic SIFT preparation import path",
+      "MiniLM1M/M16 preset and exact first-500k derivation"
+    ],
+    "identity_note": "Current driver/sampling/metrics hashes match the full run; a newly compiled executable has its own path-dependent identity and timings."
   }
 }

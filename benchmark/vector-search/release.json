@@ -1,0 +1,41 @@
+{
+  "release": "v0.1.0-alpha.3",
+  "commit": "9406d0fcd491b5d9d31d67b0cc01f9fa89775228",
+  "reference_run": "alpha3-web-retest-20261114",
+  "protocol": "luceneutil-adapted-full-v2",
+  "cargo_lock": "reproduction/locks/alpha3.Cargo.lock",
+  "cargo_lock_sha256": "454f57799469047fdcb1fac67b31c56b60d7a6c8e27e6e60ed4c06eca04cc882",
+  "presets": [
+    "mpnet-wiki-768",
+    "sift1m",
+    "glove-wiki-100",
+    "glove-wiki-300",
+    "minilm-wiki-384-m16-1m",
+    "minilm-wiki-384"
+  ],
+  "preset_sha256": {
+    "mpnet-wiki-768": "9d37bbc48d7adacaa48018721a8a0324ed8b56b1869ffaa6d693e3dc7f5f6a58",
+    "sift1m": "3b8fbb818f922764350ecaa1620fec5c3a7f06d9cc8154d1425207c0fce997d5",
+    "glove-wiki-100": "b61e18d8966a4a4dbc5ad7942ec9dc6d0a296533b1c8ff0446a42941f014bea3",
+    "glove-wiki-300": "424a0fb7e96f46be867029ecb9745626bc04ec8b6c1b1f36e223fe77bbc83909",
+    "minilm-wiki-384-m16-1m": "69de0f9eabf1eba6b3dd656e6f575ef3c39e2328acc84496c146d2472bc06413",
+    "minilm-wiki-384": "c63d61dd0395868dfa758cb72325c77e987c41936f976f7c5d63c4780012b7c8"
+  },
+  "measurement_files": {
+    "common/runtime.py": "feb18d132c190842a09182677120ea495160925d89916a2d3d7d417760ff6862",
+    "vector-search/reproduction/java/ExactGroundTruth.java": "a961d0929701cbdcb661779b4b1dfb06b77fa1457f9c3dda1230eff9bf38c888",
+    "vector-search/reproduction/java/SiftBench.java": "6c00c5c3e09b53d10a0b2df378776061afb8d3ed565ff896485f59e20e02bfb3",
+    "vector-search/reproduction/java/VerifyIndex.java": "d5c2a2971e4eb245e5dd5168596821680944d916e0ca60ea12bf0faeae31d5a5",
+    "vector-search/reproduction/java/WriterMetrics.java": "b9bd6bfb6aa059cdd8dbb5526ce747bf767fb2710af7dd98d47f93c5a4b8be60",
+    "vector-search/reproduction/metrics.py": "74f887c621445b6f6885449132a3eb025b27d668188acfe53fc1f636b35f67bd",
+    "vector-search/reproduction/runner.py": "8ede36bd58b5a5bcf3cfec77fd97bb46e3d7782f3267cb1091e6281c013a6014",
+    "vector-search/reproduction/rust/src/bin/verify_index.rs": "b4a03c5b27676e125c0a69f5e87688f3ecfdee4464a48d7608932c01c7d8a822",
+    "vector-search/reproduction/rust/src/bin/writer_metrics.rs": "2afd1eb87a0f9af1a94ec87b6bc3a9d9f8ea1476d6a242812df9f4b80ca62044",
+    "vector-search/reproduction/rust/src/main.rs": "60270001cb1b26e70d7bbc0fbe4c3a5f5aa4c74c612c03a2dc3c4982ec54fed8",
+    "vector-search/reproduction/rust/src/profiled.rs": "6a4d0819dad1b09b9be9bdf4a05483bcef0db5a3399ba5aa719b0ec4a2587854",
+    "vector-search/reproduction/rust/src/thread_cpu.rs": "ffd91714723a3c2875018356853add0a15b3d442a82c0c7aac2f263553bcbfe5"
+  },
+  "reference_configuration_patch_sha256": "e216bba0afb120e9cdf6785edee295e53c5f0155b414feec069dad8538fa6a05",
+  "reference_rlucene_metadata": "55b4e71696a27571",
+  "reference_identity_note": "New checkout/cache paths produce new build identities; these are reference measurements, never identities assigned to a new build."
+}

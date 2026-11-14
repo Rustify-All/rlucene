@@ -1,9 +1,13 @@
 # Vector search benchmarks
 
-For the five published SIFT/Wiki presets, complete graph construction, query
+For the six measured SIFT/Wiki configurations, complete graph construction, query
 measurement and bidirectional index verification, start with
 **[REPRODUCING.md](REPRODUCING.md)**. It documents explicit stages, source/data
 identities, groundtruth generation, result differences and partial-run handling.
+
+`release-plan`, `release-build` and `release-run` select the measured Alpha.3
+source and dedicated dependency lock. The release guide covers both MiniLM
+document counts, all six serial comparisons and explicit preparation-only resume.
 
 ```sh
 python3 -B benchmark/run.py vector-search presets

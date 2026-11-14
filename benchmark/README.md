@@ -53,6 +53,13 @@ ignored `data/`, `.cache/` and `runs/` directories, or user-selected paths.
 
 ## Results and reproducibility
 
+For the six measured Alpha.3 vector configurations, use the
+[vector release guide](vector-search/REPRODUCING.md#reproduce-the-measured-alpha3-release).
+`vector-search release-plan` is read-only; `release-build` freezes and compiles
+the exact release with its pinned lock; `release-run` performs all six serial
+comparisons. It includes both MiniLM1M/M16 and MiniLM500k/M64, preserves all
+attempts, and keeps indices separate from exported evidence.
+
 For the latest release's five indexing workloads, use the
 [release reproduction guide](indexing/README.md). `indexing release-reference`
 recomputes the saved result from committed formal samples without building or

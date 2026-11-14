@@ -30,7 +30,7 @@ def inputs():
     return rt.suite_inputs(SUITE)
 
 
-def build(java_home=None, jars_dir=None):
+def build(java_home=None, jars_dir=None, lock_file=None):
     """Caller holds the common exclusive lock. Builds are explicit setup only."""
     rt.macos()
     DESTINATION.mkdir(parents=True, exist_ok=True)
@@ -48,7 +48,9 @@ def build(java_home=None, jars_dir=None):
         source.mkdir()
         # Current bytes, including review edits, are copied with fresh mtimes.
         # This prevents Cargo Fresh from reusing an older source snapshot.
-        tracked = set(rt.output(["git", "-C", rt.REPOSITORY, "ls-files"]).splitlines())
+        tracked = set(rt.output(["git", "-C", rt.GIT_REPOSITORY, "ls-tree", "-r", "--name-only",
+                                 rt.SOURCE_COMMIT]).splitlines()) if rt.SOURCE_COMMIT else set(
+                                     rt.output(["git", "-C", rt.REPOSITORY, "ls-files"]).splitlines())
         tracked.update(receipt["source"]["files"])
         for relative in sorted(tracked):
             path = rt.REPOSITORY / relative
@@ -68,6 +70,9 @@ def build(java_home=None, jars_dir=None):
                                            tofile="b/src/core/codecs/lucene101_codec.rs"))
         (attempt / "codec-configuration.diff").write_text(patch, encoding="utf-8")
         shutil.copytree(DRIVERS / "rust", consumer)
+        if lock_file is not None:
+            shutil.copyfile(lock_file, consumer / "Cargo.lock")
+            receipt["selected_cargo_lock"] = {"path": str(lock_file), "sha256": rt.sha(lock_file)}
         manifest = consumer / "Cargo.toml"
         text = manifest.read_text().replace('path = "../../../.."', 'path = "../source"')
         manifest.write_text(text, encoding="utf-8")
