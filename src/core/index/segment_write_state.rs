@@ -55,7 +55,7 @@ pub struct SegmentWriteState<'a, D> {
   pub segment_suffix: String,
 
   /// IOContext for all writes; you should pass this to
-  /// [`Directory::create_output`](crate::core::store::directory::Directory::create_output).
+  /// [`Directory::create_output`].
   pub context: &'a IOContext,
 }
 

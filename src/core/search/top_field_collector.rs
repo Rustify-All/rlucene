@@ -244,7 +244,7 @@ impl TopFieldCollector {
 ///
 /// # Errors
 ///
-/// Returns [`LuceneErrorKind::IllegalArgument`] if there is evidence that `topDocs` were computed
+/// Returns [`LuceneErrorKind::IllegalArgument`](crate::core::util::error::lucene_error::LuceneErrorKind::IllegalArgument) if there is evidence that `topDocs` were computed
 /// against a different searcher or a different query.
 pub fn populate_scores<IRC, T, S, SIM>(
   top_docs: &mut [S],

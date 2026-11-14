@@ -59,7 +59,7 @@ pub trait PostingsReaderBase: Display + CloseableRef {
     D1: Directory,
     II: IndexInput;
 
-  /// Return a newly created empty [`TermState`](crate::core::index::term_state::TermState).
+  /// Return a newly created empty [`TermState`].
   fn new_term_state(&self) -> Result<Self::TermState>;
 
   /// Actually decode metadata for next term
@@ -79,7 +79,7 @@ pub trait PostingsReaderBase: Display + CloseableRef {
     S: TryInto<Self::TermStateMut<'a>, Error = E>,
     E: Display;
 
-  /// Must fully consume `state`, since after this call that [`TermState`](crate::core::index::term_state::TermState) may
+  /// Must fully consume `state`, since after this call that [`TermState`] may
   /// be reused.
   type PostingsEnum: PostingsEnum;
   fn postings<'a, S, E>(

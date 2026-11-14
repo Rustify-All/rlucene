@@ -148,7 +148,7 @@ impl FieldInfo {
   ///
   /// # Errors
   ///
-  /// Returns [`LuceneErrorKind::IllegalArgument`] if any option is invalid.
+  /// Returns [`LuceneErrorKind::IllegalArgument`](crate::core::util::error::lucene_error::LuceneErrorKind::IllegalArgument) if any option is invalid.
   pub fn check_consistency(&self) -> Result<()> {
     {
       if self.index_options != IndexOptions::None {
@@ -245,7 +245,7 @@ impl FieldInfo {
   ///
   /// # Errors
   ///
-  /// Returns [`LuceneErrorKind::IllegalArgument`] if the field schemas differ.
+  /// Returns [`LuceneErrorKind::IllegalArgument`](crate::core::util::error::lucene_error::LuceneErrorKind::IllegalArgument) if the field schemas differ.
   pub fn verify_same_schema(&self, other: &FieldInfo) -> Result<()> {
     let field_name = &self.name;
 

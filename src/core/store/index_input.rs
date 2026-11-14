@@ -61,7 +61,7 @@ pub trait IndexInput: DataInput + TryClone + CloseableRef {
 
   /// Sets the current position in this file, where the next read will occur.
   /// If this position is beyond the end of the file, it will return an
-  /// [`LuceneErrorKind::Io`], and the stream
+  /// [`LuceneErrorKind::Io`](crate::core::util::error::lucene_error::LuceneErrorKind::Io), and the stream
   /// will be in an undetermined state.
   ///
   /// # See Also

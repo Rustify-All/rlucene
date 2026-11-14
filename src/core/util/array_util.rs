@@ -49,14 +49,14 @@ impl ArrayUtil {
   ///
   /// # Errors
   ///
-  /// Returns a [`LuceneErrorKind::NumberFormat`] if it can't parse the chars into
+  /// Returns a [`LuceneErrorKind::NumberFormat`](crate::core::util::error::lucene_error::LuceneErrorKind::NumberFormat) if it can't parse the chars into
   /// an integer.
   pub fn parse_int_default(chars: &[char], offset: usize, len: usize) -> Result<i32> {
     Self::parse_int(chars, offset, len, 10)
   }
 
   /// Parses the string argument as if it were an `i32` value and returns the
-  /// result. Returns an [`LuceneErrorKind::NumberFormat`] if the string does not
+  /// result. Returns an [`LuceneErrorKind::NumberFormat`](crate::core::util::error::lucene_error::LuceneErrorKind::NumberFormat) if the string does not
   /// represent an `i32` quantity. The second argument specifies the radix
   /// to use when parsing the value.
   pub fn parse_int(chars: &[char], mut offset: usize, mut len: usize, radix: i32) -> Result<i32> {
@@ -134,7 +134,7 @@ impl ArrayUtil {
   ///
   /// # Errors
   ///
-  /// Returns [`LuceneErrorKind::IllegalArgument`] when `min_target_size` exceeds
+  /// Returns [`LuceneErrorKind::IllegalArgument`](crate::core::util::error::lucene_error::LuceneErrorKind::IllegalArgument) when `min_target_size` exceeds
   /// either Lucene's maximum supported vector length or Rust's maximum
   /// allocation size for the given element size.
   #[inline]

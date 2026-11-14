@@ -244,7 +244,7 @@ impl VectorUtil {
   ///
   /// # Errors
   ///
-  /// returns [`LuceneErrorKind::IllegalArgument`] if any component of vector is not finite
+  /// returns [`LuceneErrorKind::IllegalArgument`](crate::core::util::error::lucene_error::LuceneErrorKind::IllegalArgument) if any component of vector is not finite
   #[inline]
   pub fn check_finite(v: &[f32]) -> Result<()> {
     use wide::{bytemuck::cast, u32x16};

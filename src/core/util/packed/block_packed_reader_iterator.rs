@@ -56,7 +56,7 @@ impl BlockPackedReaderIterator {
   ///
   /// # Errors
   ///
-  /// Returns [`LuceneErrorKind::Io`] if the
+  /// Returns [`LuceneErrorKind::Io`](crate::core::util::error::lucene_error::LuceneErrorKind::Io) if the
   /// read fails.
   fn read_vlong<DI>(data_input: &mut DI) -> Result<i64>
   where
@@ -196,7 +196,7 @@ impl BlockPackedReaderIterator {
   ///
   /// # Errors
   ///
-  /// Returns [`LuceneErrorKind::Io`] if the
+  /// Returns [`LuceneErrorKind::Io`](crate::core::util::error::lucene_error::LuceneErrorKind::Io) if the
   /// reader has reached the end of the value stream.
   ///
   /// # Behavior
@@ -234,7 +234,7 @@ impl BlockPackedReaderIterator {
   ///
   /// # Errors
   ///
-  /// Returns [`LuceneErrorKind::Io`] if the
+  /// Returns [`LuceneErrorKind::Io`](crate::core::util::error::lucene_error::LuceneErrorKind::Io) if the
   /// reader has reached the end of the value stream.
   pub fn next_batch<DI>(&mut self, mut count: usize, data_input: &mut DI) -> Result<&LongsRef>
   where

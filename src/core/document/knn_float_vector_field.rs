@@ -84,7 +84,7 @@ impl KnnFloatVectorField {
   ///
   /// # Errors
   ///
-  /// returns [`LuceneErrorKind::IllegalArgument`] if has dimension > 1024.
+  /// returns [`LuceneErrorKind::IllegalArgument`](crate::core::util::error::lucene_error::LuceneErrorKind::IllegalArgument) if has dimension > 1024.
   pub fn create_field_type(
     dimension: i32,
     similarity_function: VectorSimilarityFunction,
@@ -112,7 +112,7 @@ impl KnnFloatVectorField {
   ///
   /// # Errors
   ///
-  /// returns [`LuceneErrorKind::IllegalArgument`] if the vector is empty or has
+  /// returns [`LuceneErrorKind::IllegalArgument`](crate::core::util::error::lucene_error::LuceneErrorKind::IllegalArgument) if the vector is empty or has
   /// dimension > 1024.
   pub fn with_similarity_function<N, V>(
     name: N,
@@ -146,7 +146,7 @@ impl KnnFloatVectorField {
   ///
   /// # Errors
   ///
-  /// returns [`LuceneErrorKind::IllegalArgument`] if the vector is empty or has
+  /// returns [`LuceneErrorKind::IllegalArgument`](crate::core::util::error::lucene_error::LuceneErrorKind::IllegalArgument) if the vector is empty or has
   /// dimension > 1024.
   pub fn new<N, V>(name: N, vector: V) -> Result<Self>
   where
@@ -168,7 +168,7 @@ impl KnnFloatVectorField {
   ///
   /// # Errors
   ///
-  /// returns [`LuceneErrorKind::IllegalArgument`] if the vector is empty or has
+  /// returns [`LuceneErrorKind::IllegalArgument`](crate::core::util::error::lucene_error::LuceneErrorKind::IllegalArgument) if the vector is empty or has
   /// dimension > 1024.
   pub fn with_type<N, V>(name: N, vector: V, field_type: FieldType) -> Result<Self>
   where
@@ -213,7 +213,7 @@ impl KnnFloatVectorField {
   ///
   /// # Errors
   ///
-  /// returns [`LuceneErrorKind::IllegalArgument`] if value is invalid
+  /// returns [`LuceneErrorKind::IllegalArgument`](crate::core::util::error::lucene_error::LuceneErrorKind::IllegalArgument) if value is invalid
   pub fn set_vector_value<V>(&mut self, value: V) -> Result<()>
   where
     V: Into<Vec<f32>>,

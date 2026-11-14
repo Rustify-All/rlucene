@@ -40,7 +40,7 @@ impl XYEncodingUtils {
   ///
   /// # Errors
   ///
-  /// Returns [`LuceneErrorKind::IllegalArgument`] if `x` is out of bounds.
+  /// Returns [`LuceneErrorKind::IllegalArgument`](crate::core::util::error::lucene_error::LuceneErrorKind::IllegalArgument) if `x` is out of bounds.
   pub fn encode(x: f32) -> Result<i32> {
     Ok(NumericUtils::float_to_sortable_int(Self::check_val(x)?))
   }

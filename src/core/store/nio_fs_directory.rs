@@ -235,9 +235,9 @@ impl BufferedIndexInputBase for NIOFSIndexInput {
   ///
   /// This method returns a [`LuceneError`] in the following cases:
   ///
-  /// * [`LuceneErrorKind::Eof`] - If the requested read range exceeds the file's
+  /// * [`LuceneErrorKind::Eof`](crate::core::util::error::lucene_error::LuceneErrorKind::Eof) - If the requested read range exceeds the file's
   ///   bounds or if the file unexpectedly reaches EOF during a read.
-  /// * [`LuceneErrorKind::Io`] - For general I/O errors encountered while reading
+  /// * [`LuceneErrorKind::Io`](crate::core::util::error::lucene_error::LuceneErrorKind::Io) - For general I/O errors encountered while reading
   ///   or seeking the file.
   ///
   /// # Details

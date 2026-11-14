@@ -122,7 +122,7 @@ impl LatLonPoint {
   ///
   /// # Errors
   ///
-  /// Returns [`LuceneErrorKind::IllegalArgument`] if latitude or longitude are out of bounds.
+  /// Returns [`LuceneErrorKind::IllegalArgument`](crate::core::util::error::lucene_error::LuceneErrorKind::IllegalArgument) if latitude or longitude are out of bounds.
   pub fn set_location_value(&mut self, latitude: f64, longitude: f64) -> Result<()> {
     if matches!(self.parent_field.fields_data, FieldDataEnum::Dummy(_)) {
       self.parent_field.fields_data = FieldDataEnum::Binary(BytesRef::from_bytes(vec![0u8; 8]));
@@ -213,7 +213,7 @@ impl LatLonPoint {
   ///
   /// # Errors
   ///
-  /// Returns [`LuceneErrorKind::IllegalArgument`] if the box has invalid coordinates.
+  /// Returns [`LuceneErrorKind::IllegalArgument`](crate::core::util::error::lucene_error::LuceneErrorKind::IllegalArgument) if the box has invalid coordinates.
   pub fn new_box_query(
     field: &str,
     min_latitude: f64,
@@ -276,7 +276,7 @@ impl LatLonPoint {
   ///
   /// # Errors
   ///
-  /// Returns [`LuceneErrorKind::IllegalArgument`] if the location has invalid coordinates or radius is invalid.
+  /// Returns [`LuceneErrorKind::IllegalArgument`](crate::core::util::error::lucene_error::LuceneErrorKind::IllegalArgument) if the location has invalid coordinates or radius is invalid.
   pub fn new_distance_query(
     field: &str,
     latitude: f64,
@@ -294,7 +294,7 @@ impl LatLonPoint {
   ///
   /// # Errors
   ///
-  /// Returns [`LuceneErrorKind::IllegalArgument`] if `polygons` is empty.
+  /// Returns [`LuceneErrorKind::IllegalArgument`](crate::core::util::error::lucene_error::LuceneErrorKind::IllegalArgument) if `polygons` is empty.
   ///
   /// See also [`Polygon`].
   pub fn new_polygon_query<I>(field: &str, polygons: I) -> Result<Query>
@@ -316,7 +316,7 @@ impl LatLonPoint {
   ///
   /// # Errors
   ///
-  /// Returns [`LuceneErrorKind::IllegalArgument`] if `lat_lon_geometries` is empty.
+  /// Returns [`LuceneErrorKind::IllegalArgument`](crate::core::util::error::lucene_error::LuceneErrorKind::IllegalArgument) if `lat_lon_geometries` is empty.
   ///
   /// See also [`LatLonGeometry`].
   pub fn new_geometry_query<T, I>(
@@ -440,7 +440,7 @@ impl LatLonPoint {
   ///
   /// # Errors
   ///
-  /// Returns [`LuceneErrorKind::IllegalArgument`] if `latitude`, `longitude` or `n` are out-of-bounds.
+  /// Returns [`LuceneErrorKind::IllegalArgument`](crate::core::util::error::lucene_error::LuceneErrorKind::IllegalArgument) if `latitude`, `longitude` or `n` are out-of-bounds.
   ///
   /// Returns an error if an I/O error occurs while finding the points.
   pub fn nearest<IRC, SIM>(

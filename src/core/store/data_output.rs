@@ -125,7 +125,7 @@ pub trait DataOutput {
   ///   numbers are supported but should be avoided.
   ///
   /// # Errors
-  /// Returns [`LuceneErrorKind::Io`] if
+  /// Returns [`LuceneErrorKind::Io`](crate::core::util::error::lucene_error::LuceneErrorKind::Io) if
   /// there is an error writing to the underlying medium.
   ///
   /// # See Also
