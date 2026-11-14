@@ -125,7 +125,10 @@ fn write_server(path: &str) -> Result<()> {
 }
 
 fn tokens(analyzer: &StandardAnalyzer, text: &str) -> Result<Vec<(String, i32, i32, i32)>> {
-    let mut stream = analyzer.token_stream_from_text(TEXT, text)?;
+    let mut stream = analyzer.token_stream_from_text(
+        TEXT,
+        rlucene::core::analysis::analyzer::AnalyzerText::Borrowed(text),
+    )?;
     let mut out = Vec::new();
     stream.reset()?;
     while stream.increment_token()? {

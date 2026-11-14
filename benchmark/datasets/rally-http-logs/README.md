@@ -19,7 +19,7 @@ python3 -B benchmark/datasets/prepare.py rally-http-logs-1m --archive /path/to/d
 
 The default destination is `benchmark/data/rally-http-logs-1m/`. Use
 `--destination` to prepare the files elsewhere and pass the same path as
-`--data` to the indexing runner. Preparation validates the archive and stages
+`--data rally-http-logs-1m=DIR` to the latest-release runner. Preparation validates the archive and stages
 the transformed files before checking their SHA-256. Partial outputs are
 retained for diagnosis.
 

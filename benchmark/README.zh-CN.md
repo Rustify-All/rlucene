@@ -1,5 +1,11 @@
 # 复现 RLucene 基准测试
 
+索引写入只保留最新发布版 Alpha.3 的五套方法和正式参考样本，入口见
+[索引复现说明](indexing/README.md)。执行
+`python3 -B benchmark/run.py indexing release-reference` 可不下载语料、不编译，
+直接从全部正式样本复算本次表格；`release-plan` 查看参数，`release-smoke` 验证环境和索引，
+`release-run` 完整重新测量。发布库按精确 tag/commit 冻结，不依赖当前检出的库版本。
+
 目录与[网站首页卡片](https://benchmark.amazingkoala.com.cn/)对应：
 
 - `search-benchmark-game/`：Wikipedia 962 条查询、五种模式。

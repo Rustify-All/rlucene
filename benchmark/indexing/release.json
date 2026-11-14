@@ -1,0 +1,13 @@
+{
+  "release": "v0.1.0-alpha.3",
+  "commit": "9406d0fcd491b5d9d31d67b0cc01f9fa89775228",
+  "crate_sha256": "2b9ff1e141f211c79c039924d75f1db9c68b92633e35d48fe1368ad152f3dfe7",
+  "datasets": [
+    "rally-http-logs-1m",
+    "ms-marco-passage-1m",
+    "geonames-1m",
+    "nyc-yellow-taxi-2025-01-1m",
+    "wiki-medium-indexing-1m"
+  ],
+  "reference": "reference/latest.json"
+}

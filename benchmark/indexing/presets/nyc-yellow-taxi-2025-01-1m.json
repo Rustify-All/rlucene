@@ -51,7 +51,7 @@
   ],
   "runner": "structured",
   "workload": "nyc-yellow-taxi",
-  "source_commit": "c2f2033372049aa8f9ae5ef45a678d13698f03d8",
+  "source_commit": "9406d0fcd491b5d9d31d67b0cc01f9fa89775228",
   "java_class": "NycTaxi",
   "rust_binary": "nyc-taxi-verify"
 }

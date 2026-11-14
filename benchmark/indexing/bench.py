@@ -169,6 +169,10 @@ def run(args, preset):
 
 
 def main():
+    if rt.SOURCE_COMMIT is None and (len(sys.argv) < 2 or sys.argv[1] != "datasets"):
+        from release_suite import main as release_main
+        release_main(sys.argv[1:])
+        return
     presets = {p.stem: p for p in sorted(PRESETS.glob("*.json"))}
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("datasets", "build", "build-tuned", "smoke", "run", "summarize"))

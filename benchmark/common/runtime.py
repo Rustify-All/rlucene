@@ -16,6 +16,16 @@ BENCHMARK = Path(__file__).resolve().parents[1]
 REPOSITORY = BENCHMARK.parent
 CACHE = BENCHMARK / ".cache"
 ENGINES = ["rust", "java"]
+GIT_REPOSITORY = REPOSITORY
+SOURCE_COMMIT = None
+LOCK_FD = None
+if os.environ.get("RLUCENE_BENCHMARK_CONTEXT"):
+    context = json.loads(Path(os.environ["RLUCENE_BENCHMARK_CONTEXT"]).read_text())
+    REPOSITORY = Path(context["source"])
+    GIT_REPOSITORY = Path(context["git_repository"])
+    CACHE = Path(context["cache"])
+    SOURCE_COMMIT = context["commit"]
+    LOCK_FD = int(context["lock_fd"])
 
 
 def require(condition, message):
@@ -55,6 +65,18 @@ def macos():
 
 class Lock:
     def __enter__(self):
+        if LOCK_FD is not None:
+            held = os.fstat(LOCK_FD)
+            target = os.stat("/tmp/rlucene-performance-build.lock")
+            require((held.st_dev, held.st_ino) == (target.st_dev, target.st_ino),
+                    "Inherited descriptor is not the shared performance lock")
+            self.stream = os.fdopen(os.dup(LOCK_FD), "a")
+            try:
+                fcntl.flock(self.stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BaseException:
+                self.stream.close()
+                raise
+            return self
         self.stream = open("/tmp/rlucene-performance-build.lock", "a")
         print("WAIT /tmp/rlucene-performance-build.lock", flush=True)
         try:
@@ -96,14 +118,33 @@ def jdk(selected=None):
             "javac_sha256": sha(home / "bin/javac"), "jvm_sha256": sha(home / "lib/server/libjvm.dylib")}
 
 
-def source_identity():
-    paths = [REPOSITORY / "Cargo.toml", REPOSITORY / "rust-toolchain.toml"]
-    paths += sorted((REPOSITORY / "src").rglob("*.rs"))
-    hashes = {p.relative_to(REPOSITORY).as_posix(): sha(p) for p in paths}
-    return {"commit": output(["git", "-C", REPOSITORY, "rev-parse", "HEAD"]),
+def source_identity(repository=None, commit=None):
+    repository = Path(repository or REPOSITORY)
+    commit = commit or SOURCE_COMMIT
+    paths = [repository / "Cargo.toml", repository / "rust-toolchain.toml"]
+    paths += sorted((repository / "src").rglob("*.rs"))
+    hashes = {p.relative_to(repository).as_posix(): sha(p) for p in paths}
+    if commit:
+        entries = subprocess.check_output(["git", "-C", str(GIT_REPOSITORY), "ls-tree", "-rz", commit]).split(b"\0")
+        expected = {}
+        for entry in filter(None, entries):
+            meta, filename = entry.split(b"\t", 1)
+            name = os.fsdecode(filename)
+            if name in ("Cargo.toml", "rust-toolchain.toml") or name.startswith("src/") and name.endswith(".rs"):
+                expected[name] = meta.split()[2].decode()
+        modified = set(expected).symmetric_difference(hashes)
+        for name in expected.keys() & hashes.keys():
+            data = (repository / name).read_bytes()
+            if hashlib.sha1(f"blob {len(data)}\0".encode() + data).hexdigest() != expected[name]:
+                modified.add(name)
+        modified = sorted(modified)
+    else:
+        commit = output(["git", "-C", repository, "rev-parse", "HEAD"])
+        modified = output(["git", "-C", repository, "diff", "HEAD", "--name-only", "--", "src", "Cargo.toml", "rust-toolchain.toml"]).splitlines()
+    return {"commit": commit,
             "source_sha256": hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest(),
             "files": hashes,
-            "modified_library_files": output(["git", "-C", REPOSITORY, "diff", "HEAD", "--name-only", "--", "src", "Cargo.toml", "rust-toolchain.toml"]).splitlines()}
+            "modified_library_files": modified}
 
 
 def download(url, path, expected):

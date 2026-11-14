@@ -1,0 +1,3691 @@
+{
+  "schema": "rlucene-indexing-reference-v1",
+  "release": "v0.1.0-alpha.3",
+  "commit": "9406d0fcd491b5d9d31d67b0cc01f9fa89775228",
+  "crate_sha256": "2b9ff1e141f211c79c039924d75f1db9c68b92633e35d48fe1368ad152f3dfe7",
+  "library_source_sha256": "d1c5ec60aacc761721ce78e2222d298d46e6cecd1844249741a1b07dea490cf4",
+  "totals": {
+    "formal_groups": 78,
+    "formal_engine_writes": 228,
+    "warmup_engine_writes": 80,
+    "pgo_training_writes": 16,
+    "reopen_verification_receipts": 514
+  },
+  "datasets": [
+    {
+      "dataset": "rally-http-logs-1m",
+      "label": "Rally HTTP Logs",
+      "preset": {
+        "dataset": "rally-http-logs-1m",
+        "manifest": "datasets/rally-http-logs/manifest.json",
+        "documents": 1000000,
+        "seed": "20261109",
+        "fields_per_document": 12,
+        "writer_threads": 1,
+        "directory": "mmap",
+        "codec": "Lucene101 BEST_SPEED",
+        "ram_mib": 256,
+        "flush_documents": 65536,
+        "merge_policy": "none",
+        "compound": false,
+        "commit_on_close": false,
+        "segments": [
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          16960
+        ],
+        "postings": {
+          "request": [
+            24509,
+            5922462
+          ],
+          "request.raw": [
+            48626,
+            1000000
+          ]
+        },
+        "batches": 3,
+        "formal_per_batch": 6,
+        "warmups_per_batch": 2,
+        "pgo_training_writes": 4
+      },
+      "input_manifest": "datasets/rally-http-logs/manifest.json",
+      "input_manifest_sha256": "554eed2ed360b9316dbd9526a7aa10baef42df127f6f289cc00db0dabeaf3199",
+      "machine": {
+        "os": "macOS-27.2.1-arm64-arm-64bit",
+        "architecture": "arm64",
+        "python": "3.9.6 (default, Oct 19 2026, 19:18:13) \n[Clang 21.0.0 (clang-2100.4.1.1)]",
+        "cpu_count": 12
+      },
+      "rust_version": "1.98.1",
+      "java_version": "Lucene 10.1.0 / JDK 23.0.2",
+      "optimized_configuration": "native CPU + ThinLTO + PGO",
+      "samples": [
+        {
+          "batch": 1,
+          "phase": "formal",
+          "round": 1,
+          "order": [
+            "java",
+            "rust",
+            "tuned"
+          ],
+          "engines": {
+            "java": {
+              "docs": 1000000,
+              "write_ns": 2353890000,
+              "commit_ns": 32077209,
+              "close_ns": 1039584,
+              "total_ns": 2387006793
+            },
+            "rust": {
+              "close_ns": 441667,
+              "commit_ns": 45681875,
+              "docs": 1000000,
+              "total_ns": 2240331958,
+              "write_ns": 2194208416
+            },
+            "tuned": {
+              "close_ns": 473541,
+              "commit_ns": 28979666,
+              "docs": 1000000,
+              "total_ns": 1874708790,
+              "write_ns": 1845255583
+            }
+          }
+        },
+        {
+          "batch": 1,
+          "phase": "formal",
+          "round": 2,
+          "order": [
+            "tuned",
+            "rust",
+            "java"
+          ],
+          "engines": {
+            "tuned": {
+              "close_ns": 468250,
+              "commit_ns": 29304792,
+              "docs": 1000000,
+              "total_ns": 1844552375,
+              "write_ns": 1814779333
+            },
+            "rust": {
+              "close_ns": 429791,
+              "commit_ns": 61741875,
+              "docs": 1000000,
+              "total_ns": 2277619666,
+              "write_ns": 2215448000
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 2421060625,
+              "commit_ns": 31617417,
+              "close_ns": 909791,
+              "total_ns": 2453587833
+            }
+          }
+        },
+        {
+          "batch": 1,
+          "phase": "formal",
+          "round": 3,
+          "order": [
+            "java",
+            "tuned",
+            "rust"
+          ],
+          "engines": {
+            "java": {
+              "docs": 1000000,
+              "write_ns": 2369251583,
+              "commit_ns": 32785167,
+              "close_ns": 965541,
+              "total_ns": 2403002291
+            },
+            "tuned": {
+              "close_ns": 523084,
+              "commit_ns": 48860708,
+              "docs": 1000000,
+              "total_ns": 1881755917,
+              "write_ns": 1832372125
+            },
+            "rust": {
+              "close_ns": 491375,
+              "commit_ns": 28535625,
+              "docs": 1000000,
+              "total_ns": 2227392834,
+              "write_ns": 2198365834
+            }
+          }
+        },
+        {
+          "batch": 1,
+          "phase": "formal",
+          "round": 4,
+          "order": [
+            "rust",
+            "tuned",
+            "java"
+          ],
+          "engines": {
+            "rust": {
+              "close_ns": 409375,
+              "commit_ns": 29549833,
+              "docs": 1000000,
+              "total_ns": 2234552083,
+              "write_ns": 2204592875
+            },
+            "tuned": {
+              "close_ns": 445084,
+              "commit_ns": 28533542,
+              "docs": 1000000,
+              "total_ns": 1919901251,
+              "write_ns": 1890922625
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 2380162709,
+              "commit_ns": 33151000,
+              "close_ns": 645125,
+              "total_ns": 2413958834
+            }
+          }
+        },
+        {
+          "batch": 1,
+          "phase": "formal",
+          "round": 5,
+          "order": [
+            "rust",
+            "java",
+            "tuned"
+          ],
+          "engines": {
+            "rust": {
+              "close_ns": 402708,
+              "commit_ns": 29639042,
+              "docs": 1000000,
+              "total_ns": 2249945000,
+              "write_ns": 2219903250
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 2358522750,
+              "commit_ns": 31123208,
+              "close_ns": 681334,
+              "total_ns": 2390327292
+            },
+            "tuned": {
+              "close_ns": 435208,
+              "commit_ns": 29755833,
+              "docs": 1000000,
+              "total_ns": 1894525791,
+              "write_ns": 1864334750
+            }
+          }
+        },
+        {
+          "batch": 1,
+          "phase": "formal",
+          "round": 6,
+          "order": [
+            "tuned",
+            "java",
+            "rust"
+          ],
+          "engines": {
+            "tuned": {
+              "close_ns": 436166,
+              "commit_ns": 30185958,
+              "docs": 1000000,
+              "total_ns": 1858205832,
+              "write_ns": 1827583708
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 2360693833,
+              "commit_ns": 32388750,
+              "close_ns": 581208,
+              "total_ns": 2393663791
+            },
+            "rust": {
+              "close_ns": 426500,
+              "commit_ns": 32067041,
+              "docs": 1000000,
+              "total_ns": 2256886791,
+              "write_ns": 2224393250
+            }
+          }
+        },
+        {
+          "batch": 2,
+          "phase": "formal",
+          "round": 1,
+          "order": [
+            "tuned",
+            "java",
+            "rust"
+          ],
+          "engines": {
+            "tuned": {
+              "close_ns": 428209,
+              "commit_ns": 27210792,
+              "docs": 1000000,
+              "total_ns": 1870268792,
+              "write_ns": 1842629791
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 2376555208,
+              "commit_ns": 31875833,
+              "close_ns": 1092083,
+              "total_ns": 2409523124
+            },
+            "rust": {
+              "close_ns": 470709,
+              "commit_ns": 29469959,
+              "docs": 1000000,
+              "total_ns": 2257999335,
+              "write_ns": 2228058667
+            }
+          }
+        },
+        {
+          "batch": 2,
+          "phase": "formal",
+          "round": 2,
+          "order": [
+            "rust",
+            "java",
+            "tuned"
+          ],
+          "engines": {
+            "rust": {
+              "close_ns": 497542,
+              "commit_ns": 29961875,
+              "docs": 1000000,
+              "total_ns": 2235756417,
+              "write_ns": 2205297000
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 2396452125,
+              "commit_ns": 33418542,
+              "close_ns": 829875,
+              "total_ns": 2430700542
+            },
+            "tuned": {
+              "close_ns": 483542,
+              "commit_ns": 27768458,
+              "docs": 1000000,
+              "total_ns": 1858480958,
+              "write_ns": 1830228958
+            }
+          }
+        },
+        {
+          "batch": 2,
+          "phase": "formal",
+          "round": 3,
+          "order": [
+            "rust",
+            "tuned",
+            "java"
+          ],
+          "engines": {
+            "rust": {
+              "close_ns": 620916,
+              "commit_ns": 29857709,
+              "docs": 1000000,
+              "total_ns": 2268165792,
+              "write_ns": 2237687167
+            },
+            "tuned": {
+              "close_ns": 446708,
+              "commit_ns": 28142625,
+              "docs": 1000000,
+              "total_ns": 1811044541,
+              "write_ns": 1782455208
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 2372240375,
+              "commit_ns": 31522667,
+              "close_ns": 724667,
+              "total_ns": 2404487709
+            }
+          }
+        },
+        {
+          "batch": 2,
+          "phase": "formal",
+          "round": 4,
+          "order": [
+            "java",
+            "tuned",
+            "rust"
+          ],
+          "engines": {
+            "java": {
+              "docs": 1000000,
+              "write_ns": 2489114875,
+              "commit_ns": 35948083,
+              "close_ns": 630250,
+              "total_ns": 2525693208
+            },
+            "tuned": {
+              "close_ns": 526167,
+              "commit_ns": 29528458,
+              "docs": 1000000,
+              "total_ns": 1872862833,
+              "write_ns": 1842808208
+            },
+            "rust": {
+              "close_ns": 426417,
+              "commit_ns": 29572500,
+              "docs": 1000000,
+              "total_ns": 2295046542,
+              "write_ns": 2265047625
+            }
+          }
+        },
+        {
+          "batch": 2,
+          "phase": "formal",
+          "round": 5,
+          "order": [
+            "tuned",
+            "rust",
+            "java"
+          ],
+          "engines": {
+            "tuned": {
+              "close_ns": 496208,
+              "commit_ns": 28285542,
+              "docs": 1000000,
+              "total_ns": 1910979917,
+              "write_ns": 1882198167
+            },
+            "rust": {
+              "close_ns": 395000,
+              "commit_ns": 37381416,
+              "docs": 1000000,
+              "total_ns": 2261094208,
+              "write_ns": 2223317792
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 2381163625,
+              "commit_ns": 32635167,
+              "close_ns": 596500,
+              "total_ns": 2414395292
+            }
+          }
+        },
+        {
+          "batch": 2,
+          "phase": "formal",
+          "round": 6,
+          "order": [
+            "java",
+            "rust",
+            "tuned"
+          ],
+          "engines": {
+            "java": {
+              "docs": 1000000,
+              "write_ns": 2376301792,
+              "commit_ns": 56498583,
+              "close_ns": 691292,
+              "total_ns": 2433491667
+            },
+            "rust": {
+              "close_ns": 425584,
+              "commit_ns": 29273542,
+              "docs": 1000000,
+              "total_ns": 2362467001,
+              "write_ns": 2332767875
+            },
+            "tuned": {
+              "close_ns": 476791,
+              "commit_ns": 28328292,
+              "docs": 1000000,
+              "total_ns": 1845638499,
+              "write_ns": 1816833416
+            }
+          }
+        },
+        {
+          "batch": 3,
+          "phase": "formal",
+          "round": 1,
+          "order": [
+            "rust",
+            "java",
+            "tuned"
+          ],
+          "engines": {
+            "rust": {
+              "close_ns": 464125,
+              "commit_ns": 27472250,
+              "docs": 1000000,
+              "total_ns": 2243005750,
+              "write_ns": 2215069375
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 2356448666,
+              "commit_ns": 32200916,
+              "close_ns": 1156792,
+              "total_ns": 2389806374
+            },
+            "tuned": {
+              "close_ns": 447083,
+              "commit_ns": 28402291,
+              "docs": 1000000,
+              "total_ns": 1880240624,
+              "write_ns": 1851391250
+            }
+          }
+        },
+        {
+          "batch": 3,
+          "phase": "formal",
+          "round": 2,
+          "order": [
+            "java",
+            "tuned",
+            "rust"
+          ],
+          "engines": {
+            "java": {
+              "docs": 1000000,
+              "write_ns": 2362959667,
+              "commit_ns": 31983792,
+              "close_ns": 863958,
+              "total_ns": 2395807417
+            },
+            "tuned": {
+              "close_ns": 448083,
+              "commit_ns": 27205208,
+              "docs": 1000000,
+              "total_ns": 1872940416,
+              "write_ns": 1845287125
+            },
+            "rust": {
+              "close_ns": 496959,
+              "commit_ns": 29337792,
+              "docs": 1000000,
+              "total_ns": 2239063376,
+              "write_ns": 2209228625
+            }
+          }
+        },
+        {
+          "batch": 3,
+          "phase": "formal",
+          "round": 3,
+          "order": [
+            "tuned",
+            "rust",
+            "java"
+          ],
+          "engines": {
+            "tuned": {
+              "close_ns": 449667,
+              "commit_ns": 27976417,
+              "docs": 1000000,
+              "total_ns": 1869199292,
+              "write_ns": 1840773208
+            },
+            "rust": {
+              "close_ns": 453916,
+              "commit_ns": 29358167,
+              "docs": 1000000,
+              "total_ns": 2221362541,
+              "write_ns": 2191550458
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 2394857166,
+              "commit_ns": 30217542,
+              "close_ns": 842542,
+              "total_ns": 2425917250
+            }
+          }
+        },
+        {
+          "batch": 3,
+          "phase": "formal",
+          "round": 4,
+          "order": [
+            "java",
+            "rust",
+            "tuned"
+          ],
+          "engines": {
+            "java": {
+              "docs": 1000000,
+              "write_ns": 2357284542,
+              "commit_ns": 33124041,
+              "close_ns": 638917,
+              "total_ns": 2391047500
+            },
+            "rust": {
+              "close_ns": 431833,
+              "commit_ns": 26692125,
+              "docs": 1000000,
+              "total_ns": 2243266958,
+              "write_ns": 2216143000
+            },
+            "tuned": {
+              "close_ns": 457292,
+              "commit_ns": 27967167,
+              "docs": 1000000,
+              "total_ns": 1848693959,
+              "write_ns": 1820269500
+            }
+          }
+        },
+        {
+          "batch": 3,
+          "phase": "formal",
+          "round": 5,
+          "order": [
+            "tuned",
+            "java",
+            "rust"
+          ],
+          "engines": {
+            "tuned": {
+              "close_ns": 530333,
+              "commit_ns": 35093333,
+              "docs": 1000000,
+              "total_ns": 1870692958,
+              "write_ns": 1835069292
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 2380720292,
+              "commit_ns": 30930875,
+              "close_ns": 623209,
+              "total_ns": 2412274376
+            },
+            "rust": {
+              "close_ns": 440292,
+              "commit_ns": 28330042,
+              "docs": 1000000,
+              "total_ns": 2329353459,
+              "write_ns": 2300583125
+            }
+          }
+        },
+        {
+          "batch": 3,
+          "phase": "formal",
+          "round": 6,
+          "order": [
+            "rust",
+            "tuned",
+            "java"
+          ],
+          "engines": {
+            "rust": {
+              "close_ns": 488667,
+              "commit_ns": 29878000,
+              "docs": 1000000,
+              "total_ns": 2243151209,
+              "write_ns": 2212784542
+            },
+            "tuned": {
+              "close_ns": 480416,
+              "commit_ns": 27153166,
+              "docs": 1000000,
+              "total_ns": 1884899999,
+              "write_ns": 1857266417
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 2353278250,
+              "commit_ns": 29917333,
+              "close_ns": 673583,
+              "total_ns": 2383869166
+            }
+          }
+        }
+      ],
+      "reported": {
+        "tuned": {
+          "write_ns": {
+            "candidate_median_ns": 1841701499.5,
+            "java_median_ns": 2374271083.5,
+            "paired_median_time_change_pct": -22.621535170247498,
+            "paired_geomean_time_change_pct": -22.685190687149635,
+            "median_throughput_change_pct": 28.91725853210123,
+            "paired_geomean_throughput_change_pct": 29.34132656960349,
+            "faster_pairs": 18,
+            "pairs": 18
+          },
+          "commit_ns": {
+            "candidate_median_ns": 28365291.5,
+            "java_median_ns": 32139062.5,
+            "paired_median_time_change_pct": -11.259606351073902,
+            "paired_geomean_time_change_pct": -10.690744259391671,
+            "median_throughput_change_pct": 13.304185504316068,
+            "paired_geomean_throughput_change_pct": 11.97047738304089,
+            "faster_pairs": 16,
+            "pairs": 18
+          },
+          "close_ns": {
+            "candidate_median_ns": 462771.0,
+            "java_median_ns": 707979.5,
+            "paired_median_time_change_pct": -37.24046151760972,
+            "paired_geomean_time_change_pct": -39.12800125024995,
+            "median_throughput_change_pct": 52.98700653238859,
+            "paired_geomean_throughput_change_pct": 64.27914649411875,
+            "faster_pairs": 18,
+            "pairs": 18
+          },
+          "total_ns": {
+            "candidate_median_ns": 1871777895.5,
+            "java_median_ns": 2407005416.5,
+            "paired_median_time_change_pct": -22.374966697121444,
+            "paired_geomean_time_change_pct": -22.524504959485824,
+            "median_throughput_change_pct": 28.59460635189448,
+            "paired_geomean_throughput_change_pct": 29.073070069067786,
+            "faster_pairs": 18,
+            "pairs": 18
+          }
+        },
+        "rust": {
+          "write_ns": {
+            "candidate_median_ns": 2215795500.0,
+            "java_median_ns": 2374271083.5,
+            "paired_median_time_change_pct": -6.3771312772529125,
+            "paired_geomean_time_change_pct": -6.414871730142025,
+            "median_throughput_change_pct": 7.152085266893993,
+            "paired_geomean_throughput_change_pct": 6.854584535744168,
+            "faster_pairs": 18,
+            "pairs": 18
+          },
+          "commit_ns": {
+            "candidate_median_ns": 29561166.5,
+            "java_median_ns": 32139062.5,
+            "paired_median_time_change_pct": -7.910291499584854,
+            "paired_geomean_time_change_pct": -4.494836060680396,
+            "median_throughput_change_pct": 8.720548967511132,
+            "paired_geomean_throughput_change_pct": 4.706380132006527,
+            "faster_pairs": 15,
+            "pairs": 18
+          },
+          "close_ns": {
+            "candidate_median_ns": 440979.5,
+            "java_median_ns": 707979.5,
+            "paired_median_time_change_pct": -39.24129324704908,
+            "paired_geomean_time_change_pct": -41.04840008319174,
+            "median_throughput_change_pct": 60.54703223165703,
+            "paired_geomean_throughput_change_pct": 69.63068032270323,
+            "faster_pairs": 18,
+            "pairs": 18
+          },
+          "total_ns": {
+            "candidate_median_ns": 2246605979.0,
+            "java_median_ns": 2407005416.5,
+            "paired_median_time_change_pct": -6.234557955751441,
+            "paired_geomean_time_change_pct": -6.381610740825772,
+            "median_throughput_change_pct": 7.139633696310033,
+            "paired_geomean_throughput_change_pct": 6.816620955909469,
+            "faster_pairs": 18,
+            "pairs": 18
+          }
+        }
+      },
+      "pgo_training_writes": 4,
+      "warmup_engine_writes": 18,
+      "same_process_warmup_proof": [],
+      "verification_receipts": 81,
+      "standalone_checkindex_logs": 3,
+      "original_receipt_sha256": {
+        "RUN.json": "2d04c33bb231c35e7e5fe2f24b1f47a2f841599d7d18256f6f80fe1658cdff02",
+        "RESULT.json": "c68c0d18bc08337f4825ecfd6dc6fe179cf6297e1da1f905b9f7e17b0d46efc6",
+        "samples.jsonl": "5eb9012aac30550407fb4677d347ea1a99eb9dbe65adeefde89c602edddeebc0",
+        "verification.jsonl": "179740f21798f69f1f5851e6fd8cc8e99e76865a0730cce884c128eda3fcb133"
+      },
+      "binary_sha256": {
+        "ordinary": "3b1481d1fd5133223bcdad020d55f6645f1ef5f48e75933b4c36bf19d141bf27",
+        "optimized": "7d9302385518b81e2667d900125ac87f9ff1d0e2293eb1a1c627611222250345"
+      },
+      "driver_fingerprints": {
+        "common/__init__.py": "1a35997541d3ce0559a6e825faf1272dd741dfb64bca1e3f6a47468fbf29fd55",
+        "common/java-jars.json": "1702aa80f8478ad7dbc488a383291b932b999f2b93ee08ca361a9a24906e82f0",
+        "common/result.schema.json": "fe211d423c046d40ca4cd752d715663a71d8345bc267c5172b9347e4f6e3878b",
+        "common/runtime.py": "11e89595966950b8cbac6e2f9b8eb5324f75cd80e463d921feb5858190b0742a",
+        "datasets/geonames/manifest.json": "9dd409663a8e14f867e643f90a905353f1b4fec3905d9c7d5f2203dab9d93eb1",
+        "datasets/geonames.py": "28240ae53c9cddeb28835bddf657f66ebef5f912b3a7caf69b580b446f9e6ca2",
+        "datasets/indexing_inputs.py": "e49dcbcfd2cdf5414b404f6320eb1d993592b2c63b9281bb4c06d32e0e103812",
+        "datasets/ms-marco-passage/README.md": "6648304d90dac56721cae58eb0db273ad7bb545b0a3fb7b77817277866698fb6",
+        "datasets/ms-marco-passage/manifest.json": "da553b21db65a9aa702d4c84302345d2e440c1b990246736721c207a38fa56cc",
+        "datasets/ms_marco_passage.py": "6f895fe15ac18dc0d29bb395563ee69dc0ce642868300c5fef582d261e5cdef4",
+        "datasets/nyc-yellow-taxi/manifest.json": "fbe7c7d59cd4081c2268cfc9fb1b5f59c928eb97a7ac7cec34adfb9dfd4181e7",
+        "datasets/nyc-yellow-taxi/requirements.txt": "56f72d8c787d8fdd528cf5eff4802a5d162c148f904d5ceec871cdb6c56a27de",
+        "datasets/nyc_yellow_taxi.py": "e2a93e386d10fe7e9f94666a66a8bdcf94a177ea8ede408e53c8e31970518452",
+        "datasets/prepare.py": "b16f6bb3a5b53a933b34bf98b365295789931082774a0d19a315f0236033a05a",
+        "datasets/rally-http-logs/README.md": "a1c7455620c9e9bbfeda271a6317cad4500dedc0bda02f7df68c933e2bb8c546",
+        "datasets/rally-http-logs/manifest.json": "554eed2ed360b9316dbd9526a7aa10baef42df127f6f289cc00db0dabeaf3199",
+        "datasets/rally_http_logs.py": "67b23743085333e7e55d7dd8f88a6ade3287c35f346ad5a757b10f951f24c5de",
+        "datasets/sift1m/README.md": "ae75242b16b73d88445543233b0ea4d1a79d4d67b6ebcbab1370e72cfdaef7f8",
+        "datasets/sift1m/manifest.json": "5f1e9163541f506a151f5137fc174e4002ed1f677a79322aa49565c6ea8e18f3",
+        "datasets/sift1m/published-index.json": "bdf2432e81e0e25339d635aff4e852262d40e56a6c242aa852d592d2138695bb",
+        "datasets/vector-wiki/README.md": "a8240a17c2c46d3fbe7edb19f63984e63a720055a6c988f45d86d8d8c8e6dc67",
+        "datasets/vector-wiki/manifest.json": "778c02710bc5d86e9830e30af2256ae057c7690a23b4fb7621ef42f43c0257e7",
+        "datasets/vector-wiki/queries.txt": "32769364baca01ac4cd339294e8fc2977e7b7111a0de5bc7b830cf9fe4d4d2b3",
+        "datasets/vector-wiki/requirements-inference.txt": "8e6292be0aae03773829077aa1cad44e8988938a57fcff0ac8eed107c7372277",
+        "datasets/vector-wiki/upstream/.gitattributes": "13dcbbaf2f562548ca7c67b4fb32d9e0a7acc7fb81bf099814101b0b6b0825b0",
+        "datasets/vector-wiki/upstream/WikiVectors.java": "881ae54305b5358d0b72b88e383d4953406f9a427a81f4e101f3bc5363d7f247",
+        "datasets/vector-wiki/upstream/infer_token_vectors.py": "6ca802cbcff82d97446a2434cde21a5e9866291b29ac86d921c515b6772ea584",
+        "datasets/vector-wiki/upstream/perf/VectorDictionary.java": "9d2106f22ee657cdce7aab6c5ed0b30fe14968fe6532d9f3fa79e944a1cb7c7b",
+        "datasets/wiki/README.md": "53b4a791df51a4341c1856f4ecab98915116d60cd0a823604aa1e735e0e37e17",
+        "datasets/wiki/corpus_transform.py": "d9070fdf423e803afb4d31713a94f65ab10b9a420e9da4ceaf24827eb1ddf629",
+        "datasets/wiki/manifest.json": "b06eadc4eccecf68a86bc46f75d642b3bb09bf17ef674f3a194289efa6d76a46",
+        "datasets/wiki/published-index.json": "6f642f7cc613e808b440b5eaa393926e9df3de7219012833c6f61f5ecc054828",
+        "datasets/wiki-medium-indexing/manifest.json": "fb9c8aceb2912b6a744df4b238d6d09ae43e3bd927b6b3c399d7f44e10c39650",
+        "indexing/README.md": "27a5bf35ee3adac06deeb2b1bb5c1ad73536c1251e81c5cdc42596aacf902056",
+        "indexing/bench.py": "cd2da8e6d40a926ecd12404d05bc5c88cd9adda013424cbdcb50d071918a05d0",
+        "indexing/geonames/README.md": "4b9b0f61940a98a612e81b7935feb1e65336ff55b0e20073cc1294bf0597f1d6",
+        "indexing/geonames/driver/java/GeoNames.java": "204892dbc424d83049054bc4d4a6ff84da5767818d4967a33a79c016476b8b5d",
+        "indexing/geonames/driver/rust/Cargo.lock": "71b07999a77041339da37c088ad44f568600f92d0a10710badd41e9c153b3dbe",
+        "indexing/geonames/driver/rust/Cargo.toml": "9e90b53877d87aec888a790c9243d8715deeb21e01dc0abb5a862d1187d2dd44",
+        "indexing/geonames/driver/rust/src/main.rs": "0491bc4a355d04fffd5b6eae9793be821adb39fe92989645960f81cc4e2d04f2",
+        "indexing/java/RallyMillion.java": "8aa8759a204f4992c2ac3e9ae9b15b505b6a56740b909faf68ed3141125af634",
+        "indexing/ms-marco-passage/java/Passage.java": "ef9a74bb5aea0891d1070ab649b8cfa5c04c0503393ea6e3c720ad23e9fc2364",
+        "indexing/ms-marco-passage/rust/Cargo.lock": "823e606f005291f47cd2e4d57dd730bc2ac899fbb26fe1869edfa640a1a874bf",
+        "indexing/ms-marco-passage/rust/Cargo.toml": "98936adae944e841f95d9948c6ad621e42d8b4bb3904d8df85c5e26740a34a29",
+        "indexing/ms-marco-passage/rust/src/main.rs": "e9879a8a9438ce2cff529b3d4a1325451d42c34f011cc2910223649349dd747d",
+        "indexing/ms_marco.py": "06188ac879147658135d13325fae182a65f67dfe31c1ea88cbaa59f83a7d4ae7",
+        "indexing/nyc-yellow-taxi/README.md": "6d3f9ed3b3d1fd4324e8f8f0b2f0b8cdd88aced94c4193756586b9d6fdeaf4c4",
+        "indexing/nyc-yellow-taxi/driver/java/NycTaxi.java": "21f06f0ac0cec840bdc29417ab55a406e1a61b5647839b10b6b8ed0bfb49fc68",
+        "indexing/nyc-yellow-taxi/driver/rust/Cargo.lock": "7619a79db81f5913caf233eab9b4b7b0cbd3c09efac2739ad07beca0d7e8f5c6",
+        "indexing/nyc-yellow-taxi/driver/rust/Cargo.toml": "c60e67364ad4e4cc3781080c7da363716547ce84cc7d0badd6f7dd1d54d11b6c",
+        "indexing/nyc-yellow-taxi/driver/rust/src/main.rs": "ad935a22753dbee0aa9723f1e5c5f598894946b7b7a8c4811330d2675795c9e8",
+        "indexing/presets/geonames-1m.json": "dbeca10e06916ec4a5a2f962cf6f4daff544b1011eec826913f6e351b63b7586",
+        "indexing/presets/ms-marco-passage-1m.json": "0ea339cd7fb2e524399bf331ff04b63c8d780ef6765a44f5bc19d3a5d00409a1",
+        "indexing/presets/nyc-yellow-taxi-2025-01-1m.json": "212ed91d9e8e32a140e6d34ac37c9d84e2bdb9bb7c31bb3a1621d5832b72af8f",
+        "indexing/presets/rally-http-logs-1m.json": "e05b85c57c4d5c30b28aac8e7e2516f4f4b3a8fea01289c23f6b287774a02374",
+        "indexing/presets/wiki-medium-indexing-1m.json": "74e496eca34af7cb4421208294f51324f48ae59e588b25db432658b3c26bbaba",
+        "indexing/protocol.py": "1cd9ea7b340e7679c2533a5520d136706561ee8e8646e5e85edeece3692c14a4",
+        "indexing/rust/Cargo.lock": "baf3715e04fc25e65bd5557cc5c8a824d071f981d989c5ea1f204ac3a8a5b4e9",
+        "indexing/rust/Cargo.toml": "dd399a9b451d0ee7ccf652e1e980da91f953112a6e7d573a4737a5f472845020",
+        "indexing/rust/src/bin/audit.rs": "8a71cdaffe467ad92a8d384af524511e867429ca2514e97eb7901d51cfac80b3",
+        "indexing/rust/src/main.rs": "3582a1615d10e4362d88744decd8024395e7e1d918ad8baffc03988f8fe0a5c0",
+        "indexing/structured.py": "c25bab23d28024133e0b15c44162f9917458160772bf02437028ee29a19adaca",
+        "indexing/wiki-medium/README.md": "a1f8d76824e5712d4d2ce93cae64c004cbd98e1aaac25392d866ea04dd06e5db",
+        "indexing/wiki-medium/driver/Cargo.lock": "b456263b3545bd83b22b624eef62b9641384a3d221f2d8cc9755d8f024cd06f7",
+        "indexing/wiki-medium/driver/Cargo.toml": "5bb68804ebab125c1016548c474e726e3a78483996227bf5f36b247ed95cc9ca",
+        "indexing/wiki-medium/driver/java/BenchmarkServer.java": "86104d46f28e805a639b19b13aa8a5c20e1fa3b941b3255135b003b2b21a0123",
+        "indexing/wiki-medium/driver/java/IndexingBench.java": "06aee10f0d4945da9114c0fb33e1906e413b5905ffe6e0c188361c09273439b8",
+        "indexing/wiki-medium/driver/java/VerifyIndex.java": "36f2cd8f3854cb916359f45e25079fc5460a805d47e854597f09b417b3c1f9ea",
+        "indexing/wiki-medium/driver/rustfmt.toml": "ec08ab500d98d09a24cc18458bae8c65b56807546a098236d2052e95acc7aa92",
+        "indexing/wiki-medium/driver/src/main.rs": "39e517c6977e526df3e9763daaf58a3ad14a55973c2fdd2f797725b966638ed9",
+        "indexing/wiki_medium.py": "7d4584455dbf4c2a613de2d6dcc6cb59c9b6321d4e96378f9f537a3a8b1ab5b6",
+        "run.py": "0c08e7919a0d4355640dfa57981093fc0c2d1c70d26f2027644f4de79e6d7c96"
+      }
+    },
+    {
+      "dataset": "ms-marco-passage-1m",
+      "label": "MS MARCO Passage",
+      "preset": {
+        "dataset": "ms-marco-passage-1m",
+        "manifest": "datasets/ms-marco-passage/manifest.json",
+        "documents": 1000000,
+        "small_documents": 4096,
+        "seed": "20261110",
+        "fields_per_document": 2,
+        "writer_threads": 1,
+        "directory": "mmap",
+        "codec": "Lucene101 BEST_SPEED",
+        "ram_mib": 256,
+        "flush_documents": 65536,
+        "merge_policy": "none",
+        "compound": false,
+        "commit_on_close": false,
+        "segments": [
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          16960
+        ],
+        "batches": 3,
+        "formal_per_batch": 6,
+        "warmups_per_batch": 2,
+        "pgo_training_writes": 4
+      },
+      "input_manifest": "datasets/ms-marco-passage/manifest.json",
+      "input_manifest_sha256": "da553b21db65a9aa702d4c84302345d2e440c1b990246736721c207a38fa56cc",
+      "machine": {
+        "os": "macOS-27.2.1-arm64-arm-64bit",
+        "architecture": "arm64",
+        "python": "3.9.6 (default, Oct 19 2026, 19:18:13) \n[Clang 21.0.0 (clang-2100.4.1.1)]",
+        "cpu_count": 12
+      },
+      "rust_version": "1.98.1",
+      "java_version": "Lucene 10.1.0 / JDK 23.0.2",
+      "optimized_configuration": "native CPU + ThinLTO + PGO",
+      "samples": [
+        {
+          "batch": 1,
+          "phase": "formal",
+          "round": 1,
+          "order": [
+            "java",
+            "rust",
+            "tuned"
+          ],
+          "engines": {
+            "java": {
+              "docs": 1000000,
+              "write_ns": 13783110709,
+              "commit_ns": 82176625,
+              "close_ns": 937416,
+              "total_ns": 13866224750
+            },
+            "rust": {
+              "close_ns": 336750,
+              "commit_ns": 67801042,
+              "docs": 1000000,
+              "total_ns": 11529099875,
+              "write_ns": 11460962083
+            },
+            "tuned": {
+              "close_ns": 341292,
+              "commit_ns": 61128875,
+              "docs": 1000000,
+              "total_ns": 9682228458,
+              "write_ns": 9620758291
+            }
+          }
+        },
+        {
+          "batch": 1,
+          "phase": "formal",
+          "round": 2,
+          "order": [
+            "tuned",
+            "rust",
+            "java"
+          ],
+          "engines": {
+            "tuned": {
+              "close_ns": 336042,
+              "commit_ns": 60846417,
+              "docs": 1000000,
+              "total_ns": 9688686709,
+              "write_ns": 9627504250
+            },
+            "rust": {
+              "close_ns": 364416,
+              "commit_ns": 70977375,
+              "docs": 1000000,
+              "total_ns": 11524152791,
+              "write_ns": 11452811000
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 13868497000,
+              "commit_ns": 79306709,
+              "close_ns": 787500,
+              "total_ns": 13948591209
+            }
+          }
+        },
+        {
+          "batch": 1,
+          "phase": "formal",
+          "round": 3,
+          "order": [
+            "java",
+            "tuned",
+            "rust"
+          ],
+          "engines": {
+            "java": {
+              "docs": 1000000,
+              "write_ns": 13648671583,
+              "commit_ns": 76646875,
+              "close_ns": 645250,
+              "total_ns": 13725963708
+            },
+            "tuned": {
+              "close_ns": 335000,
+              "commit_ns": 59032208,
+              "docs": 1000000,
+              "total_ns": 9666428083,
+              "write_ns": 9607060875
+            },
+            "rust": {
+              "close_ns": 344541,
+              "commit_ns": 69204542,
+              "docs": 1000000,
+              "total_ns": 11535028333,
+              "write_ns": 11465479250
+            }
+          }
+        },
+        {
+          "batch": 1,
+          "phase": "formal",
+          "round": 4,
+          "order": [
+            "rust",
+            "tuned",
+            "java"
+          ],
+          "engines": {
+            "rust": {
+              "close_ns": 315167,
+              "commit_ns": 68236416,
+              "docs": 1000000,
+              "total_ns": 11786594333,
+              "write_ns": 11718042750
+            },
+            "tuned": {
+              "close_ns": 305500,
+              "commit_ns": 60409000,
+              "docs": 1000000,
+              "total_ns": 9730307458,
+              "write_ns": 9669592958
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 13762136083,
+              "commit_ns": 73131083,
+              "close_ns": 510250,
+              "total_ns": 13835777416
+            }
+          }
+        },
+        {
+          "batch": 1,
+          "phase": "formal",
+          "round": 5,
+          "order": [
+            "rust",
+            "java",
+            "tuned"
+          ],
+          "engines": {
+            "rust": {
+              "close_ns": 373875,
+              "commit_ns": 74210042,
+              "docs": 1000000,
+              "total_ns": 11620149792,
+              "write_ns": 11545565875
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 13789456667,
+              "commit_ns": 73601125,
+              "close_ns": 520041,
+              "total_ns": 13863577833
+            },
+            "tuned": {
+              "close_ns": 356750,
+              "commit_ns": 62844792,
+              "docs": 1000000,
+              "total_ns": 10001057333,
+              "write_ns": 9937855791
+            }
+          }
+        },
+        {
+          "batch": 1,
+          "phase": "formal",
+          "round": 6,
+          "order": [
+            "tuned",
+            "java",
+            "rust"
+          ],
+          "engines": {
+            "tuned": {
+              "close_ns": 368709,
+              "commit_ns": 60749000,
+              "docs": 1000000,
+              "total_ns": 9761880834,
+              "write_ns": 9700763125
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 13672650042,
+              "commit_ns": 74446250,
+              "close_ns": 673042,
+              "total_ns": 13747769334
+            },
+            "rust": {
+              "close_ns": 336125,
+              "commit_ns": 67111208,
+              "docs": 1000000,
+              "total_ns": 11571749667,
+              "write_ns": 11504302334
+            }
+          }
+        },
+        {
+          "batch": 2,
+          "phase": "formal",
+          "round": 1,
+          "order": [
+            "tuned",
+            "java",
+            "rust"
+          ],
+          "engines": {
+            "tuned": {
+              "close_ns": 351250,
+              "commit_ns": 62190000,
+              "docs": 1000000,
+              "total_ns": 9932827000,
+              "write_ns": 9870285750
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 13728742875,
+              "commit_ns": 83771083,
+              "close_ns": 972792,
+              "total_ns": 13813486750
+            },
+            "rust": {
+              "close_ns": 360083,
+              "commit_ns": 69010709,
+              "docs": 1000000,
+              "total_ns": 11659784583,
+              "write_ns": 11590413791
+            }
+          }
+        },
+        {
+          "batch": 2,
+          "phase": "formal",
+          "round": 2,
+          "order": [
+            "rust",
+            "java",
+            "tuned"
+          ],
+          "engines": {
+            "rust": {
+              "close_ns": 392084,
+              "commit_ns": 75987834,
+              "docs": 1000000,
+              "total_ns": 11816950835,
+              "write_ns": 11740570917
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 13799055917,
+              "commit_ns": 85864792,
+              "close_ns": 769334,
+              "total_ns": 13885690043
+            },
+            "tuned": {
+              "close_ns": 368791,
+              "commit_ns": 58038417,
+              "docs": 1000000,
+              "total_ns": 9624336333,
+              "write_ns": 9565929125
+            }
+          }
+        },
+        {
+          "batch": 2,
+          "phase": "formal",
+          "round": 3,
+          "order": [
+            "rust",
+            "tuned",
+            "java"
+          ],
+          "engines": {
+            "rust": {
+              "close_ns": 334375,
+              "commit_ns": 78735750,
+              "docs": 1000000,
+              "total_ns": 11603501958,
+              "write_ns": 11524431833
+            },
+            "tuned": {
+              "close_ns": 359458,
+              "commit_ns": 63722417,
+              "docs": 1000000,
+              "total_ns": 9739991750,
+              "write_ns": 9675909875
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 14065312833,
+              "commit_ns": 79968250,
+              "close_ns": 758417,
+              "total_ns": 14146039500
+            }
+          }
+        },
+        {
+          "batch": 2,
+          "phase": "formal",
+          "round": 4,
+          "order": [
+            "java",
+            "tuned",
+            "rust"
+          ],
+          "engines": {
+            "java": {
+              "docs": 1000000,
+              "write_ns": 13824583291,
+              "commit_ns": 76673750,
+              "close_ns": 573209,
+              "total_ns": 13901830250
+            },
+            "tuned": {
+              "close_ns": 364250,
+              "commit_ns": 60088458,
+              "docs": 1000000,
+              "total_ns": 9834822000,
+              "write_ns": 9774369292
+            },
+            "rust": {
+              "close_ns": 329375,
+              "commit_ns": 71373750,
+              "docs": 1000000,
+              "total_ns": 11643561166,
+              "write_ns": 11571858041
+            }
+          }
+        },
+        {
+          "batch": 2,
+          "phase": "formal",
+          "round": 5,
+          "order": [
+            "tuned",
+            "rust",
+            "java"
+          ],
+          "engines": {
+            "tuned": {
+              "close_ns": 310833,
+              "commit_ns": 59555291,
+              "docs": 1000000,
+              "total_ns": 9747474624,
+              "write_ns": 9687608500
+            },
+            "rust": {
+              "close_ns": 387667,
+              "commit_ns": 80469584,
+              "docs": 1000000,
+              "total_ns": 11866301126,
+              "write_ns": 11785443875
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 13860198625,
+              "commit_ns": 73489750,
+              "close_ns": 511667,
+              "total_ns": 13934200042
+            }
+          }
+        },
+        {
+          "batch": 2,
+          "phase": "formal",
+          "round": 6,
+          "order": [
+            "java",
+            "rust",
+            "tuned"
+          ],
+          "engines": {
+            "java": {
+              "docs": 1000000,
+              "write_ns": 13742696333,
+              "commit_ns": 75797625,
+              "close_ns": 626000,
+              "total_ns": 13819119958
+            },
+            "rust": {
+              "close_ns": 346875,
+              "commit_ns": 71716750,
+              "docs": 1000000,
+              "total_ns": 11695837333,
+              "write_ns": 11623773708
+            },
+            "tuned": {
+              "close_ns": 334833,
+              "commit_ns": 65967292,
+              "docs": 1000000,
+              "total_ns": 9770879125,
+              "write_ns": 9704577000
+            }
+          }
+        },
+        {
+          "batch": 3,
+          "phase": "formal",
+          "round": 1,
+          "order": [
+            "rust",
+            "java",
+            "tuned"
+          ],
+          "engines": {
+            "rust": {
+              "close_ns": 330625,
+              "commit_ns": 69975709,
+              "docs": 1000000,
+              "total_ns": 11730716125,
+              "write_ns": 11660409791
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 14201519791,
+              "commit_ns": 79221833,
+              "close_ns": 1064833,
+              "total_ns": 14281806457
+            },
+            "tuned": {
+              "close_ns": 425875,
+              "commit_ns": 68250625,
+              "docs": 1000000,
+              "total_ns": 9703688208,
+              "write_ns": 9635011708
+            }
+          }
+        },
+        {
+          "batch": 3,
+          "phase": "formal",
+          "round": 2,
+          "order": [
+            "java",
+            "tuned",
+            "rust"
+          ],
+          "engines": {
+            "java": {
+              "docs": 1000000,
+              "write_ns": 14025068458,
+              "commit_ns": 78259333,
+              "close_ns": 617792,
+              "total_ns": 14103945583
+            },
+            "tuned": {
+              "close_ns": 332333,
+              "commit_ns": 67566083,
+              "docs": 1000000,
+              "total_ns": 9730380957,
+              "write_ns": 9662482541
+            },
+            "rust": {
+              "close_ns": 318000,
+              "commit_ns": 72656875,
+              "docs": 1000000,
+              "total_ns": 11675686292,
+              "write_ns": 11602711417
+            }
+          }
+        },
+        {
+          "batch": 3,
+          "phase": "formal",
+          "round": 3,
+          "order": [
+            "tuned",
+            "rust",
+            "java"
+          ],
+          "engines": {
+            "tuned": {
+              "close_ns": 334084,
+              "commit_ns": 65297041,
+              "docs": 1000000,
+              "total_ns": 9908315583,
+              "write_ns": 9842684458
+            },
+            "rust": {
+              "close_ns": 330250,
+              "commit_ns": 71309416,
+              "docs": 1000000,
+              "total_ns": 11480050416,
+              "write_ns": 11408410750
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 13873186459,
+              "commit_ns": 74585708,
+              "close_ns": 633083,
+              "total_ns": 13948405250
+            }
+          }
+        },
+        {
+          "batch": 3,
+          "phase": "formal",
+          "round": 4,
+          "order": [
+            "java",
+            "rust",
+            "tuned"
+          ],
+          "engines": {
+            "java": {
+              "docs": 1000000,
+              "write_ns": 13816399833,
+              "commit_ns": 75014000,
+              "close_ns": 528750,
+              "total_ns": 13891942583
+            },
+            "rust": {
+              "close_ns": 311291,
+              "commit_ns": 67667375,
+              "docs": 1000000,
+              "total_ns": 11559847749,
+              "write_ns": 11491869083
+            },
+            "tuned": {
+              "close_ns": 309250,
+              "commit_ns": 62015083,
+              "docs": 1000000,
+              "total_ns": 9856410833,
+              "write_ns": 9794086500
+            }
+          }
+        },
+        {
+          "batch": 3,
+          "phase": "formal",
+          "round": 5,
+          "order": [
+            "tuned",
+            "java",
+            "rust"
+          ],
+          "engines": {
+            "tuned": {
+              "close_ns": 657083,
+              "commit_ns": 339846666,
+              "docs": 1000000,
+              "total_ns": 9898458291,
+              "write_ns": 9557954542
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 13908887667,
+              "commit_ns": 75836000,
+              "close_ns": 491292,
+              "total_ns": 13985214959
+            },
+            "rust": {
+              "close_ns": 389792,
+              "commit_ns": 70718667,
+              "docs": 1000000,
+              "total_ns": 11522734918,
+              "write_ns": 11451626459
+            }
+          }
+        },
+        {
+          "batch": 3,
+          "phase": "formal",
+          "round": 6,
+          "order": [
+            "rust",
+            "tuned",
+            "java"
+          ],
+          "engines": {
+            "rust": {
+              "close_ns": 307542,
+              "commit_ns": 69755041,
+              "docs": 1000000,
+              "total_ns": 11576435125,
+              "write_ns": 11506372542
+            },
+            "tuned": {
+              "close_ns": 372750,
+              "commit_ns": 59655459,
+              "docs": 1000000,
+              "total_ns": 9808052459,
+              "write_ns": 9748024250
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 13929879708,
+              "commit_ns": 73957750,
+              "close_ns": 593958,
+              "total_ns": 14004431416
+            }
+          }
+        }
+      ],
+      "reported": {
+        "tuned": {
+          "write_ns": {
+            "candidate_median_ns": 9681759187.5,
+            "java_median_ns": 13820491562.0,
+            "paired_median_time_change_pct": -29.879230324077422,
+            "paired_geomean_time_change_pct": -29.931376067813453,
+            "median_throughput_change_pct": 42.747731009912606,
+            "paired_geomean_throughput_change_pct": 42.717231177226324,
+            "faster_pairs": 18,
+            "pairs": 18
+          },
+          "commit_ns": {
+            "candidate_median_ns": 61571979.0,
+            "java_median_ns": 76241437.5,
+            "paired_median_time_change_pct": -18.679968328541353,
+            "paired_geomean_time_change_pct": -11.594440507875149,
+            "median_throughput_change_pct": 23.824893625718936,
+            "paired_geomean_throughput_change_pct": 13.115058119063171,
+            "faster_pairs": 17,
+            "pairs": 18
+          },
+          "close_ns": {
+            "candidate_median_ns": 346271.0,
+            "java_median_ns": 629541.5,
+            "paired_median_time_change_pct": -46.359314331504486,
+            "paired_geomean_time_change_pct": -45.64813324603102,
+            "median_throughput_change_pct": 81.80601320930717,
+            "paired_geomean_throughput_change_pct": 83.9863209347775,
+            "faster_pairs": 17,
+            "pairs": 18
+          },
+          "total_ns": {
+            "candidate_median_ns": 9754677729.0,
+            "java_median_ns": 13896886416.5,
+            "paired_median_time_change_pct": -29.624224919099575,
+            "paired_geomean_time_change_pct": -29.763658666843572,
+            "median_throughput_change_pct": 42.46381892438633,
+            "paired_geomean_throughput_change_pct": 42.37643661657111,
+            "faster_pairs": 18,
+            "pairs": 18
+          }
+        },
+        "rust": {
+          "write_ns": {
+            "candidate_median_ns": 11534998854.0,
+            "java_median_ns": 13820491562.0,
+            "paired_median_time_change_pct": -16.559749845337855,
+            "paired_geomean_time_change_pct": -16.52379920961836,
+            "median_throughput_change_pct": 19.813549502065687,
+            "paired_geomean_throughput_change_pct": 19.794622962191966,
+            "faster_pairs": 18,
+            "pairs": 18
+          },
+          "commit_ns": {
+            "candidate_median_ns": 70848021.0,
+            "java_median_ns": 76241437.5,
+            "paired_median_time_change_pct": -7.0356208606518145,
+            "paired_geomean_time_change_pct": -7.548253305545527,
+            "median_throughput_change_pct": 7.612656534188855,
+            "paired_geomean_throughput_change_pct": 8.164532932505741,
+            "faster_pairs": 16,
+            "pairs": 18
+          },
+          "close_ns": {
+            "candidate_median_ns": 336437.5,
+            "java_median_ns": 629541.5,
+            "paired_median_time_change_pct": -48.02811777012557,
+            "paired_geomean_time_change_pct": -47.91292253403881,
+            "median_throughput_change_pct": 87.11989596879064,
+            "paired_geomean_throughput_change_pct": 91.98619862162516,
+            "faster_pairs": 18,
+            "pairs": 18
+          },
+          "total_ns": {
+            "candidate_median_ns": 11611825875.0,
+            "java_median_ns": 13896886416.5,
+            "paired_median_time_change_pct": -16.515896528811336,
+            "paired_geomean_time_change_pct": -16.475558591241114,
+            "median_throughput_change_pct": 19.678735851694817,
+            "paired_geomean_throughput_change_pct": 19.72543403267033,
+            "faster_pairs": 18,
+            "pairs": 18
+          }
+        }
+      },
+      "pgo_training_writes": 4,
+      "warmup_engine_writes": 18,
+      "same_process_warmup_proof": [],
+      "verification_receipts": 89,
+      "standalone_checkindex_logs": 7,
+      "original_receipt_sha256": {
+        "RUN.json": "569a2d70c32a5fbfd4a005ff3d99fe201801a8f40f4f5f4ddce638516a16bb3e",
+        "RESULT.json": "e1ff14a5602602534effa34499468e1418c73e7419475503f51bc5bd2316afa1",
+        "samples.jsonl": "f72ae6618125a2a3f91769df2c2f61171e9b622d6af2e4b2b873cf6ab3d7b50f",
+        "verification.jsonl": "5ee42923bc61874cb70e29b192a5a01c799f6cadc80bbf7bb4124ed797109237"
+      },
+      "binary_sha256": {
+        "ordinary": "6c46be45eec381967dacb289301096540b86b9283bd6fdd40ba192d065b732a6",
+        "optimized": "322d8f7487a9d1eaf1543870f88b9d4ffcf0794bc012a52023fd535b62baa331",
+        "instrumented": "eebe5e648094e1b20199facb480a5e1a7bd53222e3de7de0901017eeab63a294"
+      },
+      "driver_fingerprints": {
+        "common/__init__.py": "1a35997541d3ce0559a6e825faf1272dd741dfb64bca1e3f6a47468fbf29fd55",
+        "common/java-jars.json": "1702aa80f8478ad7dbc488a383291b932b999f2b93ee08ca361a9a24906e82f0",
+        "common/result.schema.json": "fe211d423c046d40ca4cd752d715663a71d8345bc267c5172b9347e4f6e3878b",
+        "common/runtime.py": "11e89595966950b8cbac6e2f9b8eb5324f75cd80e463d921feb5858190b0742a",
+        "datasets/geonames/manifest.json": "9dd409663a8e14f867e643f90a905353f1b4fec3905d9c7d5f2203dab9d93eb1",
+        "datasets/geonames.py": "28240ae53c9cddeb28835bddf657f66ebef5f912b3a7caf69b580b446f9e6ca2",
+        "datasets/indexing_inputs.py": "e49dcbcfd2cdf5414b404f6320eb1d993592b2c63b9281bb4c06d32e0e103812",
+        "datasets/ms-marco-passage/README.md": "6648304d90dac56721cae58eb0db273ad7bb545b0a3fb7b77817277866698fb6",
+        "datasets/ms-marco-passage/manifest.json": "da553b21db65a9aa702d4c84302345d2e440c1b990246736721c207a38fa56cc",
+        "datasets/ms_marco_passage.py": "6f895fe15ac18dc0d29bb395563ee69dc0ce642868300c5fef582d261e5cdef4",
+        "datasets/nyc-yellow-taxi/manifest.json": "fbe7c7d59cd4081c2268cfc9fb1b5f59c928eb97a7ac7cec34adfb9dfd4181e7",
+        "datasets/nyc-yellow-taxi/requirements.txt": "56f72d8c787d8fdd528cf5eff4802a5d162c148f904d5ceec871cdb6c56a27de",
+        "datasets/nyc_yellow_taxi.py": "e2a93e386d10fe7e9f94666a66a8bdcf94a177ea8ede408e53c8e31970518452",
+        "datasets/prepare.py": "b16f6bb3a5b53a933b34bf98b365295789931082774a0d19a315f0236033a05a",
+        "datasets/rally-http-logs/README.md": "a1c7455620c9e9bbfeda271a6317cad4500dedc0bda02f7df68c933e2bb8c546",
+        "datasets/rally-http-logs/manifest.json": "554eed2ed360b9316dbd9526a7aa10baef42df127f6f289cc00db0dabeaf3199",
+        "datasets/rally_http_logs.py": "67b23743085333e7e55d7dd8f88a6ade3287c35f346ad5a757b10f951f24c5de",
+        "datasets/sift1m/README.md": "ae75242b16b73d88445543233b0ea4d1a79d4d67b6ebcbab1370e72cfdaef7f8",
+        "datasets/sift1m/manifest.json": "5f1e9163541f506a151f5137fc174e4002ed1f677a79322aa49565c6ea8e18f3",
+        "datasets/sift1m/published-index.json": "bdf2432e81e0e25339d635aff4e852262d40e56a6c242aa852d592d2138695bb",
+        "datasets/vector-wiki/README.md": "a8240a17c2c46d3fbe7edb19f63984e63a720055a6c988f45d86d8d8c8e6dc67",
+        "datasets/vector-wiki/manifest.json": "778c02710bc5d86e9830e30af2256ae057c7690a23b4fb7621ef42f43c0257e7",
+        "datasets/vector-wiki/queries.txt": "32769364baca01ac4cd339294e8fc2977e7b7111a0de5bc7b830cf9fe4d4d2b3",
+        "datasets/vector-wiki/requirements-inference.txt": "8e6292be0aae03773829077aa1cad44e8988938a57fcff0ac8eed107c7372277",
+        "datasets/vector-wiki/upstream/.gitattributes": "13dcbbaf2f562548ca7c67b4fb32d9e0a7acc7fb81bf099814101b0b6b0825b0",
+        "datasets/vector-wiki/upstream/WikiVectors.java": "881ae54305b5358d0b72b88e383d4953406f9a427a81f4e101f3bc5363d7f247",
+        "datasets/vector-wiki/upstream/infer_token_vectors.py": "6ca802cbcff82d97446a2434cde21a5e9866291b29ac86d921c515b6772ea584",
+        "datasets/vector-wiki/upstream/perf/VectorDictionary.java": "9d2106f22ee657cdce7aab6c5ed0b30fe14968fe6532d9f3fa79e944a1cb7c7b",
+        "datasets/wiki/README.md": "53b4a791df51a4341c1856f4ecab98915116d60cd0a823604aa1e735e0e37e17",
+        "datasets/wiki/corpus_transform.py": "d9070fdf423e803afb4d31713a94f65ab10b9a420e9da4ceaf24827eb1ddf629",
+        "datasets/wiki/manifest.json": "b06eadc4eccecf68a86bc46f75d642b3bb09bf17ef674f3a194289efa6d76a46",
+        "datasets/wiki/published-index.json": "6f642f7cc613e808b440b5eaa393926e9df3de7219012833c6f61f5ecc054828",
+        "datasets/wiki-medium-indexing/manifest.json": "fb9c8aceb2912b6a744df4b238d6d09ae43e3bd927b6b3c399d7f44e10c39650",
+        "indexing/ms-marco-passage/java/Passage.java": "ef9a74bb5aea0891d1070ab649b8cfa5c04c0503393ea6e3c720ad23e9fc2364",
+        "indexing/ms-marco-passage/rust/Cargo.lock": "823e606f005291f47cd2e4d57dd730bc2ac899fbb26fe1869edfa640a1a874bf",
+        "indexing/ms-marco-passage/rust/Cargo.toml": "98936adae944e841f95d9948c6ad621e42d8b4bb3904d8df85c5e26740a34a29",
+        "indexing/ms-marco-passage/rust/src/main.rs": "3e5083d482d38453bacde33cf83f5f8f064c925b26049fe1b8f679500580135e",
+        "run.py": "0c08e7919a0d4355640dfa57981093fc0c2d1c70d26f2027644f4de79e6d7c96",
+        "indexing/ms_marco.py": "06188ac879147658135d13325fae182a65f67dfe31c1ea88cbaa59f83a7d4ae7",
+        "indexing/protocol.py": "1cd9ea7b340e7679c2533a5520d136706561ee8e8646e5e85edeece3692c14a4",
+        "indexing/bench.py": "cd2da8e6d40a926ecd12404d05bc5c88cd9adda013424cbdcb50d071918a05d0",
+        "indexing/presets/ms-marco-passage-1m.json": "0ea339cd7fb2e524399bf331ff04b63c8d780ef6765a44f5bc19d3a5d00409a1"
+      }
+    },
+    {
+      "dataset": "geonames-1m",
+      "label": "GeoNames",
+      "preset": {
+        "dataset": "geonames-1m",
+        "documents": 1000000,
+        "small_documents": 4096,
+        "seed": "20261110",
+        "writer_threads": 1,
+        "directory": "mmap",
+        "codec": "Lucene101 BEST_SPEED",
+        "ram_mib": 256,
+        "flush_documents": 65536,
+        "merge_policy": "none",
+        "compound": false,
+        "commit_on_close": false,
+        "segments": [
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          16960
+        ],
+        "batches": 3,
+        "formal_per_batch": 6,
+        "warmups_per_batch": 2,
+        "pgo_training_writes": 4,
+        "field_order": [
+          "population LongPoint",
+          "population NumericDocValues",
+          "geonameid stored StringField",
+          "location LatLonPoint",
+          "alias SortedSetDocValues (0..N)"
+        ],
+        "runner": "structured",
+        "workload": "geonames",
+        "source_commit": "9406d0fcd491b5d9d31d67b0cc01f9fa89775228",
+        "java_class": "GeoNames",
+        "rust_binary": "geonames-verify"
+      },
+      "input_manifest": "datasets/geonames/manifest.json",
+      "input_manifest_sha256": "9dd409663a8e14f867e643f90a905353f1b4fec3905d9c7d5f2203dab9d93eb1",
+      "machine": {
+        "os": "macOS-27.2.1-arm64-arm-64bit",
+        "architecture": "arm64",
+        "python": "3.9.6 (default, Oct 19 2026, 19:18:13) \n[Clang 21.0.0 (clang-2100.4.1.1)]",
+        "cpu_count": 12
+      },
+      "rust_version": "1.98.1",
+      "java_version": "Lucene 10.1.0 / JDK 23.0.2",
+      "optimized_configuration": "native CPU + ThinLTO + PGO",
+      "samples": [
+        {
+          "batch": 1,
+          "phase": "formal",
+          "round": 1,
+          "order": [
+            "java",
+            "rust",
+            "tuned"
+          ],
+          "engines": {
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1741957500,
+              "commit_ns": 36256541,
+              "close_ns": 1332500,
+              "total_ns": 1779546541
+            },
+            "rust": {
+              "close_ns": 468542,
+              "commit_ns": 33791875,
+              "docs": 1000000,
+              "total_ns": 1647705542,
+              "write_ns": 1613445125
+            },
+            "tuned": {
+              "close_ns": 383291,
+              "commit_ns": 31236125,
+              "docs": 1000000,
+              "total_ns": 1400875082,
+              "write_ns": 1369255666
+            }
+          }
+        },
+        {
+          "batch": 1,
+          "phase": "formal",
+          "round": 2,
+          "order": [
+            "tuned",
+            "rust",
+            "java"
+          ],
+          "engines": {
+            "tuned": {
+              "close_ns": 438834,
+              "commit_ns": 30023958,
+              "docs": 1000000,
+              "total_ns": 1395716750,
+              "write_ns": 1365253958
+            },
+            "rust": {
+              "close_ns": 358208,
+              "commit_ns": 34126625,
+              "docs": 1000000,
+              "total_ns": 1644037917,
+              "write_ns": 1609553084
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1733695958,
+              "commit_ns": 37269708,
+              "close_ns": 814458,
+              "total_ns": 1771780124
+            }
+          }
+        },
+        {
+          "batch": 1,
+          "phase": "formal",
+          "round": 3,
+          "order": [
+            "java",
+            "tuned",
+            "rust"
+          ],
+          "engines": {
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1748634375,
+              "commit_ns": 35515708,
+              "close_ns": 871375,
+              "total_ns": 1785021458
+            },
+            "tuned": {
+              "close_ns": 451333,
+              "commit_ns": 30323166,
+              "docs": 1000000,
+              "total_ns": 1403050957,
+              "write_ns": 1372276458
+            },
+            "rust": {
+              "close_ns": 373625,
+              "commit_ns": 33311375,
+              "docs": 1000000,
+              "total_ns": 1645726333,
+              "write_ns": 1612041333
+            }
+          }
+        },
+        {
+          "batch": 1,
+          "phase": "formal",
+          "round": 4,
+          "order": [
+            "rust",
+            "tuned",
+            "java"
+          ],
+          "engines": {
+            "rust": {
+              "close_ns": 372792,
+              "commit_ns": 33048791,
+              "docs": 1000000,
+              "total_ns": 1653596208,
+              "write_ns": 1620174625
+            },
+            "tuned": {
+              "close_ns": 370334,
+              "commit_ns": 30909292,
+              "docs": 1000000,
+              "total_ns": 1410680543,
+              "write_ns": 1379400917
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1759389292,
+              "commit_ns": 35233083,
+              "close_ns": 612583,
+              "total_ns": 1795234958
+            }
+          }
+        },
+        {
+          "batch": 1,
+          "phase": "formal",
+          "round": 5,
+          "order": [
+            "rust",
+            "java",
+            "tuned"
+          ],
+          "engines": {
+            "rust": {
+              "close_ns": 396000,
+              "commit_ns": 33341542,
+              "docs": 1000000,
+              "total_ns": 1658132792,
+              "write_ns": 1624395250
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1837625583,
+              "commit_ns": 37227833,
+              "close_ns": 666125,
+              "total_ns": 1875519541
+            },
+            "tuned": {
+              "close_ns": 436833,
+              "commit_ns": 31967125,
+              "docs": 1000000,
+              "total_ns": 1401500958,
+              "write_ns": 1369097000
+            }
+          }
+        },
+        {
+          "batch": 1,
+          "phase": "formal",
+          "round": 6,
+          "order": [
+            "tuned",
+            "java",
+            "rust"
+          ],
+          "engines": {
+            "tuned": {
+              "close_ns": 365208,
+              "commit_ns": 39110834,
+              "docs": 1000000,
+              "total_ns": 1404723625,
+              "write_ns": 1365247583
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1745823917,
+              "commit_ns": 38111708,
+              "close_ns": 644541,
+              "total_ns": 1784580166
+            },
+            "rust": {
+              "close_ns": 364334,
+              "commit_ns": 31737208,
+              "docs": 1000000,
+              "total_ns": 1641437334,
+              "write_ns": 1609335792
+            }
+          }
+        },
+        {
+          "batch": 2,
+          "phase": "formal",
+          "round": 1,
+          "order": [
+            "tuned",
+            "java",
+            "rust"
+          ],
+          "engines": {
+            "tuned": {
+              "close_ns": 386708,
+              "commit_ns": 51370750,
+              "docs": 1000000,
+              "total_ns": 1417787374,
+              "write_ns": 1366029916
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1791264250,
+              "commit_ns": 46193041,
+              "close_ns": 1028084,
+              "total_ns": 1838485375
+            },
+            "rust": {
+              "close_ns": 354417,
+              "commit_ns": 34977416,
+              "docs": 1000000,
+              "total_ns": 1662716875,
+              "write_ns": 1627385042
+            }
+          }
+        },
+        {
+          "batch": 2,
+          "phase": "formal",
+          "round": 2,
+          "order": [
+            "rust",
+            "java",
+            "tuned"
+          ],
+          "engines": {
+            "rust": {
+              "close_ns": 358250,
+              "commit_ns": 33317334,
+              "docs": 1000000,
+              "total_ns": 1666357459,
+              "write_ns": 1632681875
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1788898833,
+              "commit_ns": 38444958,
+              "close_ns": 862708,
+              "total_ns": 1828206499
+            },
+            "tuned": {
+              "close_ns": 422000,
+              "commit_ns": 31609250,
+              "docs": 1000000,
+              "total_ns": 1397886791,
+              "write_ns": 1365855541
+            }
+          }
+        },
+        {
+          "batch": 2,
+          "phase": "formal",
+          "round": 3,
+          "order": [
+            "rust",
+            "tuned",
+            "java"
+          ],
+          "engines": {
+            "rust": {
+              "close_ns": 397084,
+              "commit_ns": 33630125,
+              "docs": 1000000,
+              "total_ns": 1667294001,
+              "write_ns": 1633266792
+            },
+            "tuned": {
+              "close_ns": 363166,
+              "commit_ns": 31025125,
+              "docs": 1000000,
+              "total_ns": 1407012708,
+              "write_ns": 1375624417
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1756371625,
+              "commit_ns": 36955875,
+              "close_ns": 916750,
+              "total_ns": 1794244250
+            }
+          }
+        },
+        {
+          "batch": 2,
+          "phase": "formal",
+          "round": 4,
+          "order": [
+            "java",
+            "tuned",
+            "rust"
+          ],
+          "engines": {
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1770906958,
+              "commit_ns": 36465208,
+              "close_ns": 596750,
+              "total_ns": 1807968916
+            },
+            "tuned": {
+              "close_ns": 450125,
+              "commit_ns": 30659708,
+              "docs": 1000000,
+              "total_ns": 1390323500,
+              "write_ns": 1359213667
+            },
+            "rust": {
+              "close_ns": 343458,
+              "commit_ns": 33463334,
+              "docs": 1000000,
+              "total_ns": 1659183084,
+              "write_ns": 1625376292
+            }
+          }
+        },
+        {
+          "batch": 2,
+          "phase": "formal",
+          "round": 5,
+          "order": [
+            "tuned",
+            "rust",
+            "java"
+          ],
+          "engines": {
+            "tuned": {
+              "close_ns": 403333,
+              "commit_ns": 31859541,
+              "docs": 1000000,
+              "total_ns": 1399757749,
+              "write_ns": 1367494875
+            },
+            "rust": {
+              "close_ns": 393083,
+              "commit_ns": 34775875,
+              "docs": 1000000,
+              "total_ns": 1663508916,
+              "write_ns": 1628339958
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1778936042,
+              "commit_ns": 37275583,
+              "close_ns": 610125,
+              "total_ns": 1816821750
+            }
+          }
+        },
+        {
+          "batch": 2,
+          "phase": "formal",
+          "round": 6,
+          "order": [
+            "java",
+            "rust",
+            "tuned"
+          ],
+          "engines": {
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1785351500,
+              "commit_ns": 36446875,
+              "close_ns": 644792,
+              "total_ns": 1822443167
+            },
+            "rust": {
+              "close_ns": 368834,
+              "commit_ns": 33025125,
+              "docs": 1000000,
+              "total_ns": 1674925917,
+              "write_ns": 1641531958
+            },
+            "tuned": {
+              "close_ns": 360000,
+              "commit_ns": 31726125,
+              "docs": 1000000,
+              "total_ns": 1528628666,
+              "write_ns": 1496542541
+            }
+          }
+        },
+        {
+          "batch": 3,
+          "phase": "formal",
+          "round": 1,
+          "order": [
+            "rust",
+            "java",
+            "tuned"
+          ],
+          "engines": {
+            "rust": {
+              "close_ns": 391833,
+              "commit_ns": 35853042,
+              "docs": 1000000,
+              "total_ns": 1638368334,
+              "write_ns": 1602123459
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1793156542,
+              "commit_ns": 54787125,
+              "close_ns": 968000,
+              "total_ns": 1848911667
+            },
+            "tuned": {
+              "close_ns": 398333,
+              "commit_ns": 34193667,
+              "docs": 1000000,
+              "total_ns": 1369439042,
+              "write_ns": 1334847042
+            }
+          }
+        },
+        {
+          "batch": 3,
+          "phase": "formal",
+          "round": 2,
+          "order": [
+            "java",
+            "tuned",
+            "rust"
+          ],
+          "engines": {
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1776337458,
+              "commit_ns": 37904458,
+              "close_ns": 816542,
+              "total_ns": 1815058458
+            },
+            "tuned": {
+              "close_ns": 403042,
+              "commit_ns": 34530875,
+              "docs": 1000000,
+              "total_ns": 1366357251,
+              "write_ns": 1331423334
+            },
+            "rust": {
+              "close_ns": 364291,
+              "commit_ns": 36084292,
+              "docs": 1000000,
+              "total_ns": 1637545500,
+              "write_ns": 1601096917
+            }
+          }
+        },
+        {
+          "batch": 3,
+          "phase": "formal",
+          "round": 3,
+          "order": [
+            "tuned",
+            "rust",
+            "java"
+          ],
+          "engines": {
+            "tuned": {
+              "close_ns": 403500,
+              "commit_ns": 30946167,
+              "docs": 1000000,
+              "total_ns": 1380814834,
+              "write_ns": 1349465167
+            },
+            "rust": {
+              "close_ns": 385584,
+              "commit_ns": 34234875,
+              "docs": 1000000,
+              "total_ns": 1628833751,
+              "write_ns": 1594213292
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1779364750,
+              "commit_ns": 37183375,
+              "close_ns": 822625,
+              "total_ns": 1817370750
+            }
+          }
+        },
+        {
+          "batch": 3,
+          "phase": "formal",
+          "round": 4,
+          "order": [
+            "java",
+            "rust",
+            "tuned"
+          ],
+          "engines": {
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1758444291,
+              "commit_ns": 36870875,
+              "close_ns": 580250,
+              "total_ns": 1795895416
+            },
+            "rust": {
+              "close_ns": 354500,
+              "commit_ns": 33836625,
+              "docs": 1000000,
+              "total_ns": 1645956209,
+              "write_ns": 1611765084
+            },
+            "tuned": {
+              "close_ns": 424708,
+              "commit_ns": 30641208,
+              "docs": 1000000,
+              "total_ns": 1368426416,
+              "write_ns": 1337360500
+            }
+          }
+        },
+        {
+          "batch": 3,
+          "phase": "formal",
+          "round": 5,
+          "order": [
+            "tuned",
+            "java",
+            "rust"
+          ],
+          "engines": {
+            "tuned": {
+              "close_ns": 358167,
+              "commit_ns": 29684375,
+              "docs": 1000000,
+              "total_ns": 1357586667,
+              "write_ns": 1327544125
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1771466291,
+              "commit_ns": 38133708,
+              "close_ns": 612333,
+              "total_ns": 1810212332
+            },
+            "rust": {
+              "close_ns": 358334,
+              "commit_ns": 33925750,
+              "docs": 1000000,
+              "total_ns": 1635010292,
+              "write_ns": 1600726208
+            }
+          }
+        },
+        {
+          "batch": 3,
+          "phase": "formal",
+          "round": 6,
+          "order": [
+            "rust",
+            "tuned",
+            "java"
+          ],
+          "engines": {
+            "rust": {
+              "close_ns": 389542,
+              "commit_ns": 34876833,
+              "docs": 1000000,
+              "total_ns": 1647946791,
+              "write_ns": 1612680416
+            },
+            "tuned": {
+              "close_ns": 340792,
+              "commit_ns": 30212584,
+              "docs": 1000000,
+              "total_ns": 1370021626,
+              "write_ns": 1339468250
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1756962917,
+              "commit_ns": 38803166,
+              "close_ns": 668000,
+              "total_ns": 1796434083
+            }
+          }
+        }
+      ],
+      "reported": {
+        "tuned": {
+          "write_ns": {
+            "candidate_median_ns": 1365554749.5,
+            "java_median_ns": 1771186624.5,
+            "paired_median_time_change_pct": -23.447923546463855,
+            "paired_geomean_time_change_pct": -22.93056653458968,
+            "median_throughput_change_pct": 29.704548656765528,
+            "paired_geomean_throughput_change_pct": 29.753127152389403,
+            "faster_pairs": 18,
+            "pairs": 18
+          },
+          "commit_ns": {
+            "candidate_median_ns": 31130625.0,
+            "java_median_ns": 37248770.5,
+            "paired_median_time_change_pct": -15.270532379295387,
+            "paired_geomean_time_change_pct": -15.10845839301741,
+            "median_throughput_change_pct": 19.653140597080853,
+            "paired_geomean_throughput_change_pct": 17.797366035551754,
+            "faster_pairs": 16,
+            "pairs": 18
+          },
+          "close_ns": {
+            "candidate_median_ns": 400687.5,
+            "java_median_ns": 741229.0,
+            "paired_median_time_change_pct": -47.162004808395785,
+            "paired_geomean_time_change_pct": -47.91345793504329,
+            "median_throughput_change_pct": 84.98929964124162,
+            "paired_geomean_throughput_change_pct": 91.98817206043512,
+            "faster_pairs": 18,
+            "pairs": 18
+          },
+          "total_ns": {
+            "candidate_median_ns": 1398822270.0,
+            "java_median_ns": 1809090624.0,
+            "paired_median_time_change_pct": -23.02797300177033,
+            "paired_geomean_time_change_pct": -22.767952918364443,
+            "median_throughput_change_pct": 29.32955549814058,
+            "paired_geomean_throughput_change_pct": 29.47992935406507,
+            "faster_pairs": 18,
+            "pairs": 18
+          }
+        },
+        "rust": {
+          "write_ns": {
+            "candidate_median_ns": 1613062770.5,
+            "java_median_ns": 1771186624.5,
+            "paired_median_time_change_pct": -8.279639846520892,
+            "paired_geomean_time_change_pct": -8.699030022126909,
+            "median_throughput_change_pct": 9.802709286445598,
+            "paired_geomean_throughput_change_pct": 9.527861559669226,
+            "faster_pairs": 18,
+            "pairs": 18
+          },
+          "commit_ns": {
+            "candidate_median_ns": 33814250.0,
+            "java_median_ns": 37248770.5,
+            "paired_median_time_change_pct": -8.716295285741193,
+            "paired_geomean_time_change_pct": -11.577015311613948,
+            "median_throughput_change_pct": 10.157021078391516,
+            "paired_geomean_throughput_change_pct": 13.092766945622603,
+            "faster_pairs": 18,
+            "pairs": 18
+          },
+          "close_ns": {
+            "candidate_median_ns": 370813.0,
+            "java_median_ns": 741229.0,
+            "paired_median_time_change_pct": -48.300746375261674,
+            "paired_geomean_time_change_pct": -50.53123858856728,
+            "median_throughput_change_pct": 99.89293794985612,
+            "paired_geomean_throughput_change_pct": 102.14777396243639,
+            "faster_pairs": 18,
+            "pairs": 18
+          },
+          "total_ns": {
+            "candidate_median_ns": 1647826166.5,
+            "java_median_ns": 1809090624.0,
+            "paired_median_time_change_pct": -8.307331593793066,
+            "paired_geomean_time_change_pct": -8.787698193651428,
+            "median_throughput_change_pct": 9.78649694843281,
+            "paired_geomean_throughput_change_pct": 9.634334425972991,
+            "faster_pairs": 18,
+            "pairs": 18
+          }
+        }
+      },
+      "pgo_training_writes": 4,
+      "warmup_engine_writes": 18,
+      "same_process_warmup_proof": [],
+      "verification_receipts": 161,
+      "standalone_checkindex_logs": 7,
+      "original_receipt_sha256": {
+        "RUN.json": "e4a03c54ad0ab9c45b22cc402993c2e63aebfe3864df9d5175d4b27b9311ff49",
+        "RESULT.json": "caa3bf518a5c79eea0275e4812fe0ac91adf5b90f74b59b77f170bf8bd355eb0",
+        "samples.jsonl": "30623d8e350659999da4e55f012349d768191007a8a5b71622230c3d3547546b",
+        "verification.jsonl": "c4f26a770d0492b8ef175915c3e58c7a6cb999d5e30b50b28bbe3244af8b4a73"
+      },
+      "binary_sha256": {
+        "ordinary": "7111b05f93037e4492357d910e5941c69e9aafa8e423af9bd01a54e7162ce367",
+        "instrumented": "7a316f6fa62c363d753499c6bc73a04310d0600c7fe9d9f33fbb0c4ae6d66241",
+        "optimized": "99cc7627e68c5c1844f2cdb924175e39d5adcc76755ae4cd1d0cce04f0064709"
+      },
+      "driver_fingerprints": {
+        "java/GeoNames.java": {
+          "bytes": 13020,
+          "sha256": "204892dbc424d83049054bc4d4a6ff84da5767818d4967a33a79c016476b8b5d"
+        },
+        "rust/Cargo.lock": {
+          "bytes": 33190,
+          "sha256": "71b07999a77041339da37c088ad44f568600f92d0a10710badd41e9c153b3dbe"
+        },
+        "rust/Cargo.toml": {
+          "bytes": 152,
+          "sha256": "9e90b53877d87aec888a790c9243d8715deeb21e01dc0abb5a862d1187d2dd44"
+        },
+        "rust/src/main.rs": {
+          "bytes": 14038,
+          "sha256": "3b140a3046b9e242954abdbc0e2f424f3d265607ab43734dbe4ac4780d75851b"
+        }
+      }
+    },
+    {
+      "dataset": "nyc-yellow-taxi-2025-01-1m",
+      "label": "NYC Yellow Taxi",
+      "preset": {
+        "dataset": "nyc-yellow-taxi-2025-01-1m",
+        "documents": 1000000,
+        "small_documents": 4096,
+        "seed": "20261110",
+        "writer_threads": 1,
+        "directory": "mmap",
+        "codec": "Lucene101 BEST_SPEED",
+        "ram_mib": 256,
+        "flush_documents": 65536,
+        "merge_policy": "none",
+        "compound": false,
+        "commit_on_close": false,
+        "segments": [
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          65536,
+          16960
+        ],
+        "batches": 3,
+        "formal_per_batch": 6,
+        "warmups_per_batch": 2,
+        "pgo_training_writes": 4,
+        "field_order": [
+          "source_row StoredField(i64)",
+          "source_row LongPoint",
+          "tpep_pickup_datetime LongPoint",
+          "tpep_pickup_datetime NumericDocValues",
+          "tpep_dropoff_datetime LongPoint",
+          "tpep_dropoff_datetime NumericDocValues",
+          "PULocationID IntPoint",
+          "PULocationID NumericDocValues",
+          "DOLocationID IntPoint",
+          "DOLocationID NumericDocValues",
+          "trip_distance DoublePoint",
+          "trip_distance DoubleDocValues",
+          "total_amount DoublePoint",
+          "total_amount DoubleDocValues"
+        ],
+        "runner": "structured",
+        "workload": "nyc-yellow-taxi",
+        "source_commit": "9406d0fcd491b5d9d31d67b0cc01f9fa89775228",
+        "java_class": "NycTaxi",
+        "rust_binary": "nyc-taxi-verify"
+      },
+      "input_manifest": "datasets/nyc-yellow-taxi/manifest.json",
+      "input_manifest_sha256": "fbe7c7d59cd4081c2268cfc9fb1b5f59c928eb97a7ac7cec34adfb9dfd4181e7",
+      "machine": {
+        "os": "macOS-27.2.1-arm64-arm-64bit",
+        "architecture": "arm64",
+        "python": "3.9.6 (default, Oct 19 2026, 19:18:13) \n[Clang 21.0.0 (clang-2100.4.1.1)]",
+        "cpu_count": 12
+      },
+      "rust_version": "1.98.1",
+      "java_version": "Lucene 10.1.0 / JDK 23.0.2",
+      "optimized_configuration": "native CPU + ThinLTO + PGO",
+      "samples": [
+        {
+          "batch": 1,
+          "phase": "formal",
+          "round": 1,
+          "order": [
+            "java",
+            "rust",
+            "tuned"
+          ],
+          "engines": {
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1332237917,
+              "commit_ns": 27951791,
+              "close_ns": 825125,
+              "total_ns": 1361014833
+            },
+            "rust": {
+              "close_ns": 225416,
+              "commit_ns": 50815750,
+              "docs": 1000000,
+              "total_ns": 1180571582,
+              "write_ns": 1129530416
+            },
+            "tuned": {
+              "close_ns": 227875,
+              "commit_ns": 23540750,
+              "docs": 1000000,
+              "total_ns": 989082917,
+              "write_ns": 965314292
+            }
+          }
+        },
+        {
+          "batch": 1,
+          "phase": "formal",
+          "round": 2,
+          "order": [
+            "tuned",
+            "rust",
+            "java"
+          ],
+          "engines": {
+            "tuned": {
+              "close_ns": 223750,
+              "commit_ns": 24042166,
+              "docs": 1000000,
+              "total_ns": 947696958,
+              "write_ns": 923431042
+            },
+            "rust": {
+              "close_ns": 219625,
+              "commit_ns": 24511291,
+              "docs": 1000000,
+              "total_ns": 1156807332,
+              "write_ns": 1132076416
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1331275708,
+              "commit_ns": 27833458,
+              "close_ns": 651916,
+              "total_ns": 1359761082
+            }
+          }
+        },
+        {
+          "batch": 1,
+          "phase": "formal",
+          "round": 3,
+          "order": [
+            "java",
+            "tuned",
+            "rust"
+          ],
+          "engines": {
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1333915667,
+              "commit_ns": 27488750,
+              "close_ns": 465458,
+              "total_ns": 1361869875
+            },
+            "tuned": {
+              "close_ns": 218958,
+              "commit_ns": 24057500,
+              "docs": 1000000,
+              "total_ns": 934612833,
+              "write_ns": 910336375
+            },
+            "rust": {
+              "close_ns": 226167,
+              "commit_ns": 24982792,
+              "docs": 1000000,
+              "total_ns": 1155469542,
+              "write_ns": 1130260583
+            }
+          }
+        },
+        {
+          "batch": 1,
+          "phase": "formal",
+          "round": 4,
+          "order": [
+            "rust",
+            "tuned",
+            "java"
+          ],
+          "engines": {
+            "rust": {
+              "close_ns": 223584,
+              "commit_ns": 25707708,
+              "docs": 1000000,
+              "total_ns": 1159145459,
+              "write_ns": 1133214167
+            },
+            "tuned": {
+              "close_ns": 219125,
+              "commit_ns": 36146416,
+              "docs": 1000000,
+              "total_ns": 943683625,
+              "write_ns": 907318084
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1331816250,
+              "commit_ns": 27843084,
+              "close_ns": 492166,
+              "total_ns": 1360151500
+            }
+          }
+        },
+        {
+          "batch": 1,
+          "phase": "formal",
+          "round": 5,
+          "order": [
+            "rust",
+            "java",
+            "tuned"
+          ],
+          "engines": {
+            "rust": {
+              "close_ns": 236500,
+              "commit_ns": 25109958,
+              "docs": 1000000,
+              "total_ns": 1156710125,
+              "write_ns": 1131363667
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1335177625,
+              "commit_ns": 27723625,
+              "close_ns": 442209,
+              "total_ns": 1363343459
+            },
+            "tuned": {
+              "close_ns": 271917,
+              "commit_ns": 163673250,
+              "docs": 1000000,
+              "total_ns": 1075871875,
+              "write_ns": 911926708
+            }
+          }
+        },
+        {
+          "batch": 1,
+          "phase": "formal",
+          "round": 6,
+          "order": [
+            "tuned",
+            "java",
+            "rust"
+          ],
+          "engines": {
+            "tuned": {
+              "close_ns": 210166,
+              "commit_ns": 24880167,
+              "docs": 1000000,
+              "total_ns": 934371042,
+              "write_ns": 909280709
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1346679250,
+              "commit_ns": 29547166,
+              "close_ns": 461917,
+              "total_ns": 1376688333
+            },
+            "rust": {
+              "close_ns": 219084,
+              "commit_ns": 25802666,
+              "docs": 1000000,
+              "total_ns": 1156374083,
+              "write_ns": 1130352333
+            }
+          }
+        },
+        {
+          "batch": 2,
+          "phase": "formal",
+          "round": 1,
+          "order": [
+            "tuned",
+            "java",
+            "rust"
+          ],
+          "engines": {
+            "tuned": {
+              "close_ns": 210542,
+              "commit_ns": 25671416,
+              "docs": 1000000,
+              "total_ns": 940964000,
+              "write_ns": 915082042
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1325815209,
+              "commit_ns": 28522333,
+              "close_ns": 903083,
+              "total_ns": 1355240625
+            },
+            "rust": {
+              "close_ns": 223167,
+              "commit_ns": 26909167,
+              "docs": 1000000,
+              "total_ns": 1154227876,
+              "write_ns": 1127095542
+            }
+          }
+        },
+        {
+          "batch": 2,
+          "phase": "formal",
+          "round": 2,
+          "order": [
+            "rust",
+            "java",
+            "tuned"
+          ],
+          "engines": {
+            "rust": {
+              "close_ns": 280708,
+              "commit_ns": 26023708,
+              "docs": 1000000,
+              "total_ns": 1162965541,
+              "write_ns": 1136661125
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1340426584,
+              "commit_ns": 317957541,
+              "close_ns": 1402000,
+              "total_ns": 1659786125
+            },
+            "tuned": {
+              "close_ns": 264583,
+              "commit_ns": 30486209,
+              "docs": 1000000,
+              "total_ns": 965500167,
+              "write_ns": 934749375
+            }
+          }
+        },
+        {
+          "batch": 2,
+          "phase": "formal",
+          "round": 3,
+          "order": [
+            "rust",
+            "tuned",
+            "java"
+          ],
+          "engines": {
+            "rust": {
+              "close_ns": 233167,
+              "commit_ns": 27534625,
+              "docs": 1000000,
+              "total_ns": 1172433375,
+              "write_ns": 1144665583
+            },
+            "tuned": {
+              "close_ns": 219208,
+              "commit_ns": 27653167,
+              "docs": 1000000,
+              "total_ns": 961267959,
+              "write_ns": 933395584
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1411027834,
+              "commit_ns": 29955416,
+              "close_ns": 632000,
+              "total_ns": 1441615250
+            }
+          }
+        },
+        {
+          "batch": 2,
+          "phase": "formal",
+          "round": 4,
+          "order": [
+            "java",
+            "tuned",
+            "rust"
+          ],
+          "engines": {
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1349282666,
+              "commit_ns": 30109083,
+              "close_ns": 494750,
+              "total_ns": 1379886499
+            },
+            "tuned": {
+              "close_ns": 237833,
+              "commit_ns": 28009708,
+              "docs": 1000000,
+              "total_ns": 940305291,
+              "write_ns": 912057750
+            },
+            "rust": {
+              "close_ns": 229291,
+              "commit_ns": 29809375,
+              "docs": 1000000,
+              "total_ns": 1165944624,
+              "write_ns": 1135905958
+            }
+          }
+        },
+        {
+          "batch": 2,
+          "phase": "formal",
+          "round": 5,
+          "order": [
+            "tuned",
+            "rust",
+            "java"
+          ],
+          "engines": {
+            "tuned": {
+              "close_ns": 224458,
+              "commit_ns": 26338042,
+              "docs": 1000000,
+              "total_ns": 943199916,
+              "write_ns": 916637416
+            },
+            "rust": {
+              "close_ns": 287667,
+              "commit_ns": 29303833,
+              "docs": 1000000,
+              "total_ns": 1165654958,
+              "write_ns": 1136063458
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1330045041,
+              "commit_ns": 28794542,
+              "close_ns": 502208,
+              "total_ns": 1359341791
+            }
+          }
+        },
+        {
+          "batch": 2,
+          "phase": "formal",
+          "round": 6,
+          "order": [
+            "java",
+            "rust",
+            "tuned"
+          ],
+          "engines": {
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1327332833,
+              "commit_ns": 29909667,
+              "close_ns": 529250,
+              "total_ns": 1357771750
+            },
+            "rust": {
+              "close_ns": 280125,
+              "commit_ns": 26210125,
+              "docs": 1000000,
+              "total_ns": 1163244791,
+              "write_ns": 1136754541
+            },
+            "tuned": {
+              "close_ns": 237250,
+              "commit_ns": 35767750,
+              "docs": 1000000,
+              "total_ns": 947092458,
+              "write_ns": 911087458
+            }
+          }
+        },
+        {
+          "batch": 3,
+          "phase": "formal",
+          "round": 1,
+          "order": [
+            "rust",
+            "java",
+            "tuned"
+          ],
+          "engines": {
+            "rust": {
+              "close_ns": 253542,
+              "commit_ns": 26292958,
+              "docs": 1000000,
+              "total_ns": 1165694458,
+              "write_ns": 1139147958
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1277033500,
+              "commit_ns": 30646542,
+              "close_ns": 800708,
+              "total_ns": 1308480750
+            },
+            "tuned": {
+              "close_ns": 286084,
+              "commit_ns": 25350209,
+              "docs": 1000000,
+              "total_ns": 924085043,
+              "write_ns": 898448750
+            }
+          }
+        },
+        {
+          "batch": 3,
+          "phase": "formal",
+          "round": 2,
+          "order": [
+            "java",
+            "tuned",
+            "rust"
+          ],
+          "engines": {
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1281258833,
+              "commit_ns": 29839125,
+              "close_ns": 807042,
+              "total_ns": 1311905000
+            },
+            "tuned": {
+              "close_ns": 219833,
+              "commit_ns": 26673417,
+              "docs": 1000000,
+              "total_ns": 925332583,
+              "write_ns": 898439333
+            },
+            "rust": {
+              "close_ns": 257208,
+              "commit_ns": 26207750,
+              "docs": 1000000,
+              "total_ns": 1169645250,
+              "write_ns": 1143180292
+            }
+          }
+        },
+        {
+          "batch": 3,
+          "phase": "formal",
+          "round": 3,
+          "order": [
+            "tuned",
+            "rust",
+            "java"
+          ],
+          "engines": {
+            "tuned": {
+              "close_ns": 276333,
+              "commit_ns": 26143125,
+              "docs": 1000000,
+              "total_ns": 935753166,
+              "write_ns": 909333708
+            },
+            "rust": {
+              "close_ns": 282500,
+              "commit_ns": 26564500,
+              "docs": 1000000,
+              "total_ns": 1170261750,
+              "write_ns": 1143414750
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1276992917,
+              "commit_ns": 28572125,
+              "close_ns": 542083,
+              "total_ns": 1306107125
+            }
+          }
+        },
+        {
+          "batch": 3,
+          "phase": "formal",
+          "round": 4,
+          "order": [
+            "java",
+            "rust",
+            "tuned"
+          ],
+          "engines": {
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1275370917,
+              "commit_ns": 76487208,
+              "close_ns": 564916,
+              "total_ns": 1352423041
+            },
+            "rust": {
+              "close_ns": 223833,
+              "commit_ns": 24627458,
+              "docs": 1000000,
+              "total_ns": 1174434957,
+              "write_ns": 1149583666
+            },
+            "tuned": {
+              "close_ns": 269333,
+              "commit_ns": 23518583,
+              "docs": 1000000,
+              "total_ns": 926081624,
+              "write_ns": 902293708
+            }
+          }
+        },
+        {
+          "batch": 3,
+          "phase": "formal",
+          "round": 5,
+          "order": [
+            "tuned",
+            "java",
+            "rust"
+          ],
+          "engines": {
+            "tuned": {
+              "close_ns": 212833,
+              "commit_ns": 24866917,
+              "docs": 1000000,
+              "total_ns": 927759500,
+              "write_ns": 902679750
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1280003083,
+              "commit_ns": 27600458,
+              "close_ns": 458167,
+              "total_ns": 1308061708
+            },
+            "rust": {
+              "close_ns": 244750,
+              "commit_ns": 26215334,
+              "docs": 1000000,
+              "total_ns": 1169457793,
+              "write_ns": 1142997709
+            }
+          }
+        },
+        {
+          "batch": 3,
+          "phase": "formal",
+          "round": 6,
+          "order": [
+            "rust",
+            "tuned",
+            "java"
+          ],
+          "engines": {
+            "rust": {
+              "close_ns": 210541,
+              "commit_ns": 26199292,
+              "docs": 1000000,
+              "total_ns": 1164241666,
+              "write_ns": 1137831833
+            },
+            "tuned": {
+              "close_ns": 210458,
+              "commit_ns": 25718292,
+              "docs": 1000000,
+              "total_ns": 924948916,
+              "write_ns": 899020166
+            },
+            "java": {
+              "docs": 1000000,
+              "write_ns": 1289538000,
+              "commit_ns": 28235833,
+              "close_ns": 462042,
+              "total_ns": 1318235875
+            }
+          }
+        }
+      ],
+      "reported": {
+        "tuned": {
+          "write_ns": {
+            "candidate_median_ns": 910711916.5,
+            "java_median_ns": 1330660374.5,
+            "paired_median_time_change_pct": -30.807648355707386,
+            "paired_geomean_time_change_pct": -30.752230600539054,
+            "median_throughput_change_pct": 46.11210750529364,
+            "paired_geomean_throughput_change_pct": 44.40898366435822,
+            "faster_pairs": 18,
+            "pairs": 18
+          },
+          "commit_ns": {
+            "candidate_median_ns": 25930708.5,
+            "java_median_ns": 28683333.5,
+            "paired_median_time_change_pct": -9.949677364680065,
+            "paired_geomean_time_change_pct": -14.724512996423922,
+            "median_throughput_change_pct": 10.61530964339057,
+            "paired_geomean_throughput_change_pct": 17.26699373268481,
+            "faster_pairs": 15,
+            "pairs": 18
+          },
+          "close_ns": {
+            "candidate_median_ns": 224104.0,
+            "java_median_ns": 535666.5,
+            "paired_median_time_change_pct": -55.239091757007955,
+            "paired_geomean_time_change_pct": -61.13899909567719,
+            "median_throughput_change_pct": 139.02585406775424,
+            "paired_geomean_throughput_change_pct": 157.3273916598382,
+            "faster_pairs": 18,
+            "pairs": 18
+          },
+          "total_ns": {
+            "candidate_median_ns": 940634645.5,
+            "java_median_ns": 1359551436.5,
+            "paired_median_time_change_pct": -30.4363242742927,
+            "paired_geomean_time_change_pct": -30.598315529895036,
+            "median_throughput_change_pct": 44.535547675614495,
+            "paired_geomean_throughput_change_pct": 44.08872171261977,
+            "faster_pairs": 18,
+            "pairs": 18
+          }
+        },
+        "rust": {
+          "write_ns": {
+            "candidate_median_ns": 1136362291.5,
+            "java_median_ns": 1330660374.5,
+            "paired_median_time_change_pct": -14.93758078509886,
+            "paired_geomean_time_change_pct": -13.916271203499964,
+            "median_throughput_change_pct": 17.098251539438735,
+            "paired_geomean_throughput_change_pct": 16.165971662772314,
+            "faster_pairs": 18,
+            "pairs": 18
+          },
+          "commit_ns": {
+            "candidate_median_ns": 26208937.5,
+            "java_median_ns": 28683333.5,
+            "paired_median_time_change_pct": -8.598808592420903,
+            "paired_geomean_time_change_pct": -21.357514251026977,
+            "median_throughput_change_pct": 9.441038958561364,
+            "paired_geomean_throughput_change_pct": 27.157730389143865,
+            "faster_pairs": 16,
+            "pairs": 18
+          },
+          "close_ns": {
+            "candidate_median_ns": 231229.0,
+            "java_median_ns": 535666.5,
+            "paired_median_time_change_pct": -54.50196128343371,
+            "paired_geomean_time_change_pct": -60.05485474437406,
+            "median_throughput_change_pct": 131.66060485492736,
+            "paired_geomean_throughput_change_pct": 150.34331296095576,
+            "faster_pairs": 18,
+            "pairs": 18
+          },
+          "total_ns": {
+            "candidate_median_ns": 1164948312.0,
+            "java_median_ns": 1359551436.5,
+            "paired_median_time_change_pct": -14.552568042253888,
+            "paired_geomean_time_change_pct": -14.805277673751815,
+            "median_throughput_change_pct": 16.704872009806394,
+            "paired_geomean_throughput_change_pct": 17.37816295363448,
+            "faster_pairs": 18,
+            "pairs": 18
+          }
+        }
+      },
+      "pgo_training_writes": 4,
+      "warmup_engine_writes": 18,
+      "same_process_warmup_proof": [],
+      "verification_receipts": 161,
+      "standalone_checkindex_logs": 7,
+      "original_receipt_sha256": {
+        "RUN.json": "7445e5d3d65ec0c7ecf3c9f55ba3d36dcf61e3fdb6975544dbf85af69ccc451c",
+        "RESULT.json": "372c78a9bc61d3cdb98784e5506887a58974b55366991258e7d3ad2bf3cd2aef",
+        "samples.jsonl": "ac635d4f9ab8146226ffee21979d090892780b8f80af8994c8da97c0e34f22a1",
+        "verification.jsonl": "8a3da01ea14b5d54a5b5d988e9c5ca2ebfb53ca84dece0816c5bbfaa78aa75b8"
+      },
+      "binary_sha256": {
+        "ordinary": "e87a235492ebb42c4db1d8b956098560bcf00790d946b39bb39d9b444e653b52",
+        "instrumented": "046eff39cd22d8e05e1c5417ae3c15d987de88d703cbe3b641ad48585bba573e",
+        "optimized": "e649544c07e463b04bf1ccf781303c396afdee94920ee662f48dc969a22038ac"
+      },
+      "driver_fingerprints": {
+        "java/NycTaxi.java": {
+          "bytes": 16350,
+          "sha256": "21f06f0ac0cec840bdc29417ab55a406e1a61b5647839b10b6b8ed0bfb49fc68"
+        },
+        "rust/Cargo.lock": {
+          "bytes": 33190,
+          "sha256": "7619a79db81f5913caf233eab9b4b7b0cbd3c09efac2739ad07beca0d7e8f5c6"
+        },
+        "rust/Cargo.toml": {
+          "bytes": 152,
+          "sha256": "c60e67364ad4e4cc3781080c7da363716547ce84cc7d0badd6f7dd1d54d11b6c"
+        },
+        "rust/src/main.rs": {
+          "bytes": 16604,
+          "sha256": "ad935a22753dbee0aa9723f1e5c5f598894946b7b7a8c4811330d2675795c9e8"
+        }
+      }
+    },
+    {
+      "dataset": "wiki-medium-indexing-1m",
+      "label": "Wikipedia medium",
+      "preset": {
+        "dataset": "wiki-medium-indexing-1m",
+        "runner": "wiki_medium",
+        "manifest": "datasets/wiki-medium-indexing/manifest.json",
+        "rust_commit": "9406d0fcd491b5d9d31d67b0cc01f9fa89775228",
+        "documents": 1000000,
+        "preflight_documents": 4096,
+        "utf16_units": {
+          "4096": 4141932,
+          "1000000": 1005319893
+        },
+        "logical_sha256": "4866e5f3cdc769c6b137785341e80ffc924bc369cd0f6c8a816173522b3f84aa",
+        "batches": 2,
+        "formal_per_batch": 3,
+        "warmup_min_seconds": 60,
+        "orders": [
+          [
+            [
+              "rust",
+              "java"
+            ],
+            [
+              "rust",
+              "java"
+            ],
+            [
+              "java",
+              "rust"
+            ]
+          ],
+          [
+            [
+              "java",
+              "rust"
+            ],
+            [
+              "java",
+              "rust"
+            ],
+            [
+              "rust",
+              "java"
+            ]
+          ]
+        ],
+        "comparisons": [
+          [
+            "rust",
+            "java"
+          ]
+        ],
+        "writer": {
+          "threads": 1,
+          "ram_mb": 2048,
+          "max_buffered_docs": -1,
+          "scheduler": "concurrent",
+          "merge_threads": 1,
+          "mode": "full"
+        },
+        "java_flags": [
+          "--add-modules",
+          "jdk.incubator.vector",
+          "--enable-native-access=ALL-UNNAMED",
+          "-Xms4g",
+          "-Xmx4g",
+          "-XX:+UseParallelGC",
+          "-XX:+AlwaysPreTouch",
+          "-XX:+TieredCompilation",
+          "-XX:TieredStopAtLevel=4",
+          "-XX:+UseSuperWord",
+          "-XX:+UseSIMDForMemoryOps",
+          "-XX:+UseSIMDForArrayEquals",
+          "-XX:+UseFMA",
+          "-Duser.timezone=UTC"
+        ]
+      },
+      "input_manifest": "datasets/wiki-medium-indexing/manifest.json",
+      "input_manifest_sha256": "fb9c8aceb2912b6a744df4b238d6d09ae43e3bd927b6b3c399d7f44e10c39650",
+      "machine": {
+        "os": "macOS-27.2.1-arm64-arm-64bit",
+        "architecture": "arm64",
+        "python": "3.9.6 (default, Oct 19 2026, 19:18:13) \n[Clang 21.0.0 (clang-2100.4.1.1)]",
+        "cpu_count": 12
+      },
+      "rust_version": "1.98.1",
+      "java_version": "Lucene 10.1.0 / JDK 23.0.2",
+      "optimized_configuration": "native CPU + fat LTO; no PGO",
+      "samples": [
+        {
+          "batch": 1,
+          "round": 1,
+          "phase": "formal",
+          "order": [
+            "rust",
+            "java"
+          ],
+          "engines": {
+            "rust": {
+              "close_wait_merges_ns": 98750,
+              "commit_ns": 7062873250,
+              "documents": 1000000,
+              "finish_ns": 7062972500,
+              "gc_count": null,
+              "gc_ms": null,
+              "jit_ms": null,
+              "luceneutil_utf16_units": 0,
+              "persisted": true,
+              "rollback_ns": 0,
+              "total_ns": 31926738375,
+              "utf8_text_bytes": 1013509513,
+              "write_ns": 24863765666,
+              "close_ns": 98750
+            },
+            "java": {
+              "documents": 1000000,
+              "luceneutil_utf16_units": 1005319893,
+              "write_ns": 34696089542,
+              "finish_ns": 7695837333,
+              "commit_ns": 7695316958,
+              "close_wait_merges_ns": 519583,
+              "rollback_ns": 0,
+              "total_ns": 42392110125,
+              "persisted": true,
+              "jit_ms": 48,
+              "gc_ms": 42,
+              "gc_count": 9,
+              "total_jit_ms": 94,
+              "total_gc_ms": 53,
+              "total_gc_count": 11,
+              "close_ns": 519583
+            }
+          }
+        },
+        {
+          "batch": 1,
+          "round": 2,
+          "phase": "formal",
+          "order": [
+            "rust",
+            "java"
+          ],
+          "engines": {
+            "rust": {
+              "close_wait_merges_ns": 129542,
+              "commit_ns": 7119017458,
+              "documents": 1000000,
+              "finish_ns": 7119147417,
+              "gc_count": null,
+              "gc_ms": null,
+              "jit_ms": null,
+              "luceneutil_utf16_units": 0,
+              "persisted": true,
+              "rollback_ns": 0,
+              "total_ns": 31969232666,
+              "utf8_text_bytes": 1013509513,
+              "write_ns": 24850085041,
+              "close_ns": 129542
+            },
+            "java": {
+              "documents": 1000000,
+              "luceneutil_utf16_units": 1005319893,
+              "write_ns": 35315884917,
+              "finish_ns": 7708021042,
+              "commit_ns": 7707550292,
+              "close_wait_merges_ns": 469875,
+              "rollback_ns": 0,
+              "total_ns": 43024123917,
+              "persisted": true,
+              "jit_ms": 84,
+              "gc_ms": 50,
+              "gc_count": 9,
+              "total_jit_ms": 114,
+              "total_gc_ms": 59,
+              "total_gc_count": 11,
+              "close_ns": 469875
+            }
+          }
+        },
+        {
+          "batch": 1,
+          "round": 3,
+          "phase": "formal",
+          "order": [
+            "java",
+            "rust"
+          ],
+          "engines": {
+            "java": {
+              "documents": 1000000,
+              "luceneutil_utf16_units": 1005319893,
+              "write_ns": 35316618709,
+              "finish_ns": 7700388375,
+              "commit_ns": 7699916208,
+              "close_wait_merges_ns": 471291,
+              "rollback_ns": 0,
+              "total_ns": 43017230959,
+              "persisted": true,
+              "jit_ms": 4,
+              "gc_ms": 34,
+              "gc_count": 9,
+              "total_jit_ms": 8,
+              "total_gc_ms": 41,
+              "total_gc_count": 11,
+              "close_ns": 471291
+            },
+            "rust": {
+              "close_wait_merges_ns": 92375,
+              "commit_ns": 7139443458,
+              "documents": 1000000,
+              "finish_ns": 7139536333,
+              "gc_count": null,
+              "gc_ms": null,
+              "jit_ms": null,
+              "luceneutil_utf16_units": 0,
+              "persisted": true,
+              "rollback_ns": 0,
+              "total_ns": 32056958958,
+              "utf8_text_bytes": 1013509513,
+              "write_ns": 24917422416,
+              "close_ns": 92375
+            }
+          }
+        },
+        {
+          "batch": 2,
+          "round": 1,
+          "phase": "formal",
+          "order": [
+            "java",
+            "rust"
+          ],
+          "engines": {
+            "java": {
+              "documents": 1000000,
+              "luceneutil_utf16_units": 1005319893,
+              "write_ns": 34170868500,
+              "finish_ns": 7651058709,
+              "commit_ns": 7650528583,
+              "close_wait_merges_ns": 529333,
+              "rollback_ns": 0,
+              "total_ns": 41822114375,
+              "persisted": true,
+              "jit_ms": 14,
+              "gc_ms": 41,
+              "gc_count": 9,
+              "total_jit_ms": 37,
+              "total_gc_ms": 48,
+              "total_gc_count": 11,
+              "close_ns": 529333
+            },
+            "rust": {
+              "close_wait_merges_ns": 104875,
+              "commit_ns": 7330234583,
+              "documents": 1000000,
+              "finish_ns": 7330339958,
+              "gc_count": null,
+              "gc_ms": null,
+              "jit_ms": null,
+              "luceneutil_utf16_units": 0,
+              "persisted": true,
+              "rollback_ns": 0,
+              "total_ns": 33504569500,
+              "utf8_text_bytes": 1013509513,
+              "write_ns": 26174229333,
+              "close_ns": 104875
+            }
+          }
+        },
+        {
+          "batch": 2,
+          "round": 2,
+          "phase": "formal",
+          "order": [
+            "java",
+            "rust"
+          ],
+          "engines": {
+            "java": {
+              "documents": 1000000,
+              "luceneutil_utf16_units": 1005319893,
+              "write_ns": 34611229041,
+              "finish_ns": 7644462917,
+              "commit_ns": 7644001792,
+              "close_wait_merges_ns": 460375,
+              "rollback_ns": 0,
+              "total_ns": 42255933375,
+              "persisted": true,
+              "jit_ms": 103,
+              "gc_ms": 49,
+              "gc_count": 9,
+              "total_jit_ms": 161,
+              "total_gc_ms": 53,
+              "total_gc_count": 10,
+              "close_ns": 460375
+            },
+            "rust": {
+              "close_wait_merges_ns": 121541,
+              "commit_ns": 7306319625,
+              "documents": 1000000,
+              "finish_ns": 7306441584,
+              "gc_count": null,
+              "gc_ms": null,
+              "jit_ms": null,
+              "luceneutil_utf16_units": 0,
+              "persisted": true,
+              "rollback_ns": 0,
+              "total_ns": 33354651750,
+              "utf8_text_bytes": 1013509513,
+              "write_ns": 26048210083,
+              "close_ns": 121541
+            }
+          }
+        },
+        {
+          "batch": 2,
+          "round": 3,
+          "phase": "formal",
+          "order": [
+            "rust",
+            "java"
+          ],
+          "engines": {
+            "rust": {
+              "close_wait_merges_ns": 102875,
+              "commit_ns": 7218654959,
+              "documents": 1000000,
+              "finish_ns": 7218758250,
+              "gc_count": null,
+              "gc_ms": null,
+              "jit_ms": null,
+              "luceneutil_utf16_units": 0,
+              "persisted": true,
+              "rollback_ns": 0,
+              "total_ns": 32733479500,
+              "utf8_text_bytes": 1013509513,
+              "write_ns": 25514721167,
+              "close_ns": 102875
+            },
+            "java": {
+              "documents": 1000000,
+              "luceneutil_utf16_units": 1005319893,
+              "write_ns": 33786412208,
+              "finish_ns": 7541957375,
+              "commit_ns": 7541469500,
+              "close_wait_merges_ns": 487083,
+              "rollback_ns": 0,
+              "total_ns": 41328573083,
+              "persisted": true,
+              "jit_ms": 5,
+              "gc_ms": 31,
+              "gc_count": 9,
+              "total_jit_ms": 13,
+              "total_gc_ms": 39,
+              "total_gc_count": 11,
+              "close_ns": 487083
+            }
+          }
+        }
+      ],
+      "reported": {
+        "rust": {
+          "write_ns": {
+            "candidate_median_ns": 25216071791.5,
+            "java_median_ns": 34653659291.5,
+            "paired_median_time_change_pct": -26.53950064344903,
+            "paired_geomean_time_change_pct": -26.717668753385304,
+            "median_throughput_change_pct": 37.426874328543455,
+            "paired_geomean_throughput_change_pct": 36.45854095917498,
+            "faster_pairs": 6,
+            "pairs": 6
+          },
+          "commit_ns": {
+            "candidate_median_ns": 7179049208.5,
+            "java_median_ns": 7672922770.5,
+            "paired_median_time_change_pct": -5.848277912079847,
+            "paired_geomean_time_change_pct": -6.01895664260338,
+            "median_throughput_change_pct": 6.879372848082066,
+            "paired_geomean_throughput_change_pct": 6.404436924278589,
+            "faster_pairs": 6,
+            "pairs": 6
+          },
+          "close_ns": {
+            "candidate_median_ns": 103875.0,
+            "java_median_ns": 479187.0,
+            "paired_median_time_change_pct": -79.53334986396587,
+            "paired_geomean_time_change_pct": -77.99746191285841,
+            "median_throughput_change_pct": 361.31119133574003,
+            "paired_geomean_throughput_change_pct": 354.49302077763735,
+            "faster_pairs": 6,
+            "pairs": 6
+          },
+          "total_ns": {
+            "candidate_median_ns": 32395219229.0,
+            "java_median_ns": 42324021750.0,
+            "paired_median_time_change_pct": -22.87611913325098,
+            "paired_geomean_time_change_pct": -22.972403073874204,
+            "median_throughput_change_pct": 30.64897462435383,
+            "paired_geomean_throughput_change_pct": 29.82360087892415,
+            "faster_pairs": 6,
+            "pairs": 6
+          }
+        }
+      },
+      "pgo_training_writes": 0,
+      "warmup_engine_writes": 8,
+      "same_process_warmup_proof": [
+        {
+          "batch": 1,
+          "elapsed_ns": {
+            "java": 85609995708,
+            "rust": 66223789208
+          },
+          "pids": {
+            "java": 34831,
+            "rust": 34832
+          }
+        },
+        {
+          "batch": 2,
+          "elapsed_ns": {
+            "java": 82007788709,
+            "rust": 64508516874
+          },
+          "pids": {
+            "java": 35286,
+            "rust": 35287
+          }
+        }
+      ],
+      "verification_receipts": 22,
+      "standalone_checkindex_logs": 0,
+      "original_receipt_sha256": {
+        "RUN.json": "f92a02fb32e9c3cac8f090d78237e97423acebf7290e37f670007e0d44425a18",
+        "RESULT.json": "90fcd40eeee47031b835f9894e66f46e559bbfda0c2ed0bf85c2448deceb14e5",
+        "samples.jsonl": "271d0058562ec64647c5b08b5c5c4c0fafe9af1a7d9ce72c1959821723879fa3",
+        "verification.jsonl": "4dbae4d551c2f5177fbbd603a3c0004924c6199cfccb66ff18947e23075c0587"
+      },
+      "binary_sha256": {
+        "native_fat_lto": "2eed3cdb7a8ea05033db90a20884f08569f6815753a6ebc55992b41c9ed34f70"
+      },
+      "driver_fingerprints": {
+        "Cargo.lock": {
+          "bytes": 33214,
+          "sha256": "b456263b3545bd83b22b624eef62b9641384a3d221f2d8cc9755d8f024cd06f7"
+        },
+        "Cargo.toml": {
+          "bytes": 279,
+          "sha256": "5bb68804ebab125c1016548c474e726e3a78483996227bf5f36b247ed95cc9ca"
+        },
+        "java/BenchmarkServer.java": {
+          "bytes": 459,
+          "sha256": "86104d46f28e805a639b19b13aa8a5c20e1fa3b941b3255135b003b2b21a0123"
+        },
+        "java/IndexingBench.java": {
+          "bytes": 10601,
+          "sha256": "06aee10f0d4945da9114c0fb33e1906e413b5905ffe6e0c188361c09273439b8"
+        },
+        "java/VerifyIndex.java": {
+          "bytes": 9100,
+          "sha256": "36f2cd8f3854cb916359f45e25079fc5460a805d47e854597f09b417b3c1f9ea"
+        },
+        "rustfmt.toml": {
+          "bytes": 806,
+          "sha256": "ec08ab500d98d09a24cc18458bae8c65b56807546a098236d2052e95acc7aa92"
+        },
+        "src/main.rs": {
+          "bytes": 11362,
+          "sha256": "39e517c6977e526df3e9763daaf58a3ad14a55973c2fdd2f797725b966638ed9"
+        }
+      }
+    }
+  ],
+  "notes": [
+    "Four workloads compare ordinary release, native CPU + ThinLTO + same-input PGO, and Java. Wiki compares native CPU + fat LTO without PGO and Java.",
+    "All formal groups are included. Training, warmup and verification are outside formal timing.",
+    "This is the latest reference only. Repeated timings are hardware/build-specific and must record their own identities.",
+    "MS MARCO and GeoNames audit helpers were adapted to the Alpha.3 public API; timed writing loops were unchanged."
+  ]
+}

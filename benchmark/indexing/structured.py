@@ -19,7 +19,7 @@ SUITE = Path(__file__).resolve().parent
 def freeze_source(out, commit):
     archive = out / "source.tar"
     with archive.open("xb") as stream:
-        subprocess.run(["git", "-C", rt.REPOSITORY, "archive", commit], stdout=stream, check=True)
+        subprocess.run(["git", "-C", rt.GIT_REPOSITORY, "archive", commit], stdout=stream, check=True)
     source = out / "source"
     source.mkdir()
     subprocess.run(["tar", "-xf", archive, "-C", source], check=True)
@@ -27,7 +27,7 @@ def freeze_source(out, commit):
 
 
 def source_identity(source, commit):
-    entries = subprocess.check_output(["git", "-C", rt.REPOSITORY, "ls-tree", "-rz", commit]).split(b"\0")
+    entries = subprocess.check_output(["git", "-C", rt.GIT_REPOSITORY, "ls-tree", "-rz", commit]).split(b"\0")
     paths = set()
     for entry in filter(None, entries):
         meta, filename = entry.split(b"\t", 1)

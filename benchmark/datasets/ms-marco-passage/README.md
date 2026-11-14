@@ -16,7 +16,7 @@ This downloads the official archives into
 To use exact copies you already have, supply
 `--archive /path/to/collection.tar.gz --queries-archive /path/to/queries.tar.gz`.
 Use `--destination /path/to/data` to choose another directory and pass
-the same path to the indexing runner with `--data`.
+the same path to the latest-release runner with `--data ms-marco-passage-1m=DIR`.
 
 The source has 8,841,823 rows. For an N-row sample, select the original
 one-based rows `1 + floor(i * 8841823 / N)`, for `i = 0..N-1`, in source order.

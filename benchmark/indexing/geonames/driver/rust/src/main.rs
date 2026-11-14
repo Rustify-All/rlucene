@@ -268,7 +268,7 @@ fn audit_leaf(reader: &impl LeafReader, rows: &[Row<'_>]) -> Result<()> {
         let doc = doc as i32;
         let stored = stored.document(doc)?;
         assert_eq!(stored.get_fields().len(), 1);
-        assert_eq!(stored.get(ID)?.as_deref().map(String::as_str), Some(row.id));
+        assert_eq!(stored.get(ID)?.as_deref(), Some(row.id));
         assert_eq!(pop.advance_exact(doc)?, row.population >= 0);
         if row.population >= 0 {
             assert_eq!(pop.long_value()?, row.population);

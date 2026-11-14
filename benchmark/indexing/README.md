@@ -1,161 +1,157 @@
-# Indexing Benchmark
+# Latest release indexing benchmark
 
-Compare public-API indexing on a fixed million-row sample. Available presets:
+This directory reproduces the five million-document comparisons for the latest
+recorded release: **RLucene 0.1.0-alpha.3**, commit
+`9406d0fcd491b5d9d31d67b0cc01f9fa89775228`, against Apache Lucene 10.1.0.
+[release.json](release.json) selects the exact release. The library is extracted
+from Git without switching your checkout or creating a worktree. Benchmark code,
+consumers and build identities are frozen in each new output directory.
 
-- [Rally HTTP logs](../datasets/rally-http-logs/README.md), structured log rows.
-- [MS MARCO Passage Ranking v1](../datasets/ms-marco-passage/README.md), short text passages.
-- [GeoNames](geonames/README.md), geographic points, populations and multilingual aliases.
-- [NYC Yellow Taxi](nyc-yellow-taxi/README.md), trip timestamps, zones and numeric measurements.
-- [Wikipedia medium](wiki-medium/README.md), one million luceneutil line documents flushed as a single segment.
+## Review the saved result without a benchmark run
 
-## Rally HTTP logs on macOS
-
-Use Python 3.9+, Rust 1.98.1 and JDK 23. From the repository root:
+From the repository root, with Python 3.9+:
 
 ```sh
-python3 -B benchmark/run.py indexing datasets
-python3 -B benchmark/datasets/prepare.py rally-http-logs-1m
-python3 -B benchmark/run.py indexing build
-python3 -B benchmark/run.py indexing smoke --dataset rally-http-logs-1m
-python3 -B benchmark/run.py indexing run --dataset rally-http-logs-1m
+python3 -B benchmark/run.py indexing release-reference
 ```
 
-`build` compiles the standalone Java and Rust drivers and an independent Rust
-index auditor. The Rust driver uses the checkout through a Cargo path dependency.
-Use `--java-home` and `--jars-dir` to reuse local dependencies. The runner checks
-the pinned Java JAR digests. Use `--data` to select a prepared input directory
-and `--output` to select a fresh result directory.
+This recomputes every saved statistic from all 78 formal groups in
+[reference/latest.json](reference/latest.json), checks input-manifest hashes and
+prints the table below. It requires no datasets, Rust, Java, NumPy or PyArrow,
+and performs no builds, downloads or index writes.
 
-`smoke` writes one full index per selected engine and checks its contents. The
-default `run` compares ordinary RLucene release with Java Lucene 10.1.0 on JDK
-23, with normal JIT, Parallel GC and a fixed 4 GiB heap.
+| Dataset | Ordinary Rust throughput vs Java | Optimized Rust throughput vs Java |
+|---|---:|---:|
+| Rally HTTP Logs | +7.140% | +28.595% |
+| MS MARCO Passage | +19.679% | +42.464% |
+| GeoNames | +9.786% | +29.330% |
+| NYC Yellow Taxi | +16.705% | +44.536% |
+| Wikipedia medium | Not measured | +30.649% |
 
-To reproduce the optimized three-way comparison:
+Throughput change is `100 × (median(Java total) / median(Rust total) − 1)`.
+The reference preserves phase timings, paired medians, paired geometric means,
+every formal observation, build fingerprints and validation counts.
+The first four optimized builds use **native CPU + ThinLTO + same-input PGO**;
+Wiki uses **native CPU + fat LTO, without PGO**. Optimized results are not
+ordinary-release results. New machines and build paths produce their own times
+and fingerprints.
+
+## Environment
+
+The supported runner is macOS. The reference used macOS 27.2.1 arm64, 12 CPUs,
+Python 3.9.6, Rust 1.98.1 and JDK 23.0.2. Use a full Git clone containing the
+tag in `release.json`.
 
 ```sh
+rustup toolchain install 1.98.1 --profile minimal
 rustup component add llvm-tools-preview --toolchain 1.98.1
-python3 -B benchmark/run.py indexing build-tuned --dataset rally-http-logs-1m
-python3 -B benchmark/run.py indexing run --dataset rally-http-logs-1m --rust-profile both
+python3 -m venv benchmark/.cache/indexing-python
+. benchmark/.cache/indexing-python/bin/activate
+python -m pip install -r benchmark/datasets/nyc-yellow-taxi/requirements.txt
 ```
 
-`build-tuned` requires the ordinary build above. It builds Rust with native CPU
-and ThinLTO, trains PGO with four independent writes of the same million-row
-input, then builds the optimized executable from that profile. `--rust-profile
-both` measures Java, ordinary Rust and optimized Rust in the same batches.
-Use `--rust-profile tuned` to compare Java with the optimized build alone.
-Optimized results apply to the machine and the workload used in training.
+Taxi requires NumPy 2.0.2 and PyArrow 21.0.0. The launcher checks them before
+building. Set `JAVA_HOME` or pass `--java-home /path/to/jdk-23.0.2`.
+`--jars-dir DIR` reuses local pinned Java JARs; their SHA-256 is checked.
+Allow space for archives, prepared data, build caches, profiles, preflight
+indexes and retained Wikipedia indexes.
 
-## What Rally measures
-
-Both writers reuse their document and field objects. A single `KeywordField`
-provides postings and SortedSet DocValues for `request.raw`. The full schema
-includes analyzed DOCS-only `request`, original JSON, point fields, and
-DocValues. The [preset](presets/rally-http-logs-1m.json) fixes one writer thread,
-mmap, Lucene101 BEST_SPEED, 256 MiB buffering, flush every 65,536 documents,
-no merges, and 16 segments.
-
-- **Write** times binary record decoding, field updates, analysis, indexing
-  and automatic flush. File loading and reusable field setup occur before it.
-- **Commit** times the explicit durable commit, including the final segment.
-- **Close** times writer close after the commit. The three measured phases sum
-  to the reported total.
-
-Every batch uses fresh processes, two full warmup writes per engine, then six
-balanced rounds. The three-way run uses all six execution orders in each batch.
-Preflight checks complete stored values, DocValues, point values, request
-postings, CheckIndex level 2 and cross-engine reopen. Each subsequent index is
-reopened and compared with the 17-case query oracle. Query checks are outside
-the timed write operations. Build, training, validation and timing use the
-shared performance lock.
-
-## MS MARCO Passage Ranking v1 on macOS
-
-Use Python 3.9+, Rust 1.98.1 and JDK 23. From the repository root:
+## Prepare the fixed inputs
 
 ```sh
-python3 -B benchmark/datasets/prepare.py ms-marco-passage-1m
-python3 -B benchmark/run.py indexing smoke --dataset ms-marco-passage-1m
-rustup component add llvm-tools-preview --toolchain 1.98.1
-python3 -B benchmark/run.py indexing run --dataset ms-marco-passage-1m --rust-profile both
+python -B benchmark/datasets/prepare.py rally-http-logs-1m
+python -B benchmark/datasets/prepare.py ms-marco-passage-1m
+python -B benchmark/datasets/prepare.py geonames-1m
+python -B benchmark/datasets/prepare.py nyc-yellow-taxi-2025-01-1m
+python -B benchmark/datasets/prepare.py wiki-medium-indexing-1m
 ```
 
-The default smoke check builds the two drivers and verifies a 14-row
-boundary fixture and 4,096 source passages. Adding `--rust-profile both`
-to smoke also builds the optimized Rust executable and verifies the million-row
-indexes. The full run builds and validates before timing under one shared
-lock. It uses normal Java JIT, Parallel GC and a fixed 4 GiB heap. The optimized
-Rust build uses native CPU, ThinLTO and a profile trained on four independent
-writes of the same million passages. Only the workload process contributes
-to the merged profile. Training time and raw profile files are recorded
-separately. Use `--data`, `--output`, `--java-home` and `--jars-dir` as needed.
+The default directories are `benchmark/data/DATASET`. Manifests pin the source,
+sampling rules, prepared files and checksums. See [Rally](../datasets/rally-http-logs/README.md),
+[MS MARCO](../datasets/ms-marco-passage/README.md), [GeoNames](geonames/README.md),
+[Taxi](nyc-yellow-taxi/README.md) and [Wikipedia](wiki-medium/README.md).
 
-Both writers reuse one document and its fields. The stored `pid` is a
-`StringField` with DOCS postings and omitted norms. The stored `passage` is
-a `TextField` using StandardAnalyzer, with frequencies, positions and norms.
-The [preset](presets/ms-marco-passage-1m.json) uses one writer, mmap, Lucene101
-BEST_SPEED, 256 MiB buffering, a 65,536-document flush, no merges and 16
-segments. The write, explicit commit and writer close boundaries match Rally.
-Full refers to the selected million passages. Use a fresh output directory
-and allow at least 15 GB for the live indexes and build files.
+GeoNames requires the recorded **2026-11-10** archive. Its official URL serves
+a daily export, not an immutable dated file. If a download differs from the
+pinned SHA-256, supply the retained archive with the preparer's `--archive`
+option. Do not substitute a different snapshot. The saved reference samples
+still allow statistical review without the source archives.
 
-Preflight compares Unicode tokens, position increments and UTF-16 offsets
-on the fixture and a subset of the small sample. It checks all stored values
-against the input and compares the complete postings and norms across
-engines. Java CheckIndex level 2 and cross-engine reopen cover each preflight
-index. Queries compare exact counts and ordered BM25 Top 10 external pids,
-docIDs and f32 score bits. Ties use ascending docID. The query set contains
-exact pid, term and phrase checks and 32 official dev queries analyzed into
-SHOULD term clauses. These checks run outside timing.
-
-Every full batch starts fresh processes, with two warmup writes per engine
-and six formal rounds. The three-way comparison uses all six execution
-orders per batch and 18 formal groups across three batches. Java reopens
-each warmup and formal index for the 37-query check. Verified timed indexes
-are removed, and the preflight indexes and original observations are kept.
-
-## GeoNames and NYC Yellow Taxi on macOS
-
-The [GeoNames guide](geonames/README.md) and [NYC Yellow Taxi guide](nyc-yellow-taxi/README.md)
-cover data preparation, checksums and run commands. Both runners use the RLucene
-commit recorded in the preset. Use a full Git clone so that the runner can extract
-and verify the measured revision even when the checked-out benchmark code is newer.
-The Java runner uses Lucene 10.1.0 on JDK 23 with normal JIT, Parallel GC and a
-fixed 4 GiB heap. The optimized Rust build uses native CPU, ThinLTO, 16 codegen
-units and a profile trained by one process writing four full indexes for that workload.
-
-The full run writes one million documents with one writer thread, mmap,
-Lucene101 BEST_SPEED, 256 MiB buffering, a flush threshold of 65,536 documents,
-and merges, compound files and implicit commit on close disabled. It times the
-write loop, explicit commit and writer close separately. Index initialization,
-input loading, directory close and all verification happen outside those timers.
-
-The fixture and 4,096-row preflights compare Java and ordinary Rust. The million-row
-preflight also includes optimized Rust. Each preflight index passes Java CheckIndex
-level 2 and is reopened by each participating reader for a full field audit and a
-comparison against the independent query oracle. Three batches each launch fresh
-writer processes, warm up twice per engine, and run all six permutations of Java,
-ordinary Rust and optimized Rust. Java and ordinary Rust reopen every warmup and
-formal index for query verification. The runner retains logs and samples and removes
-the temporary timed indexes after verification.
-
-## Wikipedia medium on macOS
-
-The [Wikipedia medium guide](wiki-medium/README.md) records the pinned input,
-the exact Rust and Java drivers, and the six-order comparison between
-RLucene `534c6d9c0`, RLucene `c2f203337`, and Apache Lucene 10.1.0.
-
-## Read the results
-
-The default result directory is `benchmark/runs/indexing/`. Keep `RUN.json`,
-`samples.jsonl`, `verification.jsonl` and any logs or indexes needed for
-auditing. Rally build receipts live in `benchmark/.cache/indexing/`.
-MS MARCO keeps the build logs, binary fingerprints and optional PGO
-training receipts with each run.
-
-`RESULT.json` contains per-batch and combined paired ratios and absolute
-differences. `REPORT.md` gives the measured phase medians. Both can be
-regenerated from a complete run:
+## Inspect, validate and measure
 
 ```sh
-python3 -B benchmark/run.py indexing summarize --output /path/to/completed-run
+python -B benchmark/run.py indexing release-plan
+python -B benchmark/run.py indexing release-smoke --output /path/to/new-smoke
+python -B benchmark/run.py indexing release-run --output /path/to/new-run
+python -B benchmark/run.py indexing release-report --output /path/to/new-run
 ```
+
+- `release-plan` prints the release, input locations and exact presets only.
+- `release-smoke` builds drivers and runs the original preflights. It produces
+  no performance result. Rally checks the full million rows; MS MARCO checks
+  its fixture and small sample; GeoNames/Taxi check fixtures; Wiki checks 4,096
+  rows after verifying its fixed corpus.
+- `release-run` builds, trains, validates, warms up and measures the full
+  protocol, then creates the combined summary.
+- `release-report` recomputes a completed run's table from its raw formal
+  samples without executing Rust or Java.
+
+Select one dataset with `--dataset geonames-1m`. For another input layout, use
+`--data-root DIR` or repeat `--data DATASET=DIR`:
+
+```sh
+python -B benchmark/run.py indexing release-run \
+  --dataset wiki-medium-indexing-1m \
+  --data wiki-medium-indexing-1m=/path/to/prepared-wiki \
+  --output /path/to/new-wiki-run
+```
+
+Outputs must be new. Failed/stopped runs remain in place; there is no automatic
+retry or resume. The launcher holds `/tmp/rlucene-performance-build.lock` across
+staging, builds, training, validation and measurement; child runners inherit
+the same lock. CPU load never gates, filters or replaces samples.
+
+## Protocol and timing
+
+| Setting | First four workloads | Wikipedia medium |
+|---|---|---|
+| Documents / writers | 1,000,000 / one | 1,000,000 / one |
+| Directory / compound files | Explicit mmap / disabled | Explicit mmap / disabled |
+| Buffer / document flush threshold | 256 MiB / 65,536 | 2,048 MiB / disabled |
+| Merge policy / final segments | NoMerge / 16 | TieredMergePolicy / one |
+| Formal process batches | Three | Two |
+| Same-process warmup | Two complete writes per engine per batch | At least 60 seconds per engine per batch |
+| Formal groups | Six three-engine orders per batch, 18 total | Three balanced pairs per batch, six total |
+| Rust PGO | Four writes of the same million-row input | None |
+
+Java uses normal JIT, a fixed 4 GiB heap and ParallelGC. Rally enables the Vector
+API. Wiki also uses the explicit C2, SIMD/FMA and heap pre-touch options in its
+preset. Rust consumers have their own `[workspace]` and Cargo.lock; library
+unit-test targets are not used. PGO training, warmup and verification are outside
+formal timing.
+
+Write includes field updates, analysis where applicable, insertion and automatic
+flushes. Rally/MS MARCO/Taxi decode preloaded binary rows inside the loop;
+GeoNames decodes before timing. Wiki includes line ingestion, queue waiting and
+parsing, with its bounded reader started before release. Commit and close are
+separate. Wiki total spans timed writer release through close, including timer
+gaps; other totals sum the three phases. Setup and directory close are excluded.
+
+Preflight performs the dataset's CheckIndex, content/points/DocValues/postings
+audits and independent queries. Timed indexes are reopened after each batch;
+GeoNames/Taxi use both Java and ordinary Rust readers. Verified structured/passage
+indexes are removed by the original runners; raw observations remain. Wiki
+checks every index with CheckIndex, a full logical digest and Rust reopen.
+
+## Evidence and updates
+
+Each output keeps `RELEASE_RUN.json`, `CONTEXT.json`, `LIBRARY.json`, the source
+archive, frozen harness, `STAGING.patch`, build cache and per-dataset directories.
+Dataset directories retain `RUN.json`, `samples.jsonl`, `verification.jsonl`,
+build/PGO receipts, toolchain/JVM/JAR identities and logs. `SUMMARY.json` and
+`SUMMARY.md` are derived reports. Preserve all phase regressions.
+
+For a newer release, update `release.json`, the source pins in the presets and
+`reference/latest.json` from verified completed measurements. The public method
+and reference keep only the latest release. These tools do not publish the
+website or change the library checkout.

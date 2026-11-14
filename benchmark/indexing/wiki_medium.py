@@ -40,8 +40,7 @@ def build_rust(out, name, commit):
     staged = out / "source"
     source.rename(staged)
     try:
-        # The second snapshot must invalidate Cargo even when its archive mtimes
-        # predate the first build.
+        # Archive timestamps must not make Cargo reuse another source snapshot.
         for path in staged.rglob("*"):
             if path.is_file() and not path.is_symlink():
                 os.utime(path, None)
@@ -79,15 +78,12 @@ def build(out, args, preset):
     home = Path(java["home"])
     checked([home / "bin/javac", "--release", "23", "-encoding", "UTF-8", "-cp", cp, "-d", classes,
              *sorted((driver / "java").glob("*.java"))], out / "javac.log")
-    old, old_build = build_rust(out, "old", preset["old_commit"])
     rust, rust_build = build_rust(out, "rust", preset["rust_commit"])
-    rt.require(old_build["consumer_metadata"] == rust_build["consumer_metadata"],
-               "Rust consumer metadata differs between builds")
     commands = {"java": [str(home / "bin/java"), *preset["java_flags"], "-cp", f"{classes}{os.pathsep}{cp}"],
-                "old": [old], "rust": [rust]}
+                "rust": [rust]}
     identity = {"java": java, "jars": {str(jar): rt.sha(jar) for jar in jars}, "classes": rt.files(classes),
                 "driver": hashes, "rustc": rt.output(["rustc", "+1.98.1", "-Vv"]),
-                "old": old_build, "rust": rust_build}
+                "rust": rust_build}
     rt.require(rt.files(driver) == hashes, "Benchmark driver changed during build")
     return commands, identity
 
@@ -131,7 +127,7 @@ def sample(out, label, engine, process, commands, corpus, preset, count):
         rt.require(logical["logical_sha256"] == preset["logical_sha256"], f"Logical hash mismatch for {label}")
     reopen = folder / "reopen.json"
     rt.save(reopen, dict(config, action="read"))
-    reader = "old" if engine == "java" else engine
+    reader = "rust"
     checked([*commands[reader], reopen], folder / "reopen.stdout")
     rt.require(rt.load(folder / "reopen.stdout") == {"num_docs": count, "max_doc": count}, f"Reopen failed for {label}")
     protocol.append(out / "verification.jsonl", {
@@ -200,7 +196,7 @@ def run(args, preset):
                 if args.action == "run":
                     measure(out, commands, corpus, preset)
                 rt.require(rt.sha(corpus) == manifest["corpus"]["sha256"], "Wiki medium corpus changed")
-            for engine in ("old", "rust"):
+            for engine in ("rust",):
                 rt.require(rt.sha(commands[engine][0]) == identity[engine]["binary_sha256"], "Rust binary changed")
             receipt["status"] = "complete"
         except BaseException as exc:

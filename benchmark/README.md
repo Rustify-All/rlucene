@@ -53,6 +53,12 @@ ignored `data/`, `.cache/` and `runs/` directories, or user-selected paths.
 
 ## Results and reproducibility
 
+For the latest release's five indexing workloads, use the
+[release reproduction guide](indexing/README.md). `indexing release-reference`
+recomputes the saved result from committed formal samples without building or
+loading datasets. `release-plan`, `release-smoke` and `release-run` select the
+exact latest recorded release rather than whichever library is checked out.
+
 Each run records the library commit **and actual source hashes**, driver/config
 hashes, toolchain/JVM/binary/JAR identities, machine/architecture, input/index
 hashes, exact commands, warmup, order and raw observations. A changed source,
