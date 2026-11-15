@@ -295,6 +295,15 @@ where
           break;
         }
 
+        if DEFAULT_HOOK
+          && T::HAS_BORROWED_NEIGHBORS
+          && let Some((next_neighbors, next_upto)) = neighbors.as_ref()
+          && **next_upto < next_neighbors.size()
+          && let Some(&next_node) = next_neighbors.nodes().get(**next_upto)
+        {
+          scorer.prefetch(next_node as usize);
+        }
+
         let friend_similarity = scorer.score(friend_ord)?;
         results.inc_visited_count(1);
 

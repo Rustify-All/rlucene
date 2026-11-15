@@ -135,6 +135,10 @@ pub trait FloatVectorValues: KnnVectorValues {
   /// [`Self::float_copy`] instances for simultaneous reads of reusable buffers.
   fn vector_value(&self, ord: usize) -> Result<Self::VectorValue<'_>>;
 
+  /// Optional best-effort heap read hint. Custom and buffered providers default
+  /// to no operation, retaining their original reads and failures.
+  fn prefetch_vector(&self, _target_ord: usize) {}
+
   /// Optional fresh owning reader capability. Borrowed, shared and custom
   /// providers do not forward it and retain their original snapshots/guards.
   fn mapped_float_vectors(&self) -> Option<MappedFloatVectors> {
@@ -281,6 +285,17 @@ impl KnnVectorValues for FloatVectorValuesImpl {
 }
 
 impl FloatVectorValues for FloatVectorValuesImpl {
+  #[inline]
+  fn prefetch_vector(&self, target_ord: usize) {
+    if let Some(row) = self.vectors.get(target_ord)
+      && let Some(value) = row.first()
+    {
+      // A safe demand read, not a hardware prefetch instruction. Missing rows
+      // remain untouched so the ordinary score retains its original failure.
+      std::hint::black_box(*value);
+    }
+  }
+
   type VectorValue<'v>
     = &'v [f32]
   where

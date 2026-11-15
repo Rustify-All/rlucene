@@ -382,6 +382,13 @@ where
   FV: FloatVectorValues,
 {
   #[inline]
+  fn prefetch(&self, node: usize) {
+    if self.vectors1.is_none() && self.vectors2.is_none() {
+      self.vectors.prefetch_vector(node);
+    }
+  }
+
+  #[inline]
   fn score(&self, node: usize) -> Result<f32> {
     debug_assert_eq!(self.vectors1.is_some(), self.vectors2.is_some());
 

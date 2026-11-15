@@ -20,6 +20,10 @@ use crate::core::util::error::lucene_error::Result;
 
 /// A trait for scoring random nodes in batches against an abstract query.
 pub trait RandomVectorScorer {
+  /// Optional best-effort read hint. The default performs no provider access.
+  /// Implementations must not change scores, cursor state or failure timing.
+  fn prefetch(&self, _node: usize) {}
+
   /// Returns the score between the query and the provided node.
   ///
   /// # Arguments
