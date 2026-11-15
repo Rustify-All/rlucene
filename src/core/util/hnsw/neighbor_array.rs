@@ -159,20 +159,41 @@ impl<const DESC_ORDER: bool> NeighborArray<DESC_ORDER> {
 
     debug_assert!(self.sorted_node_size < self.size);
 
-    let mut unchecked_indexes =
-      smallvec::SmallVec::with_capacity(self.size - self.sorted_node_size);
-
-    while self.sorted_node_size != self.size {
+    let unchecked_size = self.size - self.sorted_node_size;
+    let mut unchecked_indexes = smallvec::SmallVec::with_capacity(unchecked_size);
+    let use_unchecked_mask = self.size <= 64;
+    let mut unchecked_mask = 0u64;
+    loop {
       let inserted_index = self.insert_sorted_internal(scorer)?;
-      for idx in &mut unchecked_indexes {
-        if *idx >= inserted_index {
-          *idx += 1;
-        }
+      if unchecked_size == 1 {
+        return Ok(smallvec::SmallVec::from_buf([inserted_index]));
       }
-      unchecked_indexes.push(inserted_index);
+      if use_unchecked_mask {
+        let lower_bits = (1u64 << inserted_index) - 1;
+        unchecked_mask = (unchecked_mask & lower_bits)
+          | ((unchecked_mask & !lower_bits) << 1)
+          | (1u64 << inserted_index);
+      } else {
+        for idx in &mut unchecked_indexes {
+          if *idx >= inserted_index {
+            *idx += 1;
+          }
+        }
+        unchecked_indexes.push(inserted_index);
+      }
+      if self.sorted_node_size == self.size {
+        break;
+      }
     }
 
-    unchecked_indexes.sort_unstable();
+    if use_unchecked_mask {
+      while unchecked_mask != 0 {
+        unchecked_indexes.push(unchecked_mask.trailing_zeros() as usize);
+        unchecked_mask &= unchecked_mask - 1;
+      }
+    } else {
+      unchecked_indexes.sort_unstable();
+    }
     Ok(unchecked_indexes)
   }
   /// insert the first unsorted node into its sorted position
