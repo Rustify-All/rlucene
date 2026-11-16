@@ -26,7 +26,7 @@ use crate::core::util::bkd::point_value::PointValue;
 use crate::core::util::bkd::point_writer::PointWriter;
 use crate::core::util::close::Closeable;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
-use crate::core::util::{CoreHelper, SliceCopyOps, ToInt};
+use crate::core::util::{CoreHelper, ToInt};
 use std::fmt;
 use std::fmt::{Display, Formatter};
 
@@ -117,15 +117,15 @@ impl<const N: usize> HeapPointWriter<N> {
     let bytes_per_doc = self.config.bytes_per_doc();
     let index_i = bytes_per_doc * i;
     let index_j = bytes_per_doc * j;
-    self
-      .scratch
-      .copy_from(&heap_value.value[index_i..index_i + bytes_per_doc], 0);
+    let copy_source = &heap_value.value[index_i..index_i + bytes_per_doc];
+    self.scratch[..copy_source.len()].copy_from_slice(copy_source);
     // Keep the existing scratch update when swapping a point with itself.
     if index_i != index_j || self.scratch.len() != bytes_per_doc {
       heap_value
         .value
         .copy_within(index_j..index_j + bytes_per_doc, index_i);
-      heap_value.value.copy_from(&self.scratch, index_j);
+      let copy_source = &self.scratch;
+      heap_value.value[index_j..][..copy_source.len()].copy_from_slice(copy_source);
     }
     Ok(())
   }
@@ -154,7 +154,8 @@ impl<const N: usize> HeapPointWriter<N> {
     };
     let start = i * self.config.bytes_per_doc() + dim;
     let len = self.config.bytes_per_dim;
-    bytes.copy_from(&heap_value.value[start..start + len], offset);
+    let copy_source = &heap_value.value[start..start + len];
+    bytes[offset..][..copy_source.len()].copy_from_slice(copy_source);
     Ok(())
   }
 
@@ -170,7 +171,8 @@ impl<const N: usize> HeapPointWriter<N> {
     };
     let start = i * self.config.bytes_per_doc() + self.config.packed_index_bytes_length();
     let len = self.data_dims_and_doc_length;
-    bytes.copy_from(&heap_value.value[start..start + len], offset);
+    let copy_source = &heap_value.value[start..start + len];
+    bytes[offset..][..copy_source.len()].copy_from_slice(copy_source);
     Ok(())
   }
 
@@ -346,10 +348,8 @@ impl<const N: usize> PointWriter for HeapPointWriter<N> {
       self.size
     );
     let position = self.next_write * self.config.bytes_per_doc();
-    self.block.copy_from(
-      &packed_value[0..self.config.packed_bytes_length()],
-      position,
-    );
+    let copy_source = &packed_value[0..self.config.packed_bytes_length()];
+    self.block[position..][..copy_source.len()].copy_from_slice(copy_source);
     BitUtil::set_i32_be(
       &mut self.block,
       position + self.config.packed_bytes_length(),
@@ -376,10 +376,9 @@ impl<const N: usize> PointWriter for HeapPointWriter<N> {
       packed_value.length
     );
     let position = self.next_write * self.config.bytes_per_doc();
-    self.block.copy_from(
-      &packed_value.bytes[packed_value.offset..(packed_value.offset + self.config.bytes_per_doc())],
-      position,
-    );
+    let copy_source =
+      &packed_value.bytes[packed_value.offset..(packed_value.offset + self.config.bytes_per_doc())];
+    self.block[position..][..copy_source.len()].copy_from_slice(copy_source);
     self.next_write += 1;
     Ok(())
   }

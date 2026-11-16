@@ -103,7 +103,7 @@ impl TestAtomicUpdate {
     let analyzer = MockAnalyzer::new(random);
     let mut conf = IndexWriterConfig::with_analyzer(analyzer)?;
     conf.set_max_buffered_docs(7);
-    match conf.get_merge_policy_mut() {
+    match &mut *conf.get_merge_policy_mut() {
       MergePolicyEnum::Tiered(merge_policy) => {
         merge_policy.set_max_merge_at_once(3)?;
       },

@@ -21,6 +21,7 @@ use crate::core::index::point_values::{IntersectVisitor, PointTree, PointValues,
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
 use crate::core::search::doc_id_set_iterator::NO_MORE_DOCS;
 use crate::core::store::{DataInput, IndexInput};
+use crate::core::util::TryIntoInt;
 use crate::core::util::array_util::ByteArrayComparator;
 use crate::core::util::bkd::bkd_bytes::BKDBytes;
 use crate::core::util::bkd::bkd_config::BKDConfig;
@@ -32,7 +33,6 @@ use crate::core::util::bkd::doc_ids_writer::DocIdsWriter;
 use crate::core::util::clone::TryClone;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::math_util::MathUtil;
-use crate::core::util::{SliceCopyOps, TryIntoInt};
 use parking_lot::Mutex;
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -507,10 +507,12 @@ where
     );
 
     // add the split dim value:
-    self.packed_bounds[self.config.packed_index_bytes_length()..].copy_from(
+    let (copy_target, copy_source, copy_offset) = (
+      &mut (self.packed_bounds[self.config.packed_index_bytes_length()..])[..],
       &self.split_values_stack[level][split_dim_pos..split_dim_pos + bytes_per_dim],
       split_dim_pos,
     );
+    copy_target[copy_offset..][..copy_source.len()].copy_from_slice(copy_source);
   }
   fn push_left(&mut self) -> Result<()> {
     self.node_id *= 2;
@@ -524,11 +526,13 @@ where
     // we should have already visited the left node
     debug_assert!(!self.split_dim_value_stack[level].is_empty());
     // save the dimension we are going to change
-    self.split_dim_value_stack[level].copy_from(
+    let (copy_target, copy_source, copy_offset) = (
+      &mut (self.split_dim_value_stack[level])[..],
       &self.packed_bounds[..self.config.packed_index_bytes_length()]
         [split_dim_pos..split_dim_pos + bytes_per_dim],
       0,
     );
+    copy_target[copy_offset..][..copy_source.len()].copy_from_slice(copy_source);
 
     debug_assert!(
       BKDBytes::<0>::new(bytes_per_dim).compare(
@@ -544,10 +548,12 @@ where
       self.config.num_dims
     );
     // add the split dim value:
-    self.packed_bounds[..self.config.packed_index_bytes_length()].copy_from(
+    let (copy_target, copy_source, copy_offset) = (
+      &mut (self.packed_bounds[..self.config.packed_index_bytes_length()])[..],
       &self.split_values_stack[level][split_dim_pos..split_dim_pos + bytes_per_dim],
       split_dim_pos,
     );
+    copy_target[copy_offset..][..copy_source.len()].copy_from_slice(copy_source);
   }
   fn push_right(&mut self) -> Result<()> {
     let node_position = self.split_positions[self.level].right_node;
@@ -575,15 +581,19 @@ where
     let bytes_per_dim = self.config.bytes_per_dim;
 
     if is_left {
-      self.packed_bounds[self.config.packed_index_bytes_length()..].copy_from(
+      let (copy_target, copy_source, copy_offset) = (
+        &mut (self.packed_bounds[self.config.packed_index_bytes_length()..])[..],
         &self.split_dim_value_stack[level][..bytes_per_dim],
         split_dim_pos,
       );
+      copy_target[copy_offset..][..copy_source.len()].copy_from_slice(copy_source);
     } else {
-      self.packed_bounds[..self.config.packed_index_bytes_length()].copy_from(
+      let (copy_target, copy_source, copy_offset) = (
+        &mut (self.packed_bounds[..self.config.packed_index_bytes_length()])[..],
         &self.split_dim_value_stack[level][..bytes_per_dim],
         split_dim_pos,
       );
+      copy_target[copy_offset..][..copy_source.len()].copy_from_slice(copy_source);
     }
   }
   fn is_root_node(&self) -> bool {
@@ -779,7 +789,7 @@ where
       } else {
         let (before, after) = self.split_values_stack.split_at_mut(self.level);
         let source = &before[self.level - 1][..self.config.packed_index_bytes_length()];
-        after[0].copy_from(source, 0);
+        after[0][..source.len()].copy_from_slice(source);
       }
 
       // Read split dim, prefix, and firstDiffByteDelta encoded as an int
@@ -1168,9 +1178,8 @@ where
       index.split_values_stack[level] = self.split_values_stack[level].clone();
 
       let src = level * dims;
-      index
-        .negative_deltas
-        .copy_from(&self.negative_deltas[src..src + dims], src);
+      let copy_source = &self.negative_deltas[src..src + dims];
+      index.negative_deltas[src..][..copy_source.len()].copy_from_slice(copy_source);
 
       index.split_positions[level].dimension = self.split_positions[level].dimension;
     }

@@ -28,7 +28,7 @@ use crate::core::store::{ByteArrayDataInput, DataInput, IndexInput};
 use crate::core::util::access::ByteSource;
 use crate::core::util::array_util::ArrayUtil;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
-use crate::core::util::{SliceCopyOps, ToInt, TryIntoInt};
+use crate::core::util::{ToInt, TryIntoInt};
 
 pub struct SegmentTermsEnumFrame<S = TermStateEnum> {
   /// Stack ordinal; -1 for the static frame.
@@ -1075,7 +1075,8 @@ where
     let src = &frame.suffixes_reader.bytes;
     let start = frame.start_byte_pos;
     let end = start + frame.suffix_length;
-    dest.copy_from(&src[start..end], frame.prefix_length);
+    let copy_source = &src[start..end];
+    dest[frame.prefix_length..][..copy_source.len()].copy_from_slice(copy_source);
     Ok(())
   }
 }

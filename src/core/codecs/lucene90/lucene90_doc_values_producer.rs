@@ -69,7 +69,7 @@ use crate::core::util::long_values::{LongValues, Zeroes};
 use crate::core::util::packed::direct_monotonic_reader::Meta;
 use crate::core::util::packed::direct_monotonic_reader::{DirectMonotonicReader, load_meta};
 use crate::core::util::packed::direct_reader::{DirectPackedEnum, DirectReader, FromSlice};
-use crate::core::util::{SliceCopyOps, ToInt, TryIntoInt};
+use crate::core::util::{ToInt, TryIntoInt};
 use std::borrow::Cow;
 use std::collections::{HashMap, hash_map::Entry};
 use std::sync::Arc;
@@ -3138,7 +3138,8 @@ where
         }
         self.block_input.bytes.access_mut(|buffer_bytes| {
           self.term.bytes.access(|term_bytes| {
-            buffer_bytes.copy_from(&term_bytes[..block_buffer_offset], 0);
+            let copy_source = &term_bytes[..block_buffer_offset];
+            buffer_bytes[..copy_source.len()].copy_from_slice(copy_source);
           })
         });
         self.block_input.bytes.access_mut(|buffer_bytes| {

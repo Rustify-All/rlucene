@@ -28,7 +28,7 @@ use crate::core::util::bkd::point_value::PointValue;
 use crate::core::util::bkd::point_writer::{PointWriter, PointWriterEnum};
 use crate::core::util::close::Closeable;
 use crate::core::util::error::lucene_error::Result;
-use crate::core::util::{CoreHelper, SliceCopyOps, ToInt};
+use crate::core::util::{CoreHelper, ToInt};
 use crate::test_framework::core::util::test_util::TestUtil;
 #[allow(dead_code)] // for quick search
 struct TestBKDRadixSort;
@@ -123,7 +123,8 @@ fn test_random_data_dim_different() -> Result<()> {
   for _ in 0..num_points {
     random.fill(&mut data_dimension_values[..]);
     let start = config.packed_index_bytes_length();
-    value.copy_from(&data_dimension_values, start);
+    let copy_source = &data_dimension_values;
+    value[start..][..copy_source.len()].copy_from_slice(copy_source);
     let doc_id = random.random_range(0..num_points);
     heap_points.append_bytes(&value, doc_id as i32)?;
   }
@@ -207,10 +208,9 @@ where
           }
 
           {
-            previous.copy_from(
-              &bytes_ref[packed_value_offset..packed_value_offset + config.packed_bytes_length()],
-              0,
-            );
+            let copy_source =
+              &bytes_ref[packed_value_offset..packed_value_offset + config.packed_bytes_length()];
+            previous[..copy_source.len()].copy_from_slice(copy_source);
           }
           previous_doc_id = point_value.doc_id();
         }
@@ -244,11 +244,9 @@ where
       let packed_value_offset = packed_value.offset;
       let mut first_value = vec![0u8; config.bytes_per_dim];
       let offset = sort_dim * config.bytes_per_dim;
-      first_value.copy_from(
-        &bytes_ref
-          [packed_value_offset + offset..packed_value_offset + offset + config.bytes_per_dim],
-        0,
-      );
+      let copy_source = &bytes_ref
+        [packed_value_offset + offset..packed_value_offset + offset + config.bytes_per_dim];
+      first_value[..copy_source.len()].copy_from_slice(copy_source);
       for i in (start + 1)..end {
         let point_value = heap_writer.get_packed_value_slice(i)?;
         let packed_value = point_value.packed_value();

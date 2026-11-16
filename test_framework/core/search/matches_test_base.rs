@@ -22,7 +22,6 @@ use crate::core::document::numeric_doc_values_field::NumericDocValuesField;
 use crate::core::document::text_field::TYPE_STORED;
 use crate::core::index::index_options::IndexOptions;
 use crate::core::index::index_reader::IndexReader;
-use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
 use crate::core::index::reader_util::ReaderUtil;
 use crate::core::search::matches::Matches;
 use crate::core::search::named_matches::NamedMatches;

@@ -21,9 +21,7 @@ use crate::core::util::accountable::Accountable;
 use crate::core::util::bit_util::BitUtil;
 use crate::core::util::bytes_ref_hash::do_hash;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
-use crate::core::util::{
-  BYTE_BLOCK_MASK, BYTE_BLOCK_SHIFT, BYTE_BLOCK_SIZE, ByteBlockPool, SliceCopyOps,
-};
+use crate::core::util::{BYTE_BLOCK_MASK, BYTE_BLOCK_SHIFT, BYTE_BLOCK_SIZE, ByteBlockPool};
 
 /// Location of a term in the byte block pool that produced it.
 /// The location remains valid only while that pool's contents are unchanged.
@@ -130,12 +128,12 @@ impl BytesRefBlockPool {
     let new_length = if length < 128 {
       // 1 byte to store length
       buffer[buffer_upto] = length as u8;
-      buffer.copy_from(bytes_slice, buffer_upto + 1);
+      buffer[buffer_upto + 1..][..bytes_slice.len()].copy_from_slice(bytes_slice);
       length + 1
     } else {
       // 2 byte to store length
       BitUtil::set_i16_be(buffer, buffer_upto, (length | 0x8000) as i16);
-      buffer.copy_from(bytes_slice, buffer_upto + 2);
+      buffer[buffer_upto + 2..][..bytes_slice.len()].copy_from_slice(bytes_slice);
       length + 2
     };
     pool.byte_upto += new_length as i32;

@@ -191,7 +191,7 @@ where
       0.0
     };
 
-    let can_randomly_force_merge = !matches!(c.get_merge_policy(), MergePolicyEnum::No(_));
+    let can_randomly_force_merge = !matches!(&*c.get_merge_policy(), MergePolicyEnum::No(_));
     let w = Self::mock_index_writer(dir.clone(), c, r).expect("should not fail");
     let flush_at = TestUtil::next_int(r, 10, 1000);
     if cfg!(feature = "test_log_verbose") {
@@ -241,7 +241,7 @@ where
     R: Rng + ?Sized,
     DF: IndexingDocument,
   {
-    maybe_change_live_index_writer_config(r, self.w.get_config_mut())?;
+    maybe_change_live_index_writer_config(r, self.w.get_config()?)?;
     let seq_no = if r.random_range(0..5) == 3 {
       self.w.add_documents_with_similarity([doc], similarity)
     } else {
@@ -257,7 +257,7 @@ where
   where
     R: Rng + ?Sized,
   {
-    maybe_change_live_index_writer_config(r, self.w.get_config_mut())?;
+    maybe_change_live_index_writer_config(r, self.w.get_config()?)?;
 
     let (do_flush_or_commit, doc_count) = {
       let mut state = self.flush_state.lock();
@@ -347,7 +347,7 @@ where
     R: Rng + ?Sized,
     DI: IntoFallibleIterator<Item: IndexingDocument>,
   {
-    maybe_change_live_index_writer_config(r, self.w.get_config_mut())?;
+    maybe_change_live_index_writer_config(r, self.w.get_config()?)?;
     let seq_no = self.w.add_documents_with_similarity(docs, similarity)?;
     self.maybe_flush_or_commit(r)?;
     Ok(seq_no)
@@ -384,7 +384,7 @@ where
     T: Into<Term>,
     DI: IntoFallibleIterator<Item: IndexingDocument>,
   {
-    maybe_change_live_index_writer_config(r, self.w.get_config_mut())?;
+    maybe_change_live_index_writer_config(r, self.w.get_config()?)?;
     let del_term = del_term.into();
     let seq_no = if self.use_soft_deletes(r) {
       let soft_deletes_field = self
@@ -451,7 +451,7 @@ where
     T: Into<Term>,
     DF: IndexingDocument,
   {
-    maybe_change_live_index_writer_config(r, self.w.get_config_mut())?;
+    maybe_change_live_index_writer_config(r, self.w.get_config()?)?;
     let del_term = del_term.into();
     let seq_no = if self.use_soft_deletes(r) {
       let soft_deletes_field = self
@@ -493,7 +493,7 @@ where
   where
     R: Rng + ?Sized,
   {
-    maybe_change_live_index_writer_config(r, self.w.get_config_mut())?;
+    maybe_change_live_index_writer_config(r, self.w.get_config()?)?;
     self.w.add_indexes_from_directory(dirs)
   }
 
@@ -503,7 +503,7 @@ where
     CR: CodecReader + 'static,
     OneMerge<D, Arc<CR>>: Send + 'static,
   {
-    maybe_change_live_index_writer_config(r, self.w.get_config_mut())?;
+    maybe_change_live_index_writer_config(r, self.w.get_config()?)?;
     self.w.add_indexes_from_codec_readers(readers)
   }
 
@@ -519,7 +519,7 @@ where
     T: Into<Arc<Term>>,
     F: Into<String>,
   {
-    maybe_change_live_index_writer_config(r, self.w.get_config_mut())?;
+    maybe_change_live_index_writer_config(r, self.w.get_config()?)?;
     self.w.update_numeric_doc_value(term, field, value)
   }
 
@@ -535,7 +535,7 @@ where
     T: Into<Arc<Term>>,
     F: Into<String>,
   {
-    maybe_change_live_index_writer_config(r, self.w.get_config_mut())?;
+    maybe_change_live_index_writer_config(r, self.w.get_config()?)?;
     self.w.update_binary_doc_value(term, field, value)
   }
 
@@ -545,7 +545,7 @@ where
     R: Rng + ?Sized,
     T: Into<Arc<Term>>,
   {
-    maybe_change_live_index_writer_config(r, self.w.get_config_mut())?;
+    maybe_change_live_index_writer_config(r, self.w.get_config()?)?;
     self.w.update_doc_values(term, updates)
   }
 
@@ -553,7 +553,7 @@ where
   where
     R: Rng + ?Sized,
   {
-    maybe_change_live_index_writer_config(r, self.w.get_config_mut())?;
+    maybe_change_live_index_writer_config(r, self.w.get_config()?)?;
     self.w.delete_documents_with_terms(terms)
   }
 
@@ -561,7 +561,7 @@ where
   where
     R: Rng + ?Sized,
   {
-    maybe_change_live_index_writer_config(r, self.w.get_config_mut())?;
+    maybe_change_live_index_writer_config(r, self.w.get_config()?)?;
     self.w.delete_documents_with_queries(queries)
   }
 
@@ -585,7 +585,7 @@ where
     D: Sync,
     Self: Sync,
   {
-    maybe_change_live_index_writer_config(r, self.w.get_config_mut())?;
+    maybe_change_live_index_writer_config(r, self.w.get_config()?)?;
     if flush_concurrently {
       let thread_pool_size = INDEX_WRITER_ACCESS.get_doc_writer_thread_pool_size(&self.w);
       let num_flushes = std::cmp::min(1, r.random_range(0..=thread_pool_size));
@@ -631,7 +631,7 @@ where
   where
     R: Rng + ?Sized,
   {
-    maybe_change_live_index_writer_config(r, self.w.get_config_mut())?;
+    maybe_change_live_index_writer_config(r, self.w.get_config()?)?;
     self.get_reader_with_options(r, true, false)
   }
 
@@ -640,7 +640,7 @@ where
   where
     R: Rng + ?Sized,
   {
-    maybe_change_live_index_writer_config(r, self.w.get_config_mut())?;
+    maybe_change_live_index_writer_config(r, self.w.get_config()?)?;
     self.w.force_merge_deletes_with_wait(do_wait)
   }
 
@@ -649,7 +649,7 @@ where
   where
     R: Rng + ?Sized,
   {
-    maybe_change_live_index_writer_config(r, self.w.get_config_mut())?;
+    maybe_change_live_index_writer_config(r, self.w.get_config()?)?;
     self.w.force_merge_deletes()
   }
 
@@ -682,7 +682,7 @@ where
         self.w.force_merge(limit as i32)?;
         if limit == 1
           || !matches!(
-            self.w.get_config()?.get_merge_policy(),
+            &*self.w.get_config()?.get_merge_policy(),
             MergePolicyEnum::Tiered(_)
           )
         {
@@ -713,7 +713,7 @@ where
   where
     R: Rng + ?Sized,
   {
-    maybe_change_live_index_writer_config(r, self.w.get_config_mut())?;
+    maybe_change_live_index_writer_config(r, self.w.get_config()?)?;
     self.get_reader_called.store(true, Ordering::SeqCst);
     if r.random_range(0..20) == 2 {
       self.do_random_force_merge(r)?;
@@ -744,7 +744,7 @@ where
     let pre_close_result =
       std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
         if !INDEX_WRITER_ACCESS.is_closed(&self.w) {
-          maybe_change_live_index_writer_config(r, self.w.get_config_mut())?;
+          maybe_change_live_index_writer_config(r, self.w.get_config()?)?;
         }
         // if someone isn't using getReader() API, we want to be sure to
         // forceMerge since presumably they might open a reader on the dir.
@@ -783,7 +783,7 @@ where
   where
     R: Rng + ?Sized,
   {
-    maybe_change_live_index_writer_config(r, self.w.get_config_mut())?;
+    maybe_change_live_index_writer_config(r, self.w.get_config()?)?;
     self.w.force_merge(max_num_segments)
   }
 }

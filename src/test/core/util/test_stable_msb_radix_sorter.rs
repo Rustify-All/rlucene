@@ -26,7 +26,7 @@ use crate::core::index::{BytesRef, BytesRefBuilder};
 use crate::core::util::CoreHelper;
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::stable_msb_radix_sorter::{StableMSBRadixSorter, StableMSBRadixSorterBase};
-use crate::core::util::{MSBRadixSorter, MSBRadixSorterBase, SliceCopyOps, Sorter};
+use crate::core::util::{MSBRadixSorter, MSBRadixSorterBase, Sorter};
 use crate::test::core::util::common_method::assert_vecs_equal;
 use crate::test_framework::core::util::test_util::TestUtil;
 
@@ -99,7 +99,7 @@ where
   for _ in 0..len {
     let mut b = vec![0u8; common_prefix_len + random.random_range(0..max_len)];
     random.fill_bytes(&mut b);
-    b.copy_from(common_prefix, 0);
+    b[..common_prefix.len()].copy_from_slice(common_prefix);
     bytes.push(BytesRef::from_bytes(b));
   }
   test(&bytes, len, random)

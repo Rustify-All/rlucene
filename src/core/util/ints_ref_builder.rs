@@ -15,7 +15,6 @@
  * limitations under the License.
  */
 use crate::core::util::CoreHelper;
-use crate::core::util::SliceCopyOps;
 use crate::core::util::access::{SharedAccessVec, WritableVec};
 use crate::core::util::array_util::ArrayUtil;
 use crate::core::util::error::lucene_error::Result;
@@ -147,7 +146,8 @@ where
     self.ints_ref.ints.access_mut(|ints_bytes| {
       ArrayUtil::grow_no_copy(ints_bytes, other_length, || 0)?;
       CoreHelper::check_from_index_size(other_offset, other_length, other.len())?;
-      ints_bytes.copy_from(&other[other_offset..(other_offset + other_length)], 0);
+      let copy_source = &other[other_offset..(other_offset + other_length)];
+      ints_bytes[..copy_source.len()].copy_from_slice(copy_source);
       self.ints_ref.length = other_length;
       Ok(())
     })

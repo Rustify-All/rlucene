@@ -93,11 +93,11 @@ fn test_delete_left_over_files() -> Result<()> {
     i += 1;
   }
   writer
-    .get_config_mut()
+    .get_config()?
     .get_merge_policy_mut()
     .get_base_mut()
     .set_no_cfs_ratio(0.0)?;
-  writer.get_config_mut().set_use_compound_file(false);
+  writer.get_config()?.set_use_compound_file(false);
   while i < 45 {
     add_doc(&mut random, &writer, i, &mut field_types)?;
     i += 1;

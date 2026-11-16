@@ -15,7 +15,6 @@
  * limitations under the License.
  */
 
-use crate::core::util::SliceCopyOps;
 use crate::core::util::array_util::ArrayUtil;
 use crate::core::util::error::lucene_error::Result;
 
@@ -134,7 +133,8 @@ impl LSBRadixSorter {
       }
     }
     if swapped {
-      array.copy_from(&self.buffer[..len], 0);
+      let copy_source = &self.buffer[..len];
+      array[..copy_source.len()].copy_from_slice(copy_source);
     }
     Ok(())
   }

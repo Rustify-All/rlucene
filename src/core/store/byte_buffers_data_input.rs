@@ -26,12 +26,12 @@ use byteorder::{ByteOrder, LE};
 
 use crate::core::store::DataInput;
 use crate::core::store::random_access_input::RandomAccessInput;
+use crate::core::util::TryIntoInt;
 use crate::core::util::accountable::Accountable;
 use crate::core::util::bit_util::BitUtil;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::group_vint_util::{GroupVIntUtil, IntReader};
 use crate::core::util::ram_usage_estimator::{size_of_slice, size_of_vec};
-use crate::core::util::{SliceCopyOps, TryIntoInt};
 pub type ByteBuffersDataInputRef<'a> = ByteBuffersDataInput<&'a [u8]>;
 pub type ByteBuffersDataInputOwned = ByteBuffersDataInput<Vec<u8>>;
 
@@ -218,7 +218,7 @@ impl<B: ByteBuffersDataInputBlock> ByteBuffersDataInput<B> {
     if type_size == 1 {
       let output_bytes =
         unsafe { std::slice::from_raw_parts_mut(output.as_mut_ptr() as *mut u8, output.len()) };
-      output_bytes.copy_from(bytes, 0);
+      output_bytes[..bytes.len()].copy_from_slice(bytes);
     } else {
       output
         .iter_mut()

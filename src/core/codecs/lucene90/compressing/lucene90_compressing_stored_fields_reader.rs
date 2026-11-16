@@ -46,7 +46,7 @@ use crate::core::util::array_util::ArrayUtil;
 use crate::core::util::clone::TryClone as OtherClone;
 use crate::core::util::close::CloseableRef;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
-use crate::core::util::{IOUtils, SliceCopyOps, TryIntoInt};
+use crate::core::util::{IOUtils, TryIntoInt};
 use std::cmp::min;
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
@@ -962,7 +962,7 @@ where
 
   fn read_bytes(&mut self, b: &mut [u8], mut offset: usize, len: usize) -> Result<()> {
     self.consume_bytes(len, |chunk| {
-      b.copy_from(chunk, offset);
+      b[offset..][..chunk.len()].copy_from_slice(chunk);
       offset += chunk.len();
     })
   }

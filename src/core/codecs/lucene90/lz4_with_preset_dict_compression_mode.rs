@@ -24,11 +24,11 @@ use crate::core::codecs::compression::decompressor::Decompressor;
 use crate::core::index::BytesRef;
 use crate::core::store::byte_buffers_data_input::ByteBuffersDataInput;
 use crate::core::store::{ByteBuffersDataOutput, DataInput, DataOutput};
+use crate::core::util::TryIntoInt;
 use crate::core::util::array_util::ArrayUtil;
 use crate::core::util::close::Closeable;
 use crate::core::util::compress::lz4::{FastCompressionHashTable, HashTableEnum, LZ4};
 use crate::core::util::error::lucene_error::{LuceneError, Result};
-use crate::core::util::{SliceCopyOps, TryIntoInt};
 #[derive(Debug)]
 pub struct LZ4WithPresetDictCompressionMode;
 impl LZ4WithPresetDictCompressionMode {
@@ -175,7 +175,8 @@ impl Decompressor for LZ4WithPresetDictDecompressor {
       // The dictionary contains some bytes we need, copy its content to
       // the BytesRef
       ArrayUtil::grow_no_copy(&mut bytes.bytes, dict_length_usize, || 0)?;
-      bytes.bytes.copy_from(&self.buffer[0..dict_length_usize], 0);
+      let copy_source = &self.buffer[0..dict_length_usize];
+      bytes.bytes[..copy_source.len()].copy_from_slice(copy_source);
       bytes.length = dict_length_usize;
     }
 
@@ -191,10 +192,9 @@ impl Decompressor for LZ4WithPresetDictDecompressor {
     while offset_in_block < offset + length {
       let bytes_to_decompress = (offset + length - offset_in_block).min(block_length);
       LZ4::decompress(input, bytes_to_decompress, &mut self.buffer, dict_length)?;
-      bytes.bytes.copy_from(
-        &self.buffer[dict_length_usize..(dict_length + bytes_to_decompress) as usize],
-        bytes.length,
-      );
+      let copy_source =
+        &self.buffer[dict_length_usize..(dict_length + bytes_to_decompress) as usize];
+      bytes.bytes[bytes.length..][..copy_source.len()].copy_from_slice(copy_source);
       bytes.length += bytes_to_decompress as usize;
       offset_in_block += block_length;
     }

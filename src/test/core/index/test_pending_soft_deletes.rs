@@ -400,9 +400,9 @@ fn test_update_applied_only_once() -> Result<()> {
   let leaves = context.leaves()?;
   assert_eq!(1, leaves.len());
   let segment_reader = leaves[0].reader();
-  let segment_info = segment_reader.get_segment_info();
-  let mut deletes = TestPendingSoftDeletes.new_pending_deletes(segment_info)?;
-  deletes.on_new_reader(segment_reader, segment_info)?;
+  let mut segment_info = segment_reader.get_segment_info().clone();
+  let mut deletes = TestPendingSoftDeletes.new_pending_deletes(&segment_info)?;
+  deletes.on_new_reader(segment_reader, &segment_info)?;
   let field_info = FieldInfo::new(
     "_soft_deletes",
     1,
@@ -412,7 +412,7 @@ fn test_update_applied_only_once() -> Result<()> {
     IndexOptions::None,
     DocValuesType::Numeric,
     DocValuesSkipIndexType::None,
-    segment_reader.get_segment_info().get_next_doc_values_gen(),
+    segment_info.get_next_doc_values_gen(),
     HashMap::new(),
     0,
     0,
@@ -426,16 +426,16 @@ fn test_update_applied_only_once() -> Result<()> {
   let docs_deleted = [1, NO_MORE_DOCS];
   let updates = vec![single_update(&docs_deleted, 3, true)?];
   for update in updates {
-    deletes.on_doc_values_update(&field_info, update, segment_reader.get_segment_info_mut())?;
+    deletes.on_doc_values_update(&field_info, update, &mut segment_info)?;
   }
   assert_eq!(0, deletes.num_pending_deletes());
-  assert_eq!(1, deletes.get_del_count(segment_reader.get_segment_info()));
+  assert_eq!(1, deletes.get_del_count(&segment_info));
   let live_docs = deletes.get_live_docs().unwrap();
   assert!(live_docs.get(0)?);
   assert!(!live_docs.get(1)?);
   assert!(live_docs.get(2)?);
   let live_docs = deletes.get_live_docs().unwrap();
-  deletes.on_new_reader(segment_reader, segment_reader.get_segment_info())?;
+  deletes.on_new_reader(segment_reader, &segment_info)?;
   // no changes we don't apply updates twice
   let same_live_docs = deletes.get_live_docs().unwrap();
   assert_eq!(live_docs.identity(), same_live_docs.identity());
@@ -444,7 +444,7 @@ fn test_update_applied_only_once() -> Result<()> {
   assert!(!live_docs.get(1)?);
   assert!(live_docs.get(2)?);
   assert_eq!(0, deletes.num_pending_deletes());
-  assert_eq!(1, deletes.get_del_count(segment_reader.get_segment_info()));
+  assert_eq!(1, deletes.get_del_count(&segment_info));
   reader.close()?;
   writer.close()?;
   dir.close()?;
@@ -489,9 +489,9 @@ fn test_reset_on_update() -> Result<()> {
   let leaves = context.leaves()?;
   assert_eq!(1, leaves.len());
   let segment_reader = leaves[0].reader();
-  let segment_info = segment_reader.get_segment_info();
-  let mut deletes = TestPendingSoftDeletes.new_pending_deletes(segment_info)?;
-  deletes.on_new_reader(segment_reader, segment_info)?;
+  let mut segment_info = segment_reader.get_segment_info().clone();
+  let mut deletes = TestPendingSoftDeletes.new_pending_deletes(&segment_info)?;
+  deletes.on_new_reader(segment_reader, &segment_info)?;
   let field_info = FieldInfo::new(
     "_soft_deletes",
     1,
@@ -501,7 +501,7 @@ fn test_reset_on_update() -> Result<()> {
     IndexOptions::None,
     DocValuesType::Numeric,
     DocValuesSkipIndexType::None,
-    segment_reader.get_segment_info().get_next_doc_values_gen(),
+    segment_info.get_next_doc_values_gen(),
     HashMap::new(),
     0,
     0,
@@ -514,7 +514,7 @@ fn test_reset_on_update() -> Result<()> {
   )?;
   let updates = vec![single_update(&[0, 1, NO_MORE_DOCS], 3, false)?];
   for update in updates {
-    deletes.on_doc_values_update(&field_info, update, segment_reader.get_segment_info_mut())?;
+    deletes.on_doc_values_update(&field_info, update, &mut segment_info)?;
   }
   assert_eq!(0, deletes.num_pending_deletes());
   let live_docs = deletes.get_live_docs().unwrap();
@@ -522,7 +522,7 @@ fn test_reset_on_update() -> Result<()> {
   assert!(live_docs.get(1)?);
   assert!(live_docs.get(2)?);
   let live_docs = deletes.get_live_docs().unwrap();
-  deletes.on_new_reader(segment_reader, segment_reader.get_segment_info())?;
+  deletes.on_new_reader(segment_reader, &segment_info)?;
   // no changes we keep this update
   let same_live_docs = deletes.get_live_docs().unwrap();
   assert_eq!(live_docs.identity(), same_live_docs.identity());
@@ -532,9 +532,7 @@ fn test_reset_on_update() -> Result<()> {
   assert!(live_docs.get(2)?);
   assert_eq!(0, deletes.num_pending_deletes());
 
-  segment_reader
-    .get_segment_info_mut()
-    .advance_doc_values_gen();
+  segment_info.advance_doc_values_gen();
   let field_info = FieldInfo::new(
     "_soft_deletes",
     1,
@@ -544,7 +542,7 @@ fn test_reset_on_update() -> Result<()> {
     IndexOptions::None,
     DocValuesType::Numeric,
     DocValuesSkipIndexType::None,
-    segment_reader.get_segment_info().get_next_doc_values_gen(),
+    segment_info.get_next_doc_values_gen(),
     HashMap::new(),
     0,
     0,
@@ -557,7 +555,7 @@ fn test_reset_on_update() -> Result<()> {
   )?;
   let updates = vec![single_update(&[1, NO_MORE_DOCS], 3, true)?];
   for update in updates {
-    deletes.on_doc_values_update(&field_info, update, segment_reader.get_segment_info_mut())?;
+    deletes.on_doc_values_update(&field_info, update, &mut segment_info)?;
   }
   // no changes we keep this update
   let same_live_docs = deletes.get_live_docs().unwrap();
@@ -567,7 +565,7 @@ fn test_reset_on_update() -> Result<()> {
   assert!(!live_docs.get(1)?);
   assert!(live_docs.get(2)?);
   assert_eq!(0, deletes.num_pending_deletes());
-  assert_eq!(1, deletes.get_del_count(segment_reader.get_segment_info()));
+  assert_eq!(1, deletes.get_del_count(&segment_info));
   reader.close()?;
   writer.close()?;
   dir.close()?;

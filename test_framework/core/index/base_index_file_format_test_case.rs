@@ -52,7 +52,6 @@ use crate::core::index::index_reader::IndexReader;
 use crate::core::index::index_writer::{IndexWriter, WRITE_LOCK_NAME};
 use crate::core::index::index_writer_config::IndexWriterConfig;
 use crate::core::index::leaf_reader::LeafReader;
-use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
 use crate::core::index::merge_policy::MergePolicy;
 use crate::core::index::numeric_doc_values::NumericDocValues;
 use crate::core::index::segment_info::SegmentInfo;

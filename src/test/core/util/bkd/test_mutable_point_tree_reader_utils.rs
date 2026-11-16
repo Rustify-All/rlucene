@@ -25,11 +25,11 @@ use rand::RngExt;
 use crate::core::codecs::mutable_point_tree::MutablePointTree;
 use crate::core::index::BytesRef;
 use crate::core::index::point_values::{PointTree, PointTreeEnum};
+use crate::core::util::ToInt;
 use crate::core::util::bkd::bkd_config::BKDConfig;
 use crate::core::util::bkd::mutable_point_tree_reader_utils::MutablePointTreeReaderUtils;
 use crate::core::util::clone::TryClone;
 use crate::core::util::error::lucene_error::Result;
-use crate::core::util::{SliceCopyOps, ToInt};
 use crate::test_framework::core::util::test_util::TestUtil;
 
 #[allow(dead_code)] // for quick search
@@ -309,10 +309,8 @@ where
         let src_start = first_value.offset + offset;
         let dst_start = point.packed_value.offset + offset;
 
-        point.packed_value.bytes.copy_from(
-          &first_value.bytes[src_start..src_start + prefix_len],
-          dst_start,
-        );
+        let copy_source = &first_value.bytes[src_start..src_start + prefix_len];
+        point.packed_value.bytes[dst_start..][..copy_source.len()].copy_from_slice(copy_source);
       }
     }
   } else {
@@ -324,10 +322,12 @@ where
 
     for i in 0..num_points {
       let mut value = vec![0u8; config.packed_bytes_length()];
-      value.copy_from(&index_dims, 0);
+      let copy_source = &index_dims;
+      value[..copy_source.len()].copy_from_slice(copy_source);
       random.fill_bytes(&mut data_dims);
       let start = config.packed_index_bytes_length();
-      value.copy_from(&data_dims, start);
+      let copy_source = &data_dims;
+      value[start..][..copy_source.len()].copy_from_slice(copy_source);
       let doc = if is_doc_id_incremental {
         i.min(max_doc - 1)
       } else {
@@ -358,10 +358,8 @@ where
         let src_start = first_value.offset + offset;
         let dst_start = point.packed_value.offset + offset;
 
-        point.packed_value.bytes.copy_from(
-          &first_value.bytes[src_start..src_start + prefix_len],
-          dst_start,
-        );
+        let copy_source = &first_value.bytes[src_start..src_start + prefix_len];
+        point.packed_value.bytes[dst_start..][..copy_source.len()].copy_from_slice(copy_source);
       }
     }
   }
@@ -380,7 +378,7 @@ impl Point {
   {
     let mut vec = vec![0u8; packed_value.len() + 1];
     vec[0] = random.random_range(0..255u8);
-    vec.copy_from(packed_value, 1);
+    vec[1..][..packed_value.len()].copy_from_slice(packed_value);
     Self {
       packed_value: BytesRef {
         bytes: vec,

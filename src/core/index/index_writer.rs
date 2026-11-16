@@ -615,7 +615,7 @@ where
       let doc_writer = DocumentsWriter::new(
         FlushNotificationsImpl::new(event_queue.clone()),
         pending_num_docs.clone(),
-        &conf,
+        &conf.base,
       )?;
 
       let has_reader = reader.is_some();
@@ -782,18 +782,11 @@ where
 
     Ok(map)
   }
-  /// Returns the [`IndexWriterConfig`] that was passed to [`IndexWriter::new`]. This returns
-  /// a live reference; changes to the config affect this writer instance.
-  pub fn get_config(&self) -> Result<&IndexWriterConfig<D>> {
+  /// Returns the live settings of the [`IndexWriterConfig`] passed to [`IndexWriter::new`].
+  /// Changes made through this shared reference affect this writer instance.
+  pub fn get_config(&self) -> Result<&impl LiveIndexWriterConfig<Directory = D>> {
     self.do_ensure_open(false)?;
-    Ok(&self.config)
-  }
-  /// Test-only mutable accessor used to exercise live configuration changes.
-  #[cfg(test)]
-  #[allow(invalid_reference_casting)]
-  #[allow(clippy::mut_from_ref)]
-  pub fn get_config_mut(&self) -> &mut IndexWriterConfig<D> {
-    unsafe { &mut *(&self.config as *const IndexWriterConfig<D> as *mut IndexWriterConfig<D>) }
+    Ok(&self.config.base)
   }
   /// Gracefully closes (commits, waits for merges), but calls rollback if there's an error so the
   /// [`IndexWriter`] is always closed. This is called from [`close`] when
@@ -814,7 +807,7 @@ where
         }
         self.flush_with_apply_merge_deletes(true, true)?;
         self.wait_for_merges()?;
-        self.commit_internal(self.config.get_merge_policy())?;
+        self.commit_internal(&*self.config.get_merge_policy())?;
         Ok(())
       }));
       if !matches!(&result, Ok(Ok(()))) {
@@ -914,7 +907,8 @@ where
     self.do_ensure_open(true)?;
     let terms = terms.into_iter().collect();
     let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<i64> {
-      let seq = self.maybe_process_events(self.doc_writer.delete_terms(&self.config, terms)?)?;
+      let seq =
+        self.maybe_process_events(self.doc_writer.delete_terms(&self.config.base, terms)?)?;
       Ok(seq)
     }));
 
@@ -950,7 +944,7 @@ where
     }
 
     let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<i64> {
-      let seq0 = self.doc_writer.delete_queries(&self.config, queries)?;
+      let seq0 = self.doc_writer.delete_queries(&self.config.base, queries)?;
       let seq = self.maybe_process_events(seq0)?;
       Ok(seq)
     }));
@@ -1562,7 +1556,7 @@ where
       );
       let seq = self
         .doc_writer
-        .update_doc_values(&self.config, vec![dv_update])?;
+        .update_doc_values(&self.config.base, vec![dv_update])?;
       self.maybe_process_events(seq)
     }));
 
@@ -1624,7 +1618,7 @@ where
       );
       let seq = self
         .doc_writer
-        .update_doc_values(&self.config, vec![dv_update])?;
+        .update_doc_values(&self.config.base, vec![dv_update])?;
       self.maybe_process_events(seq)
     }));
 
@@ -1663,7 +1657,7 @@ where
     let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
       let seq = self
         .doc_writer
-        .update_doc_values(&self.config, dv_updates)?;
+        .update_doc_values(&self.config.base, dv_updates)?;
       self.maybe_process_events(seq)
     }));
 
@@ -2627,7 +2621,7 @@ where
     }
 
     self.maybe_merge_with_max_num_segments(
-      self.config.get_merge_policy(),
+      &*self.config.get_merge_policy(),
       MergeTrigger::Explicit,
       max_num_segments,
     )?;
@@ -2713,7 +2707,7 @@ where
     D: 'static,
   {
     self.maybe_merge_with_max_num_segments(
-      self.config.get_merge_policy(),
+      &*self.config.get_merge_policy(),
       MergeTrigger::Explicit,
       UNBOUNDED_MAX_MERGE_SEGMENTS,
     )
@@ -3132,7 +3126,7 @@ where
     let mut success = false;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<i64> {
       let _full_flush_guard = self.full_flush_lock.lock();
-      let mut finalizer = self.doc_writer.lock_and_abort_all(&self.config)?;
+      let mut finalizer = self.doc_writer.lock_and_abort_all(&self.config.base)?;
       let operation_result =
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<i64> {
           self.process_events(false)?;
@@ -4410,7 +4404,7 @@ where
           let mut success = false;
           let body_res =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
-              seq_no = self.doc_writer.flush_all_threads(self, &self.config)?;
+              seq_no = self.doc_writer.flush_all_threads(self, &self.config.base)?;
               if seq_no < 0 {
                 any_changes = true;
                 seq_no = -seq_no;
@@ -4490,7 +4484,7 @@ where
           // Done: finish the full flush!
           self
             .doc_writer
-            .finish_full_flush(flush_success, &self.config)?;
+            .finish_full_flush(flush_success, &self.config.base)?;
           if let Some(ref s) = self.hooks {
             s.do_after_flush()?
           }
@@ -4601,7 +4595,7 @@ where
 
     let mut point_in_time_merges = self.update_pending_merges(
       &OneMergeWrappingMergePolicy::new(
-        self.config.get_merge_policy().clone(),
+        self.config.get_merge_policy().as_ref().clone(),
         PointInTimeOneMerge::new(
           merging_segment_infos,
           stop_collecting_merge_results,
@@ -5080,7 +5074,7 @@ where
     self.do_ensure_open(false)?;
     if self.do_flush(apply_all_deletes)? && trigger_merge {
       self.maybe_merge_with_max_num_segments(
-        self.config.get_merge_policy(),
+        &*self.config.get_merge_policy(),
         MergeTrigger::FullFlush,
         UNBOUNDED_MAX_MERGE_SEGMENTS,
       )?;
@@ -5122,7 +5116,7 @@ where
         let _guard = self.full_flush_lock.lock();
         let mut flush_success = false;
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<bool> {
-          let any_changes = self.doc_writer.flush_all_threads(self, &self.config)? < 0;
+          let any_changes = self.doc_writer.flush_all_threads(self, &self.config.base)? < 0;
           if !any_changes {
             // flushCount is incremented in flushAllThreads if true
             self.flush_count.fetch_add(1, Ordering::SeqCst);
@@ -5133,7 +5127,7 @@ where
         }));
         self
           .doc_writer
-          .finish_full_flush(flush_success, &self.config)?;
+          .finish_full_flush(flush_success, &self.config.base)?;
         self.process_events(false)?;
         unwrap_caught_result!(result)?
       };
@@ -5729,7 +5723,7 @@ where
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
               self.merge_init(merge)?;
               // The merge's SegmentCommitInfo has moved to `IndexWriter::inner::segment_infos`.
-              self.merge_middle(merge, merge_policy)?;
+              self.merge_middle(merge, &*merge_policy)?;
               self.merge_success(merge)?;
               success = true;
               Ok(())
@@ -5761,7 +5755,7 @@ where
               || (!self.closed.load(SeqCst) && !self.closing.load(SeqCst)))
           {
             self.update_pending_merges(
-              merge_policy,
+              &*merge_policy,
               MergeTrigger::MergeFinished,
               merge.stat.max_num_segments(),
               Some(&mut inner),
@@ -6661,7 +6655,7 @@ where
     if trigger_merge {
       let policy = self.config.get_merge_policy();
       self.maybe_merge_with_max_num_segments(
-        policy,
+        &*policy,
         MergeTrigger::SegmentFlush,
         UNBOUNDED_MAX_MERGE_SEGMENTS,
       )?;
@@ -6733,7 +6727,7 @@ where
   ) -> Result<bool> {
     if readers_and_updates.is_fully_deleted(info)? {
       return Ok(
-        !readers_and_updates.keep_fully_deleted_segment(self.config.get_merge_policy(), info)?,
+        !readers_and_updates.keep_fully_deleted_segment(&*self.config.get_merge_policy(), info)?,
       );
     }
     Ok(false)
@@ -7406,7 +7400,7 @@ where
               let mut success = false;
               let flush_result =
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
-                  any_changes = self.doc_writer.flush_all_threads(self, &self.config)? < 0;
+                  any_changes = self.doc_writer.flush_all_threads(self, &self.config.base)? < 0;
                   if !any_changes {
                     self.flush_count.fetch_add(1, Ordering::SeqCst);
                   }
@@ -7506,7 +7500,9 @@ where
                   success = true;
                   Ok(())
                 }));
-              self.doc_writer.finish_full_flush(success, &self.config)?;
+              self
+                .doc_writer
+                .finish_full_flush(success, &self.config.base)?;
               if success {
                 self.process_events(false)?;
                 if let Some(ref s) = self.hooks {
@@ -7544,7 +7540,7 @@ where
             any_changes |= self.maybe_merge.swap(false, Ordering::SeqCst);
             if any_changes {
               self.maybe_merge_with_max_num_segments(
-                self.config.get_merge_policy(),
+                &*self.config.get_merge_policy(),
                 MergeTrigger::FullFlush,
                 UNBOUNDED_MAX_MERGE_SEGMENTS,
               )?;
@@ -7786,7 +7782,7 @@ where
     // we must do this outside of the commitLock else we can deadlock:
     if self.maybe_merge.swap(false, Ordering::SeqCst) {
       self.maybe_merge_with_max_num_segments(
-        self.config.get_merge_policy(),
+        &*self.config.get_merge_policy(),
         MergeTrigger::FullFlush,
         UNBOUNDED_MAX_MERGE_SEGMENTS,
       )?;
@@ -7821,7 +7817,7 @@ where
     let _execution_scope =
       ExecutionScope::enter(ExecutionOwner::IndexWriter, ExecutionMethod::Operation);
     self.ensure_open()?;
-    self.commit_internal(self.config.get_merge_policy())
+    self.commit_internal(&*self.config.get_merge_policy())
   }
   /// Close the [`IndexWriter`] without committing any changes that have occurred since the last
   /// commit, or since it was opened if commit hasn't been called.
@@ -8031,7 +8027,7 @@ where
     let merge_policy = self.config.get_merge_policy();
 
     let num_deletes_to_merge = match self.get_pooled_instance(info, false)? {
-      Some(rld) => rld.num_deletes_to_merge(merge_policy, info)?,
+      Some(rld) => rld.num_deletes_to_merge(&*merge_policy, info)?,
       None => {
         // If we don't have a pooled instance, just return hard deletes; this is safe.
         info.get_del_count()

@@ -543,7 +543,17 @@ impl ByteBuffersIndexOutputOnClose for ByteBuffersDirectoryOutputOnClose {
       return Ok(());
     }
     let cached_length = output.size();
-    let content = self.output_to_input.to_input(&entry.file_name, output)?;
+    let content = if matches!(self.output_to_input, BBOutputToInput::Custom(_)) {
+      // Java invokes the conversion before publishing content. User code may
+      // query this directory, so it must not run under the file entry's lock.
+      let file_name = Arc::clone(&entry.file_name);
+      drop(entry);
+      let content = self.output_to_input.to_input(&file_name, output)?;
+      entry = self.entry.lock();
+      content
+    } else {
+      self.output_to_input.to_input(&entry.file_name, output)?
+    };
     entry.content = Some(content);
     entry.cached_length = cached_length;
     Ok(())

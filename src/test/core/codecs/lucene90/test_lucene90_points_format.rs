@@ -88,7 +88,7 @@ impl TestLucene90PointsFormat {
     let mut iwc = new_index_writer_config(random)?;
     // Avoid MockRandomMergePolicy since it may cause non-optimal merges that make the number of
     // points per leaf hard to predict.
-    while matches!(iwc.get_merge_policy(), MergePolicyEnum::MockRandom(_)) {
+    while matches!(&*iwc.get_merge_policy(), MergePolicyEnum::MockRandom(_)) {
       iwc.set_merge_policy(new_merge_policy(random)?);
     }
     let w = IndexWriter::new(dir.clone(), iwc)?;

@@ -29,7 +29,7 @@ use crate::core::store::{BufferedIndexInputBase, Context, DataInput, IOContext};
 use crate::core::util::bit_util::BitUtil;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::group_vint_util::{GroupVIntUtil, IntReader};
-use crate::core::util::{ReadableCursorExt, SliceCopyOps, TryIntoInt};
+use crate::core::util::{ReadableCursorExt, TryIntoInt};
 /// Base implementation struct for buffered [`IndexInput`].  */
 pub struct BufferedIndexInput<T> {
   buffer_size: usize,
@@ -494,10 +494,8 @@ where
       // We copy them into the start of the temporary vector to ensure
       // they are preserved when the buffer is refilled with
       // new data.
-      temp_vec.copy_from(
-        &self.buffer.get_ref()[(self.buffer_size - unaligned_bytes)..],
-        0,
-      );
+      let copy_source = &self.buffer.get_ref()[self.buffer_size - unaligned_bytes..];
+      temp_vec[..copy_source.len()].copy_from_slice(copy_source);
     }
     let mut temp_buffer = Cursor::new(temp_vec);
     temp_buffer.set_position(unaligned_bytes as u64);
@@ -562,7 +560,7 @@ where
     if type_size == 1 {
       unsafe {
         let dst_u8 = std::slice::from_raw_parts_mut(dst.as_mut_ptr() as *mut u8, len);
-        dst_u8.copy_from(src, 0);
+        dst_u8[..src.len()].copy_from_slice(src);
       }
     } else {
       for (i, dst_item) in dst.iter_mut().enumerate().take(len) {

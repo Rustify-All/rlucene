@@ -188,7 +188,7 @@ fn test_merge_factor_change() -> Result<()> {
     check_invariants(&writer)?;
   }
 
-  if let MergePolicyEnum::Mock(merge_policy) = writer.get_config_mut().get_merge_policy_mut() {
+  if let MergePolicyEnum::Mock(merge_policy) = &mut *writer.get_config()?.get_merge_policy_mut() {
     merge_policy.set_merge_factor(5);
   }
 
@@ -342,7 +342,7 @@ where
 {
   writer.wait_for_merges()?;
   let max_buffered_docs = writer.get_config()?.get_max_buffered_docs();
-  let merge_factor = match writer.get_config()?.get_merge_policy() {
+  let merge_factor = match &*writer.get_config()?.get_merge_policy() {
     MergePolicyEnum::Mock(merge_policy) => merge_policy.get_merge_factor(),
     _ => unreachable!(),
   };

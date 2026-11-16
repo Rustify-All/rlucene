@@ -18,7 +18,6 @@ use std::borrow::Borrow;
 use std::sync::Arc;
 
 use crate::core::search::doc_id_set_iterator::NO_MORE_DOCS;
-use crate::core::util::SliceCopyOps;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::hnsw::neighbor_array::NeighborArray;
 /// Hierarchical Navigable Small World (HNSW) graph.
@@ -392,7 +391,8 @@ impl<N: Borrow<Vec<usize>>> NodesIterator for ArrayNodesIterator<N> {
     match &self.nodes {
       Some(vec) => {
         let vec: &Vec<usize> = vec.borrow();
-        dest.copy_from(&vec[self.cur..self.cur + num_to_copy], 0);
+        let copy_source = &vec[self.cur..self.cur + num_to_copy];
+        dest[..copy_source.len()].copy_from_slice(copy_source);
         self.cur += num_to_copy;
         Ok(num_to_copy)
       },

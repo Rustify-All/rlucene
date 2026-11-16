@@ -2744,8 +2744,8 @@ fn test_merge_exception_is_tragic() -> Result<()> {
     do_fail: false,
   }));
 
-  let mut config = new_index_writer_config(&mut random)?;
-  if let MergePolicyEnum::Tiered(merge_policy) = config.get_merge_policy_mut()
+  let config = new_index_writer_config(&mut random)?;
+  if let MergePolicyEnum::Tiered(merge_policy) = &mut *config.get_merge_policy_mut()
     && merge_policy.get_max_merged_segment_mb() < 0.2
   {
     merge_policy.set_max_merged_segment_mb(0.2)?;
@@ -2904,7 +2904,7 @@ fn test_exception_just_before_flush_with_point_values() -> Result<()> {
   )) as Box<dyn Analyzer>;
   let mut iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
   iwc.set_commit_on_close(false).set_max_buffered_docs(3);
-  let merge_policy = iwc.get_merge_policy().clone();
+  let merge_policy = iwc.get_merge_policy().as_ref().clone();
   iwc.set_merge_policy(SoftDeletesRetentionMergePolicy::new(
     "soft_delete",
     || Ok(MatchAllDocsQuery::new().into()),

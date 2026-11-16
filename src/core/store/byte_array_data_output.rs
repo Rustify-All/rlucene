@@ -15,7 +15,6 @@
  * limitations under the License.
  */
 use crate::core::store::data_output::DataOutput;
-use crate::core::util::SliceCopyOps;
 use crate::core::util::access::ByteSourceMut;
 use crate::core::util::bit_util::BitUtil;
 use crate::core::util::error::lucene_error::Result;
@@ -85,10 +84,12 @@ where
       length,
       self.limit
     );
-    self
-      .bytes
-      .as_slice_mut()
-      .copy_from(&b[offset..(offset + length)], self.pos);
+    let (copy_target, copy_source, copy_offset) = (
+      &mut (self.bytes.as_slice_mut())[..],
+      &b[offset..(offset + length)],
+      self.pos,
+    );
+    copy_target[copy_offset..][..copy_source.len()].copy_from_slice(copy_source);
     self.pos += length;
     Ok(())
   }

@@ -29,7 +29,6 @@ use crate::core::util::int_block_pool::{
 use crate::core::util::ram_usage_estimator::size_of_array_capacity;
 use crate::core::util::{
   BYTE_BLOCK_MASK, BYTE_BLOCK_SHIFT, BYTE_BLOCK_SIZE, ByteBlockPool, Counter, SharedCounter,
-  SliceCopyOps,
 };
 
 /// This struct stores streams of information per term without knowing the size
@@ -210,7 +209,8 @@ impl<PA: PostingsArray> TermsHashPerField<PA> {
         block_index = buffer_upto;
         let slice = byte_pool.get_buffer_mut(buffer_upto);
         let write_length = std::cmp::min(slice_length as usize - 1, end - offset);
-        slice.copy_from(&b[offset..offset + write_length], slice_offset);
+        let copy_source = &b[offset..offset + write_length];
+        slice[slice_offset..][..copy_source.len()].copy_from_slice(copy_source);
         slice_offset += write_length;
         offset += write_length;
         debug_assert!(slice_offset <= i32::MAX as usize);

@@ -16,7 +16,6 @@
  */
 use num_bigint::{BigInt, Sign};
 
-use crate::core::util::SliceCopyOps;
 use crate::core::util::bit_util::BitUtil;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 
@@ -260,7 +259,8 @@ impl NumericUtils {
     } else {
       0
     });
-    full_big_int_bytes.copy_from(&big_int_bytes, padding_size);
+    let copy_source = &big_int_bytes;
+    full_big_int_bytes[padding_size..][..copy_source.len()].copy_from_slice(copy_source);
     full_big_int_bytes[0] ^= 0x80;
 
     #[cfg(debug_assertions)]

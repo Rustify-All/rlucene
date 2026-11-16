@@ -97,25 +97,20 @@ where
   T: AsRef<[u8]> + AsMut<[u8]>,
 {
   fn write_from_slice(&mut self, src: &[u8]) -> Result<()> {
-    let position = self.position() as usize;
+    let position: usize = self.position().try_convert()?;
     let len = src.len();
+    let destination = self.get_mut().as_mut();
 
-    if position + len > self.get_ref().as_ref().len() {
+    if position > destination.len() || len > destination.len() - position {
       return Err(LuceneError::illegal_argument(format!(
         "Buffer out of bounds: position={}, len={}, total={}",
         position,
         len,
-        self.get_ref().as_ref().len()
+        destination.len()
       )));
     }
 
-    unsafe {
-      std::ptr::copy_nonoverlapping(
-        src.as_ptr(),
-        self.get_mut().as_mut().as_mut_ptr().add(position),
-        len,
-      );
-    }
+    destination[position..position + len].copy_from_slice(src);
     self.set_position((position + len) as u64);
     Ok(())
   }
@@ -134,12 +129,12 @@ fn perform_read(
 ) -> Result<()> {
   let total = source.len();
 
-  if position > total || position + len > total {
+  if position > total || len > total - position {
     return Err(LuceneError::illegal_argument(format!(
       "Read out of bounds: position={position}, len={len}, total={total}"
     )));
   }
-  if offset + len > dest.len() {
+  if offset > dest.len() || len > dest.len() - offset {
     return Err(LuceneError::illegal_argument(format!(
       "Destination buffer out of bounds: offset={}, len={}, total={}",
       offset,
@@ -148,13 +143,7 @@ fn perform_read(
     )));
   }
 
-  unsafe {
-    std::ptr::copy_nonoverlapping(
-      source.as_ptr().add(position),
-      dest.as_mut_ptr().add(offset),
-      len,
-    );
-  }
+  dest[offset..offset + len].copy_from_slice(&source[position..position + len]);
 
   Ok(())
 }

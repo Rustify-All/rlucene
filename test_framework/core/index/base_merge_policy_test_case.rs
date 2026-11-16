@@ -20,7 +20,6 @@ use crate::core::index::codec_reader::CodecReader;
 use crate::core::index::directory_reader;
 use crate::core::index::index_reader::{Identity, IndexReader};
 use crate::core::index::index_writer::{IndexWriter, Inner, SOURCE, SOURCE_FLUSH, SOURCE_MERGE};
-use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
 use crate::core::index::merge_policy::{
   MergeContext, MergePolicy, MergePolicyEnum, MergeSpecification, OneMerge,
 };

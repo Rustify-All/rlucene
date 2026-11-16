@@ -402,7 +402,7 @@ fn test_soft_delete_with_retention() -> Result<()> {
   let dir = new_directory_shared(&mut random)?;
   let mut index_writer_config = new_index_writer_config(&mut random)?;
   let retention_seq_ids = seq_ids.clone();
-  let merge_policy = index_writer_config.get_merge_policy().clone();
+  let merge_policy = index_writer_config.get_merge_policy().as_ref().clone();
   index_writer_config
     .set_merge_policy(SoftDeletesRetentionMergePolicy::new(
       "soft_delete",
@@ -545,7 +545,7 @@ fn test_force_merge_deletes() -> Result<()> {
   config.set_soft_deletes_field("soft_delete");
   config.set_merge_policy(new_merge_policy_with_mock_mp(&mut random, false)?);
   if random.random_bool(0.5) {
-    let merge_policy = config.get_merge_policy().clone();
+    let merge_policy = config.get_merge_policy().as_ref().clone();
     config.set_merge_policy(SoftDeletesRetentionMergePolicy::new(
       "soft_delete",
       || Ok(MatchNoDocsQuery::new().into()),
@@ -597,7 +597,7 @@ fn test_drop_fully_soft_deleted_segment() -> Result<()> {
   if let Some(soft_delete) = soft_delete
     && random.random_bool(0.5)
   {
-    let merge_policy = config.get_merge_policy().clone();
+    let merge_policy = config.get_merge_policy().as_ref().clone();
     config.set_merge_policy(SoftDeletesRetentionMergePolicy::new(
       soft_delete,
       || Ok(MatchNoDocsQuery::new().into()),
@@ -680,7 +680,7 @@ fn test_soft_delete_while_merge_survives() -> Result<()> {
   let warmer_writer = Arc::downgrade(&writer);
   let warmer_update = update.clone();
   writer
-    .get_config_mut()
+    .get_config()?
     .set_merged_segment_warmer(Some(IndexReaderWarmerEnum::custom(
       SoftDeleteWhileMergeWarmer {
         writer: warmer_writer,
@@ -763,7 +763,7 @@ fn test_delete_doc_while_merge_that_is_soft_deleted() -> Result<()> {
     let warmer_reader = reader.clone();
     let warmer_delete = delete.clone();
     writer
-      .get_config_mut()
+      .get_config()?
       .set_merged_segment_warmer(Some(IndexReaderWarmerEnum::custom(
         DeleteDocWhileMergeWarmer {
           writer: warmer_writer,

@@ -753,7 +753,7 @@ fn test_merge_warmer() -> Result<()> {
   // get a reader to put writer into near real-time mode
   let r1 = directory_reader::open_from_writer(&writer)?;
 
-  match writer.get_config_mut().get_merge_policy_mut() {
+  match &mut *writer.get_config()?.get_merge_policy_mut() {
     MergePolicyEnum::LogDoc(merge_policy) => merge_policy.set_merge_factor(2)?,
     MergePolicyEnum::LogBytesSize(merge_policy) => merge_policy.set_merge_factor(2)?,
     _ => panic!("expected LogMergePolicy variant"),

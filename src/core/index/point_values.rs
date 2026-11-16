@@ -20,12 +20,12 @@ use crate::core::index::index_reader_context::IndexReaderContext;
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::search::doc_id_set_iterator::DocIdSetIterator;
 use crate::core::search::doc_id_set_iterator::NO_MORE_DOCS;
+use crate::core::util::TryIntoInt;
 use crate::core::util::array_util::{ArrayUtil, ByteArrayComparator};
 use crate::core::util::bkd::bkd_config::BKDConfig;
 use crate::core::util::clone::TryClone;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::ints_ref::IntsRef;
-use crate::core::util::{SliceCopyOps, TryIntoInt};
 use std::borrow::Cow;
 use std::sync::Arc;
 
@@ -197,10 +197,8 @@ where
     for i in 0..num_dimensions {
       let offset = i * num_bytes_per_dimension;
       if comparator.compare(&leaf_min_value, offset, min_value_ref, offset) < 0 {
-        min_value_ref.copy_from(
-          &leaf_min_value[offset..offset + num_bytes_per_dimension],
-          offset,
-        );
+        let copy_source = &leaf_min_value[offset..offset + num_bytes_per_dimension];
+        min_value_ref[offset..][..copy_source.len()].copy_from_slice(copy_source);
       }
     }
   }
@@ -245,10 +243,8 @@ where
     for dim in 0..num_dimensions {
       let offset = dim * num_bytes_per_dimension;
       if comparator.compare(&leaf_max_value, offset, max_value_ref, offset) > 0 {
-        max_value_ref.copy_from(
-          &leaf_max_value[offset..offset + num_bytes_per_dimension],
-          offset,
-        );
+        let copy_source = &leaf_max_value[offset..offset + num_bytes_per_dimension];
+        max_value_ref[offset..][..copy_source.len()].copy_from_slice(copy_source);
       }
     }
   }

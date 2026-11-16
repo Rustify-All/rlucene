@@ -53,7 +53,7 @@ fn test_indexing() -> Result<()> {
   iwc.set_index_deletion_policy(NoDeletionPolicy);
   let w = RandomIndexWriter::with_config(&mut random, d.clone(), iwc);
   w.w
-    .get_config_mut()
+    .get_config()?
     .set_max_buffered_docs(TestUtil::next_int(&mut random, 5, 30));
   let w = Arc::new(w);
 

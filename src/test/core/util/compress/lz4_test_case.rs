@@ -18,7 +18,6 @@ use rand::Rng;
 use rand::RngExt;
 
 use crate::core::store::{ByteArrayDataInput, ByteBuffersDataOutput, DataOutput};
-use crate::core::util::SliceCopyOps;
 use crate::core::util::compress::lz4::LZ4;
 use crate::core::util::compress::lz4::{HashTable, HashTableEnum};
 use crate::core::util::error::lucene_error::Result;
@@ -38,7 +37,7 @@ pub(crate) trait LZ4TestCase {
     };
 
     let mut copy = vec![0; data.len() + offset + random.random_range(0..10)];
-    copy.copy_from(data, offset);
+    copy[offset..][..data.len()].copy_from_slice(data);
     Self::do_test_with_offset(random, copy.as_slice(), offset, data.len(), hash_table)
   }
 
@@ -235,7 +234,8 @@ pub(crate) trait LZ4TestCase {
     // Now restore and compare bytes
     let restore_offset = TestUtil::next_usize(random, 1, 10);
     let mut restored = vec![0; restore_offset + dict_len + length + random.random_range(0..10)];
-    restored.copy_from(&data[dict_off..dict_off + dict_len], restore_offset);
+    let copy_source = &data[dict_off..dict_off + dict_len];
+    restored[restore_offset..][..copy_source.len()].copy_from_slice(copy_source);
 
     let mut input = ByteArrayDataInput::with_bytes(compressed.as_slice());
     LZ4::decompress(

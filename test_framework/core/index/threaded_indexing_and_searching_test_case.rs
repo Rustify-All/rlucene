@@ -417,7 +417,7 @@ where
     let mut config = new_index_writer_config_with_analyzer(random, analyzer)?;
     config.set_commit_on_close(false);
     config.set_info_stream(InfoStreamEnum::from(FailOnNonBulkMergesInfoStream));
-    if let MergePolicyEnum::MockRandom(merge_policy) = config.get_merge_policy_mut() {
+    if let MergePolicyEnum::MockRandom(merge_policy) = &mut *config.get_merge_policy_mut() {
       merge_policy.set_do_non_bulk_merges(false);
     }
     ensure_sane_iwc_on_nightly(&mut config)?;

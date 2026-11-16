@@ -127,7 +127,7 @@ fn test_updates_are_flushed() -> Result<()> {
   )?;
   assert_eq!(4, writer.get_flush_deletes_count());
 
-  writer.get_config_mut().set_ram_buffer_size_mb(1000.0);
+  writer.get_config()?.set_ram_buffer_size_mb(1000.0);
   writer.update_binary_doc_value(
     Term::from_text("id", "doc-2"),
     "val",
@@ -1806,7 +1806,7 @@ fn test_tons_of_updates() -> Result<()> {
   // set to flush every 2048 bytes (approximately every 12 updates), so we get
   // many flushes during binary updates
   writer
-    .get_config_mut()
+    .get_config()?
     .set_ram_buffer_size_mb(2048.0 / 1024.0 / 1024.0);
 
   let num_updates = at_least(&mut random, 100);

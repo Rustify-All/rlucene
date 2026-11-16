@@ -92,7 +92,7 @@ fn test_deletes1() -> Result<()> {
   // which should apply the delete id:2
   writer.delete_documents_with_terms(vec![Term::from_text("id", "2")])?;
   writer.flush_with_apply_merge_deletes(false, false)?;
-  match writer.get_config_mut().get_merge_policy_mut() {
+  match &mut *writer.get_config()?.get_merge_policy_mut() {
     MergePolicyEnum::Range(fsmp) => fsmp.set_merge(0, 2),
     _ => panic!("expected RangeMergePolicy"),
   }

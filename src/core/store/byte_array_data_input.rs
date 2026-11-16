@@ -20,11 +20,11 @@ use std::any::type_name;
 use std::fmt::{Display, Formatter};
 
 use crate::core::store::data_input::DataInput;
+use crate::core::util::TryIntoInt;
 use crate::core::util::access::ByteSource;
 use crate::core::util::bit_util::BitUtil;
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::group_vint_util::GroupVIntUtil;
-use crate::core::util::{SliceCopyOps, TryIntoInt};
 
 /// [`DataInput`] backed by a byte array.
 ///
@@ -125,7 +125,8 @@ where
   }
 
   fn read_bytes(&mut self, b: &mut [u8], offset: usize, len: usize) -> Result<()> {
-    b.copy_from(&self.bytes.as_slice()[self.pos..self.pos + len], offset);
+    let copy_source = &self.bytes.as_slice()[self.pos..self.pos + len];
+    b[offset..][..copy_source.len()].copy_from_slice(copy_source);
     self.pos += len;
     Ok(())
   }

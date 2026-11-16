@@ -22,7 +22,7 @@ use crate::core::util::bit_set::{BitSet, check_unpositioned};
 use crate::core::util::bits::Bits;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::ram_usage_estimator::size_of_slice;
-use crate::core::util::{HasIdentity, SliceCopyOps, TryIntoInt};
+use crate::core::util::{HasIdentity, TryIntoInt};
 use smallvec::SmallVec;
 
 // Most newly populated sparse blocks contain only a few non-zero words.
@@ -122,9 +122,11 @@ impl SparseFixedBitSet {
       let old_bytes = block_heap_bytes(bit_array);
       let new_size = oversize(bit_array.len() + 1);
       let mut new_bit_array = SmallVec::from_elem(0, new_size);
-      new_bit_array.copy_from(&bit_array[..o], 0);
+      let copy_source = &bit_array[..o];
+      new_bit_array[..copy_source.len()].copy_from_slice(copy_source);
       new_bit_array[o] = 1_u64 << (i % 64);
-      new_bit_array.copy_from(&bit_array[o..], o + 1);
+      let copy_source = &bit_array[o..];
+      new_bit_array[o + 1..][..copy_source.len()].copy_from_slice(copy_source);
       let new_bytes = block_heap_bytes(&new_bit_array);
       self.bits[i4096] = new_bit_array;
       self.ram_bytes_used = self

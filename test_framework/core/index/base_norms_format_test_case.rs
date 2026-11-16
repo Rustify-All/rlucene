@@ -24,7 +24,6 @@ use crate::core::index::field_invert_state::FieldInvertState;
 use crate::core::index::index_reader::IndexReader;
 use crate::core::index::index_reader_context::IndexReaderContext;
 use crate::core::index::leaf_reader::LeafReader;
-use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
 use crate::core::index::multi_doc_values::MultiDocValues;
 use crate::core::index::no_merge_policy::NoMergePolicy;
 use crate::core::index::numeric_doc_values::NumericDocValues;

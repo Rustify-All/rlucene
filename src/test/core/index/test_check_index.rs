@@ -125,7 +125,7 @@ fn test_check_index_all_valid() -> Result<()> {
     config.set_merge_policy(SoftDeletesRetentionMergePolicy::new(
       "soft_delete",
       || Ok(MatchAllDocsQuery::new().into()),
-      config.get_merge_policy().clone(),
+      config.get_merge_policy().as_ref().clone(),
     ));
 
     let w = IndexWriter::new(Arc::clone(&dir), config)?;

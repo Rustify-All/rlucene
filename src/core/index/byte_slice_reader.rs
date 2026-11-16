@@ -21,9 +21,7 @@ use crate::core::store::{DataInput, DataOutput};
 use crate::core::util::bit_util::BitUtil;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::group_vint_util::GroupVIntUtil;
-use crate::core::util::{
-  BYTE_BLOCK_MASK, BYTE_BLOCK_SIZE, ByteBlockPool, SliceCopyOps, TryIntoInt,
-};
+use crate::core::util::{BYTE_BLOCK_MASK, BYTE_BLOCK_SIZE, ByteBlockPool, TryIntoInt};
 use std::fmt::{Display, Formatter};
 
 /// IndexInput that knows how to read the byte slices written by Posting and PostingVector.
@@ -180,7 +178,7 @@ impl DataInput for ByteSliceReader<'_> {
 
   fn read_bytes(&mut self, b: &mut [u8], mut offset: usize, len: usize) -> Result<()> {
     self.consume_bytes(len, |slice| {
-      b.copy_from(slice, offset);
+      b[offset..][..slice.len()].copy_from_slice(slice);
       offset += slice.len();
     })
   }

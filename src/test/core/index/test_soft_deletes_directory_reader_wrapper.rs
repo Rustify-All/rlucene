@@ -424,7 +424,7 @@ fn test_avoid_wrapping_readers_without_soft_deletes() -> Result<()> {
   let mut iwc = new_index_writer_config(&mut random)?;
   let soft_deletes_field = "soft_deletes";
   iwc.set_soft_deletes_field(soft_deletes_field);
-  let merge_policy = iwc.get_merge_policy().clone();
+  let merge_policy = iwc.get_merge_policy().as_ref().clone();
   iwc.set_merge_policy(SoftDeletesRetentionMergePolicy::new(
     soft_deletes_field,
     || Ok(MatchAllDocsQuery::new().into()),
@@ -464,7 +464,7 @@ fn test_avoid_wrapping_readers_without_soft_deletes() -> Result<()> {
     wrapped.close()?;
 
     writer
-      .get_config_mut()
+      .get_config()?
       .set_merge_policy(SoftDeletesRetentionMergePolicy::new(
         soft_deletes_field,
         || Ok(MatchNoDocsQuery::new().into()),

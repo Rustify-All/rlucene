@@ -34,7 +34,7 @@ use crate::core::util::bkd::point_writer::{PointWriter, PointWriterEnum};
 use crate::core::util::close::Closeable;
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::numeric_utils::NumericUtils;
-use crate::core::util::{CoreHelper, SliceCopyOps, ToInt};
+use crate::core::util::{CoreHelper, ToInt};
 use crate::test_framework::core::util::test_util::TestUtil;
 
 #[allow(dead_code)] // for quick search
@@ -281,7 +281,8 @@ fn test_random_data_dim_diff_values() -> Result<()> {
   for i in 0..values {
     random.fill(&mut data_value[..]);
     let start = config.num_index_dims * config.bytes_per_dim;
-    value.copy_from(&data_value, start);
+    let copy_source = &data_value;
+    value[start..][..copy_source.len()].copy_from_slice(copy_source);
     points.append_bytes(&value, i as i32)?;
   }
   points.close()?;
@@ -596,7 +597,7 @@ where
     let end_idx = start_idx + size;
     let value = &value_ref[start_idx..end_idx];
     if min.as_slice().cmp(value) == Greater {
-      min.copy_from(value, 0);
+      min[..value.len()].copy_from_slice(value);
     }
   }
   reader.close()?;
@@ -680,7 +681,7 @@ where
       let copy_end = copy_start + size;
       let value = &value_vec[copy_start..copy_end];
       if min.as_slice().cmp(value) == Greater {
-        min.copy_from(value, 0);
+        min[..value.len()].copy_from_slice(value);
       }
     }
   }
@@ -710,7 +711,7 @@ where
     let end_idx = start_idx + size;
     let value = &bytes_ref[start_idx..end_idx];
     if max.as_slice().cmp(value) == Less {
-      max.copy_from(value, 0);
+      max[..value.len()].copy_from_slice(value);
     }
   }
   reader.close()?;
@@ -748,7 +749,7 @@ where
       let copy_end = copy_start + size;
       let value = &value_vec[copy_start..copy_end];
       if max.as_slice().cmp(value) == Less {
-        max.copy_from(value, 0);
+        max[..value.len()].copy_from_slice(value);
       }
     }
   }

@@ -423,7 +423,7 @@ fn test_no_wait_close() -> Result<()> {
     }
 
     let mut writer = IndexWriter::new(directory.clone(), conf)?;
-    match writer.get_config_mut().get_merge_policy_mut() {
+    match &mut *writer.get_config()?.get_merge_policy_mut() {
       crate::core::index::merge_policy::MergePolicyEnum::LogDoc(mp) => mp.set_merge_factor(100)?,
       crate::core::index::merge_policy::MergePolicyEnum::LogBytesSize(mp) => {
         mp.set_merge_factor(100)?
@@ -454,7 +454,7 @@ fn test_no_wait_close() -> Result<()> {
       }
 
       writer.commit()?;
-      match writer.get_config_mut().get_merge_policy_mut() {
+      match &mut *writer.get_config()?.get_merge_policy_mut() {
         crate::core::index::merge_policy::MergePolicyEnum::LogDoc(mp) => mp.set_merge_factor(2)?,
         crate::core::index::merge_policy::MergePolicyEnum::LogBytesSize(mp) => {
           mp.set_merge_factor(2)?

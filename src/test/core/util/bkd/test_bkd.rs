@@ -39,7 +39,7 @@ use crate::core::util::close::{Closeable, CloseableRef};
 use crate::core::util::error::lucene_error::{LuceneError, LuceneErrorKind, Result};
 use crate::core::util::io_utils::IOUtils;
 use crate::core::util::numeric_utils::NumericUtils;
-use crate::core::util::{SliceCopyOps, ToInt, TryIntoInt};
+use crate::core::util::{ToInt, TryIntoInt};
 use crate::test_framework::core::store::corrupting_index_output::CorruptingIndexOutput;
 use crate::test_framework::core::util::lucene_test_case::{
   at_least, at_least_usize, create_temp_dir, new_directory, new_directory_shared, new_fs_directory,
@@ -977,7 +977,8 @@ where
     for ord in 0..num_values {
       let doc_id = doc_ids.as_ref().map_or(ord as i32, |ids| ids[ord]);
       for (dim, value) in doc_values[ord].iter().take(num_data_dims).enumerate() {
-        scratch.copy_from(&value[0..num_bytes_per_dim], dim * num_bytes_per_dim);
+        let copy_source = &value[0..num_bytes_per_dim];
+        scratch[dim * num_bytes_per_dim..][..copy_source.len()].copy_from_slice(copy_source);
       }
       writer
         .as_mut()
@@ -1658,14 +1659,16 @@ impl IntersectVisitor for IntersectVisitorMock3 {
     let len = self.num_data_dims * self.num_bytes_per_dim;
     if self.previous.is_none() {
       let mut value = vec![0u8; len];
-      value.copy_from(&packed_value[..len], 0);
+      let copy_source = &packed_value[..len];
+      value[..copy_source.len()].copy_from_slice(copy_source);
       self.previous = Some(value);
     } else if let Some(prev) = &mut self.previous {
       let mismatch = packed_value.eq(prev.as_slice());
       if !mismatch {
         if !self.has_changed {
           self.has_changed = true;
-          prev.copy_from(&packed_value[..len], 0);
+          let copy_source = &packed_value[..len];
+          prev[..copy_source.len()].copy_from_slice(copy_source);
         } else {
           return Err(LuceneError::illegal_state(
             "Points are not in optimal order",
@@ -1699,7 +1702,8 @@ fn test_check_data_dim_optimal_order() -> Result<()> {
   // Equal index dimensions but different data dimensions
   for i in 0..num_index_dims {
     let offset = i * num_bytes_per_dim;
-    point_value2.copy_from(&point_value1[offset..offset + num_bytes_per_dim], offset);
+    let copy_source = &point_value1[offset..offset + num_bytes_per_dim];
+    point_value2[offset..][..copy_source.len()].copy_from_slice(copy_source);
   }
 
   let config = BKDConfig::new(
@@ -1888,7 +1892,8 @@ fn test_wasted_leading_bytes() -> Result<()> {
     for dim in 0..num_dims {
       random.fill_bytes(&mut tmp);
       let offset = dim * bytes_per_dim + (bytes_per_dim - bytes_used);
-      buffer.copy_from(&tmp, offset);
+      let copy_source = &tmp;
+      buffer[offset..][..copy_source.len()].copy_from_slice(copy_source);
     }
     writer.add(&buffer, doc_id)?;
   }

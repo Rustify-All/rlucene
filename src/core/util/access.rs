@@ -14,7 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::core::util::SliceCopyOps;
 use crate::core::util::array_util::ArrayUtil;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use parking_lot::Mutex;
@@ -97,7 +96,7 @@ where
   }
 
   fn copy(&mut self, src: &[T], offset: usize) {
-    self.copy_from(src, offset)
+    self[offset..][..src.len()].clone_from_slice(src)
   }
 }
 

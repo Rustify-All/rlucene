@@ -46,6 +46,7 @@ use crate::core::search::point_in_set_query::{
 use crate::core::search::point_range_query::{PointRangeBase, PointRangeQuery};
 use crate::core::search::query::{Query, QueryBase};
 use crate::core::search::score_mode::ScoreMode::CompleteNoScores;
+use crate::core::util::CoreHelper;
 use crate::core::util::bit_util::BitUtil;
 use crate::core::util::bits::Bits;
 #[cfg(feature = "nightly")]
@@ -53,7 +54,6 @@ use crate::core::util::bkd::bkd_config::BKDConfig;
 use crate::core::util::bytes_ref_iterator::BytesRefIterator;
 use crate::core::util::error::lucene_error::{LuceneError, LuceneErrorKind, Result};
 use crate::core::util::numeric_utils::NumericUtils;
-use crate::core::util::{CoreHelper, SliceCopyOps};
 use crate::test_framework::core::analysis::mock_analyzer::MockAnalyzer;
 use crate::test_framework::core::index::random_index_writer::RandomIndexWriter;
 use crate::test_framework::core::search::fixed_bit_set_collector::FixedBitSetCollector;
@@ -1174,7 +1174,8 @@ fn to_utf8_padded(s: &str, length: usize) -> Result<Vec<u8>> {
   }
 
   let mut result = vec![0u8; length];
-  result.copy_from(&bytes[0..bytes.len()], 0);
+  let copy_source = &bytes[0..bytes.len()];
+  result[..copy_source.len()].copy_from_slice(copy_source);
   Ok(result)
 }
 

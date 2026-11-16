@@ -25,7 +25,6 @@ use num_traits::FromPrimitive;
 use rand::{Rng, RngExt};
 
 use crate::core::index::BytesRef;
-use crate::core::util::SliceCopyOps;
 use crate::core::util::bit_util::BitUtil;
 use crate::core::util::core_helper::CoreHelper;
 use crate::core::util::error::lucene_error::Result;
@@ -478,14 +477,16 @@ fn test_add() -> Result<()> {
     let v1_raw_bytes = v1.to_signed_bytes_be();
     assert!(v1_raw_bytes.len() <= num_bytes);
     let start_pos = num_bytes.saturating_sub(v1_raw_bytes.len());
-    v1_bytes.copy_from(&v1_raw_bytes, start_pos);
+    let copy_source = &v1_raw_bytes;
+    v1_bytes[start_pos..][..copy_source.len()].copy_from_slice(copy_source);
 
     v2_bytes.clear();
     v2_bytes.resize(num_bytes, 0);
     let v2_raw_bytes = v2.to_signed_bytes_be();
     assert!(v2_raw_bytes.len() <= num_bytes);
     let start_pos = num_bytes.saturating_sub(v2_raw_bytes.len());
-    v2_bytes.copy_from(&v2_raw_bytes, start_pos);
+    let copy_source = &v2_raw_bytes;
+    v2_bytes[start_pos..][..copy_source.len()].copy_from_slice(copy_source);
 
     result.clear();
     result.resize(num_bytes, 0);
@@ -555,13 +556,15 @@ fn test_subtract() -> Result<()> {
     v1_bytes.resize(num_bytes, 0);
     let v1_raw_bytes = v1.to_signed_bytes_be();
     let start_pos = num_bytes.saturating_sub(v1_raw_bytes.len());
-    v1_bytes.copy_from(&v1_raw_bytes, start_pos);
+    let copy_source = &v1_raw_bytes;
+    v1_bytes[start_pos..][..copy_source.len()].copy_from_slice(copy_source);
 
     v2_bytes.clear();
     v2_bytes.resize(num_bytes, 0);
     let v2_raw_bytes = v2.to_signed_bytes_be();
     let start_pos = num_bytes.saturating_sub(v2_raw_bytes.len());
-    v2_bytes.copy_from(&v2_raw_bytes, start_pos);
+    let copy_source = &v2_raw_bytes;
+    v2_bytes[start_pos..][..copy_source.len()].copy_from_slice(copy_source);
 
     result.clear();
     result.resize(num_bytes, 0);

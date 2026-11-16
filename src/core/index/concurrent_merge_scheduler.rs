@@ -17,6 +17,7 @@
 use std::cell::RefCell;
 use std::cmp;
 use std::fmt::{Display, Formatter};
+use std::io::Write;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::thread;
@@ -1650,10 +1651,17 @@ where
     // runs update_merge_threads; if the new thread has not entered its closure yet, leaving this
     // false would let the scheduler prune a live merge thread.
     state.set_alive(true);
-    match thread::Builder::new()
-      .name(thread_name)
-      .spawn(move || -> Result<()> { self.run(merge_scheduler) })
-    {
+    match thread::Builder::new().name(thread_name).spawn(move || {
+      if let Err(error) = self.run(merge_scheduler) {
+        // Java reports this failure through the thread's uncaught exception handler.
+        // A detached Rust thread must consume the error instead of dropping its Result.
+        if log::log_enabled!(log::Level::Error) {
+          log::error!("{error}");
+        } else {
+          let _ = writeln!(std::io::stderr(), "Exception in merge thread: {error}");
+        }
+      }
+    }) {
       Ok(_handle) => Ok(()),
       Err(err) => {
         state.set_alive(false);

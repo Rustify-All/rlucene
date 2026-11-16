@@ -14,8 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use std::ptr;
-
 pub struct BitUtil {}
 impl BitUtil {
   pub const BYTE_BYTES: usize = size_of::<i8>();
@@ -53,84 +51,47 @@ impl BitUtil {
   }
 
   // i16 big_endian
+  #[inline]
   pub fn get_i16_be(bytes: &[u8], pos: usize) -> i16 {
-    debug_assert!(
-      pos + Self::SHORT_BYTES <= bytes.len(),
-      "Index out of bounds"
-    );
-
-    unsafe {
-      let raw_value = ptr::read_unaligned(bytes.as_ptr().add(pos) as *const i16);
-      i16::from_be(raw_value)
-    }
+    let mut value = [0; Self::SHORT_BYTES];
+    value.copy_from_slice(&bytes[pos..][..Self::SHORT_BYTES]);
+    i16::from_be_bytes(value)
   }
 
   #[cfg(target_endian = "little")]
+  #[inline]
   pub fn set_i16_be(bytes: &mut [u8], pos: usize, value: i16) {
     Self::set_i16_be_with_len(bytes, pos, value, Self::SHORT_BYTES);
   }
 
   #[cfg(target_endian = "little")]
+  #[inline]
   pub fn set_i16_be_with_len(bytes: &mut [u8], pos: usize, value: i16, len: usize) {
-    debug_assert!(
-      pos + len <= bytes.len(),
-      "Index out of bounds: pos={} len={} bytes.len()={}",
-      pos,
-      len,
-      bytes.len()
-    );
-    debug_assert!(
-      (0..=Self::SHORT_BYTES).contains(&len),
-      "Invalid length: len={len} (must be <= 2)"
-    );
-
-    let value_be = value.to_be();
-
-    unsafe {
-      let value_ptr = &value_be as *const i16 as *const u8;
-      let dest_ptr = bytes.as_mut_ptr().add(pos);
-      ptr::copy_nonoverlapping(value_ptr, dest_ptr, len);
-    }
+    bytes[pos..][..len].copy_from_slice(&value.to_be_bytes()[..len]);
   }
   // i16 little_endian
   #[cfg(target_endian = "little")]
+  #[inline]
   pub fn get_i16_le(bytes: &[u8], pos: usize) -> i16 {
     let mut value = [0; Self::SHORT_BYTES];
     value.copy_from_slice(&bytes[pos..][..Self::SHORT_BYTES]);
     i16::from_le_bytes(value)
   }
   #[cfg(target_endian = "little")]
+  #[inline]
   pub fn set_i16_le(bytes: &mut [u8], pos: usize, value: i16) {
     // Call the more flexible implementation with len = 2 (write all bytes)
     Self::set_i16_le_with_len(bytes, pos, value, Self::SHORT_BYTES);
   }
 
   #[cfg(target_endian = "little")]
+  #[inline]
   pub fn set_i16_le_with_len(bytes: &mut [u8], pos: usize, value: i16, len: usize) {
-    debug_assert!(
-      pos + len <= bytes.len(),
-      "Index out of bounds: pos={} len={} bytes.len()={}",
-      pos,
-      len,
-      bytes.len()
-    );
-    debug_assert!(
-      (0..=Self::SHORT_BYTES).contains(&len),
-      "Invalid length: len={} (must be <= {})",
-      len,
-      Self::SHORT_BYTES
-    );
-
-    let value_le = value.to_le();
-
-    unsafe {
-      let value_ptr = &value_le as *const i16 as *const u8;
-      let dest_ptr = bytes.as_mut_ptr().add(pos);
-      ptr::copy_nonoverlapping(value_ptr, dest_ptr, len);
-    }
+    bytes[pos..][..len].copy_from_slice(&value.to_le_bytes()[..len]);
   }
 
   // i32 big_endian
+  #[inline]
   pub fn get_i32_be(bytes: &[u8], pos: usize) -> i32 {
     assert!(
       bytes.len() >= Self::INT_BYTES && pos <= bytes.len() - Self::INT_BYTES,
@@ -141,31 +102,15 @@ impl BitUtil {
     i32::from_be_bytes(value)
   }
   #[cfg(target_endian = "little")]
+  #[inline]
   pub fn set_i32_be(bytes: &mut [u8], pos: usize, value: i32) {
     Self::set_i32_be_with_len(bytes, pos, value, Self::INT_BYTES);
   }
 
   #[cfg(target_endian = "little")]
+  #[inline]
   pub fn set_i32_be_with_len(bytes: &mut [u8], pos: usize, value: i32, len: usize) {
-    debug_assert!(
-      pos + len <= bytes.len(),
-      "Index out of bounds: pos={} len={} bytes.len()={}",
-      pos,
-      len,
-      bytes.len()
-    );
-    debug_assert!(
-      (0..=Self::INT_BYTES).contains(&len),
-      "Invalid length: len={len} (must be <= 4)"
-    );
-
-    let value_be = value.to_be();
-
-    unsafe {
-      let value_ptr = &value_be as *const i32 as *const u8;
-      let dest_ptr = bytes.as_mut_ptr().add(pos);
-      ptr::copy_nonoverlapping(value_ptr, dest_ptr, len);
-    }
+    bytes[pos..][..len].copy_from_slice(&value.to_be_bytes()[..len]);
   }
   // i32 little_endian
   #[cfg(target_endian = "little")]
@@ -181,71 +126,36 @@ impl BitUtil {
   }
 
   #[cfg(target_endian = "little")]
+  #[inline]
   pub fn set_i32_le(bytes: &mut [u8], pos: usize, value: i32) {
     Self::set_i32_le_with_len(bytes, pos, value, Self::INT_BYTES);
   }
   #[cfg(target_endian = "little")]
+  #[inline]
   pub fn set_i32_le_with_len(bytes: &mut [u8], pos: usize, value: i32, len: usize) {
-    debug_assert!(
-      pos + len <= bytes.len(),
-      "Index out of bounds: pos={} len={} bytes.len()={}",
-      pos,
-      len,
-      bytes.len()
-    );
-    debug_assert!(
-      (0..=Self::INT_BYTES).contains(&len),
-      "Invalid length: len={len} (must be <= 4)"
-    );
-
-    let value_le = value.to_le();
-
-    unsafe {
-      let value_ptr = &value_le as *const i32 as *const u8;
-      let dest_ptr = bytes.as_mut_ptr().add(pos);
-      ptr::copy_nonoverlapping(value_ptr, dest_ptr, len);
-    }
+    bytes[pos..][..len].copy_from_slice(&value.to_le_bytes()[..len]);
   }
 
   // i64 big_endian
+  #[inline]
   pub fn get_i64_be(bytes: &[u8], pos: usize) -> i64 {
-    debug_assert!(pos + Self::LONG_BYTES <= bytes.len(), "Index out of bounds");
-
-    unsafe {
-      let raw_value = ptr::read_unaligned(bytes.as_ptr().add(pos) as *const i64);
-      i64::from_be(raw_value)
-    }
+    let mut value = [0; Self::LONG_BYTES];
+    value.copy_from_slice(&bytes[pos..][..Self::LONG_BYTES]);
+    i64::from_be_bytes(value)
   }
 
+  #[inline]
   pub fn set_i64_be(bytes: &mut [u8], pos: usize, value: i64) {
     Self::set_i64_be_with_len(bytes, pos, value, Self::LONG_BYTES);
   }
 
+  #[inline]
   pub fn set_i64_be_with_len(bytes: &mut [u8], pos: usize, value: i64, len: usize) {
-    debug_assert!(
-      pos + len <= bytes.len(),
-      "Index out of bounds: pos={} len={} bytes.len()={}",
-      pos,
-      len,
-      bytes.len()
-    );
-    debug_assert!(
-      (0..=Self::LONG_BYTES).contains(&len),
-      "Invalid length: len={} (must be <= {})",
-      len,
-      Self::LONG_BYTES
-    );
-
-    let value_be = value.to_be();
-
-    unsafe {
-      let value_ptr = &value_be as *const i64 as *const u8;
-      let dest_ptr = bytes.as_mut_ptr().add(pos);
-      ptr::copy_nonoverlapping(value_ptr, dest_ptr, len);
-    }
+    bytes[pos..][..len].copy_from_slice(&value.to_be_bytes()[..len]);
   }
   // i64 little_endian
   #[cfg(target_endian = "little")]
+  #[inline]
   pub fn get_i64_le(bytes: &[u8], pos: usize) -> i64 {
     let mut value = [0; Self::LONG_BYTES];
     value.copy_from_slice(&bytes[pos..][..Self::LONG_BYTES]);
@@ -253,34 +163,16 @@ impl BitUtil {
   }
 
   #[cfg(target_endian = "little")]
+  #[inline]
   pub fn set_i64_le(bytes: &mut [u8], pos: usize, value: i64) {
     // Call the more flexible implementation with len = 8 (write all bytes)
     Self::set_i64_le_with_len(bytes, pos, value, Self::LONG_BYTES);
   }
 
   #[cfg(target_endian = "little")]
+  #[inline]
   pub fn set_i64_le_with_len(bytes: &mut [u8], pos: usize, value: i64, len: usize) {
-    debug_assert!(
-      pos + len <= bytes.len(),
-      "Index out of bounds: pos={} len={} bytes.len()={}",
-      pos,
-      len,
-      bytes.len()
-    );
-    debug_assert!(
-      (0..=Self::LONG_BYTES).contains(&len),
-      "Invalid length: len={} (must be <= {})",
-      len,
-      Self::LONG_BYTES
-    );
-
-    let value_le = value.to_le();
-
-    unsafe {
-      let value_ptr = &value_le as *const i64 as *const u8;
-      let dest_ptr = bytes.as_mut_ptr().add(pos);
-      ptr::copy_nonoverlapping(value_ptr, dest_ptr, len);
-    }
+    bytes[pos..][..len].copy_from_slice(&value.to_le_bytes()[..len]);
   }
 
   /// Returns the next highest power of two, or the current value if it's

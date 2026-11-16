@@ -43,7 +43,6 @@ use crate::core::index::knn_vector_values::{
   create_dense_iterator,
 };
 use crate::core::index::leaf_reader::LeafReader;
-use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
 use crate::core::index::stored_fields::StoredFields;
 use crate::core::index::term::Term;
 use crate::core::index::two_phase_commit::TwoPhaseCommit;

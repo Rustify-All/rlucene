@@ -19,7 +19,6 @@ use crate::core::index::filtered_terms_enum::{
 };
 use crate::core::index::terms_enum::TermsEnum;
 use crate::core::index::{BytesRef, BytesRefBuilder};
-use crate::core::util::SliceCopyOps;
 use crate::core::util::array_util::ArrayUtil;
 use crate::core::util::automation::compiled_automaton::{
   AutomatonEnum, AutomatonType, CompiledAutomaton,
@@ -169,8 +168,12 @@ impl AutomatonTermsEnum {
       ArrayUtil::grow_no_copy(&mut self.linear_upper_bound.bytes, length, || 0)?;
     }
 
-    self.linear_upper_bound.bytes[..position]
-      .copy_from(&self.seek_bytes_ref.bytes().bytes[0..position], 0);
+    let (copy_target, copy_source, copy_offset) = (
+      &mut (self.linear_upper_bound.bytes[..position])[..],
+      &self.seek_bytes_ref.bytes().bytes[0..position],
+      0,
+    );
+    copy_target[copy_offset..][..copy_source.len()].copy_from_slice(copy_source);
     self.linear_upper_bound.bytes[position] = max_interval;
     self.linear_upper_bound.length = length;
     self.linear = true;

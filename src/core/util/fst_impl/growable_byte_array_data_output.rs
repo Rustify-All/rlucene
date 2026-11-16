@@ -15,7 +15,6 @@
  * limitations under the License.
  */
 use crate::core::store::DataOutput;
-use crate::core::util::SliceCopyOps;
 use crate::core::util::accountable::Accountable;
 use crate::core::util::array_util::ArrayUtil;
 use crate::core::util::error::lucene_error::Result;
@@ -82,7 +81,8 @@ impl GrowableByteArrayDataOutput {
   /// Copies bytes from this store to a target buffer.
   pub fn write_to(&self, src_offset: usize, dest: &mut [u8], dest_offset: usize, len: usize) {
     debug_assert!(src_offset + len <= self.next_write);
-    dest.copy_from(&self.bytes[src_offset..(src_offset + len)], dest_offset);
+    let copy_source = &self.bytes[src_offset..(src_offset + len)];
+    dest[dest_offset..][..copy_source.len()].copy_from_slice(copy_source);
   }
 }
 
@@ -107,7 +107,8 @@ impl DataOutput for GrowableByteArrayDataOutput {
     }
     let start = offset;
     let end = start + length;
-    self.bytes.copy_from(&b[start..end], self.next_write);
+    let copy_source = &b[start..end];
+    self.bytes[self.next_write..][..copy_source.len()].copy_from_slice(copy_source);
     self.next_write += length;
     Ok(())
   }

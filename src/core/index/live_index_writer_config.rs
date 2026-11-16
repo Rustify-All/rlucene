@@ -37,10 +37,11 @@ use crate::core::store::directory::Directory;
 use crate::core::util::LATEST;
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::info_stream::{InfoStreamMT, get_default_info_stream};
+use parking_lot::{MappedRwLockWriteGuard, RwLock};
 use std::collections::HashSet;
-use std::fmt::Display;
+use std::fmt::{Display, Formatter};
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicI64, AtomicU64, Ordering};
 
 use crate::core::index::segment_reader::DefaultLeafReader;
 use crate::core::util::comparator::Comparator;
@@ -64,6 +65,9 @@ pub trait LiveIndexWriterConfig: Display {
   fn get_index_sort(&self) -> Option<&Arc<Sort>>;
   /// Returns the field names involved in the index sort.
   fn get_index_sort_fields(&self) -> &HashSet<String>;
+
+  /// Returns the comparator used to order leaf readers.
+  fn get_leaf_sorter(&self) -> Option<&LeafSorter<Self::Directory>>;
   /// Returns `true` iff newly written segments are packed in a compound file.
   ///
   /// The default is `true`.
@@ -79,9 +83,15 @@ pub trait LiveIndexWriterConfig: Display {
   fn get_parent_field(&self) -> Option<&String>;
 
   /// Returns the current [`MergePolicyEnum`] in use by this writer.
-  fn get_merge_policy(&self) -> &MergePolicyEnum<Self::Directory>;
+  ///
+  /// The returned handle keeps that policy alive if another thread replaces it.
+  /// The configuration lock is released before the policy is used.
+  fn get_merge_policy(&self) -> Arc<MergePolicyEnum<Self::Directory>>;
   /// Returns mutable access to the current [`MergePolicyEnum`].
-  fn get_merge_policy_mut(&mut self) -> &mut MergePolicyEnum<Self::Directory>;
+  ///
+  /// If a reader retains the old policy, mutation uses a private clone. Release
+  /// this guard before calling writer operations that read the merge policy.
+  fn get_merge_policy_mut(&self) -> MappedRwLockWriteGuard<'_, MergePolicyEnum<Self::Directory>>;
 
   /// Returns the configured flushing behavior. The default is
   /// [`FlushByRamOrCountsPolicy`].
@@ -132,7 +142,7 @@ pub trait LiveIndexWriterConfig: Display {
   fn get_index_writer_event_listener(&self) -> &IndexWriterEventListenerEnum;
 
   /// Returns the current merged segment warmer.
-  fn get_merged_segment_warmer(&self) -> Option<&IndexReaderWarmerEnum<Self::Directory>>;
+  fn get_merged_segment_warmer(&self) -> Option<Arc<IndexReaderWarmerEnum<Self::Directory>>>;
 
   /// Returns `true` if [`IndexWriter::close`](crate::core::index::index_writer::IndexWriter::close) should first commit before closing.
   fn get_commit_on_close(&self) -> bool;
@@ -182,10 +192,7 @@ pub trait LiveIndexWriterConfig: Display {
   ///
   /// Takes effect immediately, but only the next time a document is added,
   /// updated, or deleted.
-  fn set_ram_buffer_size_mb(&mut self, ram_buffer_size_mb: f64) -> &mut Self {
-    self.get_base_mut().ram_buffer_size_mb = ram_buffer_size_mb;
-    self
-  }
+  fn set_ram_buffer_size_mb(&self, ram_buffer_size_mb: f64) -> &Self;
 
   /// Determines the minimal number of documents required before buffered
   /// in-memory documents are flushed as a new segment.
@@ -200,10 +207,7 @@ pub trait LiveIndexWriterConfig: Display {
   ///
   /// Takes effect immediately, but only the next time a document is added,
   /// updated, or deleted.
-  fn set_max_buffered_docs(&mut self, max_buffered_docs: i32) -> &mut Self {
-    self.get_base_mut().max_buffered_docs = max_buffered_docs;
-    self
-  }
+  fn set_max_buffered_docs(&self, max_buffered_docs: i32) -> &Self;
 
   /// Sets whether the [`IndexWriter`](crate::core::index::index_writer::IndexWriter) should pack newly written segments in a
   /// compound file.
@@ -214,10 +218,7 @@ pub trait LiveIndexWriterConfig: Display {
   /// NOTE: To control compound file usage during segment merges, use the
   /// corresponding merge policy settings. This setting only applies to newly
   /// created segments.
-  fn set_use_compound_file(&mut self, use_compound_file: bool) -> &mut Self {
-    self.get_base_mut().use_compound_file = use_compound_file;
-    self
-  }
+  fn set_use_compound_file(&self, use_compound_file: bool) -> &Self;
 
   /// Expert: sets the [`MergePolicyEnum`] used whenever there are changes to
   /// the segments in the index.
@@ -227,14 +228,9 @@ pub trait LiveIndexWriterConfig: Display {
   ///
   /// Takes effect on subsequent merge selections. Any merges in flight or
   /// already registered by the previous merge policy are not affected.
-  fn set_merge_policy<T>(&mut self, merge_policy: T) -> &mut Self
+  fn set_merge_policy<T>(&self, merge_policy: T) -> &Self
   where
-    T: Into<MergePolicyEnum<Self::Directory>>,
-  {
-    let v = merge_policy.into();
-    self.get_base_mut().merge_policy = v;
-    self
-  }
+    T: Into<MergePolicyEnum<Self::Directory>>;
 
   /// Sets the flushing behavior. The default is [`FlushByRamOrCountsPolicy`].
   fn set_flush_policy<T>(&mut self, flush_policy: T) -> &mut Self
@@ -259,12 +255,9 @@ pub trait LiveIndexWriterConfig: Display {
   ///
   /// Takes effect on the next merge.
   fn set_merged_segment_warmer(
-    &mut self,
+    &self,
     merge_segment_warmer: Option<IndexReaderWarmerEnum<Self::Directory>>,
-  ) -> &mut Self {
-    self.get_base_mut().merged_segment_warmer = merge_segment_warmer;
-    self
-  }
+  ) -> &Self;
 }
 
 /// Leaf sorter for sorting leaf readers.
@@ -327,14 +320,14 @@ where
 {
   /// Default analyzer to use for indexing documents.
   pub analyzer: AnalyzerEnum,
-  /// RAM buffer size in MB for added documents and deletions before flushing.
-  pub ram_buffer_size_mb: f64,
+  /// RAM buffer size in MB, stored as atomic `f64::to_bits()` for live reads.
+  pub ram_buffer_size_mb: AtomicU64,
   /// Number of buffered added documents that triggers a flush.
-  pub max_buffered_docs: i32,
+  pub max_buffered_docs: AtomicI32,
   /// [`IndexDeletionPolicyEnum`] controlling when commit points are deleted.
   pub index_deletion_policy: IndexDeletionPolicyEnum<D>,
   /// True if newly written segment flushes should use compound file format.
-  pub use_compound_file: bool,
+  pub use_compound_file: AtomicBool,
   /// [`OpenMode`] that [`IndexWriter`](crate::core::index::index_writer::IndexWriter) is opened with.
   pub open_mode: OpenMode,
   /// [`Codecs`] implementation used to write new segments.
@@ -342,7 +335,7 @@ where
   /// [`InfoStreamMT`] for debugging messages.
   pub info_stream: InfoStreamMT,
   /// [`MergePolicyEnum`] for selecting merges.
-  pub merge_policy: MergePolicyEnum<D>,
+  pub merge_policy: RwLock<Arc<MergePolicyEnum<D>>>,
   /// Flushing behavior; the default is [`FlushByRamOrCountsPolicy`].
   pub flush_policy: Arc<FlushPolicyEnum>,
   /// True if readers should be pooled.
@@ -355,11 +348,11 @@ where
   /// Soft deletes field, or `None` if soft deletes are disabled.
   pub soft_deletes_field: Option<String>,
   /// Amount of time to wait for merges returned by full-flush merge selection.
-  pub max_full_flush_merge_wait_millis: i64,
+  pub max_full_flush_merge_wait_millis: AtomicI64,
   /// [`IndexWriterEventListenerEnum`] for recording key [`IndexWriter`](crate::core::index::index_writer::IndexWriter) events.
   pub event_listener: IndexWriterEventListenerEnum,
   /// Warmer called for newly merged segments before they are committed.
-  pub merged_segment_warmer: Option<IndexReaderWarmerEnum<D>>,
+  pub merged_segment_warmer: RwLock<Option<Arc<IndexReaderWarmerEnum<D>>>>,
   /// True if calls to [`IndexWriter::close`](crate::core::index::index_writer::IndexWriter::close) should first do a commit.
   pub commit_on_close: bool,
   /// True if an indexing thread should check for pending flushes on update in
@@ -385,22 +378,24 @@ where
     T: Into<AnalyzerEnum>,
   {
     Ok(Self {
-      ram_buffer_size_mb: DEFAULT_RAM_BUFFER_SIZE_MB,
-      max_buffered_docs: DEFAULT_MAX_BUFFERED_DOCS,
+      ram_buffer_size_mb: AtomicU64::new(DEFAULT_RAM_BUFFER_SIZE_MB.to_bits()),
+      max_buffered_docs: AtomicI32::new(DEFAULT_MAX_BUFFERED_DOCS),
       index_deletion_policy: KeepOnlyLastCommitDeletionPolicy.into(),
-      use_compound_file: DEFAULT_USE_COMPOUND_FILE_SYSTEM,
+      use_compound_file: AtomicBool::new(DEFAULT_USE_COMPOUND_FILE_SYSTEM),
       open_mode: OpenMode::CreateOrAppend,
       codec: codec::get_default(),
       info_stream: get_default_info_stream(),
-      merge_policy: MergePolicyEnum::Tiered(TieredMergePolicy::default()),
+      merge_policy: RwLock::new(Arc::new(MergePolicyEnum::Tiered(
+        TieredMergePolicy::default(),
+      ))),
       flush_policy: Arc::new(FlushByRamOrCountsPolicy::new().into()),
       reader_pooling: DEFAULT_READER_POOLING,
       per_thread_hard_limit_mb: DEFAULT_RAM_PER_THREAD_HARD_LIMIT_MB,
       created_version_major: LATEST.major,
       soft_deletes_field: None,
-      max_full_flush_merge_wait_millis: DEFAULT_MAX_FULL_FLUSH_MERGE_WAIT_MILLIS,
+      max_full_flush_merge_wait_millis: AtomicI64::new(DEFAULT_MAX_FULL_FLUSH_MERGE_WAIT_MILLIS),
       event_listener: NoOpIndexWriterEventListener.into(),
-      merged_segment_warmer: None,
+      merged_segment_warmer: RwLock::new(None),
       commit_on_close: DEFAULT_COMMIT_ON_CLOSE,
       check_pending_flush_on_update: AtomicBool::new(true),
       parent_field: None,
@@ -417,5 +412,172 @@ where
 
   pub fn get_flush_policy(&self) -> &FlushPolicyEnum {
     &self.flush_policy
+  }
+}
+
+impl<D: Directory> Display for LiveIndexWriterConfigBase<D> {
+  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    write!(
+      f,
+      "{}",
+      std::any::type_name::<crate::core::index::index_writer_config::IndexWriterConfig<D>>()
+    )
+  }
+}
+
+impl<D> LiveIndexWriterConfig for LiveIndexWriterConfigBase<D>
+where
+  D: Directory,
+{
+  type Directory = D;
+
+  fn get_analyzer(&self) -> &AnalyzerEnum {
+    &self.analyzer
+  }
+
+  fn get_merge_scheduler(&self) -> &MergeSchedulerEnum {
+    &self.merge_scheduler
+  }
+
+  fn get_codec(&self) -> &Codecs {
+    &self.codec
+  }
+
+  fn get_index_sort(&self) -> Option<&Arc<Sort>> {
+    self.index_sort.as_ref()
+  }
+
+  fn get_index_sort_fields(&self) -> &HashSet<String> {
+    &self.index_sort_fields
+  }
+
+  fn get_leaf_sorter(&self) -> Option<&LeafSorter<D>> {
+    self.leaf_sorter.as_ref()
+  }
+
+  fn get_use_compound_file(&self) -> bool {
+    self.use_compound_file.load(Ordering::SeqCst)
+  }
+
+  fn get_soft_deletes_field(&self) -> Option<&String> {
+    self.soft_deletes_field.as_ref()
+  }
+
+  fn get_info_stream(&self) -> InfoStreamMT {
+    self.info_stream.clone()
+  }
+
+  fn get_parent_field(&self) -> Option<&String> {
+    self.parent_field.as_ref()
+  }
+
+  fn get_merge_policy(&self) -> Arc<MergePolicyEnum<D>> {
+    Arc::clone(&self.merge_policy.read())
+  }
+  fn get_merge_policy_mut(&self) -> parking_lot::MappedRwLockWriteGuard<'_, MergePolicyEnum<D>> {
+    parking_lot::RwLockWriteGuard::map(self.merge_policy.write(), Arc::make_mut)
+  }
+
+  fn set_merge_policy<T>(&self, merge_policy: T) -> &Self
+  where
+    T: Into<MergePolicyEnum<D>>,
+  {
+    let merge_policy = Arc::new(merge_policy.into());
+    let previous = std::mem::replace(&mut *self.merge_policy.write(), merge_policy);
+    drop(previous);
+    self
+  }
+  fn get_flush_policy(&self) -> &FlushPolicyEnum {
+    &self.flush_policy
+  }
+
+  fn get_ram_buffer_size_mb(&self) -> f64 {
+    f64::from_bits(self.ram_buffer_size_mb.load(Ordering::SeqCst))
+  }
+
+  fn set_ram_buffer_size_mb(&self, ram_buffer_size_mb: f64) -> &Self {
+    self
+      .ram_buffer_size_mb
+      .store(ram_buffer_size_mb.to_bits(), Ordering::SeqCst);
+    self
+  }
+
+  fn get_ram_per_thread_hard_limit_mb(&self) -> i32 {
+    self.per_thread_hard_limit_mb
+  }
+
+  fn get_max_buffered_docs(&self) -> i32 {
+    self.max_buffered_docs.load(Ordering::SeqCst)
+  }
+
+  fn set_max_buffered_docs(&self, max_buffered_docs: i32) -> &Self {
+    self
+      .max_buffered_docs
+      .store(max_buffered_docs, Ordering::SeqCst);
+    self
+  }
+
+  fn set_use_compound_file(&self, use_compound_file: bool) -> &Self {
+    self
+      .use_compound_file
+      .store(use_compound_file, Ordering::SeqCst);
+    self
+  }
+
+  fn get_check_pending_flush_on_update(&self) -> bool {
+    self.check_pending_flush_on_update.load(Ordering::SeqCst)
+  }
+
+  fn set_check_pending_flush_update(&self, check_pending_flush_on_update: bool) -> &Self {
+    self
+      .check_pending_flush_on_update
+      .store(check_pending_flush_on_update, Ordering::SeqCst);
+    self
+  }
+
+  fn get_index_deletion_policy(&self) -> &IndexDeletionPolicyEnum<D> {
+    &self.index_deletion_policy
+  }
+
+  fn get_max_full_flush_merge_wait_millis(&self) -> i64 {
+    self.max_full_flush_merge_wait_millis.load(Ordering::SeqCst)
+  }
+
+  fn get_index_writer_event_listener(&self) -> &IndexWriterEventListenerEnum {
+    &self.event_listener
+  }
+
+  fn get_merged_segment_warmer(&self) -> Option<Arc<IndexReaderWarmerEnum<D>>> {
+    self.merged_segment_warmer.read().clone()
+  }
+
+  fn set_merged_segment_warmer(
+    &self,
+    merge_segment_warmer: Option<IndexReaderWarmerEnum<D>>,
+  ) -> &Self {
+    let warmer = merge_segment_warmer.map(Arc::new);
+    let previous = std::mem::replace(&mut *self.merged_segment_warmer.write(), warmer);
+    drop(previous);
+    self
+  }
+
+  fn get_commit_on_close(&self) -> bool {
+    self.commit_on_close
+  }
+
+  fn get_open_mode(&self) -> &OpenMode {
+    &self.open_mode
+  }
+
+  fn get_index_created_version_major(&self) -> i32 {
+    self.created_version_major
+  }
+
+  fn get_reader_pooling(&self) -> bool {
+    self.reader_pooling
+  }
+
+  fn get_base_mut(&mut self) -> &mut LiveIndexWriterConfigBase<D> {
+    self
   }
 }

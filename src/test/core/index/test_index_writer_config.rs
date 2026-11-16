@@ -64,7 +64,7 @@ fn test_defaults() -> Result<()> {
   assert_eq!(DEFAULT_READER_POOLING, conf.get_reader_pooling());
   assert!(conf.get_merged_segment_warmer().is_none());
   assert!(matches!(
-    conf.get_merge_policy(),
+    &*conf.get_merge_policy(),
     MergePolicyEnum::Tiered(_)
   ));
   assert!(matches!(
@@ -146,7 +146,7 @@ fn test_live_change_to_cfs() -> Result<()> {
     .set_no_cfs_ratio(0.0)?;
   let w = IndexWriter::new(dir.clone(), iwc)?;
   // Change to true:
-  w.get_config_mut().set_use_compound_file(true);
+  w.get_config()?.set_use_compound_file(true);
 
   let mut field_to_type = HashMap::<String, FieldType>::new();
   let mut doc = Document::new();
@@ -176,11 +176,12 @@ fn test_live_change_to_cfs() -> Result<()> {
   // no compound files after merge
   assert!(!w.newest_segment().unwrap().info.get_use_compound_file());
 
-  let lmp = w.get_config_mut().get_merge_policy_mut();
+  let mut lmp = w.get_config()?.get_merge_policy_mut();
   lmp.get_base_mut().set_no_cfs_ratio(1.0)?;
   lmp
     .get_base_mut()
     .set_max_cfs_segment_size_mb(f64::INFINITY)?;
+  drop(lmp);
 
   w.add_document(&mut doc)?;
   w.force_merge(1)?;

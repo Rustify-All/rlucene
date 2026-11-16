@@ -44,7 +44,7 @@ use crate::core::util::error::lucene_error::{CaughtResult, LuceneError, Result};
 use crate::core::util::fixed_bit_set::FixedBitSet;
 use crate::core::util::numeric_utils::NumericUtils;
 use crate::core::util::priority_queue::{Compare, PriorityQueue};
-use crate::core::util::{IOUtils, SliceCopyOps, ToInt, TryIntoInt};
+use crate::core::util::{IOUtils, ToInt, TryIntoInt};
 use std::sync::Arc;
 
 /// Recursively builds a block KD-tree to assign all incoming points in N-dim
@@ -262,8 +262,10 @@ where
     if self.point_count == 0 {
       self.init_point_writer()?;
       let length = self.config.packed_index_bytes_length();
-      self.min_packed_value.copy_from(&packed_value[..length], 0);
-      self.max_packed_value.copy_from(&packed_value[..length], 0);
+      let copy_source = &packed_value[..length];
+      self.min_packed_value[..copy_source.len()].copy_from_slice(copy_source);
+      let copy_source = &packed_value[..length];
+      self.max_packed_value[..copy_source.len()].copy_from_slice(copy_source);
     } else {
       let bytes_per_dim = self.config.bytes_per_dim;
       for dim in 0..self.config.num_index_dims {
@@ -273,17 +275,15 @@ where
           .compare(packed_value, offset, &self.min_packed_value, offset)
           < 0
         {
-          self
-            .min_packed_value
-            .copy_from(&packed_value[offset..offset + bytes_per_dim], offset);
+          let copy_source = &packed_value[offset..offset + bytes_per_dim];
+          self.min_packed_value[offset..][..copy_source.len()].copy_from_slice(copy_source);
         } else if self
           .comparator
           .compare(packed_value, offset, &self.max_packed_value, offset)
           > 0
         {
-          self
-            .max_packed_value
-            .copy_from(&packed_value[offset..offset + bytes_per_dim], offset);
+          let copy_source = &packed_value[offset..offset + bytes_per_dim];
+          self.max_packed_value[offset..][..copy_source.len()].copy_from_slice(copy_source);
         }
       }
     }
@@ -337,14 +337,12 @@ where
       return Ok(());
     }
     let value = values.get_value(from, &mut self.scratch_bytes_ref1)?;
-    min_packed_value.copy_from(
-      &value.bytes[value.offset..value.offset + self.config.packed_index_bytes_length()],
-      0,
-    );
-    max_packed_value.copy_from(
-      &value.bytes[value.offset..value.offset + self.config.packed_index_bytes_length()],
-      0,
-    );
+    let copy_source =
+      &value.bytes[value.offset..value.offset + self.config.packed_index_bytes_length()];
+    min_packed_value[..copy_source.len()].copy_from_slice(copy_source);
+    let copy_source =
+      &value.bytes[value.offset..value.offset + self.config.packed_index_bytes_length()];
+    max_packed_value[..copy_source.len()].copy_from_slice(copy_source);
 
     let comparator = BKDBytes::<B>::new(self.config.bytes_per_dim);
     if B == 4 && to <= from + 1 {
@@ -399,10 +397,8 @@ where
             0,
           ) < 0
           {
-            min_packed_value.copy_from(
-              &value.bytes[offset + start_offset..offset + end_offset],
-              start_offset,
-            );
+            let copy_source = &value.bytes[offset + start_offset..offset + end_offset];
+            min_packed_value[start_offset..][..copy_source.len()].copy_from_slice(copy_source);
           } else if comparator.compare(
             &value.bytes[offset + start_offset..offset + end_offset],
             0,
@@ -410,10 +406,8 @@ where
             0,
           ) > 0
           {
-            max_packed_value.copy_from(
-              &value.bytes[offset + start_offset..offset + end_offset],
-              start_offset,
-            );
+            let copy_source = &value.bytes[offset + start_offset..offset + end_offset];
+            max_packed_value[start_offset..][..copy_source.len()].copy_from_slice(copy_source);
           }
         }
       }
@@ -434,10 +428,8 @@ where
           0,
         ) < 0
         {
-          min_packed_value.copy_from(
-            &value.bytes[offset + start_offset..offset + end_offset],
-            start_offset,
-          );
+          let copy_source = &value.bytes[offset + start_offset..offset + end_offset];
+          min_packed_value[start_offset..][..copy_source.len()].copy_from_slice(copy_source);
         } else if comparator.compare(
           &value.bytes[offset + start_offset..offset + end_offset],
           0,
@@ -445,10 +437,8 @@ where
           0,
         ) > 0
         {
-          max_packed_value.copy_from(
-            &value.bytes[offset + start_offset..offset + end_offset],
-            start_offset,
-          );
+          let copy_source = &value.bytes[offset + start_offset..offset + end_offset];
+          max_packed_value[start_offset..][..copy_source.len()].copy_from_slice(copy_source);
         }
       }
     }
@@ -1045,17 +1035,15 @@ where
       #[cfg(debug_assertions)]
       let cmp = last_split_values.to_vec();
       let last_split_values_start = split_dim * self.config.bytes_per_dim + prefix;
-      sav_split_value.copy_from(
-        &last_split_values[last_split_values_start..last_split_values_start + suffix],
-        0,
-      );
+      let copy_source =
+        &last_split_values[last_split_values_start..last_split_values_start + suffix];
+      sav_split_value[..copy_source.len()].copy_from_slice(copy_source);
       // copy our split value into lastSplitValues for our children to
       // prefix-code against
       let split_bytes_start = address + prefix;
-      last_split_values.copy_from(
-        &split_bytes[split_bytes_start..split_bytes_start + suffix],
-        last_split_values_start,
-      );
+      let copy_source = &split_bytes[split_bytes_start..split_bytes_start + suffix];
+      last_split_values[last_split_values_start..][..copy_source.len()]
+        .copy_from_slice(copy_source);
 
       let num_bytes = self.append_block(write_buffer, blocks);
 
@@ -1111,7 +1099,8 @@ where
       negative_deltas[split_dim] = sav_negative_delta;
 
       let start = split_dim * self.config.bytes_per_dim + prefix;
-      last_split_values.copy_from(&sav_split_value[..suffix], start);
+      let copy_source = &sav_split_value[..suffix];
+      last_split_values[start..][..copy_source.len()].copy_from_slice(copy_source);
 
       #[cfg(debug_assertions)]
       debug_assert!(last_split_values == &cmp[..]);
@@ -1305,10 +1294,8 @@ where
     let value = packed_values.get_value(0)?;
     let bytes_ref = value.bytes;
     let offset = value.offset;
-    self.scratch.copy_from(
-      &bytes_ref[offset..(offset + self.config.packed_bytes_length())],
-      0,
-    );
+    let copy_source = &bytes_ref[offset..(offset + self.config.packed_bytes_length())];
+    self.scratch[..copy_source.len()].copy_from_slice(copy_source);
 
     let mut cardinality = 1;
     for i in 1..count {
@@ -1329,10 +1316,8 @@ where
               self.config.bytes_per_dim - self.common_prefix_lengths[j],
             )?;
           }
-          self.scratch.copy_from(
-            &bytes_ref[offset..(offset + self.config.packed_bytes_length())],
-            0,
-          );
+          let copy_source = &bytes_ref[offset..(offset + self.config.packed_bytes_length())];
+          self.scratch[..copy_source.len()].copy_from_slice(copy_source);
           cardinality = 1;
           break;
         } else if dim == self.config.num_dims - 1 {
@@ -1638,9 +1623,8 @@ where
           .compare(&self.scratch_diff, 0, &self.scratch, 0)
           > 0
       {
-        self
-          .scratch
-          .copy_from(&self.scratch_diff[0..self.config.bytes_per_dim], 0);
+        let copy_source = &self.scratch_diff[0..self.config.bytes_per_dim];
+        self.scratch[..copy_source.len()].copy_from_slice(copy_source);
         split_dim = Some(dim);
       }
     }
@@ -1970,10 +1954,8 @@ where
       split_dimension_values[split_offset] = split_dim as u8;
       let value = reader.get_value(mid, &mut self.scratch_bytes_ref1)?;
       let start = value.offset + (split_dim * self.config.bytes_per_dim);
-      split_packed_values.copy_from(
-        &value.bytes[start..start + self.config.bytes_per_dim],
-        address,
-      );
+      let copy_source = &value.bytes[start..start + self.config.bytes_per_dim];
+      split_packed_values[address..][..copy_source.len()].copy_from_slice(copy_source);
 
       let mut min_split_packed_value = smallvec::SmallVec::from_slice(
         &self.min_packed_value[..self.config.packed_index_bytes_length()],
@@ -1985,8 +1967,10 @@ where
       let start = value.offset + (split_dim * self.config.bytes_per_dim);
       let end = start + self.config.bytes_per_dim;
       let offset = split_dim * self.config.bytes_per_dim;
-      min_split_packed_value.copy_from(&value.bytes[start..end], offset);
-      max_split_packed_value.copy_from(&value.bytes[start..end], offset);
+      let copy_source = &value.bytes[start..end];
+      min_split_packed_value[offset..][..copy_source.len()].copy_from_slice(copy_source);
+      let copy_source = &value.bytes[start..end];
+      max_split_packed_value[offset..][..copy_source.len()].copy_from_slice(copy_source);
       // recurse
       parent_splits[split_dim] += 1;
       self.build_with_reader(
@@ -2039,14 +2023,10 @@ where
       let value = point_value.packed_value();
       let offset = value.offset;
       let value = value.bytes;
-      min_packed_value.copy_from(
-        &value[offset..(offset + self.config.packed_index_bytes_length())],
-        0,
-      );
-      max_packed_value.copy_from(
-        &value[offset..(offset + self.config.packed_index_bytes_length())],
-        0,
-      );
+      let copy_source = &value[offset..(offset + self.config.packed_index_bytes_length())];
+      min_packed_value[..copy_source.len()].copy_from_slice(copy_source);
+      let copy_source = &value[offset..(offset + self.config.packed_index_bytes_length())];
+      max_packed_value[..copy_source.len()].copy_from_slice(copy_source);
     }
 
     while reader.next()? {
@@ -2061,10 +2041,9 @@ where
           .compare(value, offset + start_offset, min_packed_value, start_offset)
           < 0
         {
-          min_packed_value.copy_from(
-            &value[offset + start_offset..offset + start_offset + self.config.bytes_per_dim],
-            start_offset,
-          );
+          let copy_source =
+            &value[offset + start_offset..offset + start_offset + self.config.bytes_per_dim];
+          min_packed_value[start_offset..][..copy_source.len()].copy_from_slice(copy_source);
         } else if self.comparator.compare(
           value,
           offset + start_offset,
@@ -2072,10 +2051,9 @@ where
           start_offset,
         ) > 0
         {
-          max_packed_value.copy_from(
-            &value[offset + start_offset..offset + start_offset + self.config.bytes_per_dim],
-            start_offset,
-          );
+          let copy_source =
+            &value[offset + start_offset..offset + start_offset + self.config.bytes_per_dim];
+          max_packed_value[start_offset..][..copy_source.len()].copy_from_slice(copy_source);
         }
       }
     }
@@ -2280,10 +2258,8 @@ where
 
       split_dimension_values[split_value_offset] = split_dim as u8;
       let address = split_value_offset * self.config.bytes_per_dim;
-      split_packed_values.copy_from(
-        &select_slice.partition[0..self.config.bytes_per_dim],
-        address,
-      );
+      let copy_source = &select_slice.partition[0..self.config.bytes_per_dim];
+      split_packed_values[address..][..copy_source.len()].copy_from_slice(copy_source);
 
       let bounds_len = self.config.packed_index_bytes_length();
       let mut min_split_packed_value =
@@ -2292,10 +2268,10 @@ where
         smallvec::SmallVec::<[u8; 32]>::from_slice(&max_packed_value[..bounds_len]);
 
       let start = split_dim * self.config.bytes_per_dim;
-      min_split_packed_value
-        .copy_from(&select_slice.partition[0..self.config.bytes_per_dim], start);
-      max_split_packed_value
-        .copy_from(&select_slice.partition[0..self.config.bytes_per_dim], start);
+      let copy_source = &select_slice.partition[0..self.config.bytes_per_dim];
+      min_split_packed_value[start..][..copy_source.len()].copy_from_slice(copy_source);
+      let copy_source = &select_slice.partition[0..self.config.bytes_per_dim];
+      max_split_packed_value[start..][..copy_source.len()].copy_from_slice(copy_source);
 
       parent_splits[split_dim] += 1;
       let mut left_slice = match select_slice.left_writer {
@@ -2366,10 +2342,8 @@ where
       for dim in 0..self.config.num_dims {
         let src_offset = offset + dim * self.config.bytes_per_dim;
         let dst_offset = dim * self.config.bytes_per_dim;
-        self.scratch.copy_from(
-          &bytes[src_offset..src_offset + self.config.bytes_per_dim],
-          dst_offset,
-        );
+        let copy_source = &bytes[src_offset..src_offset + self.config.bytes_per_dim];
+        self.scratch[dst_offset..][..copy_source.len()].copy_from_slice(copy_source);
       }
     }
 
@@ -2598,16 +2572,12 @@ where
     debug_assert!(self.leaf_count != 0);
     let packed_index_bytes_length = self.bkd_writer.config.packed_index_bytes_length();
     if self.value_count == 0 {
-      self
-        .bkd_writer
-        .min_packed_value
-        .copy_from(&self.leaf_values[0..packed_index_bytes_length], 0);
+      let copy_source = &self.leaf_values[0..packed_index_bytes_length];
+      self.bkd_writer.min_packed_value[..copy_source.len()].copy_from_slice(copy_source);
     }
     let start = (self.leaf_count - 1) * packed_index_bytes_length;
-    self.bkd_writer.max_packed_value.copy_from(
-      &self.leaf_values[start..start + packed_index_bytes_length],
-      0,
-    );
+    let copy_source = &self.leaf_values[start..start + packed_index_bytes_length];
+    self.bkd_writer.max_packed_value[..copy_source.len()].copy_from_slice(copy_source);
     self.value_count += self.leaf_count as i64;
 
     if !self.leaf_block_fps.is_empty() {
@@ -2793,10 +2763,9 @@ fn value_in_order(
       );
     }
   }
-  last_packed_value.copy_from(
-    &packed_value[packed_value_offset..(packed_value_offset + config.packed_bytes_length())],
-    0,
-  );
+  let copy_source =
+    &packed_value[packed_value_offset..(packed_value_offset + config.packed_bytes_length())];
+  last_packed_value[..copy_source.len()].copy_from_slice(copy_source);
   true
 }
 
@@ -2953,10 +2922,9 @@ impl IntersectVisitor for MergeIntersectsVisitor {
   }
 
   fn visit_with_packed_value(&mut self, doc_id: i32, packed_value: &[u8]) -> Result<()> {
-    self.packed_values.copy_from(
-      &packed_value[..self.packed_bytes_length],
-      self.docs_in_block * self.packed_bytes_length,
-    );
+    let copy_source = &packed_value[..self.packed_bytes_length];
+    self.packed_values[self.docs_in_block * self.packed_bytes_length..][..copy_source.len()]
+      .copy_from_slice(copy_source);
     self.doc_ids[self.docs_in_block] = doc_id;
     self.docs_in_block += 1;
     Ok(())

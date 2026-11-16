@@ -55,7 +55,7 @@ fn test() -> Result<()> {
   let max_terms_per_doc = TestUtil::next_int(&mut random, 10, 20);
   let analyzer = MockAnalyzer::new(&mut random);
   let iwc = new_index_writer_config_with_analyzer(&mut random, analyzer)?;
-  if matches!(iwc.get_merge_policy(), MergePolicyEnum::MockRandom(_))
+  if matches!(&*iwc.get_merge_policy(), MergePolicyEnum::MockRandom(_))
     && (is_night_mode() || random_multiplier() > 1)
   {
     // Otherwise test can take way too long (> 2 hours).

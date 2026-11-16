@@ -15,7 +15,6 @@
  * limitations under the License.
  */
 use crate::core::store::Checksum;
-use crate::core::util::SliceCopyOps;
 
 /// Wraps another [`Checksum`] with an internal buffer to speed up checksum
 /// calculations.
@@ -135,7 +134,7 @@ impl<T: Checksum> Checksum for BufferedChecksum<T> {
       let bytes = &bytes[offset..offset + len];
       if !bytes.is_empty() {
         self.ensure_buffer();
-        self.buffer.copy_from(bytes, self.upto);
+        self.buffer[self.upto..][..bytes.len()].copy_from_slice(bytes);
       }
       self.upto += len;
     }

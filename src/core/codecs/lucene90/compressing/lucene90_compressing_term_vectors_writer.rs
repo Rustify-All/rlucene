@@ -49,7 +49,7 @@ use crate::core::util::packed::block_packed_writer::BlockPackedWriter;
 use crate::core::util::packed::direct_writer::{DirectWriter, bits_required};
 use crate::core::util::packed::{PackedImpl, PackedInts, Writer};
 use crate::core::util::ram_usage_estimator::size_of_vec;
-use crate::core::util::{SliceCopyOps, StringHelper, TryIntoInt};
+use crate::core::util::{StringHelper, TryIntoInt};
 use std::sync::LazyLock;
 
 pub(crate) static FLAGS_BITS: LazyLock<i32> = LazyLock::new(|| {
@@ -1131,10 +1131,8 @@ where
 
     self.last_term.offset = 0;
     self.last_term.length = term.length;
-    self.last_term.bytes.copy_from(
-      &term.bytes[term.offset + copy_from..term.offset + term.length],
-      copy_from,
-    );
+    let copy_source = &term.bytes[term.offset + copy_from..term.offset + term.length];
+    self.last_term.bytes[copy_from..][..copy_source.len()].copy_from_slice(copy_source);
 
     Ok(())
   }

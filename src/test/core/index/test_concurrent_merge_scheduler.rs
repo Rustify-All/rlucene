@@ -351,7 +351,7 @@ fn test_no_wait_close() -> Result<()> {
 
     // Force a bunch of merge threads to kick off so we
     // stress out aborting them on close:
-    match writer.get_config_mut().get_merge_policy_mut() {
+    match &mut *writer.get_config()?.get_merge_policy_mut() {
       crate::core::index::merge_policy::MergePolicyEnum::LogDoc(mp) => mp.set_merge_factor(3)?,
       crate::core::index::merge_policy::MergePolicyEnum::LogBytesSize(mp) => {
         mp.set_merge_factor(3)?

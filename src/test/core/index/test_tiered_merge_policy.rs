@@ -340,11 +340,13 @@ fn test_force_merge_deletes() -> Result<()> {
     println!("\nTEST: forceMergeDeletes2");
   }
 
-  let mp = match w.get_config_mut().get_merge_policy_mut() {
+  let mut policy = w.get_config()?.get_merge_policy_mut();
+  let mp = match &mut *policy {
     MergePolicyEnum::Tiered(t) => t,
     _ => unreachable!(""),
   };
   mp.set_force_merge_deletes_pct_allowed(10.0)?;
+  drop(policy);
 
   w.force_merge_deletes()?;
 
@@ -1136,11 +1138,13 @@ fn test_unbalanced_merge_selection() -> Result<()> {
   let mut iwc = IndexWriterConfig::with_analyzer(analyzer)?;
   iwc.set_codec(TestUtil::get_default_codec());
 
-  let tmp = match iwc.get_merge_policy_mut() {
+  let mut policy = iwc.get_merge_policy_mut();
+  let tmp = match &mut *policy {
     MergePolicyEnum::Tiered(t) => t,
     _ => unreachable!(),
   };
   tmp.set_floor_segment_mb(0.00001)?;
+  drop(policy);
 
   iwc.set_merge_scheduler(SerialMergeScheduler::new());
   iwc.set_max_buffered_docs(100);

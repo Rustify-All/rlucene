@@ -17,7 +17,7 @@
 
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::{
-  BINARY_SORT_THRESHOLD, HISTOGRAM_SIZE, MSBRadixSorterBase, SliceCopyOps, Sorter, check_range,
+  BINARY_SORT_THRESHOLD, HISTOGRAM_SIZE, MSBRadixSorterBase, Sorter, check_range,
 };
 
 pub struct StableMSBRadixSorter<T> {
@@ -87,7 +87,7 @@ where
     k: usize,
   ) -> Result<()> {
     // Copy start_offsets to fixed_start_offsets
-    self.fixed_start_offsets.copy_from(start_offsets, 0);
+    self.fixed_start_offsets[..start_offsets.len()].copy_from_slice(start_offsets);
 
     for (i, &limit) in end_offsets.iter().enumerate().take(HISTOGRAM_SIZE) {
       let mut h1 = self.fixed_start_offsets[i];

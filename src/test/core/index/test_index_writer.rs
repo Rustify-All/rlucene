@@ -362,9 +362,9 @@ fn test_changing_ram_buffer() -> Result<()> {
     dir.clone(),
     new_index_writer_config_with_analyzer(&mut random, mock)?,
   )?;
-  writer.get_config_mut().set_max_buffered_docs(10);
+  writer.get_config()?.set_max_buffered_docs(10);
   writer
-    .get_config_mut()
+    .get_config()?
     .set_ram_buffer_size_mb(DISABLE_AUTO_FLUSH as f64);
   let mut field_types = HashMap::new();
 
@@ -389,40 +389,40 @@ fn test_changing_ram_buffer() -> Result<()> {
     } else if j == 10 {
       assert!(flush_count > last_flush_count);
       last_flush_count = flush_count;
-      writer.get_config_mut().set_ram_buffer_size_mb(0.000001);
+      writer.get_config()?.set_ram_buffer_size_mb(0.000001);
       writer
-        .get_config_mut()
+        .get_config()?
         .set_max_buffered_docs(DISABLE_AUTO_FLUSH);
     } else if j < 20 {
       assert!(flush_count > last_flush_count);
       last_flush_count = flush_count;
     } else if j == 20 {
-      writer.get_config_mut().set_ram_buffer_size_mb(16.0);
+      writer.get_config()?.set_ram_buffer_size_mb(16.0);
       writer
-        .get_config_mut()
+        .get_config()?
         .set_max_buffered_docs(DISABLE_AUTO_FLUSH);
       last_flush_count = flush_count;
     } else if j < 30 {
       assert_eq!(flush_count, last_flush_count);
     } else if j == 30 {
-      writer.get_config_mut().set_ram_buffer_size_mb(0.000001);
+      writer.get_config()?.set_ram_buffer_size_mb(0.000001);
       writer
-        .get_config_mut()
+        .get_config()?
         .set_max_buffered_docs(DISABLE_AUTO_FLUSH);
     } else if j < 40 {
       assert!(flush_count > last_flush_count);
       last_flush_count = flush_count;
     } else if j == 40 {
-      writer.get_config_mut().set_max_buffered_docs(10);
+      writer.get_config()?.set_max_buffered_docs(10);
       writer
-        .get_config_mut()
+        .get_config()?
         .set_ram_buffer_size_mb(DISABLE_AUTO_FLUSH as f64);
       last_flush_count = flush_count;
     } else if j < 50 {
       assert_eq!(flush_count, last_flush_count);
-      writer.get_config_mut().set_max_buffered_docs(10);
+      writer.get_config()?.set_max_buffered_docs(10);
       writer
-        .get_config_mut()
+        .get_config()?
         .set_ram_buffer_size_mb(DISABLE_AUTO_FLUSH as f64);
     } else if j == 50 {
       assert!(flush_count > last_flush_count);
@@ -3687,13 +3687,13 @@ fn test_never_check_out_on_full_flush() -> Result<()> {
     let guard = w.doc_writer.guard.lock();
     w.doc_writer
       .flush_control
-      .mark_for_full_flush(&w.doc_writer, &guard, &w.config)?;
+      .mark_for_full_flush(&w.doc_writer, &guard, &w.config.base)?;
   }
 
   let documents_writer_per_thread = w
     .doc_writer
     .flush_control
-    .checkout_largest_non_pending_writer(&w.config)?;
+    .checkout_largest_non_pending_writer(&w.config.base)?;
 
   assert!(documents_writer_per_thread.is_none());
   assert_eq!(
@@ -3703,12 +3703,12 @@ fn test_never_check_out_on_full_flush() -> Result<()> {
 
   w.doc_writer
     .flush_control
-    .abort_full_flushes(&w.doc_writer, &w.config)?;
+    .abort_full_flushes(&w.doc_writer, &w.config.base)?;
 
   assert!(
     w.doc_writer
       .flush_control
-      .checkout_largest_non_pending_writer(&w.config)?
+      .checkout_largest_non_pending_writer(&w.config.base)?
       .is_none(),
     "was aborted"
   );
@@ -4197,7 +4197,7 @@ fn soft_updates_concurrently(mix_deletes: bool) -> Result<()> {
   index_writer_config.set_soft_deletes_field("soft_delete");
   let merge_away_soft_deletes = Arc::new(AtomicBool::new(random.random_bool(0.5)));
   if !mix_deletes {
-    let merge_policy = index_writer_config.get_merge_policy().clone();
+    let merge_policy = index_writer_config.get_merge_policy().as_ref().clone();
     index_writer_config.set_merge_policy(SoftUpdatesConcurrentlyMergePolicy::new(
       OneMergeWrappingMergePolicy::new(
         merge_policy,
@@ -5056,12 +5056,12 @@ fn test_flush_while_starting_new_threads() -> Result<()> {
       let guard = w.doc_writer.guard.lock();
       w.doc_writer
         .flush_control
-        .mark_for_full_flush(&w.doc_writer, &guard, &w.config)?;
+        .mark_for_full_flush(&w.doc_writer, &guard, &w.config.base)?;
     }
     thread.join().expect("thread panicked")?;
     w.doc_writer
       .flush_control
-      .abort_full_flushes(&w.doc_writer, &w.config)?;
+      .abort_full_flushes(&w.doc_writer, &w.config.base)?;
 
     Ok(())
   })?;

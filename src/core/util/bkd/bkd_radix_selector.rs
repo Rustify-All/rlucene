@@ -32,7 +32,7 @@ use crate::core::util::radix_selector::{RadixSelector, RadixSelectorBase};
 use crate::core::util::selector::Selector;
 use crate::core::util::{
   CoreHelper, IOUtils, IntroSelector, IntroSelectorBase, IntroSelectorBaseDefault, MSBRadixSorter,
-  MSBRadixSorterBase, SliceCopyOps, Sorter,
+  MSBRadixSorterBase, Sorter,
 };
 use std::sync::Arc;
 
@@ -297,15 +297,15 @@ impl<const N: usize> BKDRadixSelector<N> {
 
       let mut start = value.offset + offset;
       let mut end = start + self.config.bytes_per_dim;
-      self.scratch.copy_from(&value.bytes[start..end], 0);
+      let copy_source = &value.bytes[start..end];
+      self.scratch[..copy_source.len()].copy_from_slice(copy_source);
 
       start = value.offset + self.config.packed_index_bytes_length();
       end = start
         + ((self.config.num_dims - self.config.num_index_dims) * self.config.bytes_per_dim)
         + BitUtil::INT_BYTES;
-      self
-        .scratch
-        .copy_from(&value.bytes[start..end], self.config.bytes_per_dim);
+      let copy_source = &value.bytes[start..end];
+      self.scratch[self.config.bytes_per_dim..][..copy_source.len()].copy_from_slice(copy_source);
     }
     let mut histogram_index;
     for i in (from + 1)..to {

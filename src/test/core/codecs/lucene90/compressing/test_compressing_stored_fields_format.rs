@@ -415,7 +415,7 @@ mod compression_numeric_encoding_tests {
         assert_eq!(1, reader.get_num_dirty_chunks()?);
       }
     }
-    iw.get_config_mut()
+    iw.get_config()?
       .set_merge_policy(new_log_merge_policy(&mut random)?);
     iw.force_merge(1)?;
     // Add a single doc and merge again.

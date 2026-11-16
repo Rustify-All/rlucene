@@ -245,7 +245,7 @@ where
     if !self.maybe_flush(writer)? {
       if let Some(dwpt) = self
         .flush_control
-        .checkout_largest_non_pending_writer(&writer.config)?
+        .checkout_largest_non_pending_writer(&writer.config.base)?
       {
         self.do_flush(dwpt, writer)?;
         return Ok(true);
@@ -507,7 +507,7 @@ where
     let dwpt_wrapper = self.flush_control.obtain_and_lock(writer)?;
     let mut flushing_dwpt_opt = None;
     let mut seq_no = 0;
-    let config = &writer.config;
+    let config = &writer.config.base;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       // This must happen after we've pulled the DWPT because IW.close
       // waits for all DWPT to be released:
@@ -571,7 +571,7 @@ where
   fn maybe_flush(&self, writer: &IndexWriter<D>) -> Result<bool> {
     let flushing_dwpt = self
       .flush_control
-      .next_pending_flush(None, &writer.config)?;
+      .next_pending_flush(None, &writer.config.base)?;
 
     if let Some(flushing_dwpt) = flushing_dwpt {
       self.do_flush(flushing_dwpt, writer)?;
@@ -675,7 +675,7 @@ where
         }
         Ok(())
       }));
-      let config = &writer.config;
+      let config = &writer.config.base;
       self
         .flush_control
         .do_after_flush(None, flushing_dwpt, config)?;

@@ -339,9 +339,9 @@ impl TestUtil {
     D: Directory,
   {
     // Keep number of open files lowish.
-    let merge_policy = w.get_config_mut().get_merge_policy_mut();
+    let mut merge_policy = w.get_config()?.get_merge_policy_mut();
     merge_policy.get_base_mut().set_no_cfs_ratio(1.0)?;
-    match merge_policy {
+    match &mut *merge_policy {
       MergePolicyEnum::LogDoc(lmp) => {
         lmp.set_merge_factor(std::cmp::min(5, lmp.get_merge_factor()))?;
       },
@@ -357,6 +357,7 @@ impl TestUtil {
       },
       _ => {},
     }
+    drop(merge_policy);
     let merge_scheduler = w.get_config()?.get_merge_scheduler();
     if let MergeSchedulerEnum::Concurrent(cms) = merge_scheduler {
       cms.set_max_merges_and_threads(3, 2)?;

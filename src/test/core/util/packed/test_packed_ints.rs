@@ -25,6 +25,7 @@ use crate::core::store::directory::Directory;
 use crate::core::store::{
   ByteArrayDataInput, DataInput, DataOutput, IO_CONTEXT_DEFAULT, IndexInput, IndexOutput,
 };
+use crate::core::util::TryIntoInt;
 use crate::core::util::accountable::Accountable;
 use crate::core::util::bit_util::BitUtil;
 use crate::core::util::close::{Closeable, CloseableRef};
@@ -48,7 +49,6 @@ use crate::core::util::packed::{
   Decoder, Encoder, FormatBehavior, MAX_SUPPORTED_BITS_PER_VALUE, Mutable, NullReader, PackedImpl,
   PackedInts, PackedSingleBlockImpl, Reader, ReaderIterator, Writer, create, is_supported,
 };
-use crate::core::util::{SliceCopyOps, TryIntoInt};
 use crate::test_framework::core::util::test_util::TestUtil;
 
 #[allow(dead_code)] // for quick search

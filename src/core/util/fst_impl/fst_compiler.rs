@@ -19,6 +19,7 @@ use std::fmt::{Display, Formatter};
 use smallvec::SmallVec;
 
 use crate::core::store::{ByteArrayDataOutput, DataOutput, IndexOutput};
+use crate::core::util::TryIntoInt;
 use crate::core::util::accountable::Accountable;
 use crate::core::util::array_util::ArrayUtil;
 use crate::core::util::close::Closeable;
@@ -38,7 +39,6 @@ use crate::core::util::fst_impl::read_write_data_output::ReadWriteDataOutput;
 use crate::core::util::fst_impl::reverse_bytes_reader::ReverseBytesReader;
 use crate::core::util::ints_ref::IntsRef;
 use crate::core::util::ints_ref_builder::IntsRefBuilder;
-use crate::core::util::{SliceCopyOps, TryIntoInt};
 
 /// Builds a minimal FST (maps an [`IntsRef`] term to an arbitrary output) from
 /// pre-sorted terms with outputs. The FST becomes an FSA if you use
@@ -744,10 +744,12 @@ where
     }
 
     // Write header at the beginning
-    self
-      .scratch_bytes
-      .get_bytes()
-      .copy_from(&self.fixed_length_arcs_buffer.get_bytes()[..header_len], 0);
+    let (copy_target, copy_source, copy_offset) = (
+      &mut (self.scratch_bytes.get_bytes())[..],
+      &self.fixed_length_arcs_buffer.get_bytes()[..header_len],
+      0,
+    );
+    copy_target[copy_offset..][..copy_source.len()].copy_from_slice(copy_source);
 
     Ok(())
   }

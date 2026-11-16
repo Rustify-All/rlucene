@@ -22,9 +22,7 @@ use crate::core::index::{BytesRef, BytesRefBuilder};
 use crate::core::util::bytes_ref_comparator::{BytesRefComparator, Natural};
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::stable_string_sorter::{StableStringSorter, StableStringSorterBase};
-use crate::core::util::{
-  MSBRadixSorterBase, NaturalOrder, SliceCopyOps, Sorter, StringSorter, StringSorterBase,
-};
+use crate::core::util::{MSBRadixSorterBase, NaturalOrder, Sorter, StringSorter, StringSorterBase};
 use crate::test::core::util::common_method::assert_vecs_equal;
 use crate::test_framework::core::util::test_util::TestUtil;
 
@@ -144,7 +142,7 @@ where
   for _ in 0..len {
     let mut b = vec![0u8; common_prefix_len + random.random_range(0..max_len)];
     random.fill_bytes(&mut b[common_prefix_len..]);
-    b.copy_from(common_prefix, 0);
+    b[..common_prefix.len()].copy_from_slice(common_prefix);
     bytes.push(BytesRef::from_bytes(b));
   }
 
@@ -250,7 +248,8 @@ impl StableStringSorterBase for StableStringSorterTestImpl<'_> {
   }
 
   fn restore(&mut self, i: usize, j: usize) {
-    self.ord.copy_from(&self.tmp[i..j], i);
+    let copy_source = &self.tmp[i..j];
+    self.ord[i..][..copy_source.len()].copy_from_slice(copy_source);
   }
 }
 impl Sorter for StableStringSorterTestImpl<'_> {

@@ -78,7 +78,7 @@ use crate::core::util::dummy::dummy_hnsw_graph::DummyHnswGraph;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::io_utils::IOUtils;
 use crate::core::util::merged_iterator::MergedIterator;
-use crate::core::util::{CoreHelper, SliceCopyOps, TryIntoInt};
+use crate::core::util::{CoreHelper, TryIntoInt};
 use parking_lot::Mutex;
 use std::borrow::Cow;
 use std::cell::Cell;
@@ -2586,9 +2586,12 @@ where
             );
             // unsigned byte-wise compare (lexicographic)
             if v < 0 {
-              min_packed_value
-                .to_mut()
-                .copy_from(leaf_min_packed_value.as_ref(), off);
+              let (copy_target, copy_source, copy_offset) = (
+                &mut (min_packed_value.to_mut())[..],
+                leaf_min_packed_value.as_ref(),
+                off,
+              );
+              copy_target[copy_offset..][..copy_source.len()].copy_from_slice(copy_source);
             }
           }
         },
@@ -2626,9 +2629,12 @@ where
             );
             // unsigned byte-wise compare (lexicographic)
             if v > 0 {
-              max_packed_value
-                .to_mut()
-                .copy_from(leaf_max_packed_value.as_ref(), off);
+              let (copy_target, copy_source, copy_offset) = (
+                &mut (max_packed_value.to_mut())[..],
+                leaf_max_packed_value.as_ref(),
+                off,
+              );
+              copy_target[copy_offset..][..copy_source.len()].copy_from_slice(copy_source);
             }
           }
         },

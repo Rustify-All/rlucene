@@ -325,12 +325,6 @@ where
   pub fn get_segment_info(&self) -> &SegmentCommitInfo<D> {
     &self.si
   }
-  #[cfg(test)]
-  #[allow(invalid_reference_casting)]
-  #[allow(clippy::mut_from_ref)]
-  pub(crate) fn get_segment_info_mut(&self) -> &mut SegmentCommitInfo<D> {
-    unsafe { &mut *(&self.si as *const SegmentCommitInfo<D> as *mut SegmentCommitInfo<D>) }
-  }
   /// Returns the directory this index resides in.
   pub fn directory(&self) -> &D {
     self.si.info.dir.as_ref()
@@ -737,8 +731,10 @@ impl CacheHelperImpl {
   }
 
   fn notify_reader_closed_listeners(&self) -> Result<()> {
-    let mut reader_closed_listeners = self.reader_closed_listeners.lock();
-    let listeners = reader_closed_listeners.take().unwrap_or_default();
+    let listeners = {
+      let mut reader_closed_listeners = self.reader_closed_listeners.lock();
+      reader_closed_listeners.take().unwrap_or_default()
+    };
     IOUtils::apply_to_all(listeners.iter().map(Some), |listener| {
       listener.on_close(&self.cache_key)
     })

@@ -487,9 +487,7 @@ fn test_doc_values_query_matches_count() -> Result<()> {
   assert_same_count(&searcher, "doesNotExist", 0)?;
 
   // Test that we can't count in O(1) when there are deleted documents
-  w.w
-    .get_config_mut()
-    .set_merge_policy(NoMergePolicy::default());
+  w.w.get_config()?.set_merge_policy(NoMergePolicy::default());
   w.delete_documents_with_queries(
     &mut random,
     vec![LongPoint::new_range_query("long", 0, 9)?.into()],
@@ -789,9 +787,7 @@ fn test_norms_query_matches_count() -> Result<()> {
   assert_norms_count_without_shortcut(&searcher, "text_s", random_num_docs)?;
 
   // We can still shortcut with deleted docs
-  w.w
-    .get_config_mut()
-    .set_merge_policy(NoMergePolicy::default());
+  w.w.get_config()?.set_merge_policy(NoMergePolicy::default());
   w.delete_documents_with_terms(&mut random, vec![Term::from_text("text", "text")])?; // deletes all but the first doc
 
   let reader2 = w.get_reader(&mut random)?;

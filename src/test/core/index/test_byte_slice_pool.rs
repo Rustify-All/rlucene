@@ -23,7 +23,7 @@ use crate::core::index::byte_slice_pool::ByteSlicePool;
 use crate::core::util::allocator_byte::{DirectAllocatorByte, DirectTrackingAllocatorByte};
 use crate::core::util::bit_util::BitUtil;
 use crate::core::util::error::lucene_error::{LuceneError, LuceneErrorKind, Result};
-use crate::core::util::{AtomicCounter, BYTE_BLOCK_SIZE, ByteBlockPool, SliceCopyOps};
+use crate::core::util::{AtomicCounter, BYTE_BLOCK_SIZE, ByteBlockPool};
 use crate::test_framework::core::util::test_util::TestUtil;
 
 #[allow(dead_code)] // for quick search
@@ -73,7 +73,8 @@ fn test_alloc_known_size_slice() -> Result<()> {
         assert_eq!(0, block_pool.get_buffer(buffer_upto)[buffer_index]);
         let write_length = std::cmp::min(slice_length - 1, size - offset);
         let buffer = block_pool.get_buffer_mut(buffer_upto);
-        buffer.copy_from(&random_data[offset..offset + write_length], buffer_index);
+        let copy_source = &random_data[offset..offset + write_length];
+        buffer[buffer_index..][..copy_source.len()].copy_from_slice(copy_source);
         offset += write_length;
         upto += write_length;
       }
@@ -168,10 +169,8 @@ impl SliceWriter {
 
       let write_length = std::cmp::min(self.size, (self.slice_length - 1) as usize);
       let buffer = block_pool.get_buffer_mut(self.first_slice);
-      buffer.copy_from(
-        &self.random_data[self.data_offset..self.data_offset + write_length],
-        self.slice_offset,
-      );
+      let copy_source = &self.random_data[self.data_offset..self.data_offset + write_length];
+      buffer[self.slice_offset..][..copy_source.len()].copy_from_slice(copy_source);
       self.data_offset += write_length;
       self.has_started = true;
       return Ok(true);
@@ -199,10 +198,8 @@ impl SliceWriter {
       (self.slice_length - 1) as usize,
     );
     current_pool_buffer = block_pool.get_buffer_mut(self.slice);
-    current_pool_buffer.copy_from(
-      &self.random_data[self.data_offset..self.data_offset + write_length],
-      self.slice_offset,
-    );
+    let copy_source = &self.random_data[self.data_offset..self.data_offset + write_length];
+    current_pool_buffer[self.slice_offset..][..copy_source.len()].copy_from_slice(copy_source);
     self.data_offset += write_length;
     Ok(true)
   }
@@ -260,10 +257,8 @@ impl SliceReader {
       };
 
       let current_buffer = block_pool.get_buffer(self.slice);
-      self.read_data.copy_from(
-        &current_buffer[self.slice_offset..self.slice_offset + read_length],
-        self.data_offset,
-      );
+      let copy_source = &current_buffer[self.slice_offset..self.slice_offset + read_length];
+      self.read_data[self.data_offset..][..copy_source.len()].copy_from_slice(copy_source);
       self.data_offset += read_length;
       self.slice_size_idx = std::cmp::min(
         self.slice_size_idx + 1,
@@ -293,10 +288,8 @@ impl SliceReader {
     };
 
     slice_buffer = block_pool.get_buffer(self.slice);
-    self.read_data.copy_from(
-      &slice_buffer[self.slice_offset..self.slice_offset + read_length],
-      self.data_offset,
-    );
+    let copy_source = &slice_buffer[self.slice_offset..self.slice_offset + read_length];
+    self.read_data[self.data_offset..][..copy_source.len()].copy_from_slice(copy_source);
     self.data_offset += read_length;
     self.slice_size_idx = std::cmp::min(
       self.slice_size_idx + 1,

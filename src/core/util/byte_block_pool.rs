@@ -18,13 +18,13 @@
 use std::borrow::Cow;
 
 use crate::core::index::{BytesRef, BytesRefBuilder};
+use crate::core::util::TryIntoInt;
 use crate::core::util::access::SharedAccessVec;
 use crate::core::util::accountable::Accountable;
 use crate::core::util::allocator_byte::{AllocatorByte, AllocatorByteEnum, DirectAllocatorByte};
 use crate::core::util::array_util::ArrayUtil;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::ram_usage_estimator::{size_of_array_capacity, size_of_vec};
-use crate::core::util::{SliceCopyOps, TryIntoInt};
 
 /// This struct enables the allocation of fixed-size buffers and their
 /// management as part of a buffer array. Allocation is done through the use of
@@ -252,10 +252,12 @@ impl ByteBlockPool {
       let src_buffer_index: i32 = (src_offset >> BYTE_BLOCK_SHIFT).try_convert()?;
       let src_pos = (src_offset & BYTE_BLOCK_MASK as i64) as usize;
       let bytes_to_copy = std::cmp::min(BYTE_BLOCK_SIZE as usize - src_pos, length);
-      self.buffers[buffer_upto].copy_from(
+      let (copy_target, copy_source, copy_offset) = (
+        &mut (self.buffers[buffer_upto])[..],
         &src_pool.buffers[src_buffer_index as usize][src_pos..src_pos + bytes_to_copy],
         self.byte_upto as usize,
       );
+      copy_target[copy_offset..][..copy_source.len()].copy_from_slice(copy_source);
 
       length -= bytes_to_copy;
       src_offset += bytes_to_copy as i64;
@@ -286,17 +288,23 @@ impl ByteBlockPool {
       let buffer_left = (BYTE_BLOCK_SIZE - self.byte_upto) as usize;
       if bytes_left < buffer_left {
         // fits within current buffer
-        self.buffers[buffer_upto]
-          .copy_from(&bytes[offset..offset + bytes_left], self.byte_upto as usize);
+        let (copy_target, copy_source, copy_offset) = (
+          &mut (self.buffers[buffer_upto])[..],
+          &bytes[offset..offset + bytes_left],
+          self.byte_upto as usize,
+        );
+        copy_target[copy_offset..][..copy_source.len()].copy_from_slice(copy_source);
         self.byte_upto += bytes_left as i32;
         break;
       } else {
         // fill up this buffer and move to next one
         if buffer_left > 0 {
-          self.buffers[buffer_upto].copy_from(
+          let (copy_target, copy_source, copy_offset) = (
+            &mut (self.buffers[buffer_upto])[..],
             &bytes[offset..offset + buffer_left],
             self.byte_upto as usize,
           );
+          copy_target[copy_offset..][..copy_source.len()].copy_from_slice(copy_source);
         }
         buffer_upto = self.next_buffer()?;
         bytes_left -= buffer_left;
@@ -324,7 +332,8 @@ impl ByteBlockPool {
     let mut pos = (offset & BYTE_BLOCK_MASK as i64) as usize;
     while bytes_left > 0 {
       let chunk = std::cmp::min(BYTE_BLOCK_SIZE as usize - pos, bytes_left);
-      bytes.copy_from(&self.buffers[buffer_index][pos..pos + chunk], bytes_offset);
+      let copy_source = &self.buffers[buffer_index][pos..pos + chunk];
+      bytes[bytes_offset..][..copy_source.len()].copy_from_slice(copy_source);
 
       bytes_offset += chunk;
       bytes_left -= chunk;

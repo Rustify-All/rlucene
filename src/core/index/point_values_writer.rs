@@ -33,7 +33,7 @@ use crate::core::util::clone::TryClone;
 use crate::core::util::close::CloseableRef;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::paged_bytes::{PagedBytes, PagedBytesDataOutput, Reader, get_data_output};
-use crate::core::util::{Counter, SharedCounter, SliceCopyOps, TryIntoInt};
+use crate::core::util::{Counter, SharedCounter, TryIntoInt};
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::sync::Arc;
@@ -541,7 +541,8 @@ impl<const SINGLE_PAGE: bool, const PACKED_BYTES: usize> MutablePointTree
 
   fn restore(&mut self, i: usize, j: usize) {
     if let Some(temp) = &self.temp {
-      self.ords.copy_from(&temp[i..j], i);
+      let copy_source = &temp[i..j];
+      self.ords[i..][..copy_source.len()].copy_from_slice(copy_source);
     }
   }
 }

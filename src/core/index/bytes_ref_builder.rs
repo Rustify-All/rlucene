@@ -15,10 +15,10 @@
  * limitations under the License.
  */
 use crate::core::index::bytes_ref::BytesRef;
+use crate::core::util::CoreHelper;
 use crate::core::util::access::{ByteSource, SharedAccessVec, WritableVec};
 use crate::core::util::array_util::ArrayUtil;
 use crate::core::util::error::lucene_error::Result;
-use crate::core::util::{CoreHelper, SliceCopyOps};
 
 /// A builder for [`BytesRef`] instances.
 pub struct BytesRefBuilder<AV> {
@@ -122,7 +122,7 @@ where
     self
       .bytes_mut()
       .bytes
-      .access_mut(|bytes| bytes.copy_from(source, pos));
+      .access_mut(|bytes| bytes[pos..][..source.len()].copy_from_slice(source));
     self.bytes_ref.length += len;
     Ok(())
   }
@@ -173,7 +173,7 @@ where
     self
       .bytes_mut()
       .bytes
-      .access_mut(|bytes| bytes.copy_from(source, 0));
+      .access_mut(|bytes| bytes[..source.len()].copy_from_slice(source));
     Ok(())
   }
   pub fn copy_bytes_from_ref<B: ByteSource>(&mut self, b: &BytesRef<B>) -> Result<()>
@@ -212,7 +212,7 @@ where
     self
       .bytes_ref
       .bytes
-      .access_mut(|bytes| bytes.copy_from(source, 0));
+      .access_mut(|bytes| bytes[..source.len()].copy_from_slice(source));
     self.bytes_ref.length = len;
     self.bytes_ref.offset = 0;
     Ok(())

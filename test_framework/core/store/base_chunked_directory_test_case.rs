@@ -29,7 +29,6 @@ use crate::core::document::document::Document;
 use crate::core::document::field::Store;
 use crate::core::document::fields::Fields;
 use crate::core::index::index_reader::IndexReader;
-use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
 use crate::core::index::stored_fields::StoredFields;
 use crate::core::store::directory::Directory;
 use crate::core::store::random_access_input::RandomAccessInput;

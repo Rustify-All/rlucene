@@ -41,7 +41,6 @@ use crate::core::store::check_sum_index_input::ChecksumIndexInput;
 use crate::core::store::directory::Directory;
 use crate::core::store::random_access_input::RandomAccessInput;
 use crate::core::store::{DataOutput, ReadAdvice, write_group_vints_i64};
-use crate::core::util::SliceCopyOps;
 use crate::core::util::clone::TryClone as OtherClone;
 use crate::core::util::close::{Closeable, CloseableRef};
 use crate::core::util::error::lucene_error::{LuceneError, LuceneErrorKind, Result};
@@ -1333,7 +1332,8 @@ pub trait BaseDirectoryTestCase {
       data_copy.resize(data_len, 0u8);
       let mut input_copy = dir.open_input(&file_name, io_context)?;
 
-      data_copy.copy_from(&data[..header_len], 0);
+      let copy_source = &data[..header_len];
+      data_copy[..copy_source.len()].copy_from_slice(copy_source);
 
       DataInput::read_bytes(
         &mut input_copy,
@@ -1749,7 +1749,8 @@ pub trait BaseDirectoryTestCase {
         assert_eq!((num - i) - j, slice2_length);
 
         let mut data = vec![0u8; num];
-        data.copy_from(&bytes[..i + j], 0);
+        let copy_source = &bytes[..i + j];
+        data[..copy_source.len()].copy_from_slice(copy_source);
 
         if random.random_bool(0.5) {
           // Read the bytes for this slice-of-slice

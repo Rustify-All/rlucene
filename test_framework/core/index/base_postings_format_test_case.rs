@@ -798,7 +798,7 @@ pub trait BasePostingsFormatTestCase:
     let dir = new_directory_shared(random)?;
     let mut iwc = new_index_writer_config(random)?;
     iwc.set_codec(self.get_codec()?);
-    iwc.base.merge_policy = new_log_merge_policy(random)?;
+    iwc.set_merge_policy(new_log_merge_policy(random)?);
     let iw = IndexWriter::new(dir.clone(), iwc)?;
     let doc = Document::new();
     iw.add_document(doc)?;
@@ -836,7 +836,7 @@ pub trait BasePostingsFormatTestCase:
     let dir = new_directory_shared(random)?;
     let mut iwc = new_index_writer_config(random)?;
     iwc.set_codec(self.get_codec()?);
-    iwc.base.merge_policy = new_tiered_merge_policy(random)?.into();
+    iwc.set_merge_policy(new_tiered_merge_policy(random)?);
     let iw = IndexWriter::new(dir.clone(), iwc)?;
 
     for i in 0..10000 {
@@ -883,7 +883,7 @@ pub trait BasePostingsFormatTestCase:
     let dir = new_directory_shared(random)?;
     let mut iwc = new_index_writer_config(random)?;
     iwc.set_codec(self.get_codec()?);
-    iwc.base.merge_policy = new_tiered_merge_policy(random)?.into();
+    iwc.set_merge_policy(new_tiered_merge_policy(random)?);
     let iw = IndexWriter::new(dir.clone(), iwc)?;
 
     for i in 100000..=100400 {
@@ -951,7 +951,7 @@ pub trait BasePostingsFormatTestCase:
     let dir = new_directory_shared(random)?;
     let mut iwc = new_index_writer_config(random)?;
     iwc.set_codec(self.get_codec()?);
-    iwc.base.merge_policy = new_log_merge_policy(random)?;
+    iwc.set_merge_policy(new_log_merge_policy(random)?);
     let iw = IndexWriter::new(dir.clone(), iwc)?;
 
     let mut document = Document::new();

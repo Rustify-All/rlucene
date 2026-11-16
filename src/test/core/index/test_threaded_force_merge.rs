@@ -57,7 +57,7 @@ impl TestThreadedForceMerge {
   }
 
   fn set_merge_factor(writer: &DefaultIndexWriter<DirEnum>, merge_factor: usize) -> Result<()> {
-    match writer.get_config_mut().get_merge_policy_mut() {
+    match &mut *writer.get_config()?.get_merge_policy_mut() {
       MergePolicyEnum::LogDoc(mp) => mp.set_merge_factor(merge_factor),
       MergePolicyEnum::LogBytesSize(mp) => mp.set_merge_factor(merge_factor),
       _ => Err(LuceneError::illegal_state(

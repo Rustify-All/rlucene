@@ -72,7 +72,6 @@ use crate::core::store::{
   ByteBuffersDirectory, IO_CONTEXT_DEFAULT, IO_CONTEXT_READ_ONCE, IOContext,
 };
 use crate::core::util::CoreHelper;
-use crate::core::util::SliceCopyOps;
 use crate::core::util::access::{ByteSource, SharedAccessVec};
 use crate::core::util::close::CloseableRef;
 use crate::core::util::error::lucene_error::{LuceneError, LuceneErrorKind, Result};
@@ -740,7 +739,7 @@ where
 
 pub(crate) fn maybe_change_live_index_writer_config<R, C>(
   _random: &mut R,
-  _config: &mut C,
+  _config: &C,
 ) -> Result<()>
 where
   R: Rng + ?Sized,
@@ -1444,9 +1443,9 @@ where
 {
   if is_night_mode() {
     conf.set_use_compound_file(true);
-    let mp = conf.get_merge_policy_mut();
+    let mut mp = conf.get_merge_policy_mut();
 
-    match mp {
+    match &mut *mp {
       MergePolicyEnum::Tiered(mp) => {
         mp.set_max_merged_segment_mb(5000.0)?;
       },
@@ -1574,7 +1573,8 @@ where
 
   let mut bytes = vec![0u8; start_offset + length + end_padding];
 
-  bytes.copy_from(&bytes_in[offset..(offset + length)], start_offset);
+  let copy_source = &bytes_in[offset..(offset + length)];
+  bytes[start_offset..][..copy_source.len()].copy_from_slice(copy_source);
   // Create a BytesRef and return it
   let vec = AV::from_vec(bytes);
   let it = BytesRef {

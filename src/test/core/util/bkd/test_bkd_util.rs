@@ -17,7 +17,6 @@
 use crate::test_framework::core::util::lucene_test_case::random;
 use rand::RngExt;
 
-use crate::core::util::SliceCopyOps;
 use crate::core::util::bit_util::BitUtil;
 use crate::core::util::bkd::bkd_util::BKDUtil;
 use crate::test_framework::core::util::test_util::TestUtil;
@@ -39,7 +38,8 @@ fn test_equals4() {
   for i in 0..BitUtil::INT_BYTES {
     a[a_offset + i] = random.random();
   }
-  b.copy_from(&a[a_offset..a_offset + 4], b_offset);
+  let copy_source = &a[a_offset..a_offset + 4];
+  b[b_offset..][..copy_source.len()].copy_from_slice(copy_source);
 
   assert!(BKDUtil::equals4(a, a_offset, b, b_offset));
 
@@ -68,7 +68,8 @@ fn test_equals8() {
   for i in 0..BitUtil::LONG_BYTES {
     a[a_offset + i] = random.random();
   }
-  b.copy_from(&a[a_offset..a_offset + 8], b_offset);
+  let copy_source = &a[a_offset..a_offset + 8];
+  b[b_offset..][..copy_source.len()].copy_from_slice(copy_source);
 
   assert!(BKDUtil::equals8(a, a_offset, b, b_offset));
 

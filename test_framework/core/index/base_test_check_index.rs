@@ -20,7 +20,6 @@ use crate::core::document::text_field::TYPE_STORED;
 use crate::core::index::check_index::{CheckIndex, Level};
 use crate::core::index::index_writer::{IndexWriter, MAX_TERM_LENGTH};
 use crate::core::index::index_writer_config::IndexWriterConfig;
-use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
 use crate::core::index::term::Term;
 use crate::core::index::two_phase_commit::TwoPhaseCommit;
 use crate::core::store::directory::Directory;

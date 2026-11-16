@@ -118,7 +118,6 @@ pub mod supplier;
 pub mod tim_sorter;
 pub mod to_string_utils;
 pub mod unicode_util;
-pub mod vec_copy_ops;
 pub mod vector_util;
 pub mod version;
 
@@ -139,5 +138,4 @@ pub use stable_string_sorter::*;
 pub use string_helper::*;
 pub use string_sorter::*;
 pub use tim_sorter::*;
-pub(crate) use vec_copy_ops::*;
 pub use version::*;

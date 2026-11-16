@@ -29,7 +29,6 @@ use crate::core::index::doc_values_skipper::DocValuesSkipper;
 use crate::core::index::index_reader::IndexReader;
 use crate::core::index::index_reader_context::IndexReaderContext;
 use crate::core::index::leaf_reader::LeafReader;
-use crate::core::index::live_index_writer_config::LiveIndexWriterConfig;
 use crate::core::index::numeric_doc_values::NumericDocValues;
 use crate::core::index::serial_merge_scheduler::SerialMergeScheduler;
 use crate::core::index::sorted_doc_values::SortedDocValues;

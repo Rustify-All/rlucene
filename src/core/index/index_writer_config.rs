@@ -34,6 +34,7 @@ use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::info_stream::InfoStreamMT;
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
+use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
@@ -85,6 +86,51 @@ where
     })
   }
 
+  /// Sets the RAM buffer size while retaining the construction-time builder.
+  pub fn set_ram_buffer_size_mb(&mut self, ram_buffer_size_mb: f64) -> &mut Self {
+    LiveIndexWriterConfig::set_ram_buffer_size_mb(&self.base, ram_buffer_size_mb);
+    self
+  }
+
+  /// Sets the document flush threshold while retaining the construction-time builder.
+  pub fn set_max_buffered_docs(&mut self, max_buffered_docs: i32) -> &mut Self {
+    LiveIndexWriterConfig::set_max_buffered_docs(&self.base, max_buffered_docs);
+    self
+  }
+
+  /// Sets compound-file use while retaining the construction-time builder.
+  pub fn set_use_compound_file(&mut self, use_compound_file: bool) -> &mut Self {
+    LiveIndexWriterConfig::set_use_compound_file(&self.base, use_compound_file);
+    self
+  }
+
+  /// Sets the merge policy while retaining the construction-time builder.
+  pub fn set_merge_policy<T>(&mut self, merge_policy: T) -> &mut Self
+  where
+    T: Into<MergePolicyEnum<D>>,
+  {
+    LiveIndexWriterConfig::set_merge_policy(&self.base, merge_policy);
+    self
+  }
+
+  /// Sets the flushing behavior.
+  pub fn set_flush_policy<T>(&mut self, flush_policy: T) -> &mut Self
+  where
+    T: Into<FlushPolicyEnum>,
+  {
+    self.base.set_flush_policy(flush_policy);
+    self
+  }
+
+  /// Sets the stream used for debugging messages.
+  pub fn set_info_stream<T>(&mut self, info_stream: T) -> &mut Self
+  where
+    T: Into<InfoStreamMT>,
+  {
+    self.base.set_info_stream(info_stream);
+    self
+  }
+
   /// Sets if calls to [`IndexWriter::close`](crate::core::index::index_writer::IndexWriter::close) should first commit before closing.
   ///
   /// Use `true` to match the behavior of Lucene 4.x.
@@ -107,7 +153,10 @@ where
     &mut self,
     max_full_flush_merge_wait_millis: i64,
   ) -> &mut Self {
-    self.base.max_full_flush_merge_wait_millis = max_full_flush_merge_wait_millis;
+    self
+      .base
+      .max_full_flush_merge_wait_millis
+      .store(max_full_flush_merge_wait_millis, Ordering::SeqCst);
     self
   }
 
@@ -266,13 +315,13 @@ where
     &mut self,
     merge_segment_warmer: Option<IndexReaderWarmerEnum<D>>,
   ) -> &mut Self {
-    self.base.merged_segment_warmer = merge_segment_warmer;
+    LiveIndexWriterConfig::set_merged_segment_warmer(&self.base, merge_segment_warmer);
     self
   }
 
   /// Returns the current merged segment warmer.
-  pub fn get_merged_segment_warmer(&self) -> Option<&IndexReaderWarmerEnum<D>> {
-    self.base.merged_segment_warmer.as_ref()
+  pub fn get_merged_segment_warmer(&self) -> Option<Arc<IndexReaderWarmerEnum<D>>> {
+    self.base.merged_segment_warmer.read().clone()
   }
 
   /// Sets the parent document field.
@@ -322,128 +371,26 @@ where
   }
 }
 
+impl<D: Directory> Deref for IndexWriterConfig<D> {
+  type Target = LiveIndexWriterConfigBase<D>;
+
+  fn deref(&self) -> &Self::Target {
+    &self.base
+  }
+}
+
+impl<D: Directory> DerefMut for IndexWriterConfig<D> {
+  fn deref_mut(&mut self) -> &mut Self::Target {
+    &mut self.base
+  }
+}
+
 impl<D> Display for IndexWriterConfig<D>
 where
   D: Directory,
 {
   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
     write!(f, "{}", std::any::type_name::<Self>())
-  }
-}
-
-impl<D> LiveIndexWriterConfig for IndexWriterConfig<D>
-where
-  D: Directory,
-{
-  type Directory = D;
-
-  fn get_analyzer(&self) -> &AnalyzerEnum {
-    &self.base.analyzer
-  }
-
-  fn get_merge_scheduler(&self) -> &MergeSchedulerEnum {
-    &self.base.merge_scheduler
-  }
-
-  fn get_codec(&self) -> &Codecs {
-    &self.base.codec
-  }
-
-  fn get_index_sort(&self) -> Option<&Arc<Sort>> {
-    self.base.index_sort.as_ref()
-  }
-
-  fn get_index_sort_fields(&self) -> &HashSet<String> {
-    &self.base.index_sort_fields
-  }
-
-  fn get_use_compound_file(&self) -> bool {
-    self.base.use_compound_file
-  }
-
-  fn get_soft_deletes_field(&self) -> Option<&String> {
-    self.base.soft_deletes_field.as_ref()
-  }
-
-  fn get_info_stream(&self) -> InfoStreamMT {
-    self.base.info_stream.clone()
-  }
-
-  fn get_parent_field(&self) -> Option<&String> {
-    self.base.parent_field.as_ref()
-  }
-
-  fn get_merge_policy(&self) -> &MergePolicyEnum<D> {
-    &self.base.merge_policy
-  }
-  fn get_merge_policy_mut(&mut self) -> &mut MergePolicyEnum<D> {
-    &mut self.base.merge_policy
-  }
-  fn get_flush_policy(&self) -> &FlushPolicyEnum {
-    self.base.get_flush_policy()
-  }
-
-  fn get_ram_buffer_size_mb(&self) -> f64 {
-    self.base.ram_buffer_size_mb
-  }
-
-  fn get_ram_per_thread_hard_limit_mb(&self) -> i32 {
-    self.base.per_thread_hard_limit_mb
-  }
-
-  fn get_max_buffered_docs(&self) -> i32 {
-    self.base.max_buffered_docs
-  }
-
-  fn get_check_pending_flush_on_update(&self) -> bool {
-    self
-      .base
-      .check_pending_flush_on_update
-      .load(Ordering::SeqCst)
-  }
-
-  fn set_check_pending_flush_update(&self, check_pending_flush_on_update: bool) -> &Self {
-    self
-      .base
-      .check_pending_flush_on_update
-      .store(check_pending_flush_on_update, Ordering::SeqCst);
-    self
-  }
-
-  fn get_index_deletion_policy(&self) -> &IndexDeletionPolicyEnum<D> {
-    &self.base.index_deletion_policy
-  }
-
-  fn get_max_full_flush_merge_wait_millis(&self) -> i64 {
-    self.base.max_full_flush_merge_wait_millis
-  }
-
-  fn get_index_writer_event_listener(&self) -> &IndexWriterEventListenerEnum {
-    &self.base.event_listener
-  }
-
-  fn get_merged_segment_warmer(&self) -> Option<&IndexReaderWarmerEnum<D>> {
-    self.base.merged_segment_warmer.as_ref()
-  }
-
-  fn get_commit_on_close(&self) -> bool {
-    self.base.commit_on_close
-  }
-
-  fn get_open_mode(&self) -> &OpenMode {
-    &self.base.open_mode
-  }
-
-  fn get_index_created_version_major(&self) -> i32 {
-    self.base.created_version_major
-  }
-
-  fn get_reader_pooling(&self) -> bool {
-    self.base.reader_pooling
-  }
-
-  fn get_base_mut(&mut self) -> &mut LiveIndexWriterConfigBase<D> {
-    &mut self.base
   }
 }
 

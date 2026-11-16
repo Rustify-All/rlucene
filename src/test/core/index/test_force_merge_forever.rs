@@ -81,7 +81,7 @@ fn test() -> Result<()> {
   )?;
 
   // Try to make an index that requires merging:
-  w.get_config_mut()
+  w.get_config()?
     .set_max_buffered_docs(TestUtil::next_int(&mut random, 2, 11));
   let num_start_docs = at_least(&mut random, 20);
   let mut docs = LineFileDocs::new(&mut random)?;
@@ -89,7 +89,8 @@ fn test() -> Result<()> {
     w.add_document(docs.next_doc()?)?;
   }
   let merge_at_once = 1 + w.clone_segment_infos()?.size();
-  match w.get_config_mut().get_merge_policy_mut() {
+  let mut merge_policy = w.get_config()?.get_merge_policy_mut();
+  match &mut *merge_policy {
     MergePolicyEnum::Tiered(mp) => {
       mp.set_max_merge_at_once(merge_at_once as i32)?;
     },
@@ -100,14 +101,16 @@ fn test() -> Result<()> {
       mp.set_merge_factor(merge_at_once)?;
     },
     _ => {
+      drop(merge_policy);
       w.close()?;
       docs.close();
       return Ok(());
     },
   }
+  drop(merge_policy);
 
   let do_stop = AtomicBool::new(false);
-  w.get_config_mut().set_max_buffered_docs(2);
+  w.get_config()?.set_max_buffered_docs(2);
   let seed = random.random();
 
   thread::scope(|scope| -> Result<()> {

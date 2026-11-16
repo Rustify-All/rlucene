@@ -17,11 +17,11 @@
 use crate::core::analysis::token_attributes::char_term_attribute::CharTermAttribute;
 use crate::core::analysis::token_attributes::term_to_bytes_ref_attribute::TermToBytesRefAttribute;
 use crate::core::index::{BytesRef, BytesRefBuilder};
+use crate::core::util::CoreHelper;
 use crate::core::util::array_util::ArrayUtil;
 use crate::core::util::attribute::Attribute;
 use crate::core::util::attribute_impl::AttributeImpl;
 use crate::core::util::error::lucene_error::Result;
-use crate::core::util::{CoreHelper, SliceCopyOps};
 #[cfg(any(test, debug_assertions))]
 use std::collections::HashSet;
 use std::fmt::Display;
@@ -123,9 +123,8 @@ where
 
   fn copy_buffer(&mut self, buffer: &[char], offset: usize, length: usize) -> Result<()> {
     self.grow_term_buffer(length)?;
-    self
-      .term_buffer
-      .copy_from(&buffer[offset..offset + length], 0);
+    let copy_source = &buffer[offset..offset + length];
+    self.term_buffer[..copy_source.len()].copy_from_slice(copy_source);
     self.term_length = length;
     Ok(())
   }
@@ -280,9 +279,8 @@ where
     if let Some(other) = ta {
       let len = other.length();
       self.resize_buffer(self.term_length + len)?;
-      self
-        .term_buffer
-        .copy_from(&other.buffer()[0..len], self.term_length);
+      let copy_source = &other.buffer()[0..len];
+      self.term_buffer[self.term_length..][..copy_source.len()].copy_from_slice(copy_source);
       self.term_length += len;
       Ok(self)
     } else {

@@ -18,7 +18,6 @@
 use crate::core::index::BytesRef;
 use crate::core::store::data_input_ext::DataInputExt;
 use crate::core::store::{DataInput, DataOutput, IndexInput};
-use crate::core::util::SliceCopyOps;
 use crate::core::util::accountable::Accountable;
 use crate::core::util::array_util::ArrayUtil;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
@@ -221,10 +220,8 @@ impl PagedBytes {
       current_block[self.upto + 1] = length as u8;
       self.upto += 2;
     }
-    current_block.copy_from(
-      &bytes.bytes[bytes.offset..bytes.offset + bytes.length],
-      self.upto,
-    );
+    let copy_source = &bytes.bytes[bytes.offset..bytes.offset + bytes.length];
+    current_block[self.upto..][..copy_source.len()].copy_from_slice(copy_source);
     self.upto += bytes.length;
 
     Ok(pointer)
@@ -367,12 +364,10 @@ impl Reader {
       // Split across two blocks
       ArrayUtil::grow_no_copy(&mut b.bytes, length, || 0)?;
       let first_len = self.block_size - offset;
-      b.bytes
-        .copy_from(&self.blocks[index][offset..offset + first_len], 0);
-      b.bytes.copy_from(
-        &self.blocks[index + 1][..length - first_len],
-        self.block_size - offset,
-      );
+      let copy_source = &self.blocks[index][offset..offset + first_len];
+      b.bytes[..copy_source.len()].copy_from_slice(copy_source);
+      let copy_source = &self.blocks[index + 1][..length - first_len];
+      b.bytes[self.block_size - offset..][..copy_source.len()].copy_from_slice(copy_source);
       b.offset = 0;
       Ok(BytesRef {
         bytes: &b.bytes,
@@ -712,7 +707,8 @@ impl DataOutput for PagedBytesDataOutput {
         .current_block
         .as_mut()
         .ok_or_else(|| LuceneError::illegal_state("current_block not initialized"))?;
-      current_block.copy_from(&b[offset..offset_end], self.paged_bytes.upto);
+      let copy_source = &b[offset..offset_end];
+      current_block[self.paged_bytes.upto..][..copy_source.len()].copy_from_slice(copy_source);
       self.paged_bytes.upto += length;
       return Ok(());
     }
@@ -736,14 +732,16 @@ impl DataOutput for PagedBytesDataOutput {
         .as_mut()
         .ok_or_else(|| LuceneError::illegal_state("current_block not initialized"))?;
       if block_left < left {
-        current_block.copy_from(&b[offset..offset + block_left], self.paged_bytes.upto);
+        let copy_source = &b[offset..offset + block_left];
+        current_block[self.paged_bytes.upto..][..copy_source.len()].copy_from_slice(copy_source);
         let old_block = std::mem::replace(current_block, vec![0u8; self.paged_bytes.block_size]);
         self.paged_bytes.add_block(old_block)?;
 
         self.paged_bytes.upto = 0;
         offset += block_left;
       } else {
-        current_block.copy_from(&b[offset..offset + left], self.paged_bytes.upto);
+        let copy_source = &b[offset..offset + left];
+        current_block[self.paged_bytes.upto..][..copy_source.len()].copy_from_slice(copy_source);
         self.paged_bytes.upto += left;
         break;
       }

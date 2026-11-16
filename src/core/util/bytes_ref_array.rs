@@ -26,8 +26,8 @@ use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::ram_usage_estimator::size_of_array_capacity;
 use crate::core::util::sortable_bytes_ref_array::SortableBytesRefArray;
 use crate::core::util::{
-  ByteBlockPool, BytesRefComparator, Counter, MSBRadixSorterBase, SharedCounter, SliceCopyOps,
-  Sorter, StableStringSorter, StableStringSorterBase, StringSorter, StringSorterBase, TryIntoInt,
+  ByteBlockPool, BytesRefComparator, Counter, MSBRadixSorterBase, SharedCounter, Sorter,
+  StableStringSorter, StableStringSorterBase, StringSorter, StringSorterBase, TryIntoInt,
 };
 
 /// A simple append-only random-access array that stores full copies of the
@@ -529,7 +529,8 @@ impl StableStringSorterBase for StableStringSorterImpl<'_, '_> {
     self.tmp[j] = value;
   }
   fn restore(&mut self, i: usize, j: usize) {
-    self.ordered_entries.copy_from(&self.tmp[i..j], i);
+    let copy_source = &self.tmp[i..j];
+    self.ordered_entries[i..][..copy_source.len()].copy_from_slice(copy_source);
   }
 }
 impl MSBRadixSorterBase for StableStringSorterImpl<'_, '_> {}

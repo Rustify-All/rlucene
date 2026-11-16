@@ -391,7 +391,7 @@ pub trait BaseKnnVectorsFormatTestCase:
     };
     iwc.set_codec(TestUtil::always_knn_vectors_format(format));
     iwc.set_merge_scheduler(MergeSchedulerEnum::KnnMergeScheduler(merge_scheduler));
-    let mp = iwc.get_merge_policy().clone();
+    let mp = iwc.get_merge_policy().as_ref().clone();
     iwc.set_merge_policy(MergePolicyEnum::Force(ForceMergePolicy::new(mp)));
 
     let writer = IndexWriter::new(dir, iwc)?;
@@ -441,7 +441,7 @@ pub trait BaseKnnVectorsFormatTestCase:
     };
     iwc.set_codec(TestUtil::always_knn_vectors_format(format));
     iwc.set_merge_scheduler(MergeSchedulerEnum::KnnMergeScheduler(merge_scheduler));
-    let mp = iwc.get_merge_policy().clone();
+    let mp = iwc.get_merge_policy().as_ref().clone();
     iwc.set_merge_policy(MergePolicyEnum::Force(ForceMergePolicy::new(mp)));
 
     let writer = IndexWriter::new(dir, iwc)?;
