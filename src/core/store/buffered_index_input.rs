@@ -490,11 +490,10 @@ where
       // unprocessed and must be handled before reading new data
       // from the underlying input.
       //
-      // The unaligned bytes are located at the end of the current buffer.
-      // We copy them into the start of the temporary vector to ensure
-      // they are preserved when the buffer is refilled with
-      // new data.
-      let copy_source = &self.buffer.get_ref()[self.buffer_size - unaligned_bytes..];
+      // The unaligned bytes were moved to the start of the current buffer above.
+      // Copy that prefix into the temporary vector. Reading the former tail is
+      // incorrect when the in-place move overlaps it.
+      let copy_source = &self.buffer.get_ref()[..unaligned_bytes];
       temp_vec[..copy_source.len()].copy_from_slice(copy_source);
     }
     let mut temp_buffer = Cursor::new(temp_vec);
