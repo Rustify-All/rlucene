@@ -168,15 +168,15 @@ impl RateLimiter for SimpleRateLimiter {
 
     let mut cur_ns = start_ns;
 
-    // `park_timeout` may return before the deadline when another thread calls
-    // `unpark`, so keep checking the remaining duration in a loop.
+    // Sleeping must not consume an unpark token belonging to the caller.
+    // Keep checking the remaining duration to preserve the rate-limiting loop.
     loop {
       let pause_ns = target_ns.wrapping_sub(cur_ns);
       if pause_ns > 0 {
         // The minimum practical sleep duration on a general-purpose runtime
         // is 1 msec; if you pass just 1 nsec the default impl rounds
         // this up to 1 msec:
-        thread::park_timeout(Duration::from_nanos(pause_ns as u64));
+        thread::sleep(Duration::from_nanos(pause_ns as u64));
         cur_ns = (self.time_origin.elapsed().as_nanos() as i64).wrapping_add(1);
         continue;
       }

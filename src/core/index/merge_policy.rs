@@ -3009,17 +3009,14 @@ impl OneMergeProgress {
     }
 
     let start = Instant::now();
-    let deadline = start + Duration::from_nanos(pause_nanos);
+    let mut remaining = Duration::from_nanos(pause_nanos);
 
     let mut lock = self.pause_lock.lock();
     let pause_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-      while !self.aborted.load(Ordering::SeqCst) && condition() {
-        let now = Instant::now();
-        if now >= deadline {
-          break;
-        }
-        let timeout = deadline - now;
-        self.pausing.wait_for(&mut lock, timeout);
+      while !remaining.is_zero() && !self.aborted.load(Ordering::SeqCst) && condition() {
+        let wait_start = Instant::now();
+        self.pausing.wait_for(&mut lock, remaining);
+        remaining = remaining.saturating_sub(wait_start.elapsed());
       }
     }));
     drop(lock);
