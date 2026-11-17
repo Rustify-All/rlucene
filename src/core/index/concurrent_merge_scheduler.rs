@@ -18,8 +18,8 @@ use std::cell::RefCell;
 use std::cmp;
 use std::fmt::{Display, Formatter};
 use std::io::Write;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::thread;
 use std::thread::ThreadId;
 use std::time::{Duration, Instant};
@@ -1117,12 +1117,20 @@ impl ConcurrentMergeScheduler {
    */
   pub fn sync(&self) -> Result<()> {
     let mut inner = self.shared.inner.lock();
-    while inner
+    while let Some(to_sync) = inner
       .merge_threads
       .iter()
-      .any(|merge_thread| merge_thread.is_alive() && !merge_thread.is_current_thread())
+      .find(|merge_thread| merge_thread.is_alive() && !merge_thread.is_current_thread())
+      .cloned()
     {
-      self.shared.changed.wait(&mut inner);
+      // Keep the selected thread alive even if scheduling removes it before its final callbacks.
+      while to_sync.is_alive() {
+        self.shared.changed.wait(&mut inner);
+      }
+      // A last state owner may contain a user error with a reentrant destructor.
+      drop(inner);
+      drop(to_sync);
+      inner = self.shared.inner.lock();
     }
     Ok(())
   }
@@ -1471,7 +1479,7 @@ impl ConcurrentMergeScheduler {
 /** State for a running merge thread tracked by the scheduler. */
 struct MergeThreadState {
   name: String,
-  owner_id: Mutex<Option<ThreadId>>,
+  owner_id: OnceLock<ThreadId>,
   estimated_merge_bytes: Arc<AtomicI64>,
   merge_start_ns: Arc<Mutex<Instant>>,
   merge_stat: MergeStat,
@@ -1488,7 +1496,7 @@ impl MergeThreadState {
   {
     Self {
       name,
-      owner_id: Mutex::new(None),
+      owner_id: OnceLock::new(),
       estimated_merge_bytes: merge.estimated_merge_bytes.clone(),
       merge_start_ns: merge.merge_start_ns.clone(),
       merge_stat: merge.stat.clone(),
@@ -1498,15 +1506,14 @@ impl MergeThreadState {
   }
 
   fn set_owner_to_current_thread(&self) {
-    *self.owner_id.lock() = Some(thread::current().id());
+    let _ = self.owner_id.set(thread::current().id());
   }
 
   fn is_current_thread(&self) -> bool {
     self
       .owner_id
-      .lock()
-      .map(|owner_id| owner_id == thread::current().id())
-      .unwrap_or(false)
+      .get()
+      .is_some_and(|owner_id| *owner_id == thread::current().id())
   }
 
   fn set_alive(&self, alive: bool) {
@@ -1558,25 +1565,48 @@ where
 
     struct AliveOnExit<'a> {
       state: &'a MergeThreadState,
+      shared: &'a ConcurrentMergeSchedulerShared,
     }
 
     impl Drop for AliveOnExit<'_> {
       fn drop(&mut self) {
+        let mut inner = self.shared.inner.lock();
         self.state.set_alive(false);
+        // Remove private bookkeeping while this frame still owns the state. Leaving a dead
+        // entry for a later update could drop its last payload owner under the scheduling lock.
+        if let Some(index) = inner
+          .merge_threads
+          .iter()
+          .position(|thread| std::ptr::eq(thread.as_ref(), self.state))
+        {
+          inner.merge_threads.remove(index);
+        }
+        self.shared.changed.notify_all();
       }
     }
 
-    let _alive_on_exit = AliveOnExit { state: &state };
-    // Keep the guard outside run_merge so its source, merge and scheduler are
-    // dropped before the thread is announced as no longer alive, also on unwind.
-    Self::run_merge(&state, merge_source, merge, merge_scheduler)
+    let _alive_on_exit = AliveOnExit {
+      state: &state,
+      shared: &merge_scheduler.shared,
+    };
+    // Publish completion only after merge resources and the final callbacks have finished.
+    let result = Self::run_merge(&state, merge_source, merge, &merge_scheduler);
+    if let Err(error) = &result {
+      // Keep error reporting within the running thread's completion boundary.
+      if log::log_enabled!(log::Level::Error) {
+        log::error!("{error}");
+      } else {
+        let _ = writeln!(std::io::stderr(), "Exception in merge thread: {error}");
+      }
+    }
+    result
   }
 
   fn run_merge(
     state: &MergeThreadState,
     merge_source: MS,
     merge: OneMerge<D, MS::Reader>,
-    merge_scheduler: ConcurrentMergeScheduler,
+    merge_scheduler: &ConcurrentMergeScheduler,
   ) -> Result<()> {
     state.set_owner_to_current_thread();
     let previous =
@@ -1613,20 +1643,8 @@ where
     });
 
     if !matches!(&merge_result, Ok(Ok(()))) {
-      let mut inner = merge_scheduler.shared.inner.lock();
-      // `run_on_merge_finished` removes the current merge thread in its cleanup path before
-      // returning an error. Only perform this cleanup here when the failure happened before
-      // `run_on_merge_finished` was entered.
-      if inner
-        .merge_threads
-        .iter()
-        .any(|merge_thread| merge_thread.is_current_thread())
-      {
-        ConcurrentMergeScheduler::remove_merge_thread(&mut inner);
-        merge_scheduler.update_merge_threads(&mut inner)?;
-        merge_scheduler.shared.changed.notify_all();
-      }
-      drop(inner);
+      // As in Java, a thread that failed before run_on_merge_finished remains visible until
+      // its error handler exits. The completion guard releases dead Rust bookkeeping.
       if matches!(
         merge_result
           .as_ref()
@@ -1653,15 +1671,8 @@ where
     // false would let the scheduler prune a live merge thread.
     state.set_alive(true);
     match thread::Builder::new().name(thread_name).spawn(move || {
-      if let Err(error) = self.run(merge_scheduler) {
-        // Java reports this failure through the thread's uncaught exception handler.
-        // A detached Rust thread must consume the error instead of dropping its Result.
-        if log::log_enabled!(log::Level::Error) {
-          log::error!("{error}");
-        } else {
-          let _ = writeln!(std::io::stderr(), "Exception in merge thread: {error}");
-        }
-      }
+      // run reports failures before publishing completion to sync/close waiters.
+      let _ = self.run(merge_scheduler);
     }) {
       Ok(_handle) => Ok(()),
       Err(err) => {

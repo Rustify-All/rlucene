@@ -26,7 +26,7 @@ use crate::core::search::leaf_collector::LeafCollector;
 use crate::core::search::scorable::Scorable;
 use crate::core::search::score_mode::ScoreMode;
 use crate::core::search::weight::Weight;
-use crate::core::util::error::lucene_error::{LuceneError, Result};
+use crate::core::util::error::lucene_error::{LuceneError, LuceneErrorKind, Result};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -128,7 +128,14 @@ impl Collector for TotalHitCountCollector {
       if first {
         // The first thread for a given leaf gets to decide what the next threads targeting the
         // same leaf do.
-        if self.try_count(context, weight, searcher)? {
+        if self
+          .try_count(context, weight, searcher)
+          .inspect_err(|error| {
+            if matches!(error.kind(), LuceneErrorKind::CollectionTerminated(_)) {
+              let _ = early_terminated.set(true);
+            }
+          })?
+        {
           let _ = early_terminated.set(true);
           return Err(LuceneError::collection_terminated(""));
         }
