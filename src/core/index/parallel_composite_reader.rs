@@ -320,6 +320,7 @@ where
   }
 
   fn do_close(&self) -> Result<()> {
+    let _close_guard = self.index_reader_base.state.close_lock.lock();
     let mut first_error = None;
     for reader in &self.complete_reader_set {
       let result = if self.close_sub_readers {
@@ -338,10 +339,15 @@ where
       }
     }
 
-    // Finally close our own synthetic readers. Their `close()` implementation
-    // is intentionally empty, so they never touch the real leaf readers.
+    // Release our synthetic readers with the same ownership policy as the real
+    // readers. Their do_close() is empty and never touches the real leaf readers.
     for reader in self.base_composite_reader_base.get_sequential_sub_readers() {
-      match reader.close() {
+      let result = if self.close_sub_readers {
+        reader.close()
+      } else {
+        reader.dec_ref()
+      };
+      match result {
         Err(error) if error.is_io_error() => {
           if first_error.is_none() {
             first_error = Some(error);

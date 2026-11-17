@@ -126,8 +126,7 @@ pub struct SortingCodecReader<CR, DM> {
   in_: CR,
   doc_map: DM,
   meta_data: LeafMetaData,
-  inner: Arc<Mutex<Inner>>,
-  index_base: IndexReaderBase,
+  inner: Arc<(IndexReaderBase, Mutex<Inner>)>,
 }
 pub struct Inner {
   // we try to cache the last used DV or Norms instance since during merge
@@ -142,19 +141,21 @@ pub struct Inner {
 
 impl<CR, DM> SortingCodecReader<CR, DM> {
   pub fn new(base: CR, doc_map: DM, meta_data: LeafMetaData) -> Self {
-    let inner = Arc::new(Mutex::new(Inner {
-      cached_field: None,
-      cache_is_norms: false,
-      cached_object: None,
-      cache_stats: HashMap::new(),
-      sort: meta_data.sort.clone(),
-    }));
+    let inner = Arc::new((
+      IndexReaderBase::new(),
+      Mutex::new(Inner {
+        cached_field: None,
+        cache_is_norms: false,
+        cached_object: None,
+        cache_stats: HashMap::new(),
+        sort: meta_data.sort.clone(),
+      }),
+    ));
     Self {
       in_: base,
       doc_map,
       meta_data,
       inner,
-      index_base: IndexReaderBase::new(),
     }
   }
 }
@@ -355,7 +356,7 @@ where
   }
 
   fn index_base(&self) -> &IndexReaderBase {
-    &self.index_base
+    &self.inner.0
   }
 }
 
@@ -664,12 +665,17 @@ where
 
 pub struct NormsProducerImpl<NP, DM> {
   delegate: NP,
-  inner: Arc<Mutex<Inner>>,
+  inner: Arc<(IndexReaderBase, Mutex<Inner>)>,
   max_doc: i32,
   doc_map: DM,
 }
 impl<NP, DM> NormsProducerImpl<NP, DM> {
-  fn new(delegate: NP, inner: Arc<Mutex<Inner>>, max_doc: i32, doc_map: DM) -> Self {
+  fn new(
+    delegate: NP,
+    inner: Arc<(IndexReaderBase, Mutex<Inner>)>,
+    max_doc: i32,
+    doc_map: DM,
+  ) -> Self {
     Self {
       delegate,
       inner,
@@ -791,12 +797,17 @@ where
 
 pub struct DocValuesProducerImpl<DVP, DM> {
   delegate: DVP,
-  inner: Arc<Mutex<Inner>>,
+  inner: Arc<(IndexReaderBase, Mutex<Inner>)>,
   max_doc: i32,
   doc_map: DM,
 }
 impl<DVP, DM> DocValuesProducerImpl<DVP, DM> {
-  fn new(delegate: DVP, inner: Arc<Mutex<Inner>>, max_doc: i32, doc_map: DM) -> Self {
+  fn new(
+    delegate: DVP,
+    inner: Arc<(IndexReaderBase, Mutex<Inner>)>,
+    max_doc: i32,
+    doc_map: DM,
+  ) -> Self {
     Self {
       delegate,
       inner,
@@ -2012,7 +2023,7 @@ where
 fn get_or_create_dv<F>(
   field: &Arc<FieldInfo>,
   supplier: F,
-  inner: &Arc<Mutex<Inner>>,
+  inner: &Arc<(IndexReaderBase, Mutex<Inner>)>,
 ) -> Result<CachedObject>
 where
   F: FnOnce() -> Result<CachedObject>,
@@ -2022,7 +2033,7 @@ where
 fn get_or_create_norms<F>(
   field: &Arc<FieldInfo>,
   supplier: F,
-  inner: &Arc<Mutex<Inner>>,
+  inner: &Arc<(IndexReaderBase, Mutex<Inner>)>,
 ) -> Result<CachedObject>
 where
   F: FnOnce() -> Result<CachedObject>,
@@ -2034,12 +2045,13 @@ fn get_or_create<F>(
   field: &Arc<FieldInfo>,
   norms: bool,
   supplier: F,
-  inner: &Arc<Mutex<Inner>>,
+  state: &Arc<(IndexReaderBase, Mutex<Inner>)>,
 ) -> Result<CachedObject>
 where
   F: FnOnce() -> Result<CachedObject>,
 {
-  let mut inner = inner.lock();
+  let _reader_guard = state.0.state.close_lock.lock();
+  let mut inner = state.1.lock();
   if inner
     .cached_field
     .as_ref()
@@ -2048,7 +2060,9 @@ where
     || inner.cache_is_norms != norms
   {
     debug_assert!(assert_created_only_once(&field.name, norms, &mut inner));
+    drop(inner);
     let new_object = supplier()?;
+    let mut inner = state.1.lock();
     inner.cached_field = Some(Arc::clone(field));
     inner.cache_is_norms = norms;
     inner.cached_object = Some(new_object.clone());

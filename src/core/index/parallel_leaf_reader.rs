@@ -596,6 +596,7 @@ where
       ParallelLeafReaderHook::ParallelCompositeReader => return Ok(()),
     }
 
+    let _close_guard = self.index_base.state.close_lock.lock();
     let mut first_error = None;
     for reader in &self.complete_reader_set {
       let result = if self.close_sub_readers {

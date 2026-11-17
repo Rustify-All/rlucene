@@ -25,7 +25,7 @@ use crate::core::index::term_vectors::TermVectors;
 use crate::core::util::IOUtils;
 use crate::core::util::accountable::Accountable;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
-use parking_lot::Mutex;
+use parking_lot::{Mutex, ReentrantMutex};
 use std::fmt::Display;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
@@ -196,6 +196,7 @@ pub trait IndexReader: Display {
   /// No other methods should be called after this has been called.
   fn close(&self) -> Result<()> {
     let base = self.index_base();
+    let _close_guard = base.state.close_lock.lock();
     if !base.state.closed.load(Ordering::SeqCst) {
       self.dec_ref()?;
       base.state.closed.store(true, Ordering::SeqCst);
@@ -337,14 +338,16 @@ pub trait IndexReader: Display {
 
 #[derive(Clone)]
 pub struct IndexReaderBase {
-  state: Arc<IndexReaderState>,
+  pub(super) state: Arc<IndexReaderState>,
 }
 
-struct IndexReaderState {
+pub(super) struct IndexReaderState {
   closed: AtomicBool,
-  closed_by_child: AtomicBool,
-  ref_count: AtomicI32,
+  pub(super) closed_by_child: AtomicBool,
+  pub(super) ref_count: AtomicI32,
   parent_readers: Mutex<Vec<Weak<IndexReaderState>>>,
+  // Match Java's close monitor, including same-thread close-listener reentry.
+  pub(super) close_lock: ReentrantMutex<()>,
 }
 
 impl IndexReaderBase {
@@ -355,6 +358,7 @@ impl IndexReaderBase {
         closed_by_child: AtomicBool::new(false),
         ref_count: AtomicI32::new(1),
         parent_readers: Mutex::new(Vec::new()),
+        close_lock: ReentrantMutex::new(()),
       }),
     }
   }
@@ -449,6 +453,10 @@ where
 }
 
 pub(crate) type ClosedListenerList = Arc<Mutex<Option<Vec<Arc<dyn ClosedListener>>>>>;
+
+// Share reader state across helper handles without retaining the reader itself.
+pub(super) type ReaderClosedListenerList =
+  Arc<(IndexReaderBase, Mutex<Option<Vec<Arc<dyn ClosedListener>>>>)>;
 
 #[doc(hidden)]
 pub trait IndexReaderContextKind<R>

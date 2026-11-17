@@ -24,8 +24,8 @@ use crate::core::index::directory_reader::{DirectoryReader, DirectoryReaderBase}
 use crate::core::index::dummy::dummy_index_commit::DummyIndexCommit;
 use crate::core::index::index_commit::{IndexCommit, cmp_commit, is_same_commit};
 use crate::core::index::index_reader::{
-  CacheHelper, CacheKey, ClosedListener, ClosedListenerList, CompositeReaderContextKind,
-  IndexReader, IndexReaderBase,
+  CacheHelper, CacheKey, ClosedListener, CompositeReaderContextKind, IndexReader, IndexReaderBase,
+  ReaderClosedListenerList,
 };
 use crate::core::index::index_writer::{IndexWriter, Inner};
 use crate::core::index::leaf_reader::LeafReader;
@@ -48,6 +48,7 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter, Write};
 use std::sync::Arc;
+use std::sync::atomic::Ordering as AtomicOrdering;
 
 /// Default implementation of DirectoryReader.
 pub struct StandardDirectoryReader<D>
@@ -81,6 +82,7 @@ where
     let base_composite_reader_base =
       BaseCompositeReaderBase::new(readers, leaf_sorter.as_ref(), &index_base)?;
     let directory_reader_base = DirectoryReaderBase::new(directory);
+    let cache_helper = CacheHelperImpl::new(&index_base);
     Ok(StandardDirectoryReader {
       writer,
       segment_infos,
@@ -90,7 +92,7 @@ where
       directory_reader_base,
       sub_reader_sorter: leaf_sorter,
       index_base,
-      cache_helper: CacheHelperImpl::new(),
+      cache_helper,
     })
   }
 
@@ -658,19 +660,19 @@ where
 #[derive(Clone)]
 pub struct CacheHelperImpl {
   cache_key: CacheKey,
-  reader_closed_listeners: ClosedListenerList,
+  reader_closed_listeners: ReaderClosedListenerList,
 }
 impl CacheHelperImpl {
-  fn new() -> Self {
+  fn new(index_base: &IndexReaderBase) -> Self {
     Self {
       cache_key: CacheKey::new(),
-      reader_closed_listeners: Arc::new(Mutex::new(Some(Vec::new()))),
+      reader_closed_listeners: Arc::new((index_base.clone(), Mutex::new(Some(Vec::new())))),
     }
   }
 
   fn notify_reader_closed_listeners(&self) -> Result<()> {
     let listeners = {
-      let mut reader_closed_listeners = self.reader_closed_listeners.lock();
+      let mut reader_closed_listeners = self.reader_closed_listeners.1.lock();
       reader_closed_listeners.take().unwrap_or_default()
     };
     IOUtils::apply_to_all(listeners.iter().map(Some), |listener| {
@@ -684,7 +686,19 @@ impl CacheHelper for CacheHelperImpl {
   }
 
   fn add_closed_listener(&self, listener: Arc<dyn ClosedListener>) -> Result<()> {
-    let mut reader_closed_listeners = self.reader_closed_listeners.lock();
+    let base = &self.reader_closed_listeners.0;
+    if base.state.ref_count.load(AtomicOrdering::SeqCst) <= 0 {
+      return Err(LuceneError::already_closed(
+        "this IndexReader is closed".to_string(),
+      ));
+    }
+    if base.state.closed_by_child.load(AtomicOrdering::Relaxed) {
+      return Err(LuceneError::already_closed(
+        "this IndexReader cannot be used anymore as one of its child readers was closed"
+          .to_string(),
+      ));
+    }
+    let mut reader_closed_listeners = self.reader_closed_listeners.1.lock();
     let Some(reader_closed_listeners) = reader_closed_listeners.as_mut() else {
       return Err(LuceneError::already_closed(
         "this IndexReader is closed".to_string(),

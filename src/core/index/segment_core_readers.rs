@@ -37,7 +37,9 @@ use crate::core::util::error::lucene_error::{LuceneError, LuceneErrorKind, Resul
 use crate::core::util::io_utils::IOUtils;
 
 use crate::core::codecs::knn_vectors_format::KnnVectorsFormat;
-use crate::core::index::index_reader::{CacheHelper, CacheKey, ClosedListener, ClosedListenerList};
+use crate::core::index::index_reader::{
+  CacheHelper, CacheKey, ClosedListener, ClosedListenerList, IndexReaderBase,
+};
 use parking_lot::Mutex;
 use std::fmt::{Display, Formatter};
 use std::sync::Arc;
@@ -269,8 +271,13 @@ where
     }
     Ok(())
   }
-  pub(crate) fn get_cache_helper(&self) -> SegmentCoreReadersCacheHelperImpl {
-    self.cache_helper.clone()
+  pub(crate) fn get_cache_helper(
+    &self,
+    reader_state: &IndexReaderBase,
+  ) -> SegmentCoreReadersCacheHelperImpl {
+    let mut helper = self.cache_helper.clone();
+    helper.reader_state = Some(reader_state.clone());
+    helper
   }
 }
 
@@ -288,6 +295,8 @@ where
 pub struct SegmentCoreReadersCacheHelperImpl {
   cache_key: CacheKey,
   core_closed_listeners: ClosedListenerList,
+  // Bound per reader, since readers with different lifetimes may share a core.
+  reader_state: Option<IndexReaderBase>,
 }
 impl Default for SegmentCoreReadersCacheHelperImpl {
   fn default() -> Self {
@@ -300,6 +309,7 @@ impl SegmentCoreReadersCacheHelperImpl {
     Self {
       cache_key: CacheKey::new(),
       core_closed_listeners: Arc::new(Mutex::new(Some(Vec::new()))),
+      reader_state: None,
     }
   }
 
@@ -319,6 +329,19 @@ impl CacheHelper for SegmentCoreReadersCacheHelperImpl {
   }
 
   fn add_closed_listener(&self, listener: Arc<dyn ClosedListener>) -> Result<()> {
+    if let Some(base) = &self.reader_state {
+      if base.state.ref_count.load(Ordering::SeqCst) <= 0 {
+        return Err(LuceneError::already_closed(
+          "this IndexReader is closed".to_string(),
+        ));
+      }
+      if base.state.closed_by_child.load(Ordering::Relaxed) {
+        return Err(LuceneError::already_closed(
+          "this IndexReader cannot be used anymore as one of its child readers was closed"
+            .to_string(),
+        ));
+      }
+    }
     let mut core_closed_listeners = self.core_closed_listeners.lock();
     let Some(core_closed_listeners) = core_closed_listeners.as_mut() else {
       return Err(LuceneError::already_closed(

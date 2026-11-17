@@ -33,8 +33,8 @@ use crate::core::index::field_info::FieldInfo;
 use crate::core::index::field_infos::FieldInfos;
 use crate::core::index::fields::Fields;
 use crate::core::index::index_reader::{
-  CacheHelper, CacheKey, ClosedListener, ClosedListenerList, IndexReader, IndexReaderBase,
-  LeafReaderContextKind,
+  CacheHelper, CacheKey, ClosedListener, IndexReader, IndexReaderBase, LeafReaderContextKind,
+  ReaderClosedListenerList,
 };
 use crate::core::index::leaf_metadata::LeafMetaData;
 use crate::core::index::leaf_reader::LeafReader;
@@ -59,6 +59,7 @@ use parking_lot::Mutex;
 use std::fmt::{Display, Formatter};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
+use std::sync::atomic::Ordering as AtomicOrdering;
 
 /// IndexReader implementation over a single segment.
 /// Instances pointing to the same segment
@@ -107,7 +108,7 @@ where
     let is_nrt = false;
     let original_si_id = Arc::clone(&si.info.id_key);
     let index_base = IndexReaderBase::new();
-    let reader_cache_helper = CacheHelperImpl::new();
+    let reader_cache_helper = CacheHelperImpl::new(&index_base);
     let core = Arc::new(SegmentCoreReaders::new(si.info.dir.as_ref(), &si, context)?);
     let seg_doc_values = Arc::new(SegmentDocValues::new());
     let field_infos = Arc::clone(&core.core_field_infos);
@@ -208,7 +209,7 @@ where
     )?);
     let original_si_id = Arc::clone(&si.info.id_key);
     let index_base = IndexReaderBase::new();
-    let reader_cache_helper = CacheHelperImpl::new();
+    let reader_cache_helper = CacheHelperImpl::new(&index_base);
     core.inc_ref()?;
     let mut segment_reader = Self {
       si,
@@ -533,7 +534,7 @@ where
   type CacheHelper = SegmentCoreReadersCacheHelperImpl;
 
   fn get_core_cache_helper(&self) -> Result<Option<Self::CacheHelper>> {
-    Ok(Option::from(self.core.get_cache_helper()))
+    Ok(Option::from(self.core.get_cache_helper(&self.index_base)))
   }
 
   type Terms = <<Self as CodecReader>::FieldsProducer as Fields>::Terms;
@@ -641,12 +642,14 @@ where
   }
 
   fn get_field_infos(&self) -> Result<Arc<FieldInfos>> {
+    self.ensure_open()?;
     Ok(self.field_infos.clone())
   }
 
   type Bits = DocBits;
 
   fn get_live_docs(&self) -> Result<Option<Self::Bits>> {
+    self.ensure_open()?;
     Ok(self.live_docs.clone())
   }
 
@@ -720,19 +723,19 @@ where
 #[derive(Clone)]
 pub struct CacheHelperImpl {
   cache_key: CacheKey,
-  reader_closed_listeners: ClosedListenerList,
+  reader_closed_listeners: ReaderClosedListenerList,
 }
 impl CacheHelperImpl {
-  fn new() -> Self {
+  fn new(index_base: &IndexReaderBase) -> Self {
     Self {
       cache_key: CacheKey::new(),
-      reader_closed_listeners: Arc::new(Mutex::new(Some(Vec::new()))),
+      reader_closed_listeners: Arc::new((index_base.clone(), Mutex::new(Some(Vec::new())))),
     }
   }
 
   fn notify_reader_closed_listeners(&self) -> Result<()> {
     let listeners = {
-      let mut reader_closed_listeners = self.reader_closed_listeners.lock();
+      let mut reader_closed_listeners = self.reader_closed_listeners.1.lock();
       reader_closed_listeners.take().unwrap_or_default()
     };
     IOUtils::apply_to_all(listeners.iter().map(Some), |listener| {
@@ -746,7 +749,19 @@ impl CacheHelper for CacheHelperImpl {
   }
 
   fn add_closed_listener(&self, listener: Arc<dyn ClosedListener>) -> Result<()> {
-    let mut reader_closed_listeners = self.reader_closed_listeners.lock();
+    let base = &self.reader_closed_listeners.0;
+    if base.state.ref_count.load(AtomicOrdering::SeqCst) <= 0 {
+      return Err(LuceneError::already_closed(
+        "this IndexReader is closed".to_string(),
+      ));
+    }
+    if base.state.closed_by_child.load(AtomicOrdering::Relaxed) {
+      return Err(LuceneError::already_closed(
+        "this IndexReader cannot be used anymore as one of its child readers was closed"
+          .to_string(),
+      ));
+    }
+    let mut reader_closed_listeners = self.reader_closed_listeners.1.lock();
     let Some(reader_closed_listeners) = reader_closed_listeners.as_mut() else {
       return Err(LuceneError::already_closed(
         "this IndexReader is closed".to_string(),

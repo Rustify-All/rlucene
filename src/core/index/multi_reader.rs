@@ -176,6 +176,7 @@ where
   }
 
   fn do_close(&self) -> Result<()> {
+    let _close_guard = self.index_reader_base.state.close_lock.lock();
     let mut first_err: Option<LuceneError> = None;
 
     for r in self.base_composite_reader_base.get_sequential_sub_readers() {
