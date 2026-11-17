@@ -117,16 +117,24 @@ impl FSLockFactory for NativeFSLockFactory {
     // we must create the file to have a truly canonical path.
     // if it's already created, we don't care. if it cant be created, it
     // will fail below.
-    let file = OpenOptions::new()
+    let creation_exception = OpenOptions::new()
       .write(true)
-      .create(true)
-      .truncate(false)
-      .open(&lock_file)?;
-    let real_path = lock_file
-      .canonicalize()
-      .map_err(|e| LuceneError::io_with_path(lock_file.to_string_lossy().into_owned(), e))?;
+      .create_new(true)
+      .open(&lock_file)
+      .map_err(LuceneError::io)
+      .and_then(CloseableWrite::close)
+      .err();
+    let real_path = lock_file.canonicalize().map_err(|e| {
+      let mut error = LuceneError::io_with_path(lock_file.to_string_lossy().into_owned(), e);
+      if let Some(creation_exception) = creation_exception {
+        error.add_suppressed(creation_exception);
+      }
+      error
+    })?;
     let real_path_str = real_path.to_string_lossy();
-    let metadata = file.metadata()?;
+    // Best-effort snapshot of the path before opening the channel, as in Java.
+    let metadata =
+      fs::metadata(&real_path).map_err(|e| LuceneError::io_with_path(real_path_str.as_ref(), e))?;
 
     let mut lock_held = self.lock_held.lock();
     if lock_held.contains(real_path_str.as_ref()) {
@@ -136,11 +144,27 @@ impl FSLockFactory for NativeFSLockFactory {
     }
     lock_held.insert(real_path_str.to_string());
     drop(lock_held);
-    let result =
-      std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| file.try_lock_exclusive()));
+    let mut file = None;
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+      let file = file.insert(
+        OpenOptions::new()
+          .write(true)
+          .create(true)
+          .truncate(false)
+          .open(&real_path)
+          .map_err(|e| LuceneError::io_with_path(real_path_str.as_ref(), e))?,
+      );
+      file.try_lock_exclusive().map_err(|error| {
+        if error.kind() == ErrorKind::WouldBlock {
+          LuceneError::lock_obtain_failed(format!("Lock held by another program: {real_path_str}"))
+        } else {
+          LuceneError::io_with_path(real_path_str.as_ref(), error)
+        }
+      })
+    }));
     match result {
       Ok(Ok(())) => Ok(NativeFSLock {
-        file: Mutex::new(Some(file)),
+        file: Mutex::new(file),
         path: real_path,
         metadata,
         closed: AtomicBool::new(false),
@@ -148,18 +172,12 @@ impl FSLockFactory for NativeFSLockFactory {
         close_lock: Mutex::new(()),
       }),
       Ok(Err(error)) => {
-        drop(file);
+        IOUtils::close_while_handling_exception_with(file, CloseableWrite::close);
         clear_lock_held(&real_path)?;
-        if error.kind() == ErrorKind::WouldBlock {
-          Err(LuceneError::lock_obtain_failed(format!(
-            "Lock held by another program: {real_path_str}"
-          )))
-        } else {
-          Err(LuceneError::io_with_path(real_path_str, error))
-        }
+        Err(error)
       },
       Err(payload) => {
-        drop(file);
+        IOUtils::close_while_handling_exception_with(file, CloseableWrite::close);
         clear_lock_held(&real_path)?;
         std::panic::resume_unwind(payload)
       },
@@ -277,11 +295,13 @@ impl Lock for NativeFSLock {
   /// Ensures the validity of the current lock.
   ///
   /// # Errors
-  /// - Returns [`LuceneError::illegal_state`](crate::core::util::error::lucene_error::LuceneError::illegal_state) if:
+  /// - Returns [`LuceneError::already_closed`] if:
+  ///   - The lock has already been released.
   ///   - The lock file is no longer in the global lock map.
   ///   - The file lock is no longer valid.
   ///   - The lock file size is not 0.
-  ///   - The lock file has been deleted or is inaccessible.
+  ///   - The backing file creation time has changed.
+  /// - Returns an I/O error if the file descriptor or path metadata cannot be read.
   fn ensure_valid(&self) -> Result<()> {
     if self.closed.load(Ordering::SeqCst) {
       return Err(LuceneError::already_closed(format!(
@@ -298,6 +318,7 @@ impl Lock for NativeFSLock {
         self.path
       )));
     }
+    drop(lock_held);
 
     if !self.lock_valid.load(Ordering::SeqCst) {
       return Err(LuceneError::already_closed(format!(
@@ -316,17 +337,32 @@ impl Lock for NativeFSLock {
       .metadata()
       .map_err(LuceneError::io)?;
     if metadata.len() != 0 {
-      return Err(LuceneError::illegal_state(format!(
+      return Err(LuceneError::already_closed(format!(
         "Unexpected lock file size: {}, (lock: {:?})",
         metadata.len(),
         self.path
       )));
     }
 
-    if !self.path.exists() {
-      return Err(LuceneError::illegal_state(format!(
-        "Lock file deleted or inaccessible: {:?}",
-        self.path
+    let metadata = fs::metadata(&self.path)
+      .map_err(|e| LuceneError::io_with_path(self.path.to_string_lossy(), e))?;
+    #[cfg(target_os = "macos")]
+    let (creation_time, expected_creation_time) = {
+      // The JDK 23 Unix provider exposes macOS birth times in whole seconds.
+      use std::os::macos::fs::MetadataExt;
+      (metadata.st_birthtime(), self.metadata.st_birthtime())
+    };
+    #[cfg(not(target_os = "macos"))]
+    let (creation_time, expected_creation_time) = (
+      metadata.created().or_else(|_| metadata.modified())?,
+      self
+        .metadata
+        .created()
+        .or_else(|_| self.metadata.modified())?,
+    );
+    if creation_time != expected_creation_time {
+      return Err(LuceneError::already_closed(format!(
+        "Underlying file changed by an external force at {creation_time:?}, (lock={self})"
       )));
     }
 

@@ -284,6 +284,7 @@ where
   T: FSDirectoryBase,
 {
   fn list_all(&self) -> Result<Vec<String>> {
+    self.ensure_open()?;
     let pending_deletes = self.pending_deletes.lock();
     Self::list_all(&self.directory, Some(&pending_deletes))
   }
@@ -308,6 +309,7 @@ where
   }
 
   fn file_length(&self, name: &str) -> Result<usize> {
+    self.ensure_open()?;
     if self.pending_deletes.lock().contains(name) {
       return Err(LuceneError::not_such_file(format!(
         "file \"{name}\" is pending delete"
@@ -356,6 +358,7 @@ where
     suffix: &str,
     _context: &IOContext,
   ) -> Result<Self::IndexOutput> {
+    self.ensure_open()?;
     let mut pending_deletes = self.pending_deletes.lock();
     Self::maybe_delete_pending_files(
       &self.directory,
@@ -399,6 +402,7 @@ where
   }
 
   fn sync(&self, names: &[String]) -> Result<()> {
+    self.ensure_open()?;
     let mut file_path = PathBuf::new();
     for name in names {
       file_path.clear();
@@ -415,6 +419,7 @@ where
   }
 
   fn sync_metadata(&self) -> Result<()> {
+    self.ensure_open()?;
     IOUtils::fsync(&self.directory, true)?;
     Self::maybe_delete_pending_files(
       &self.directory,
@@ -425,6 +430,7 @@ where
   }
 
   fn rename(&self, source: &str, dest: &str) -> Result<()> {
+    self.ensure_open()?;
     let mut pending_deletes = self.pending_deletes.lock();
     if pending_deletes.contains(source) {
       return Err(LuceneError::not_such_file(format!(

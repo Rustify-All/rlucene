@@ -24,7 +24,7 @@ use std::time::SystemTime;
 use crate::core::store::fs_lock_factory::FSLockFactory;
 use crate::core::store::lock::Lock;
 use crate::core::store::lock_factory::LockFactory;
-use crate::core::util::close::CloseableRef;
+use crate::core::util::close::{CloseableRef, CloseableWrite};
 use crate::core::util::error::lucene_error::{CaughtResultExt, LuceneError, Result};
 use parking_lot::Mutex;
 
@@ -89,8 +89,9 @@ impl FSLockFactory for SimpleFSLockFactory {
       .open(&lock_file)
     {
       Ok(file) => {
-        let metadata = file
-          .metadata()
+        file.close()?;
+        // Snapshot the path after creation, as Files.createFile/readAttributes do.
+        let metadata = fs::metadata(&lock_file)
           .map_err(|e| LuceneError::io_with_path(lock_file.to_string_lossy().into_owned(), e))?;
         let creation_time = metadata
           .created()
@@ -192,8 +193,26 @@ impl Lock for SimpleFSLock {
       .map_err(|e| LuceneError::io_with_path(self.path.to_string_lossy().into_owned(), e))?;
     let creation_time = metadata
       .created()
+      .or_else(|_| metadata.modified())
       .map_err(|e| LuceneError::io_with_path(self.path.to_string_lossy().into_owned(), e))?;
-    if self.creation_time != creation_time {
+    #[cfg(target_os = "macos")]
+    let changed = {
+      // The JDK 23 Unix provider exposes macOS birth times in whole seconds.
+      // Keep SystemTime storage and floor both values, including before the epoch.
+      let [expected, actual] = [self.creation_time, creation_time].map(|time| {
+        match time.duration_since(SystemTime::UNIX_EPOCH) {
+          Ok(duration) => i128::from(duration.as_secs()),
+          Err(error) => {
+            let duration = error.duration();
+            -i128::from(duration.as_secs()) - i128::from(duration.subsec_nanos() != 0)
+          },
+        }
+      });
+      expected != actual
+    };
+    #[cfg(not(target_os = "macos"))]
+    let changed = self.creation_time != creation_time;
+    if changed {
       return Err(LuceneError::already_closed(format!(
         "Underlying file changed by an external force at {creation_time:?}, (lock={self})"
       )));

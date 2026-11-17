@@ -127,11 +127,14 @@ where
   W: Write + Send,
 {
   fn close(&self) -> Result<()> {
-    let result = self
-      .lock
-      .ensure_valid()
-      .and_then(|_| self.verify(MSG_LOCK_RELEASED));
-    IOUtils::use_or_suppress_result(result, self.lock.close())
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      self
+        .lock
+        .ensure_valid()
+        .and_then(|_| self.verify(MSG_LOCK_RELEASED))
+    }));
+    let close_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.lock.close()));
+    IOUtils::use_or_suppress_caught_result(result, close_result)
   }
 }
 
