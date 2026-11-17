@@ -1854,7 +1854,7 @@ impl PerField {
       let mut stream = field
         .token_stream(analyzer, token_stream)?
         .ok_or_else(|| LuceneError::illegal_state("Analyzer token_stream is not initialized"))?;
-      // Keep the owner (including the analyzer's RefMut) alive while a concrete
+      // Keep the owner (including the analyzer's stream guard) alive while a concrete
       // stream is borrowed for the entire reset/increment/end/close sequence.
       macro_rules! consume_tokens {
         ($stream:expr, $vectors:literal) => {{

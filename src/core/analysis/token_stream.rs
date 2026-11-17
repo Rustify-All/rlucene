@@ -24,6 +24,7 @@ use crate::core::util::attribute_source::{AttributeSource, Attributes};
 use crate::core::util::close::Closeable;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::impl_from_for_enum;
+use parking_lot::{ArcMutexGuard, RawMutex};
 use std::cell::RefMut;
 
 pub trait TokenStream: Closeable {
@@ -315,6 +316,56 @@ where
 }
 
 impl<T> TokenStream for RefMut<'_, T>
+where
+  T: TokenStream,
+{
+  fn increment_token(&mut self) -> Result<bool> {
+    (**self).increment_token()
+  }
+
+  fn end(&mut self) -> Result<()> {
+    (**self).end()
+  }
+
+  fn default_end(&mut self) -> Result<()> {
+    (**self).default_end()
+  }
+
+  fn reset(&mut self) -> Result<()> {
+    (**self).reset()
+  }
+
+  fn default_reset(&mut self) -> Result<()> {
+    (**self).default_reset()
+  }
+
+  fn get_attribute_source(&self) -> &Attributes {
+    (**self).get_attribute_source()
+  }
+
+  fn get_attribute_source_mut(&mut self) -> &mut Attributes {
+    (**self).get_attribute_source_mut()
+  }
+
+  fn set_reader(&mut self, input: ReaderEnum) -> Result<()> {
+    (**self).set_reader(input)
+  }
+
+  fn set_reader_test_point(&mut self) -> Result<()> {
+    (**self).set_reader_test_point()
+  }
+}
+
+impl<T> Closeable for ArcMutexGuard<RawMutex, T>
+where
+  T: TokenStream,
+{
+  fn close(&mut self) -> Result<()> {
+    (**self).close()
+  }
+}
+
+impl<T> TokenStream for ArcMutexGuard<RawMutex, T>
 where
   T: TokenStream,
 {

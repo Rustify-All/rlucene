@@ -29,6 +29,7 @@ use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::impl_from_for_enum;
 #[cfg(test)]
 use crate::test_framework::core::analysis::mock_analyzer::MockAnalyzer;
+use parking_lot::{ArcMutexGuard, Mutex, RawMutex};
 use std::cell::{RefCell, RefMut};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -66,7 +67,7 @@ impl From<Arc<String>> for AnalyzerText<'_> {
 }
 
 pub struct AnalyzerStoredValue {
-  reuse_strategy: ReuseStrategyFactory,
+  reuse_strategy: Option<ReuseStrategyFactory>,
   stored_value: ThreadLocal<RefCell<ReuseStrategyEnum>>,
   text_buffers: ThreadLocal<RefCell<Arc<String>>>,
 }
@@ -78,7 +79,7 @@ impl AnalyzerStoredValue {
 
   pub fn global() -> Self {
     Self {
-      reuse_strategy: ReuseStrategyFactory::Global,
+      reuse_strategy: Some(ReuseStrategyFactory::Global),
       stored_value: ThreadLocal::new(),
       text_buffers: ThreadLocal::new(),
     }
@@ -86,35 +87,45 @@ impl AnalyzerStoredValue {
 
   pub fn per_field() -> Self {
     Self {
-      reuse_strategy: ReuseStrategyFactory::PerField,
+      reuse_strategy: Some(ReuseStrategyFactory::PerField),
       stored_value: ThreadLocal::new(),
       text_buffers: ThreadLocal::new(),
     }
   }
 
-  fn get(&self) -> &RefCell<ReuseStrategyEnum> {
-    self
-      .stored_value
-      .get_or(|| RefCell::new(self.reuse_strategy.new_reuse_strategy()))
+  fn get(&self) -> Result<&RefCell<ReuseStrategyEnum>> {
+    let reuse_strategy = self
+      .reuse_strategy
+      .as_ref()
+      .ok_or_else(|| LuceneError::already_closed("this Analyzer is closed"))?;
+    Ok(
+      self
+        .stored_value
+        .get_or(|| RefCell::new(reuse_strategy.new_reuse_strategy())),
+    )
   }
 
-  pub fn reuse_strategy(&self) -> RefMut<'_, ReuseStrategyEnum> {
-    self.get().borrow_mut()
+  /// Returns the reuse state, or an already-closed error after this analyzer is closed.
+  pub fn reuse_strategy(&self) -> Result<RefMut<'_, ReuseStrategyEnum>> {
+    Ok(self.get()?.borrow_mut())
   }
 
-  fn reader_for_text(&self, text: AnalyzerText<'_>) -> ReaderEnum {
+  fn reader_for_text(&self, text: AnalyzerText<'_>) -> Result<ReaderEnum> {
+    if self.reuse_strategy.is_none() {
+      return Err(LuceneError::already_closed("this Analyzer is closed"));
+    }
     let text = match text {
-      AnalyzerText::Shared(text) => return ReaderEnum::from(text),
+      AnalyzerText::Shared(text) => return Ok(ReaderEnum::from(text)),
       AnalyzerText::SharedText(text) => {
-        return ReaderEnum::SharedText(StringReader {
+        return Ok(ReaderEnum::SharedText(StringReader {
           source: Some(text),
           next: 0,
-        });
+        }));
       },
       AnalyzerText::Borrowed(text) => text,
     };
     if text.len() > MAX_REUSABLE_TEXT_BYTES {
-      return ReaderEnum::from(text);
+      return Ok(ReaderEnum::from(text));
     }
     let mut buffer = self
       .text_buffers
@@ -137,12 +148,15 @@ impl AnalyzerStoredValue {
       // before replacing it, or change the contents visible to that reader.
       *buffer = Arc::new(text.to_owned());
     }
-    ReaderEnum::from(Arc::clone(&buffer))
+    Ok(ReaderEnum::from(Arc::clone(&buffer)))
   }
 
   pub fn close(&mut self) -> Result<()> {
-    self.stored_value.clear();
-    self.text_buffers.clear();
+    if self.reuse_strategy.is_some() {
+      self.stored_value.clear();
+      self.text_buffers.clear();
+      self.reuse_strategy = None;
+    }
     Ok(())
   }
 }
@@ -196,39 +210,39 @@ pub trait Analyzer: Closeable + Send + Sync {
     Ok(in_)
   }
 
+  /// Returns exclusive access to the selected component, independently of the reuse cache.
+  /// Drop the returned guard before requesting that same component again.
   fn token_stream(
     &self,
     field_name: &str,
     input: ReaderEnum,
-  ) -> Result<RefMut<'_, AnalyzerTokenStreams>> {
-    let reader = self.init_reader(field_name, input);
-    let mut reuse_strategy = self.stored_value().reuse_strategy();
-    if reuse_strategy
+  ) -> Result<ArcMutexGuard<RawMutex, AnalyzerTokenStreams>> {
+    let reuse_strategy = self.stored_value().get()?;
+    // Retain the component selected before init_reader: a callback can replace
+    // the cache, but Java still uses the previously selected component here.
+    let components = reuse_strategy
+      .borrow_mut()
       .get_reusable_components(field_name)?
-      .is_none()
-    {
-      let v = self.create_components(field_name)?;
-      reuse_strategy.set_reusable_components(field_name, v)?;
-    }
-
-    let mut component_error = None;
-    let mut components = RefMut::filter_map(reuse_strategy, |reuse_strategy| match reuse_strategy
-      .get_reusable_components(field_name)
-    {
-      Ok(components) => components,
-      Err(error) => {
-        component_error = Some(error);
-        None
+      .map(|components| TokenStreamComponents {
+        sink: Arc::clone(&components.sink),
+        max_token_length: components.max_token_length,
+      });
+    let reader = self.init_reader(field_name, input);
+    let mut components = match components {
+      Some(components) => components,
+      None => {
+        let components = self.create_components(field_name)?;
+        reuse_strategy.borrow_mut().set_reusable_components(
+          field_name,
+          TokenStreamComponents {
+            sink: Arc::clone(&components.sink),
+            max_token_length: components.max_token_length,
+          },
+        )?;
+        components
       },
-    })
-    .map_err(|_| {
-      component_error
-        .unwrap_or_else(|| LuceneError::illegal_state("Analyzer token_stream is not initialized"))
-    })?;
-    components.set_reader(reader)?;
-    Ok(RefMut::map(components, |components| {
-      components.get_token_stream()
-    }))
+    };
+    components.set_reader(reader)
   }
 
   /// Analyzes text supplied with `.into()` or an explicit [`AnalyzerText`].
@@ -240,8 +254,8 @@ pub trait Analyzer: Closeable + Send + Sync {
     &self,
     field_name: &str,
     text: AnalyzerText<'_>,
-  ) -> Result<RefMut<'_, AnalyzerTokenStreams>> {
-    self.token_stream(field_name, self.stored_value().reader_for_text(text))
+  ) -> Result<ArcMutexGuard<RawMutex, AnalyzerTokenStreams>> {
+    self.token_stream(field_name, self.stored_value().reader_for_text(text)?)
   }
 
   fn normalize(&self, field_name: &str, text: &str) -> Result<BytesRef<Vec<u8>>> {
@@ -369,7 +383,7 @@ where
     &self,
     field_name: &str,
     input: ReaderEnum,
-  ) -> Result<RefMut<'_, AnalyzerTokenStreams>> {
+  ) -> Result<ArcMutexGuard<RawMutex, AnalyzerTokenStreams>> {
     (**self).token_stream(field_name, input)
   }
 
@@ -377,7 +391,7 @@ where
     &self,
     field_name: &str,
     text: AnalyzerText<'_>,
-  ) -> Result<RefMut<'_, AnalyzerTokenStreams>> {
+  ) -> Result<ArcMutexGuard<RawMutex, AnalyzerTokenStreams>> {
     (**self).token_stream_from_text(field_name, text)
   }
 
@@ -486,7 +500,7 @@ impl Analyzer for AnalyzerEnum {
     &self,
     field_name: &str,
     input: ReaderEnum,
-  ) -> Result<RefMut<'_, AnalyzerTokenStreams>> {
+  ) -> Result<ArcMutexGuard<RawMutex, AnalyzerTokenStreams>> {
     match self {
       AnalyzerEnum::Whitespace(v) => v.token_stream(field_name, input),
       AnalyzerEnum::Standard(v) => v.token_stream(field_name, input),
@@ -498,7 +512,7 @@ impl Analyzer for AnalyzerEnum {
     &self,
     field_name: &str,
     text: AnalyzerText<'_>,
-  ) -> Result<RefMut<'_, AnalyzerTokenStreams>> {
+  ) -> Result<ArcMutexGuard<RawMutex, AnalyzerTokenStreams>> {
     match self {
       AnalyzerEnum::Whitespace(v) => v.token_stream_from_text(field_name, text),
       AnalyzerEnum::Standard(v) => v.token_stream_from_text(field_name, text),
@@ -677,7 +691,7 @@ impl ReuseStrategy for PerFieldReuseStrategy {
 }
 
 pub struct TokenStreamComponents {
-  sink: AnalyzerTokenStreams,
+  sink: Arc<Mutex<AnalyzerTokenStreams>>,
   max_token_length: Option<usize>,
 }
 impl TokenStreamComponents {
@@ -686,13 +700,17 @@ impl TokenStreamComponents {
     T: Into<AnalyzerTokenStreams>,
   {
     Self {
-      sink: sink.into(),
+      sink: Arc::new(Mutex::new(sink.into())),
       max_token_length,
     }
   }
-  fn set_reader(&mut self, reader: ReaderEnum) -> Result<()> {
-    match self.sink {
-      AnalyzerTokenStreams::Standard(ref mut ts) => {
+  fn set_reader(
+    &mut self,
+    reader: ReaderEnum,
+  ) -> Result<ArcMutexGuard<RawMutex, AnalyzerTokenStreams>> {
+    let mut sink = self.get_token_stream()?;
+    match &mut *sink {
+      AnalyzerTokenStreams::Standard(ts) => {
         let src = &mut ts.base.input.token_filter_base.input;
         src.set_reader(reader)?;
         let max_token_length = self
@@ -700,18 +718,24 @@ impl TokenStreamComponents {
           .ok_or_else(|| LuceneError::illegal_state("max_token_length is not set"))?;
         src.set_max_token_length(max_token_length)?;
       },
-      AnalyzerTokenStreams::Whitespace(ref mut ts) => {
+      AnalyzerTokenStreams::Whitespace(ts) => {
         ts.set_reader(reader)?;
       },
-      AnalyzerTokenStreams::Custom(ref mut ts) => {
+      AnalyzerTokenStreams::Custom(ts) => {
         ts.set_reader(reader)?;
       },
       _ => return Err(LuceneError::unsupported_operation("")),
     }
-    Ok(())
+    Ok(sink)
   }
-  pub fn get_token_stream(&mut self) -> &mut AnalyzerTokenStreams {
-    &mut self.sink
+
+  /// Borrows this component's stream independently of the analyzer's reuse cache.
+  /// Drop the returned guard before borrowing the same stream again.
+  pub fn get_token_stream(&mut self) -> Result<ArcMutexGuard<RawMutex, AnalyzerTokenStreams>> {
+    self
+      .sink
+      .try_lock_arc()
+      .ok_or_else(|| LuceneError::illegal_state("Analyzer token stream is already borrowed"))
   }
 }
 

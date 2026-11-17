@@ -1240,10 +1240,10 @@ where
   }));
   let finally_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
     a.stored_value()
-      .reuse_strategy()
+      .reuse_strategy()?
       .get_reusable_components(field)?
       .ok_or_else(|| LuceneError::illegal_state("reusable components are missing"))?
-      .get_token_stream()
+      .get_token_stream()?
       .close()
   }));
   let result = IOUtils::finally_caught_result(result, finally_result);

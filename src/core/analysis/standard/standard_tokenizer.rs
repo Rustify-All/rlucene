@@ -107,6 +107,7 @@ impl StandardTokenizer {
   ///
   /// Returns an error if the given length is outside the range
   /// `[1, MAX_TOKEN_LENGTH_LIMIT]`.
+  #[inline(always)]
   pub fn set_max_token_length(&mut self, length: usize) -> Result<()> {
     if length < 1 {
       return Err(LuceneError::illegal_argument(

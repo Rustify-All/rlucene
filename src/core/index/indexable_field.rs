@@ -26,8 +26,8 @@ use crate::core::index::indexable_field_type::IndexableFieldType;
 use crate::core::index::{BytesRef, BytesRefValue, BytesRefValueEnum};
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::number::Number;
+use parking_lot::{ArcMutexGuard, RawMutex};
 use std::borrow::{Borrow, Cow};
-use std::cell::RefMut;
 use std::fmt::Display;
 
 /// Represents a single field for indexing. [`IndexWriter`](crate::core::index::index_writer::IndexWriter)
@@ -140,7 +140,7 @@ impl From<FieldDataEnum> for StoredValueEnum<'_> {
 
 pub type IndexingTokenStream<'a> = Option<
   IndexingTokenStreamEnum3<
-    RefMut<'a, AnalyzerTokenStreams>,
+    ArcMutexGuard<RawMutex, AnalyzerTokenStreams>,
     &'a mut ReusedIndexingTokenStream,
     &'a mut FieldTokenStreamEnum,
   >,
