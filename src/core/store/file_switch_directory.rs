@@ -21,10 +21,11 @@ use crate::core::util::HasIdentity;
 use crate::core::util::close::CloseableRef;
 use crate::core::util::error::lucene_error::{LuceneError, LuceneErrorKind, Result};
 use crate::core::util::io_utils::IOUtils;
-use parking_lot::Mutex;
+use parking_lot::ReentrantMutex;
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::io::{Error, ErrorKind};
+use std::sync::atomic::{AtomicBool, Ordering};
 fn embedded_extension(name: &str) -> Option<&str> {
   name.split('.').skip(1).find_map(|part| {
     let len = part.bytes().take_while(u8::is_ascii_alphabetic).count();
@@ -66,7 +67,8 @@ where
   secondary_dir: D,
   primary_dir: D,
   primary_extensions: HashSet<String>,
-  do_close: Mutex<bool>,
+  do_close: AtomicBool,
+  close_lock: ReentrantMutex<()>,
   id: Identity,
 }
 
@@ -95,7 +97,8 @@ where
       secondary_dir,
       primary_dir,
       primary_extensions,
-      do_close: Mutex::new(do_close),
+      do_close: AtomicBool::new(do_close),
+      close_lock: ReentrantMutex::new(()),
       id: Identity::new(),
     })
   }
@@ -158,10 +161,14 @@ where
   D: Directory,
 {
   fn close(&self) -> Result<()> {
-    let mut do_close = self.do_close.lock();
-    if *do_close {
+    // Publish successful closure to callers that skip the coordination lock.
+    if !self.do_close.load(Ordering::Acquire) {
+      return Ok(());
+    }
+    let _guard = self.close_lock.lock();
+    if self.do_close.load(Ordering::Relaxed) {
       IOUtils::close((Some(&self.primary_dir), Some(&self.secondary_dir)))?;
-      *do_close = false;
+      self.do_close.store(false, Ordering::Release);
     }
     Ok(())
   }

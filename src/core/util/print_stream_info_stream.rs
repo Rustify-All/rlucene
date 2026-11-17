@@ -18,8 +18,9 @@ use crate::core::util::close::CloseableRef;
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::info_stream::{InfoStream, InfoStreamEnum};
 use chrono::Utc;
-use parking_lot::Mutex;
+use parking_lot::ReentrantMutex;
 use std::any::TypeId;
+use std::cell::RefCell;
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicI32, Ordering};
 
@@ -29,7 +30,7 @@ static MESSAGE_ID: AtomicI32 = AtomicI32::new(0);
 pub struct PrintStreamInfoStream<W> {
   message_id: i32,
   // Write has no close operation. Taking the owned writer releases its resource.
-  pub(crate) stream: Mutex<Option<W>>,
+  pub(crate) stream: ReentrantMutex<RefCell<Option<W>>>,
 }
 
 impl<W> PrintStreamInfoStream<W> {
@@ -40,7 +41,7 @@ impl<W> PrintStreamInfoStream<W> {
   pub fn with_message_id(stream: W, message_id: i32) -> Self {
     Self {
       message_id,
-      stream: Mutex::new(Some(stream)),
+      stream: ReentrantMutex::new(RefCell::new(Some(stream))),
     }
   }
 }
@@ -53,7 +54,8 @@ where
     let current_thread = std::thread::current();
     let thread_name = current_thread.name().unwrap_or("<unnamed>");
     let timestamp = self.get_timestamp();
-    let mut stream = self.stream.lock();
+    let stream_guard = self.stream.lock();
+    let mut stream = stream_guard.borrow_mut();
     if let Some(stream) = stream.as_mut() {
       // Record I/O failures instead of propagating them from println.
       let _ = writeln!(
@@ -77,8 +79,9 @@ where
 {
   fn close(&self) -> Result<()> {
     if !self.is_system_stream() {
-      let mut stream = self.stream.lock();
-      if let Some(mut stream) = stream.take() {
+      let stream_guard = self.stream.lock();
+      let stream = stream_guard.borrow_mut().take();
+      if let Some(mut stream) = stream {
         // An I/O failure does not escape close.
         let _ = stream.flush();
       }

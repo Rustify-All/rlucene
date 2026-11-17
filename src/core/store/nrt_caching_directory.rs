@@ -30,7 +30,7 @@ use crate::core::util::io_utils::IOUtils;
 use crate::core::util::{HasIdentity, TryIntoInt};
 #[cfg(test)]
 use crate::test_framework::core::store::test_nrt_caching_directory::AssertCacheWriteNRTCachingDirectory;
-use parking_lot::Mutex;
+use parking_lot::ReentrantMutex;
 use std::collections::HashSet;
 use std::fmt::{Display, Formatter};
 use std::io::ErrorKind;
@@ -82,7 +82,8 @@ pub struct NRTCachingDirectory<D> {
   max_cached_bytes: i64,
 
   delegate: D,
-  lock: Mutex<()>,
+  // Match Java's synchronized methods: delegates may reenter this directory.
+  lock: ReentrantMutex<()>,
   hook: NRTCachingDirectoryHook,
   id: Identity,
 }
@@ -125,7 +126,7 @@ impl<D> NRTCachingDirectory<D> {
       max_merge_size_bytes: (max_merge_size_mb * 1024.0 * 1024.0) as i64,
       max_cached_bytes: (max_cached_mb * 1024.0 * 1024.0) as i64,
       delegate,
-      lock: Mutex::new(()),
+      lock: ReentrantMutex::new(()),
       hook,
       id: Identity::new(),
     }

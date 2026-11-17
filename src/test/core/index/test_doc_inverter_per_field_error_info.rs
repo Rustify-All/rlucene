@@ -203,6 +203,7 @@ fn info_bytes_to_string(
     print_stream_info_stream
       .stream
       .lock()
+      .borrow()
       .as_ref()
       .expect("info stream is still open")
       .get_ref()
