@@ -375,7 +375,7 @@ where
     use_buffer: bool,
   ) -> Result<()>
   where
-    D: Copy,
+    D: wide::bytemuck::Pod,
     F: Fn(&[u8]) -> D,
   {
     if len == 0 {
@@ -542,25 +542,21 @@ where
   ///
   /// # Behavior
   /// - If `type_size` is 1, the function directly copies the data from `src`
-  ///   to `dst` as bytes using unsafe code.
+  ///   to `dst` through a safe byte view.
   /// - Otherwise, it iterates over `src` in chunks of `type_size`, applies
   ///   the `converter` function to each chunk, and stores the resulting value
   ///   in `dst`.
   ///
-  /// # Safety
-  /// - Unsafe code is used to cast `dst` to a mutable byte slice when
-  ///   `type_size == 1`. The caller must ensure that `dst` has sufficient
-  ///   capacity and correct alignment to avoid undefined behavior.
+  /// The `Pod` bound ensures that the destination has no padding and permits
+  /// every bit pattern, so it can safely be viewed and written as bytes.
   fn process_data<D, F>(src: &[u8], dst: &mut [D], len: usize, type_size: usize, converter: &F)
   where
-    D: Copy,
+    D: wide::bytemuck::Pod,
     F: Fn(&[u8]) -> D,
   {
     if type_size == 1 {
-      unsafe {
-        let dst_u8 = std::slice::from_raw_parts_mut(dst.as_mut_ptr() as *mut u8, len);
-        dst_u8[..src.len()].copy_from_slice(src);
-      }
+      let dst_u8 = &mut wide::bytemuck::cast_slice_mut::<D, u8>(dst)[..len];
+      dst_u8[..src.len()].copy_from_slice(src);
     } else {
       for (i, dst_item) in dst.iter_mut().enumerate().take(len) {
         let chunk_start = i * type_size;

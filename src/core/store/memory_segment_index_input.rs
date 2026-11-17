@@ -607,50 +607,45 @@ impl MemorySegmentIndexInput {
   // itself preserves bytes on every target. Small copies use constant widths
   // to avoid a library call; larger copies retain platform memcpy.
   #[inline]
-  unsafe fn copy_bytes(src: *const u8, dst: *mut u8, len: usize) {
-    // SAFETY: callers check a readable immutable source and a disjoint,
-    // writable destination of exactly len bytes and retain the source owner.
-    // Each head/tail copy stays within both ranges; separate copies may
-    // overlap each other in the destination, but never their own source.
-    unsafe {
-      if len <= 80 {
-        match len {
-          0 => {},
-          1 => std::ptr::copy_nonoverlapping(src, dst, 1),
-          2..=3 => {
-            std::ptr::copy_nonoverlapping(src, dst, 2);
-            std::ptr::copy_nonoverlapping(src.add(len - 2), dst.add(len - 2), 2);
-          },
-          4..=7 => {
-            std::ptr::copy_nonoverlapping(src, dst, 4);
-            std::ptr::copy_nonoverlapping(src.add(len - 4), dst.add(len - 4), 4);
-          },
-          8..=16 => {
-            std::ptr::copy_nonoverlapping(src, dst, 8);
-            std::ptr::copy_nonoverlapping(src.add(len - 8), dst.add(len - 8), 8);
-          },
-          17..=32 => {
-            std::ptr::copy_nonoverlapping(src, dst, 16);
-            std::ptr::copy_nonoverlapping(src.add(len - 16), dst.add(len - 16), 16);
-          },
-          _ => {
-            std::ptr::copy_nonoverlapping(src, dst, 32);
-            std::ptr::copy_nonoverlapping(src.add(len - 32), dst.add(len - 32), 32);
-            if len > 64 {
-              std::ptr::copy_nonoverlapping(src.add(32), dst.add(32), 16);
-            }
-          },
-        }
-      } else {
-        std::ptr::copy_nonoverlapping(src, dst, len);
+  fn copy_bytes(src: &[u8], dst: &mut [u8]) {
+    let len = src.len();
+    let dst = &mut dst[..len];
+    if len <= 80 {
+      match len {
+        0 => {},
+        1 => dst[..1].copy_from_slice(&src[..1]),
+        2..=3 => {
+          dst[..2].copy_from_slice(&src[..2]);
+          dst[len - 2..len].copy_from_slice(&src[len - 2..]);
+        },
+        4..=7 => {
+          dst[..4].copy_from_slice(&src[..4]);
+          dst[len - 4..len].copy_from_slice(&src[len - 4..]);
+        },
+        8..=16 => {
+          dst[..8].copy_from_slice(&src[..8]);
+          dst[len - 8..len].copy_from_slice(&src[len - 8..]);
+        },
+        17..=32 => {
+          dst[..16].copy_from_slice(&src[..16]);
+          dst[len - 16..len].copy_from_slice(&src[len - 16..]);
+        },
+        _ => {
+          dst[..32].copy_from_slice(&src[..32]);
+          dst[len - 32..len].copy_from_slice(&src[len - 32..]);
+          if len > 64 {
+            dst[32..48].copy_from_slice(&src[32..48]);
+          }
+        },
       }
+    } else {
+      dst[..len].copy_from_slice(src);
     }
   }
-  // SAFETY contract: only the three primitive callers below use this helper.
-  // T is i32/f32 with N=4, or i64 with N=8; all bit patterns are valid and
-  // decode is the corresponding from_le_bytes operation.
+  // The three primitive callers use i32/f32 with N=4, or i64 with N=8,
+  // and the corresponding from_le_bytes decoder. Pod permits a safe byte view.
   #[cold]
-  unsafe fn read_array_boundary<T, F, const N: usize>(
+  fn read_array_boundary<T, F, const N: usize>(
     &mut self,
     dst: &mut [T],
     offset: usize,
@@ -658,6 +653,7 @@ impl MemorySegmentIndexInput {
     decode: F,
   ) -> Result<()>
   where
+    T: wide::bytemuck::Pod,
     F: Fn([u8; N]) -> T,
   {
     CoreHelper::check_from_index_size(offset, len, dst.len())?;
@@ -705,22 +701,16 @@ impl MemorySegmentIndexInput {
       } else {
         let bytes = &segment[*position..*position + count * N];
         #[cfg(target_endian = "little")]
-        // SAFETY: count complete elements fit both slices. The primitive type
-        // contract above makes the byte copy valid, including every float bit
-        // pattern. The retained read-only mapping is disjoint from dst.
-        unsafe {
-          let target = dst.as_mut_ptr().cast::<u8>();
+        {
+          let target = wide::bytemuck::cast_slice_mut::<T, u8>(&mut dst[..count]);
           if (65..=128).contains(&bytes.len()) {
             // This range also covers a short long-array tail without a memcpy
             // call. Both 64-byte copies stay within the complete elements.
-            std::ptr::copy_nonoverlapping(bytes.as_ptr(), target, 64);
-            std::ptr::copy_nonoverlapping(
-              bytes.as_ptr().add(bytes.len() - 64),
-              target.add(bytes.len() - 64),
-              64,
-            );
+            let tail = bytes.len() - 64;
+            target[..64].copy_from_slice(&bytes[..64]);
+            target[tail..bytes.len()].copy_from_slice(&bytes[tail..]);
           } else {
-            Self::copy_bytes(bytes.as_ptr(), target, bytes.len());
+            Self::copy_bytes(bytes, target);
           }
         }
         #[cfg(target_endian = "big")]
@@ -964,9 +954,7 @@ impl DataInput for MemorySegmentIndexInput {
     }
     let position = self.position.get_mut();
     let state = self.state.get_mut();
-    if *position < state.current.len() {
-      // SAFETY: the input's MappedFile retains this checked immutable range.
-      let value = unsafe { *state.current.as_ptr().add(*position) };
+    if let Some(value) = state.current.get(*position).copied() {
       *position += 1;
       return Ok(value);
     }
@@ -984,21 +972,11 @@ impl DataInput for MemorySegmentIndexInput {
     let state = self.state.get_mut();
     if let Some(remaining) = state.current.len().checked_sub(*position)
       && len <= remaining
-      && let Some(target) = b.get_mut(offset..).and_then(|s| s.get_mut(..len))
+      && let Some(target_remaining) = b.len().checked_sub(offset)
+      && len <= target_remaining
     {
-      // SAFETY: checked_sub and len <= remaining prove the source range lies
-      // inside the immutable mapping retained by the input. target is a checked,
-      // disjoint mutable range of the same length. Byte pointers need no
-      // alignment; each constant-width head/tail copy stays in these ranges.
-      // The overlapping head/tail destinations are separate copy operations,
-      // while each operation's source and destination remain disjoint.
-      unsafe {
-        Self::copy_bytes(
-          state.current.as_ptr().add(*position),
-          target.as_mut_ptr(),
-          len,
-        );
-      }
+      let target = &mut b[offset..][..len];
+      Self::copy_bytes(&state.current[*position..][..len], target);
       *position += len;
       return Ok(());
     }
@@ -1099,16 +1077,7 @@ impl DataInput for MemorySegmentIndexInput {
       && let Some(target) = dst.get_mut(offset..).and_then(|s| s.get_mut(..len))
     {
       #[cfg(target_endian = "little")]
-      // SAFETY: both slices cover exactly byte_len bytes. The mapped source is
-      // read-only and cannot overlap the caller's mutable destination. i32 has
-      // no padding and every bit pattern is valid; byte alignment is sufficient.
-      unsafe {
-        Self::copy_bytes(
-          bytes.as_ptr(),
-          target.as_mut_ptr().cast::<u8>(),
-          bytes.len(),
-        );
-      }
+      Self::copy_bytes(bytes, wide::bytemuck::cast_slice_mut::<i32, u8>(target));
       #[cfg(target_endian = "big")]
       for (value, chunk) in target.iter_mut().zip(bytes.as_chunks::<4>().0) {
         *value = i32::from_le_bytes(*chunk);
@@ -1116,9 +1085,7 @@ impl DataInput for MemorySegmentIndexInput {
       *position += byte_len;
       return Ok(());
     }
-    // SAFETY: this primitive has the checked element width and all bit
-    // patterns are valid; the boundary helper retains scalar EOF behavior.
-    unsafe { self.read_array_boundary(dst, offset, len, i32::from_le_bytes) }
+    self.read_array_boundary(dst, offset, len, i32::from_le_bytes)
   }
 
   #[inline]
@@ -1132,16 +1099,7 @@ impl DataInput for MemorySegmentIndexInput {
       && let Some(target) = dst.get_mut(offset..).and_then(|s| s.get_mut(..len))
     {
       #[cfg(target_endian = "little")]
-      // SAFETY: both slices cover exactly byte_len bytes. The mapped source is
-      // read-only and cannot overlap the caller's mutable destination. i64 has
-      // no padding and every bit pattern is valid; byte alignment is sufficient.
-      unsafe {
-        Self::copy_bytes(
-          bytes.as_ptr(),
-          target.as_mut_ptr().cast::<u8>(),
-          bytes.len(),
-        );
-      }
+      Self::copy_bytes(bytes, wide::bytemuck::cast_slice_mut::<i64, u8>(target));
       #[cfg(target_endian = "big")]
       for (value, chunk) in target.iter_mut().zip(bytes.as_chunks::<8>().0) {
         *value = i64::from_le_bytes(*chunk);
@@ -1149,9 +1107,7 @@ impl DataInput for MemorySegmentIndexInput {
       *position += byte_len;
       return Ok(());
     }
-    // SAFETY: this primitive has the checked element width and all bit
-    // patterns are valid; the boundary helper retains scalar EOF behavior.
-    unsafe { self.read_array_boundary(dst, offset, len, i64::from_le_bytes) }
+    self.read_array_boundary(dst, offset, len, i64::from_le_bytes)
   }
 
   #[inline]
@@ -1170,9 +1126,7 @@ impl DataInput for MemorySegmentIndexInput {
       *position += byte_len;
       return Ok(());
     }
-    // SAFETY: this primitive has the checked element width and all bit
-    // patterns are valid; the boundary helper retains scalar EOF behavior.
-    unsafe { self.read_array_boundary(dst, offset, len, f32::from_le_bytes) }
+    self.read_array_boundary(dst, offset, len, f32::from_le_bytes)
   }
 
   #[inline]

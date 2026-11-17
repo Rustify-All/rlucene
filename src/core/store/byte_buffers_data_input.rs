@@ -146,8 +146,7 @@ impl<B: ByteBuffersDataInputBlock> ByteBuffersDataInput<B> {
     pos & (self.block_mask)
   }
   fn read_buffer<T, C>(
-    &self,
-    mut pos: usize,
+    &mut self,
     len: usize,
     output: &mut [T],
     type_size: usize,
@@ -156,80 +155,65 @@ impl<B: ByteBuffersDataInputBlock> ByteBuffersDataInput<B> {
   where
     C: Fn(&[u8]) -> T,
   {
-    let mut bytes_read = len * type_size;
-    if type_size > 1
-      && bytes_read > 0
+    let pos = self.pos;
+    let total_bytes = len * type_size;
+    if total_bytes > 0
       && let Some(block) = self.blocks.get(self.block_index(pos))
-      && pos + bytes_read <= self.length + self.offset
+      && pos + total_bytes <= self.length + self.offset
       && let Some(bytes) = block
         .get_ref()
         .as_slice()
         .get(self.block_offset(pos)..)
-        .and_then(|bytes| bytes.get(..bytes_read))
+        .and_then(|bytes| bytes.get(..total_bytes))
     {
+      // Java advances the cursor before decoding a complete block chunk.
+      self.pos += total_bytes;
       output
         .iter_mut()
         .zip(bytes.chunks_exact(type_size).map(converter))
         .for_each(|(out, value)| *out = value);
       return Ok(());
     }
-    // Gather cross-block reads before decoding so an EOF leaves the output unchanged.
-    stack_or_heap_buffer!(bytes, u8, bytes_read, 128, 0);
-    let mut bytes_offset = 0;
-    while bytes_read > 0 {
-      let block_index = self.block_index(pos);
-      let block_offset = self.block_offset(pos);
 
-      if block_index >= self.blocks.len() || pos + bytes_read > self.length + self.offset {
-        return Err(LuceneError::eof(format!("{pos}")));
-      }
-
-      let block = self.blocks.get(block_index).ok_or_else(|| {
-        LuceneError::eof(format!("missing block {block_index} at position {pos}"))
-      })?;
+    let mut completed = 0;
+    while completed < len {
+      let block_offset = self.block_offset(self.pos);
+      let block = self
+        .blocks
+        .get(self.block_index(self.pos))
+        .ok_or_else(|| LuceneError::eof(format!("{}", self.pos)))?;
       let block_bytes = block.get_ref().as_slice();
-      let available = block_bytes.len().saturating_sub(block_offset);
-
-      let chunk = bytes_read.min(available);
-      if block_offset > block_bytes.len() || block_offset + chunk > block_bytes.len() {
-        return Err(LuceneError::illegal_argument(format!(
-          "Read out of bounds: position={}, len={}, total={}",
-          block_offset,
-          chunk,
-          block_bytes.len()
-        )));
+      let available = block_bytes
+        .len()
+        .saturating_sub(block_offset)
+        .min((self.length + self.offset).saturating_sub(self.pos));
+      let chunk = (available / type_size).min(len - completed);
+      if chunk == 0 {
+        // Complete one boundary element locally instead of gathering the
+        // entire numeric request into a temporary buffer.
+        let mut bytes = [0; BitUtil::LONG_BYTES];
+        self.do_read_bytes(self.pos, type_size, &mut bytes[..type_size])?;
+        output[completed] = converter(&bytes[..type_size]);
+        self.pos += type_size;
+        completed += 1;
+      } else {
+        let bytes_read = chunk * type_size;
+        self.pos += bytes_read;
+        output[completed..completed + chunk]
+          .iter_mut()
+          .zip(
+            block_bytes[block_offset..block_offset + bytes_read]
+              .chunks_exact(type_size)
+              .map(&converter),
+          )
+          .for_each(|(out, value)| *out = value);
+        completed += chunk;
       }
-      if bytes_offset + chunk > bytes.len() {
-        return Err(LuceneError::illegal_argument(format!(
-          "Destination buffer out of bounds: offset={}, len={}, total={}",
-          bytes_offset,
-          chunk,
-          bytes.len()
-        )));
-      }
-      bytes[bytes_offset..bytes_offset + chunk]
-        .copy_from_slice(&block_bytes[block_offset..block_offset + chunk]);
-      bytes_offset += chunk;
-      pos += chunk;
-      bytes_read -= chunk;
     }
-
-    debug_assert!(bytes.len().is_multiple_of(type_size));
-    if type_size == 1 {
-      let output_bytes =
-        unsafe { std::slice::from_raw_parts_mut(output.as_mut_ptr() as *mut u8, output.len()) };
-      output_bytes[..bytes.len()].copy_from_slice(bytes);
-    } else {
-      output
-        .iter_mut()
-        .zip(bytes.chunks_exact(type_size).map(converter))
-        .for_each(|(out, value)| *out = value);
-    }
-
     Ok(())
   }
-  fn do_read_longs(&self, pos: usize, len: usize, output: &mut [i64]) -> Result<()> {
-    self.read_buffer(pos, len, output, BitUtil::LONG_BYTES, LE::read_i64)
+  fn do_read_longs(&mut self, len: usize, output: &mut [i64]) -> Result<()> {
+    self.read_buffer(len, output, BitUtil::LONG_BYTES, LE::read_i64)
   }
   fn do_read_bytes(&self, mut pos: usize, mut len: usize, output: &mut [u8]) -> Result<()> {
     let mut output_offset = 0;
@@ -260,8 +244,8 @@ impl<B: ByteBuffersDataInputBlock> ByteBuffersDataInput<B> {
     Ok(())
   }
 
-  fn do_read_floats(&self, pos: usize, len: usize, output: &mut [f32]) -> Result<()> {
-    self.read_buffer(pos, len, output, BitUtil::FLOAT_BYTES, LE::read_f32)
+  fn do_read_floats(&mut self, len: usize, output: &mut [f32]) -> Result<()> {
+    self.read_buffer(len, output, BitUtil::FLOAT_BYTES, LE::read_f32)
   }
 
   pub fn seek(&mut self, position: usize) -> Result<()> {
@@ -440,19 +424,21 @@ where
       return Ok(std::borrow::Cow::Borrowed(&[]));
     }
     let pos = self.pos;
+    if len > (self.length + self.offset).saturating_sub(pos) {
+      // Failed borrowed reads retain the ordinary read's cursor progress.
+      self.pos = self.length + self.offset;
+      return Err(LuceneError::eof(format!("{}", self.pos)));
+    }
     let block_index = self.block_index(pos);
     let block_offset = self.block_offset(pos);
-    let contiguous = pos
-      .checked_add(len)
-      .is_some_and(|end| end <= self.length + self.offset)
-      && self.blocks.get(block_index).is_some_and(|block| {
-        block
-          .get_ref()
-          .as_slice()
-          .len()
-          .checked_sub(block_offset)
-          .is_some_and(|remaining| len <= remaining)
-      });
+    let contiguous = self.blocks.get(block_index).is_some_and(|block| {
+      block
+        .get_ref()
+        .as_slice()
+        .len()
+        .checked_sub(block_offset)
+        .is_some_and(|remaining| len <= remaining)
+    });
     if contiguous {
       self.pos += len;
       return Ok(std::borrow::Cow::Borrowed(
@@ -505,6 +491,13 @@ where
     if len == 1 {
       output[0] = DataInput::read_byte(self)?;
       return Ok(());
+    }
+    let available = (self.length + self.offset).saturating_sub(self.pos);
+    if len > available {
+      // Preserve the readable prefix and cursor progress before reporting EOF, as Java does.
+      self.do_read_bytes(self.pos, available, &mut output[..available])?;
+      self.pos += available;
+      return Err(LuceneError::eof(format!("{}", self.pos)));
     }
     self.do_read_bytes(self.pos, len, output)?;
     self.pos += len;
@@ -609,15 +602,11 @@ where
   }
 
   fn read_longs(&mut self, dst: &mut [i64], offset: usize, len: usize) -> Result<()> {
-    self.do_read_longs(self.pos, len, &mut dst[offset..(offset + len)])?;
-    self.pos += len * BitUtil::LONG_BYTES;
-    Ok(())
+    self.do_read_longs(len, &mut dst[offset..(offset + len)])
   }
 
   fn read_floats(&mut self, dst: &mut [f32], offset: usize, len: usize) -> Result<()> {
-    self.do_read_floats(self.pos, len, &mut dst[offset..(offset + len)])?;
-    self.pos += len * BitUtil::FLOAT_BYTES;
-    Ok(())
+    self.do_read_floats(len, &mut dst[offset..(offset + len)])
   }
 
   fn skip_bytes(&mut self, num_bytes: i64) -> Result<()> {
