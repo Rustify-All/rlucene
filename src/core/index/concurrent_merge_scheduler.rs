@@ -1201,7 +1201,8 @@ impl MergeScheduler for ConcurrentMergeScheduler {
   where
     D: Directory,
   {
-    *self.shared.info_stream.lock() = info_stream;
+    let previous = std::mem::replace(&mut *self.shared.info_stream.lock(), info_stream);
+    drop(previous);
     self.init_dynamic_defaults(directory);
     Ok(())
   }

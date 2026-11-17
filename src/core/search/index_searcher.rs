@@ -171,29 +171,34 @@ fn default_caching_policy() -> Arc<QueryCachingPolicyEnum> {
 /// Expert: sets the default query cache instance.
 pub fn set_default_query_cache(query_cache: Option<Arc<DefaultQueryCache>>) {
   #[cfg(not(test))]
-  {
-    *DEFAULT_QUERY_CACHE.write() = query_cache;
-  }
+  let previous = {
+    let mut current = DEFAULT_QUERY_CACHE.write();
+    std::mem::replace(&mut *current, query_cache).and_then(Arc::into_inner)
+  };
   #[cfg(test)]
-  {
-    DEFAULT_QUERY_CACHE.with(|default_query_cache| {
-      *default_query_cache.borrow_mut() = query_cache;
-    });
-  }
+  let previous = DEFAULT_QUERY_CACHE.with(|default_query_cache| {
+    std::mem::replace(&mut *default_query_cache.borrow_mut(), query_cache).and_then(Arc::into_inner)
+  });
+  // Drop the extracted last-owner value after unlocking; custom predicates may reenter.
+  drop(previous);
 }
 
 /// Expert: sets the default query caching policy instance.
 pub fn set_default_query_caching_policy(query_caching_policy: Arc<QueryCachingPolicyEnum>) {
   #[cfg(not(test))]
-  {
-    *DEFAULT_CACHING_POLICY.write() = query_caching_policy;
-  }
+  let previous = {
+    let mut current = DEFAULT_CACHING_POLICY.write();
+    Arc::into_inner(std::mem::replace(&mut *current, query_caching_policy))
+  };
   #[cfg(test)]
-  {
-    DEFAULT_CACHING_POLICY.with(|default_policy| {
-      *default_policy.borrow_mut() = query_caching_policy;
-    });
-  }
+  let previous = DEFAULT_CACHING_POLICY.with(|default_policy| {
+    Arc::into_inner(std::mem::replace(
+      &mut *default_policy.borrow_mut(),
+      query_caching_policy,
+    ))
+  });
+  // Shared owners are released under the lock; only the final value is dropped outside.
+  drop(previous);
 }
 
 pub struct IndexSearcher<

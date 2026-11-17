@@ -660,9 +660,9 @@ impl Drop for Node {
   fn drop(&mut self) {
     let mut next = self.next.get_mut().take();
     while let Some(node) = next {
-      match Arc::try_unwrap(node) {
-        Ok(mut node) => next = node.next.get_mut().take(),
-        Err(_) => break,
+      match Arc::into_inner(node) {
+        Some(mut node) => next = node.next.get_mut().take(),
+        None => break,
       }
     }
   }

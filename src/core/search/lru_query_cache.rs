@@ -1193,12 +1193,16 @@ where
       return self.in_.count(context, searcher);
     };
 
-    let cached = self
+    let count = self
       .lru_cache
-      .get(self.query.as_ref(), &cache_helper, &inner_read);
+      .get(self.query.as_ref(), &cache_helper, &inner_read)
+      .map(|cached| cached.count());
 
-    if let Some(cached) = cached {
-      return cached.count().try_convert();
+    // A child count may invoke the policy again and reenter this cache.
+    drop(inner_read);
+
+    if let Some(count) = count {
+      return count.try_convert();
     }
 
     self.in_.count(context, searcher)

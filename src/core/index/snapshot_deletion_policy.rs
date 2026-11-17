@@ -107,7 +107,6 @@ where
   ///
   /// * `commit` - the commit previously returned by [`Self::snapshot`].
   pub fn release(&self, commit: &Arc<CommitPoint<D>>) -> Result<()> {
-    let _guard = self.lock();
     self.release_gen(commit.get_generation())
   }
 

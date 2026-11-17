@@ -335,6 +335,7 @@ where
       Self::private_delete_file(&self.directory, name, true, &mut pending_deletes)?;
       pending_deletes.remove(name);
     }
+    drop(pending_deletes);
 
     let file_path = self.directory.join(name);
     let file = File::options()
@@ -359,10 +360,9 @@ where
     _context: &IOContext,
   ) -> Result<Self::IndexOutput> {
     self.ensure_open()?;
-    let mut pending_deletes = self.pending_deletes.lock();
     Self::maybe_delete_pending_files(
       &self.directory,
-      &mut pending_deletes,
+      &mut self.pending_deletes.lock(),
       &self.ops_since_last_delete,
     )?;
 
@@ -370,7 +370,7 @@ where
       let counter = self.next_temp_file_counter.fetch_add(1, SeqCst);
       let name = get_temp_file_name(prefix, suffix, counter);
 
-      if pending_deletes.contains(&name) {
+      if self.pending_deletes.lock().contains(&name) {
         continue;
       }
 
@@ -448,6 +448,7 @@ where
       pending_deletes.remove(dest); // watch out if the delete fails, it's
       // back in here
     }
+    drop(pending_deletes);
 
     let source_path = self.directory.join(source);
     let dest_path = self.directory.join(dest);

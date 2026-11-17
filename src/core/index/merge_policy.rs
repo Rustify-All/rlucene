@@ -2026,7 +2026,8 @@ impl MergeStat {
   }
 
   pub(crate) fn set_exception(&self, error: CaughtResult) {
-    self.state.lock().error = Some(error);
+    let previous = self.state.lock().error.replace(error);
+    drop(previous);
   }
 
   pub(crate) fn get_exception(&self) -> Option<CaughtResult> {

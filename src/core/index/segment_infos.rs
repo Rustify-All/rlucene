@@ -1437,8 +1437,9 @@ pub fn set_info_stream<T>(output: T) -> Result<()>
 where
   T: Into<Option<OutputEnum>>,
 {
+  let output = output.into();
   let mut info_stream = INFO_STREAM.lock();
-  *info_stream = output.into();
+  *info_stream = output;
   Ok(())
 }
 
