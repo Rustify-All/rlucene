@@ -283,9 +283,10 @@ where
         }
       },
     };
+    let leaf_nodes = self.data_in.lock().try_clone()?;
     BKDPointTree::new(
       slice,
-      self.data_in.clone(),
+      Arc::new(Mutex::new(leaf_nodes)),
       self.config.clone(),
       self.num_leaves,
       self.version,
@@ -319,7 +320,8 @@ pub struct BKDPointTree<I: IndexInput> {
   level: usize,
   /// Used to read the packed tree off-heap.
   inner_nodes: I::IndexInput,
-  /// Used to read the packed leaves off-heap.
+  /// Independent leaf cursor for this tree. Temporary Arc clones let traversal
+  /// borrow the cursor while updating the rest of the tree.
   leaf_nodes: Arc<Mutex<I>>,
   /// Leaf file pointer and position after node data, including the leaf sentinel level.
   leaf_positions: Box<[LeafLevelPositions]>,
@@ -1150,9 +1152,11 @@ where
   where
     Self: Sized,
   {
+    let inner_nodes = self.inner_nodes.try_clone()?;
+    let leaf_nodes = self.leaf_nodes.lock().try_clone()?;
     let mut index = BKDPointTree::with_scratch_iterator(
-      self.inner_nodes.try_clone()?,
-      self.leaf_nodes.clone(),
+      inner_nodes,
+      Arc::new(Mutex::new(leaf_nodes)),
       self.config.clone(),
       self.leaf_node_offset,
       self.version,
