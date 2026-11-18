@@ -41,7 +41,7 @@ use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::fmt::{Display, Formatter};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 /// Reader for [`Lucene90NormsFormat`]
 pub struct Lucene90NormsProducer<I, const MERGING: bool = false>
@@ -57,8 +57,10 @@ where
   disi_inputs: Mutex<HashMap<i32, Arc<Mutex<I::IndexInput>>>>,
   #[allow(clippy::type_complexity)]
   disi_jump_tables: Mutex<HashMap<i32, Option<Arc<I::RandomAccessSlice>>>>,
-  data_inputs: Mutex<HashMap<i32, Arc<I::RandomAccessSlice>>>,
+  data_inputs: NormDataInputs<I::RandomAccessSlice>,
 }
+
+type NormDataInputs<R> = OnceLock<Box<[OnceLock<Arc<R>>]>>;
 
 impl<I, const MERGING: bool> Lucene90NormsProducer<I, MERGING>
 where
@@ -155,7 +157,7 @@ where
         data,
         disi_inputs: HashMap::new().into(),
         disi_jump_tables: HashMap::new().into(),
-        data_inputs: HashMap::new().into(),
+        data_inputs: OnceLock::new(),
       })
     }));
     if !success {
@@ -233,10 +235,18 @@ where
   }
   fn get_data_input(
     &self,
-    field: &FieldInfo,
+    field_slot: usize,
     entry: &NormsEntry,
   ) -> Result<RandomAccessSliceEnum<I::RandomAccessSlice>> {
-    if MERGING && let Some(existing) = self.data_inputs.lock().get(&field.number) {
+    let cache_slot = MERGING.then(|| {
+      let slots = self.data_inputs.get_or_init(|| {
+        std::iter::repeat_with(OnceLock::new)
+          .take(self.norms.values.len())
+          .collect()
+      });
+      &slots[field_slot]
+    });
+    if let Some(existing) = cache_slot.and_then(OnceLock::get) {
       return Ok(RandomAccessSliceEnum::Shared(Arc::clone(existing)));
     }
 
@@ -244,13 +254,17 @@ where
     let slice = self
       .data
       .random_access_slice(entry.norms_offset.try_convert()?, length)?;
-    let input = if MERGING {
-      let slice = Arc::new(slice);
-      self
-        .data_inputs
-        .lock()
-        .insert(field.number, Arc::clone(&slice));
-      RandomAccessSliceEnum::Shared(slice)
+    let input = if let Some(cache_slot) = cache_slot {
+      let mut published = false;
+      let slice = cache_slot.get_or_init(|| {
+        published = true;
+        Arc::new(slice)
+      });
+      let input = RandomAccessSliceEnum::Shared(Arc::clone(slice));
+      if !published {
+        return Ok(input);
+      }
+      input
     } else {
       RandomAccessSliceEnum::Owned(slice)
     };
@@ -399,10 +413,11 @@ macro_rules! impl_norms_producer {
       type MergeInstance = Lucene90NormsProducer<I, true>;
 
       fn get_norms(&self, field: &Arc<FieldInfo>) -> Result<Self::NumericDocValues> {
-        let slot = self.norms.by_field.get(&field.number).ok_or_else(|| {
+        let &slot = self.norms.by_field.get(&field.number).ok_or_else(|| {
           LuceneError::illegal_state(format!("norms entry is missing for field {}", field.name))
         })?;
-        let entry = &self.norms.values[*slot as usize];
+        let slot = slot as usize;
+        let entry = &self.norms.values[slot];
         if entry.docs_with_field_offset == -2 {
           // empty
           return Ok(Lucene90NormNumericDocValuesEnum::Empty(
@@ -421,7 +436,7 @@ macro_rules! impl_norms_producer {
               dense_norms_iterator,
             ));
           }
-          let slice = match self.get_data_input(field, entry)? {
+          let slice = match self.get_data_input(slot, entry)? {
             RandomAccessSliceEnum::$variant(slice) => slice,
             _ => {
               return Err(LuceneError::illegal_state(
@@ -499,7 +514,7 @@ macro_rules! impl_norms_producer {
           ));
         }
 
-        let slice = match self.get_data_input(field, entry)? {
+        let slice = match self.get_data_input(slot, entry)? {
           RandomAccessSliceEnum::$variant(slice) => slice,
           _ => {
             return Err(LuceneError::illegal_state(
@@ -560,7 +575,7 @@ macro_rules! impl_norms_producer {
           norms: self.norms.clone(),
           disi_inputs: HashMap::new().into(),
           disi_jump_tables: HashMap::new().into(),
-          data_inputs: HashMap::new().into(),
+          data_inputs: OnceLock::new(),
         }))
       }
     }
