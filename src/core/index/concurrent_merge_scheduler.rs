@@ -1727,11 +1727,17 @@ impl ConcurrentMergeSchedulerDefaults {
 
 impl Display for ConcurrentMergeScheduler {
   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-    let inner = self.shared.inner.lock();
+    let (max_thread_count, max_merge_count, io_throttle) = {
+      let inner = self.shared.inner.lock();
+      (
+        inner.max_thread_count,
+        inner.max_merge_count,
+        inner.do_auto_io_throttle,
+      )
+    };
     write!(
       f,
-      "ConcurrentMergeScheduler: maxThreadCount={}, maxMergeCount={}, ioThrottle={}",
-      inner.max_thread_count, inner.max_merge_count, inner.do_auto_io_throttle
+      "ConcurrentMergeScheduler: maxThreadCount={max_thread_count}, maxMergeCount={max_merge_count}, ioThrottle={io_throttle}"
     )
   }
 }

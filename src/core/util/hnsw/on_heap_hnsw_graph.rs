@@ -523,7 +523,7 @@ fn check_graph(graph: &[OnceLock<NodeLevels>], level: usize, node: usize) {
 impl fmt::Display for OnHeapHnswGraph {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     let size = self.size();
-    let entry_node = self.entry_node.read();
+    let entry_node = *self.entry_node.read();
     let num_levels = entry_node.level + 1;
 
     write!(
@@ -550,7 +550,7 @@ impl Accountable for OnHeapHnswGraph {
   }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 struct EntryNode {
   node: Option<usize>,
   level: usize,
