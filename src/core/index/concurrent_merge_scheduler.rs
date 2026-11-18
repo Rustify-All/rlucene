@@ -123,6 +123,7 @@ struct ConcurrentMergeSchedulerShared {
   inner: Mutex<Inner>,
   changed: Condvar,
   info_stream: Mutex<InfoStreamMT>,
+  direct_merge_executor: OnceLock<Arc<TaskExecutor>>,
   #[allow(clippy::type_complexity)]
   intra_merge_executor: Mutex<Option<(usize, Arc<TaskExecutor>)>>,
 }
@@ -778,6 +779,7 @@ impl ConcurrentMergeScheduler {
         inner,
         changed: Condvar::new(),
         info_stream: Mutex::new(get_default_info_stream()),
+        direct_merge_executor: OnceLock::new(),
         intra_merge_executor: Mutex::new(None),
       }),
       hook,
@@ -994,7 +996,12 @@ impl ConcurrentMergeSchedulerDefaults {
   {
     // Don't do multithreaded merges for small merges.
     if merge.estimated_merge_bytes.load(Ordering::SeqCst) < MIN_BIG_MERGE_MB * 1024 * 1024 {
-      Ok(Arc::new(TaskExecutor::direct()))
+      Ok(Arc::clone(
+        scheduler
+          .shared
+          .direct_merge_executor
+          .get_or_init(|| Arc::new(TaskExecutor::direct())),
+      ))
     } else {
       scheduler.get_parallel_merge_executor()
     }

@@ -8222,7 +8222,8 @@ where
     sci: &SegmentCommitInfo<D>,
     _inner: &mut Inner<D>,
   ) -> Result<DefaultLeafReader<D>> {
-    if let Some(remove) = self.merged_readers.lock().remove(&sci.info.name) {
+    let merged = self.merged_readers.lock().remove(&sci.info.name);
+    if let Some(remove) = merged {
       match remove.get_segment_info().files_for_read()? {
         std::borrow::Cow::Borrowed(files) => self.files.extend(files.iter().cloned()),
         std::borrow::Cow::Owned(files) => self.files.extend(files),

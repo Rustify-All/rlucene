@@ -264,14 +264,14 @@ impl DocumentsWriterDeleteQueue {
       Some(global_state) => global_state,
       None => &*self.global_buffer_lock.lock(),
     };
-    let current_tail = self.tail.lock().clone();
     //  Check if all items in the global slice were applied,
     //  if the global slice is up-to-date,
     //  and if `global_buffered_updates` has changes.
-    global_state.global_buffered_updates.any()
-      || !global_state.global_slice.is_empty()
-      || !Arc::ptr_eq(&global_state.global_slice.slice_tail, &current_tail)
-      || current_tail.next.get().is_some()
+    global_state.global_buffered_updates.any() || !global_state.global_slice.is_empty() || {
+      let current_tail = self.tail.lock();
+      !Arc::ptr_eq(&global_state.global_slice.slice_tail, &current_tail)
+        || current_tail.next.get().is_some()
+    }
   }
 
   pub(crate) fn try_apply_global_slice(&self) -> Result<()> {
