@@ -32,7 +32,7 @@ use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::{HasIdentity, TryIntoInt};
 use crc32fast::Hasher;
 use num_bigint::BigInt;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use std::collections::{HashMap, HashSet, hash_map::Entry};
 use std::fmt::{Display, Formatter};
 use std::io::{Cursor, Error, ErrorKind};
@@ -196,7 +196,7 @@ where
   LF: LockFactory,
 {
   temp_file_name: ByteBuffersDirectoryTempFileName,
-  files: Mutex<HashMap<Arc<str>, Arc<Mutex<FileEntry>>>>,
+  files: Mutex<HashMap<Arc<str>, Arc<RwLock<FileEntry>>>>,
 
   /// Conversion between a buffered index output and the corresponding index
   /// input for a given file.
@@ -298,7 +298,7 @@ where
         Error::new(ErrorKind::NotFound, name.to_string()),
       ));
     };
-    entry.lock().deleted = true;
+    entry.write().deleted = true;
     Ok(())
   }
 
@@ -306,7 +306,7 @@ where
     self.ensure_open()?;
     let file = self.files.lock().get(name).cloned();
     match file {
-      Some(file) => Ok(file.lock().length()),
+      Some(file) => Ok(file.read().length()),
       None => Err(LuceneError::io_with_path(
         name,
         Error::new(ErrorKind::NotFound, name.to_string()),
@@ -330,7 +330,7 @@ where
           ));
         },
         Entry::Vacant(vacant) => {
-          let entry = Arc::new(Mutex::new(FileEntry::new(vacant.key().clone())));
+          let entry = Arc::new(RwLock::new(FileEntry::new(vacant.key().clone())));
           vacant.insert(entry.clone());
           entry
         },
@@ -361,7 +361,7 @@ where
         match files.entry(name) {
           Entry::Occupied(_) => continue,
           Entry::Vacant(vacant) => {
-            let entry = Arc::new(Mutex::new(FileEntry::new(vacant.key().clone())));
+            let entry = Arc::new(RwLock::new(FileEntry::new(vacant.key().clone())));
             vacant.insert(entry.clone());
             entry
           },
@@ -408,7 +408,7 @@ where
     self.ensure_open()?;
     let file = self.files.lock().get(name).cloned();
     match file {
-      Some(file) => file.lock().open_input(),
+      Some(file) => file.read().open_input(),
       None => Err(LuceneError::io_with_path(
         name,
         Error::new(ErrorKind::NotFound, name.to_string()),
@@ -514,12 +514,12 @@ impl FileEntry {
 }
 
 pub struct ByteBuffersDirectoryOutputOnClose {
-  entry: Arc<Mutex<FileEntry>>,
+  entry: Arc<RwLock<FileEntry>>,
   output_to_input: BBOutputToInput,
 }
 
 impl ByteBuffersDirectoryOutputOnClose {
-  fn new(entry: Arc<Mutex<FileEntry>>, output_to_input: BBOutputToInput) -> Self {
+  fn new(entry: Arc<RwLock<FileEntry>>, output_to_input: BBOutputToInput) -> Self {
     Self {
       entry,
       output_to_input,
@@ -529,7 +529,7 @@ impl ByteBuffersDirectoryOutputOnClose {
 
 impl ByteBuffersIndexOutputOnClose for ByteBuffersDirectoryOutputOnClose {
   fn on_close(&mut self, output: ByteBuffersDataOutput) -> Result<()> {
-    let mut entry = self.entry.lock();
+    let mut entry = self.entry.write();
     // Defensive check for an output that was deleted before it was closed. The
     // NRT-specific strategy must not publish deleted content or update cache
     // accounting, while ordinary custom strategies still receive their close
@@ -549,7 +549,7 @@ impl ByteBuffersIndexOutputOnClose for ByteBuffersDirectoryOutputOnClose {
       let file_name = Arc::clone(&entry.file_name);
       drop(entry);
       let content = self.output_to_input.to_input(&file_name, output)?;
-      entry = self.entry.lock();
+      entry = self.entry.write();
       content
     } else {
       self.output_to_input.to_input(&entry.file_name, output)?
@@ -561,12 +561,12 @@ impl ByteBuffersIndexOutputOnClose for ByteBuffersDirectoryOutputOnClose {
 }
 
 fn create_output(
-  entry: Arc<Mutex<FileEntry>>,
+  entry: Arc<RwLock<FileEntry>>,
   bb_output_supplier: &BBOutputSupplier,
   output_to_input: BBOutputToInput,
 ) -> Result<DirectoryByteBuffersIndexOutput> {
   let file_name = {
-    let entry = entry.lock();
+    let entry = entry.read();
     if entry.content.is_some() {
       return Err(LuceneError::io_with_path(
         entry.file_name.as_ref(),
