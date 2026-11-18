@@ -104,6 +104,9 @@ impl Display for SingleInstanceLock {
 
 impl CloseableRef for SingleInstanceLock {
   fn close(&self) -> Result<()> {
+    if self.closed.load(Ordering::Acquire) {
+      return Ok(());
+    }
     let _guard = self.close_lock.lock();
     if self.closed.load(Ordering::SeqCst) {
       return Ok(());

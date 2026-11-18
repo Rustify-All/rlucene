@@ -27,7 +27,7 @@ use std::time::SystemTime;
 
 use chrono::{DateTime, Utc};
 use fs2::FileExt;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 
 use crate::core::store::fs_lock_factory::FSLockFactory;
 use crate::core::store::lock::Lock;
@@ -164,7 +164,7 @@ impl FSLockFactory for NativeFSLockFactory {
     }));
     match result {
       Ok(Ok(())) => Ok(NativeFSLock {
-        file: Mutex::new(file),
+        file: RwLock::new(file),
         path: real_path,
         metadata,
         closed: AtomicBool::new(false),
@@ -210,7 +210,7 @@ fn clear_lock_held(path: &Path) -> Result<()> {
 }
 
 pub struct NativeFSLock {
-  file: Mutex<Option<File>>,
+  file: RwLock<Option<File>>,
   pub(crate) path: PathBuf,
   pub(crate) metadata: Metadata,
   pub(crate) closed: AtomicBool,
@@ -222,7 +222,7 @@ impl NativeFSLock {
   #[cfg(test)]
   pub(crate) fn release_lock_for_test(&self) -> Result<()> {
     let _guard = self.close_lock.lock();
-    let file = self.file.lock();
+    let file = self.file.write();
     let file = file
       .as_ref()
       .ok_or_else(|| LuceneError::already_closed("native file lock is closed"))?;
@@ -266,7 +266,7 @@ impl CloseableRef for NativeFSLock {
     let _guard = self.close_lock.lock();
     if !self.closed.load(Ordering::SeqCst) {
       let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
-        if let Some(file) = self.file.lock().take() {
+        if let Some(file) = self.file.write().take() {
           let unlock_result =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
               let unlock_result = if self.lock_valid.swap(false, Ordering::SeqCst) {
@@ -329,7 +329,7 @@ impl Lock for NativeFSLock {
 
     let metadata = self
       .file
-      .lock()
+      .read()
       .as_ref()
       .ok_or_else(|| {
         LuceneError::already_closed(format!("Lock already released: {:?}", self.path))
