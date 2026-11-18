@@ -20,7 +20,7 @@ use parking_lot::Mutex;
 use rayon::ThreadPool;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Executor wrapper responsible for the execution of concurrent tasks. Used to parallelize search
 /// across segments as well as query rewrite in some cases. Exposes a single
@@ -116,19 +116,18 @@ impl TaskExecutor {
       // their slots so collect_results retains the same error and drop order.
       let mut remaining = tasks.iter_mut();
       while let Some(task) = remaining.next() {
-        *task.started_or_cancelled.get_mut() = true;
-        let outcome = match task.callable.get_mut().take() {
+        let state = task.state.get_mut();
+        let outcome = match state.callable.take() {
           Some(callable) => catch_unwind(AssertUnwindSafe(callable)),
           None => Ok(Err(LuceneError::illegal_state(
             "the task that starts must still own its callable",
           ))),
         };
         let failed = !matches!(outcome, Ok(Ok(_)));
-        *task.outcome.get_mut() = Some(TaskOutcome::Completed(outcome));
+        state.outcome = Some(TaskOutcome::Completed(outcome));
         if failed {
           for task in remaining {
-            *task.started_or_cancelled.get_mut() = true;
-            *task.outcome.get_mut() = Some(TaskOutcome::Cancelled);
+            task.state.get_mut().outcome = Some(TaskOutcome::Cancelled);
           }
           break;
         }
@@ -150,9 +149,14 @@ enum TaskOutcome<T> {
 }
 
 struct Task<F, T> {
-  callable: Mutex<Option<F>>,
-  outcome: Mutex<Option<TaskOutcome<T>>>,
-  started_or_cancelled: AtomicBool,
+  state: Mutex<TaskState<F, T>>,
+}
+
+struct TaskState<F, T> {
+  // A running task has taken its callable. A cancelled task retains it until
+  // results are collected in submission order.
+  callable: Option<F>,
+  outcome: Option<TaskOutcome<T>>,
 }
 
 impl<F, T> Task<F, T>
@@ -161,41 +165,36 @@ where
 {
   fn new(callable: F) -> Self {
     Self {
-      callable: Mutex::new(Some(callable)),
-      outcome: Mutex::new(None),
-      started_or_cancelled: AtomicBool::new(false),
+      state: Mutex::new(TaskState {
+        callable: Some(callable),
+        outcome: None,
+      }),
     }
   }
 
   fn run(&self, tasks: &[Self]) {
-    if self
-      .started_or_cancelled
-      .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-      .is_err()
-    {
-      return;
-    }
-
-    let outcome = match self.callable.lock().take() {
-      Some(callable) => catch_unwind(AssertUnwindSafe(callable)),
-      None => Ok(Err(LuceneError::illegal_state(
-        "the task that starts must still own its callable",
-      ))),
+    let callable = {
+      let mut state = self.state.lock();
+      if state.outcome.is_some() {
+        return;
+      }
+      state.callable.take()
     };
+    let Some(callable) = callable else {
+      return;
+    };
+    let outcome = catch_unwind(AssertUnwindSafe(callable));
     let failed = !matches!(outcome, Ok(Ok(_)));
-    *self.outcome.lock() = Some(TaskOutcome::Completed(outcome));
+    self.state.lock().outcome = Some(TaskOutcome::Completed(outcome));
     if failed {
       cancel_all(tasks);
     }
   }
 
   fn cancel(&self) {
-    if self
-      .started_or_cancelled
-      .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-      .is_ok()
-    {
-      *self.outcome.lock() = Some(TaskOutcome::Cancelled);
+    let mut state = self.state.lock();
+    if state.callable.is_some() && state.outcome.is_none() {
+      state.outcome = Some(TaskOutcome::Cancelled);
     }
   }
 }
@@ -205,8 +204,9 @@ fn collect_results<F, T>(tasks: smallvec::SmallVec<[Task<F, T>; 1]>) -> Result<V
   let mut results = Vec::with_capacity(tasks.len());
   for task in tasks {
     let outcome = task
-      .outcome
+      .state
       .into_inner()
+      .outcome
       .ok_or_else(|| LuceneError::illegal_state("all tasks must be completed or cancelled"))?;
     match outcome {
       TaskOutcome::Completed(Ok(Ok(result))) => results.push(result),
