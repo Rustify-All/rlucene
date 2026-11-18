@@ -1481,7 +1481,6 @@ struct MergeThreadState {
   name: String,
   owner_id: OnceLock<ThreadId>,
   estimated_merge_bytes: Arc<AtomicI64>,
-  merge_start_ns: Arc<Mutex<Instant>>,
   merge_stat: MergeStat,
   rate_limiter: Arc<MergeRateLimiter>,
   alive: AtomicBool,
@@ -1498,7 +1497,6 @@ impl MergeThreadState {
       name,
       owner_id: OnceLock::new(),
       estimated_merge_bytes: merge.estimated_merge_bytes.clone(),
-      merge_start_ns: merge.merge_start_ns.clone(),
       merge_stat: merge.stat.clone(),
       rate_limiter: Arc::new(MergeRateLimiter::new(merge.get_merge_progress())),
       alive: AtomicBool::new(false),
@@ -1619,14 +1617,17 @@ where
       merge_scheduler.do_merge(&merge_source, merge)?;
       if merge_scheduler.verbose() {
         merge_scheduler.message(&format!(
-          "merge thread {} merge segment [{}] done estSize={:.1} MB (written={:.1} MB) runTime={:.1}s (stopped={:.1}s, paused={:.1}s) rate={}",
+          "merge thread {} merge segment [{}] done estSize={:.1} MB (written={:.1} MB) runTime={} (stopped={:.1}s, paused={:.1}s) rate={}",
           state.name,
           state.merge_stat.name().unwrap_or_else(|| Arc::from("_na_")),
           ConcurrentMergeScheduler::bytes_to_mb(
             state.estimated_merge_bytes.load(Ordering::SeqCst),
           ),
           ConcurrentMergeScheduler::bytes_to_mb(state.rate_limiter.get_total_bytes_written()),
-          state.merge_start_ns.lock().elapsed().as_secs_f64(),
+          std::fmt::from_fn(|f| match state.merge_stat.merge_start_time() {
+            Some(start) => write!(f, "{:.1}s", start.elapsed().as_secs_f64()),
+            None => f.write_str("not-started"),
+          }),
           Duration::from_nanos(state.rate_limiter.get_total_stopped_ns()?).as_secs_f64(),
           Duration::from_nanos(state.rate_limiter.get_total_paused_ns()?).as_secs_f64(),
           ConcurrentMergeScheduler::rate_to_string(state.rate_limiter.get_mb_per_sec()),
@@ -1735,10 +1736,10 @@ impl ConcurrentMergeScheduler {
       if other.is_alive()
         && !Arc::ptr_eq(other, merge_thread)
         && other.estimated_merge_bytes.load(Ordering::SeqCst) >= MIN_BIG_MERGE_MB * 1024 * 1024
-        && now
-          .saturating_duration_since(*other.merge_start_ns.lock())
-          .as_secs_f64()
-          > 3.0
+        && other
+          .merge_stat
+          .merge_start_time()
+          .is_some_and(|start| now.saturating_duration_since(start) > Duration::from_secs(3))
       {
         let other_merge_mb = Self::bytes_to_mb(other.estimated_merge_bytes.load(Ordering::SeqCst));
         let ratio = other_merge_mb / merge_mb;

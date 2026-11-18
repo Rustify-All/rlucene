@@ -75,8 +75,8 @@ use parking_lot::{Condvar, Mutex};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::thread::{self, ThreadId};
 use std::time::{Duration, Instant};
 
@@ -1845,7 +1845,6 @@ where
   /// Sum of sizeInBytes of all SegmentInfos; set by IW.mergeInit
   pub(crate) total_merge_bytes: AtomicI64,
   merge_readers: Vec<MergeReader<CR>>,
-  pub(crate) merge_start_ns: Arc<Mutex<Instant>>,
   /// Total number of documents in segments to be merged, not accounting for deletions.
   pub(crate) total_max_doc: i32,
   #[cfg(test)]
@@ -1882,6 +1881,7 @@ impl Default for MergeStat {
 
 #[derive(Default)]
 struct MergeCompletion {
+  start_time: OnceLock<Instant>,
   /// `None` means the merge is still running or has not started yet.
   /// `Some(success)` means the merge has finished, and `success` records whether it completed
   /// successfully.
@@ -1892,6 +1892,7 @@ struct MergeCompletion {
 impl MergeCompletion {
   fn new() -> Self {
     Self {
+      start_time: OnceLock::new(),
       state: Mutex::new(None),
       completed: Condvar::new(),
     }
@@ -1985,6 +1986,18 @@ impl Hash for MergeStat {
 }
 
 impl MergeStat {
+  pub(crate) fn set_merge_start_time(&self, start_time: Instant) -> Result<()> {
+    self
+      .completion
+      .start_time
+      .set(start_time)
+      .map_err(|_| LuceneError::illegal_state("merge start time was already published"))
+  }
+
+  pub(crate) fn merge_start_time(&self) -> Option<Instant> {
+    self.completion.start_time.get().copied()
+  }
+
   pub fn await_all(merges: &[MergeStat]) {
     for merge in merges {
       merge.await_();
@@ -2126,7 +2139,6 @@ where
       estimated_merge_bytes: Arc::new(AtomicI64::new(0)),
       total_merge_bytes: AtomicI64::new(0),
       merge_readers: Vec::new(),
-      merge_start_ns: Arc::new(Mutex::new(Instant::now())),
       total_max_doc,
       #[cfg(test)]
       segments: original_segments,
@@ -2170,7 +2182,6 @@ where
       estimated_merge_bytes: Arc::new(AtomicI64::new(0)),
       total_merge_bytes: AtomicI64::new(0),
       merge_readers,
-      merge_start_ns: Arc::new(Mutex::new(Instant::now())),
       total_max_doc: total_docs,
       #[cfg(test)]
       segments: Vec::new(),
@@ -2217,10 +2228,6 @@ where
   }
   pub fn get_merge_progress(&self) -> Arc<OneMergeProgress> {
     self.stat.merge_progress.clone()
-  }
-
-  pub(crate) fn set_merge_start_time(&self, merge_start_time: Instant) {
-    *self.merge_start_ns.lock() = merge_start_time;
   }
 
   pub fn set_aborted(&self) -> Result<()> {

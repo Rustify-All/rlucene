@@ -2085,6 +2085,7 @@ where
           }
           v
         };
+        merge.stat.set_merge_start_time(Instant::now())?;
         if merger.should_merge()? {
           merger.merge()?;
         }
@@ -4137,8 +4138,8 @@ where
       let mut inner = self.inner.lock();
       inner.running_add_indexes_merges.insert(merger.id);
     }
-    merge.set_merge_start_time(Instant::now());
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
+      merge.stat.set_merge_start_time(Instant::now())?;
       merger.merge()?;
       Ok(())
     }));
