@@ -528,7 +528,7 @@ impl ByteBuffersDirectoryOutputOnClose {
 }
 
 impl ByteBuffersIndexOutputOnClose for ByteBuffersDirectoryOutputOnClose {
-  fn on_close(&mut self, output: ByteBuffersDataOutput) -> Result<()> {
+  fn on_close(&mut self, mut output: ByteBuffersDataOutput) -> Result<()> {
     let mut entry = self.entry.write();
     // Defensive check for an output that was deleted before it was closed. The
     // NRT-specific strategy must not publish deleted content or update cache
@@ -542,17 +542,22 @@ impl ByteBuffersIndexOutputOnClose for ByteBuffersDirectoryOutputOnClose {
     {
       return Ok(());
     }
-    let cached_length = output.size();
-    let content = if matches!(self.output_to_input, BBOutputToInput::Custom(_)) {
+    let (content, cached_length) = if matches!(self.output_to_input, BBOutputToInput::Custom(_)) {
       // Java invokes the conversion before publishing content. User code may
       // query this directory, so it must not run under the file entry's lock.
       let file_name = Arc::clone(&entry.file_name);
       drop(entry);
+      let size = output.observe_size();
       let content = self.output_to_input.to_input(&file_name, output)?;
+      let cached_length = size.load(Ordering::Relaxed);
       entry = self.entry.write();
-      content
+      (content, cached_length)
     } else {
-      self.output_to_input.to_input(&entry.file_name, output)?
+      let cached_length = output.size();
+      (
+        self.output_to_input.to_input(&entry.file_name, output)?,
+        cached_length,
+      )
     };
     entry.content = Some(content);
     entry.cached_length = cached_length;

@@ -16,7 +16,8 @@
  */
 use std::collections::VecDeque;
 use std::io::Cursor;
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, AtomicUsize, Ordering};
 
 use byteorder::WriteBytesExt;
 
@@ -40,6 +41,7 @@ pub struct ByteBuffersDataOutput {
   current_block_index: usize,
   reuse: bool,
   cached_ram_bytes: AtomicI64,
+  observed_size: Option<Arc<AtomicUsize>>,
 }
 
 impl Default for ByteBuffersDataOutput {
@@ -117,6 +119,7 @@ impl ByteBuffersDataOutput {
       current_block_index: 0,
       reuse,
       cached_ram_bytes: AtomicI64::new(-1),
+      observed_size: None,
     }
   }
   /// Creates a new output, suitable for writing a file of approximately
@@ -229,6 +232,7 @@ impl ByteBuffersDataOutput {
       self.blocks.push_back(new_block);
     }
     self.current_block_index = self.blocks.len() - 1;
+    self.publish_size();
     Ok(())
   }
   /// Copies the current content of this object into another [`DataOutput`].
@@ -271,6 +275,20 @@ impl ByteBuffersDataOutput {
     );
     full_block_size + last_block.position() as usize
   }
+
+  // An owned conversion can move this output or its blocks elsewhere. Observe
+  // the last written size independently of the storage transfer.
+  pub(crate) fn observe_size(&mut self) -> Arc<AtomicUsize> {
+    let size = Arc::new(AtomicUsize::new(self.size()));
+    self.observed_size = Some(Arc::clone(&size));
+    size
+  }
+
+  fn publish_size(&self) {
+    if let Some(size) = &self.observed_size {
+      size.store(self.size(), Ordering::Relaxed);
+    }
+  }
   fn block_size(&self) -> usize {
     1 << self.block_bits
   }
@@ -292,6 +310,7 @@ impl ByteBuffersDataOutput {
       self.blocks = VecDeque::new();
     }
     self.current_block_index = 0;
+    self.publish_size();
   }
 
   pub(crate) fn buffer_slices(&self) -> impl Iterator<Item = &[u8]> {
@@ -502,7 +521,9 @@ impl DataOutput for ByteBuffersDataOutput {
       .blocks
       .get_mut(self.current_block_index)
       .ok_or_else(|| LuceneError::illegal_state("current write block is missing"))?;
-    Ok(last_block.write_u8(b)?)
+    last_block.write_u8(b)?;
+    self.publish_size();
+    Ok(())
   }
 
   #[inline]
@@ -557,6 +578,7 @@ impl DataOutput for ByteBuffersDataOutput {
         .ok_or_else(|| LuceneError::illegal_state("current write block is missing"))?;
       let chunk = available_space.min(length);
       last_block.write_from(b, offset, chunk)?;
+      self.publish_size();
       length -= chunk;
       offset += chunk;
     }
@@ -590,6 +612,7 @@ impl DataOutput for ByteBuffersDataOutput {
         let end = position + bytes.len();
         block.get_mut()[position..end].copy_from_slice(&bytes);
         block.set_position(end as u64);
+        self.publish_size();
       } else {
         for &value in chunk {
           self.write_int(value)?;
@@ -636,6 +659,7 @@ impl DataOutput for ByteBuffersDataOutput {
       let current_block_mut = last_block.get_mut();
       input.read_bytes(current_block_mut, current_pos, bytes_to_copy)?;
       last_block.set_position((current_pos + bytes_to_copy).try_convert()?);
+      self.publish_size();
       num_bytes -= bytes_to_copy;
     }
     Ok(())
