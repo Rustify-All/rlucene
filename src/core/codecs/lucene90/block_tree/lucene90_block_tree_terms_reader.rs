@@ -405,7 +405,12 @@ where
     }));
 
     // Clear so refs to terms index are releasable even if the caller hangs onto us.
-    self.field_map.write().clear();
+    let fields = {
+      let mut fields = self.field_map.write();
+      let empty = HashMap::with_hasher(fields.hasher().clone());
+      std::mem::replace(&mut *fields, empty)
+    };
+    drop(fields);
     unwrap_caught_result!(close_result)
   }
 }

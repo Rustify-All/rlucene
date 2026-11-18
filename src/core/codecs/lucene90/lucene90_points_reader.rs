@@ -227,7 +227,11 @@ where
       IOUtils::close([self.index_in.as_ref(), &*data_in])?;
     }
     // Free up heap:
-    self.readers.write().clear();
+    let readers = std::mem::replace(
+      &mut *self.readers.write(),
+      PointReaders::Dense(Box::default()),
+    );
+    drop(readers);
     Ok(())
   }
 }
@@ -294,13 +298,6 @@ impl<I: IndexInput> PointReaders<I> {
     match self {
       Self::Dense(slots) => slots.get(usize::try_from(*field).ok()?)?.as_ref(),
       Self::Sparse(readers) => readers.get(field),
-    }
-  }
-
-  fn clear(&mut self) {
-    match self {
-      Self::Dense(slots) => slots.fill(None),
-      Self::Sparse(readers) => readers.clear(),
     }
   }
 }
