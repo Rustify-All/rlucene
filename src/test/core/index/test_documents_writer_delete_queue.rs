@@ -374,7 +374,7 @@ impl UpdateThread {
       self
         .queue
         .add_with_slice(term_node.clone(), &mut self.slice)?;
-      assert!(self.slice.is_tail(&term_node));
+      assert!(self.slice.is_tail(Arc::as_ptr(&term_node)));
 
       let mut guard = self.deletes.lock();
       self.slice.apply(&mut guard, MAX_INT)?;

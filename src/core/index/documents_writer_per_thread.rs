@@ -480,12 +480,10 @@ where
       .as_mut()
       .ok_or_else(|| LuceneError::illegal_state("document writer delete slice is missing"))?;
     let seq_no: i64 = if let Some(node) = delete_node {
-      let seq = self
-        .state
-        .delete_queue
-        .add_with_slice(node.clone(), delete_slice)?;
+      let node_identity = Arc::as_ptr(&node);
+      let seq = self.state.delete_queue.add_with_slice(node, delete_slice)?;
       debug_assert!(
-        delete_slice.is_tail(&node),
+        delete_slice.is_tail(node_identity),
         "expected the delete term as the tail item"
       );
       delete_slice.apply(&mut self.pending_updates, doc_id_upto)?;

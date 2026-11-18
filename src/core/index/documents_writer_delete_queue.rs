@@ -15,8 +15,8 @@
  * limitations under the License.
  */
 use std::fmt::{Display, Formatter, Write as _};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::{Arc, OnceLock};
 
 use parking_lot::Mutex;
 
@@ -249,9 +249,10 @@ impl DocumentsWriterDeleteQueue {
     self.ensure_open()?;
     {
       let mut tail = self.tail.lock();
-      let mut tail_next_guard = tail.next.lock();
-      *tail_next_guard = Option::from(new_node.clone());
-      drop(tail_next_guard);
+      tail
+        .next
+        .set(Arc::clone(&new_node))
+        .map_err(|_| LuceneError::illegal_state("delete queue tail already has a successor"))?;
       *tail = new_node;
     }
 
@@ -270,7 +271,7 @@ impl DocumentsWriterDeleteQueue {
     global_state.global_buffered_updates.any()
       || !global_state.global_slice.is_empty()
       || !Arc::ptr_eq(&global_state.global_slice.slice_tail, &current_tail)
-      || current_tail.next.lock().is_some()
+      || current_tail.next.get().is_some()
   }
 
   pub(crate) fn try_apply_global_slice(&self) -> Result<()> {
@@ -590,29 +591,19 @@ impl DeleteSlice {
     //present node in the slice!
     {
       let mut current = &self.slice_head;
-      let mut current_owner;
       loop {
-        let next_node_guard = current.next.lock();
-        debug_assert!(
-          next_node_guard.is_some(),
-          "slice property violated: nodes between the head and tail must not be null"
-        );
-        let next_node = next_node_guard.as_ref().ok_or_else(|| {
+        let next_node = current.next.get().ok_or_else(|| {
           LuceneError::illegal_state(
             "slice property violated: nodes between the head and tail must not be null",
           )
         })?;
 
         if Arc::ptr_eq(next_node, &self.slice_tail) {
-          drop(next_node_guard);
           self.slice_tail.apply(del, doc_id_upto)?;
           break;
         }
-        let next_node = Arc::clone(next_node);
-        drop(next_node_guard);
         next_node.apply(del, doc_id_upto)?;
-        current_owner = next_node;
-        current = &current_owner;
+        current = next_node;
       }
     }
     self.reset();
@@ -625,8 +616,8 @@ impl DeleteSlice {
     }
   }
   /// Returns `true` if the given node is the slice's tail.
-  pub(crate) fn is_tail(&self, node: &Arc<Node>) -> bool {
-    Arc::ptr_eq(&self.slice_tail, node)
+  pub(crate) fn is_tail(&self, node: *const Node) -> bool {
+    std::ptr::eq(Arc::as_ptr(&self.slice_tail), node)
   }
 
   /// Returns `true` if the given item is identical to the item held by the
@@ -643,25 +634,25 @@ impl DeleteSlice {
 
 /// Represents a node in a linked list.
 pub(crate) struct Node {
-  /// The next node in the list, or `None` if this is the last node.
-  next: Mutex<Option<Arc<Node>>>,
+  /// The successor is published once, before the queue advances its tail.
+  next: OnceLock<Arc<Node>>,
   pub(crate) item: NodeEnum,
 }
 
 impl Node {
   pub(crate) fn new(sub_node: NodeEnum) -> Self {
     Self {
-      next: Mutex::new(None),
+      next: OnceLock::new(),
       item: sub_node,
     }
   }
 }
 impl Drop for Node {
   fn drop(&mut self) {
-    let mut next = self.next.get_mut().take();
+    let mut next = self.next.take();
     while let Some(node) = next {
       match Arc::into_inner(node) {
-        Some(mut node) => next = node.next.get_mut().take(),
+        Some(mut node) => next = node.next.take(),
         None => break,
       }
     }
