@@ -244,25 +244,28 @@ where
     let slice = self
       .data
       .random_access_slice(entry.norms_offset.try_convert()?, length)?;
-    // Prefetch the first page of data. Following pages are expected to get
-    // prefetched through read-ahead.
+    let input = if MERGING {
+      let slice = Arc::new(slice);
+      self
+        .data_inputs
+        .lock()
+        .insert(field.number, Arc::clone(&slice));
+      RandomAccessSliceEnum::Shared(slice)
+    } else {
+      RandomAccessSliceEnum::Owned(slice)
+    };
+
+    // Publish the merge slice before prefetching, so it remains reusable if
+    // prefetching fails. Following pages are expected to get prefetched
+    // through read-ahead.
+    let slice = match &input {
+      RandomAccessSliceEnum::Shared(slice) => slice.as_ref(),
+      RandomAccessSliceEnum::Owned(slice) => slice,
+    };
     if slice.length()? > 0 {
       slice.prefetch(0, 1)?;
     }
-
-    if MERGING {
-      let slice_rc = Arc::new(slice);
-      if MERGING {
-        self
-          .data_inputs
-          .lock()
-          .insert(field.number, Arc::clone(&slice_rc));
-      }
-
-      Ok(RandomAccessSliceEnum::Shared(slice_rc))
-    } else {
-      Ok(RandomAccessSliceEnum::Owned(slice))
-    }
+    Ok(input)
   }
   fn get_disi_jump_table(
     &self,
