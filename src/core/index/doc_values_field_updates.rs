@@ -1491,7 +1491,8 @@ where
     }
   }
 
-  if queue.size() == 0 {
+  // Lucene retains the iterator for a single update packet even when it is empty.
+  if queue.size() == 0 && count != 1 {
     return Ok(None);
   }
   let value = MergedIterator::new(queue);

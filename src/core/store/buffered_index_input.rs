@@ -201,16 +201,11 @@ where
   /// * Returns [`LuceneError::eof`](crate::core::util::error::lucene_error::LuceneError::eof) if no new data can be read from the
   ///   underlying input.
   fn refill(&mut self, remain_unaligned_bytes: usize, start: usize) -> Result<()> {
-    // After the last read, some unaligned bytes remain in the buffer.
-    let mut end = start + (self.buffer_size - remain_unaligned_bytes);
-
-    // Don't read past EOF
-    let length = self.sub_index_input.length();
-    if end > length {
-      end = length;
-    }
-
-    let new_length = end - start;
+    let new_length = self
+      .sub_index_input
+      .length()
+      .saturating_sub(start)
+      .min(self.buffer_size - remain_unaligned_bytes);
     if new_length == 0 {
       return Err(LuceneError::eof(format!("read past EOF: {self}")));
     }
@@ -461,10 +456,14 @@ where
     }
     // If the buffer is not used or the remaining data exceeds the buffer
     // size, read directly from the underlying input
-    let after = self.buffer_start + (self.length + remaining_bytes - unaligned_bytes);
-    if after > self.sub_index_input.length() {
+    let start = self.buffer_start + self.length;
+    let read_length = remaining_bytes - unaligned_bytes;
+    let Some(after) = start
+      .checked_add(read_length)
+      .filter(|&after| after <= self.sub_index_input.length())
+    else {
       return Err(LuceneError::eof(format!("read past EOF: {self}")));
-    }
+    };
     // Prepare a temporary buffer to handle unaligned and remaining bytes.
     let scratch_len = remaining_bytes + unaligned_bytes;
     let reuse_scratch = scratch_len <= 8192;
@@ -498,11 +497,9 @@ where
     }
     let mut temp_buffer = Cursor::new(temp_vec);
     temp_buffer.set_position(unaligned_bytes as u64);
-    let read_result = self.sub_index_input.read_internal(
-      &mut temp_buffer,
-      remaining_bytes - unaligned_bytes,
-      self.buffer_start + self.length,
-    );
+    let read_result = self
+      .sub_index_input
+      .read_internal(&mut temp_buffer, read_length, start);
     if let Err(error) = read_result {
       if reuse_scratch && temp_buffer.get_ref().capacity() <= 8192 {
         self.bulk_scratch = temp_buffer.into_inner();
@@ -621,7 +618,7 @@ where
       // the same data over and over again.  We also check that we can
       // read `width` bytes without going over the end of the
       // buffer
-      let v = self.buffer_start.max(pos + width);
+      let v = self.buffer_start.max(pos.saturating_add(width));
       self.buffer_start = v.saturating_sub(self.buffer_size);
       self.buffer_start = self.buffer_start.min(pos);
       self.pos = self.buffer_start;
@@ -705,22 +702,23 @@ where
     let remaining = len - available;
     if len > 0 && remaining >= self.buffer_size {
       debug_assert!(state.buffer.position() <= u32::MAX as u64);
-      let after = state.buffer_start + (state.length + remaining);
-      if after > self.sub_index_input.length() {
+      let start = state.buffer_start + state.length;
+      let Some(after) = start
+        .checked_add(remaining)
+        .filter(|&after| after <= self.sub_index_input.length())
+      else {
         return Err(LuceneError::eof(format!(
           "read past EOF: BufferedIndexInput({})",
           self.resource_desc
         )));
-      }
+      };
       // Read the suffix at its final offset so the cached prefix does not
       // require moving the newly read bytes after the input succeeds.
       let mut output = Cursor::new(bytes);
       output.set_position(available as u64);
-      self.sub_index_input.read_internal(
-        &mut output,
-        remaining,
-        state.buffer_start + state.length,
-      )?;
+      self
+        .sub_index_input
+        .read_internal(&mut output, remaining, start)?;
       debug_assert!(output.position() == len as u64);
       let mut bytes = output.into_inner();
       bytes.resize(len, 0);
@@ -944,18 +942,19 @@ where
       debug_assert_eq!(pos, state.buffer_start);
       debug_assert!(state.buffer.position() <= u32::MAX as u64);
       let remaining = len - state.length;
-      let after = state.buffer_start + (state.length + remaining);
-      if after > state.sub_index_input.length() {
+      let start = state.buffer_start + state.length;
+      let Some(after) = start
+        .checked_add(remaining)
+        .filter(|&after| after <= state.sub_index_input.length())
+      else {
         return Err(LuceneError::eof(format!("read past EOF: {state}")));
-      }
+      };
       // Keep the original underlying target shape, using the final owner.
       bytes.truncate(remaining);
       let mut output = Cursor::new(bytes);
-      state.sub_index_input.read_internal(
-        &mut output,
-        remaining,
-        state.buffer_start + state.length,
-      )?;
+      state
+        .sub_index_input
+        .read_internal(&mut output, remaining, start)?;
       debug_assert!(output.position() == (len - state.length) as u64);
       let mut bytes = output.into_inner();
       bytes.resize(len, 0);
@@ -964,7 +963,7 @@ where
         bytes.copy_within(..len - available, available);
         bytes[..available].copy_from_slice(&state.buffer.get_ref()[..available]);
       }
-      state.buffer_start += len;
+      state.buffer_start = after;
       state.length = 0;
       return Ok(std::borrow::Cow::Owned(bytes));
     }

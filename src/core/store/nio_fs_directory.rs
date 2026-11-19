@@ -264,20 +264,19 @@ impl BufferedIndexInputBase for NIOFSIndexInput {
     file_pointer: usize,
   ) -> Result<()> {
     debug_assert!(buffer.remain()? >= len, "buffer overflow");
-    let mut pos = file_pointer + self.off;
     let file = self.shared.file.read();
     let file = file
       .as_ref()
       .ok_or_else(|| LuceneError::already_closed(format!("Already closed: {self}")))?;
 
-    // Check if the requested read exceeds the file's end
-    if pos + len > self.end {
+    let input_length = self.length();
+    if file_pointer > input_length || len > input_length - file_pointer {
       return Err(LuceneError::eof(format!(
-        "read past EOF: position={} len={} end={}",
-        pos, len, self.end
+        "read past EOF: position={file_pointer} len={len} input length={input_length}"
       )));
     }
 
+    let mut pos = self.off + file_pointer;
     let mut read_length = len;
     while read_length > 0 {
       // Determine the size of the current chunk to read
@@ -315,14 +314,11 @@ impl BufferedIndexInputBase for NIOFSIndexInput {
   type Slice = BufferedIndexInput<NIOFSIndexInput>;
 
   fn slice(&self, slice_description: &str, offset: usize, length: usize) -> Result<Self::Slice> {
-    if offset + length > self.length() {
+    let input_length = self.length();
+    if offset > input_length || length > input_length - offset {
       return Err(LuceneError::illegal_argument(format!(
         "slice() {} out of bounds: offset={}, length={}, fileLength={}: {}",
-        slice_description,
-        offset,
-        length,
-        self.length(),
-        self
+        slice_description, offset, length, input_length, self
       )));
     }
 

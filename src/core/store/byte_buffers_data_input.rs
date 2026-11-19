@@ -277,7 +277,7 @@ where
   B: ByteBuffersDataInputBlock + Clone,
 {
   pub fn slice(&self, offset: usize, length: usize) -> Result<ByteBuffersDataInput<B>> {
-    if offset + length > self.length {
+    if offset > self.length || length > self.length - offset {
       return Err(LuceneError::illegal_argument(format!(
         "slice(offset={}, length={}) is out of bounds: {}",
         offset, length, self.length
@@ -287,7 +287,10 @@ where
     Self::new(blocks, length)
   }
   pub fn slice_buffer_list(blocks: &[Cursor<B>], offset: usize, length: usize) -> Vec<Cursor<B>> {
-    debug_assert!(!blocks.is_empty(), "blocks cannot be empty");
+    // A zero-length slice at the end of a full block may have no blocks.
+    if blocks.is_empty() {
+      return Vec::new();
+    }
 
     if blocks.len() == 1 {
       let mut new_cursor = Cursor::new(blocks[0].get_ref().clone());

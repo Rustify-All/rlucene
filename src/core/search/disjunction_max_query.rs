@@ -334,10 +334,14 @@ where
   where
     IndexSearcher<IRC, SIM>: Sync,
   {
-    let mut weights = Vec::with_capacity(query.get_disjuncts().len());
-    for query in query.disjuncts.keys().cloned() {
-      let weight = query.create_weight(searcher, &score_mode, boost)?;
-      weights.push(weight);
+    let mut weights = Vec::with_capacity(query.ordered_queries.len());
+    for (subquery, count) in &query.disjuncts {
+      for _ in 0..*count {
+        let weight = subquery
+          .clone()
+          .create_weight(searcher, &score_mode, boost)?;
+        weights.push(weight);
+      }
     }
     let tie_breaker_multiplier = query.get_tie_breaker_multiplier();
     Ok(Self {
