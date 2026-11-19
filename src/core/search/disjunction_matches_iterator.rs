@@ -199,17 +199,21 @@ where
   }
 
   fn init(&mut self) -> Result<()> {
-    let mut matches: Vec<TermMatchesIterator<TE::PostingsEnum>> = vec![
+    let mut first = Some(
       self
         .first
         .take()
         .ok_or_else(|| LuceneError::illegal_state("first matches iterator is missing"))?,
-    ];
+    );
+    let mut matches = Vec::new();
     let mut reuse = None;
     while let Some(term) = self.terms.next()? {
       if self.te.seek_exact(&term.as_bytes_ref())? {
         let mut postings = self.te.postings_with_flags(reuse, OFFSETS as i32)?;
         if postings.advance(self.doc)? == self.doc {
+          if let Some(first) = first.take() {
+            matches.push(first);
+          }
           matches.push(TermMatchesIterator::new(postings, self.query.clone())?);
           reuse = None;
         } else {
@@ -217,8 +221,10 @@ where
         }
       }
     }
-    self.it = combine_iterators(matches)?;
-    debug_assert!(self.it.is_some());
+    self.it = Some(match first {
+      Some(first) => MatchesIteratorEnum2::A(first),
+      None => MatchesIteratorEnum2::B(DisjunctionMatchesIterator::new(matches)?),
+    });
     Ok(())
   }
 }
@@ -365,19 +371,6 @@ type TermDisjunction<TE> = MatchesIteratorEnum2<
   TermMatchesIterator<<TE as TermsEnum>::PostingsEnum>,
   DisjunctionMatchesIterator<TermMatchesIterator<<TE as TermsEnum>::PostingsEnum>>,
 >;
-fn combine_iterators<M: MatchesIterator>(
-  mut mis: Vec<M>,
-) -> Result<Option<MatchesIteratorEnum2<M, DisjunctionMatchesIterator<M>>>> {
-  if mis.is_empty() {
-    return Ok(None);
-  }
-  if mis.len() == 1 {
-    return Ok(mis.pop().map(MatchesIteratorEnum2::A));
-  }
-  Ok(Some(MatchesIteratorEnum2::B(
-    DisjunctionMatchesIterator::new(mis)?,
-  )))
-}
 pub fn from_sub_iterators<'a, LR: LeafReader, SIM>(
   mut mis: Vec<QueryWeightMatchesIterator<'a, LR, SIM>>,
 ) -> Result<Option<QueryWeightMatchesIterator<'a, LR, SIM>>>

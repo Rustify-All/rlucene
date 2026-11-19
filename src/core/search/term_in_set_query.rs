@@ -320,7 +320,7 @@ impl MultiTermQuery for TermInSetQuery {
 
 pub struct SetEnum {
   iterator: TermIteratorArc,
-  seek_term: Option<BytesRef<Vec<u8>>>,
+  has_seek_term: bool,
 }
 
 impl SetEnum {
@@ -332,12 +332,12 @@ impl SetEnum {
     TE: TermsEnum,
   {
     let mut iterator = term_data.iterator()?;
-    let seek_term = iterator.next()?.map(Cow::into_owned);
+    let has_seek_term = iterator.set_next()?;
     Ok(FilteredTermsEnum::new(
       terms_enum,
       SetEnum {
         iterator,
-        seek_term,
+        has_seek_term,
       },
     ))
   }
@@ -346,24 +346,19 @@ impl SetEnum {
 impl FilteredTermsEnumBase for SetEnum {
   fn accept(&mut self, term: &BytesRef<&[u8]>, _ord: i64) -> Result<AcceptStatus> {
     let mut cmp = std::cmp::Ordering::Equal;
-    while let Some(seek_term) = self.seek_term.as_ref()
-      && {
-        cmp = seek_term.compare_to(term);
-        cmp.is_lt()
-      }
-    {
-      match (self.iterator.next()?, self.seek_term.as_mut()) {
-        (Some(Cow::Borrowed(term)), Some(buffer)) => {
-          buffer.copy_from_slice(&term.bytes[term.offset..term.offset + term.length]);
-        },
-        (term, _) => self.seek_term = term.map(Cow::into_owned),
-      }
+    while self.has_seek_term && {
+      cmp = self.iterator.builder.bytes().compare_to(term);
+      cmp.is_lt()
+    } {
+      self.has_seek_term = self.iterator.set_next()?;
     }
 
-    match self.seek_term.as_ref() {
-      None => Ok(AcceptStatus::End),
-      Some(_) if cmp.is_eq() => Ok(AcceptStatus::YesAndSeek),
-      Some(_) => Ok(AcceptStatus::NoAndSeek),
+    if !self.has_seek_term {
+      Ok(AcceptStatus::End)
+    } else if cmp.is_eq() {
+      Ok(AcceptStatus::YesAndSeek)
+    } else {
+      Ok(AcceptStatus::NoAndSeek)
     }
   }
 
@@ -371,21 +366,15 @@ impl FilteredTermsEnumBase for SetEnum {
     &mut self,
     current: Option<&BytesRef<&[u8]>>,
   ) -> Result<Option<Cow<'_, BytesRef<Vec<u8>>>>> {
-    let Some(current) = current else {
-      return Ok(self.seek_term.as_ref().map(Cow::Borrowed));
-    };
-    while self
-      .seek_term
-      .as_ref()
-      .is_some_and(|seek_term| !seek_term.compare_to(current).is_gt())
-    {
-      match (self.iterator.next()?, self.seek_term.as_mut()) {
-        (Some(Cow::Borrowed(term)), Some(buffer)) => {
-          buffer.copy_from_slice(&term.bytes[term.offset..term.offset + term.length]);
-        },
-        (term, _) => self.seek_term = term.map(Cow::into_owned),
+    if let Some(current) = current {
+      while self.has_seek_term && !self.iterator.builder.bytes().compare_to(current).is_gt() {
+        self.has_seek_term = self.iterator.set_next()?;
       }
     }
-    Ok(self.seek_term.as_ref().map(Cow::Borrowed))
+    Ok(
+      self
+        .has_seek_term
+        .then(|| Cow::Borrowed(self.iterator.builder.bytes())),
+    )
   }
 }

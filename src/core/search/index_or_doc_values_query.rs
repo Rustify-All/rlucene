@@ -151,17 +151,17 @@ impl QueryBase for IndexOrDocValuesQuery {
   {
     let index_rewrite_id = self.index_query.identity();
     let dv_rewrite_id = self.dv_query.identity();
-    let index_rewrite = index_searcher.rewrite(self.index_query.as_ref().clone())?;
-    let dv_rewrite = index_searcher.rewrite(self.dv_query.as_ref().clone())?;
+    let index_rewrite = index_searcher.rewrite_borrowed(&self.index_query)?;
+    let dv_rewrite = index_searcher.rewrite_borrowed(&self.dv_query)?;
 
-    if matches!(index_rewrite, Query::MatchAllDocs(_))
-      || matches!(dv_rewrite, Query::MatchAllDocs(_))
+    if matches!(index_rewrite.as_ref(), Query::MatchAllDocs(_))
+      || matches!(dv_rewrite.as_ref(), Query::MatchAllDocs(_))
     {
       return Ok(Some(MatchAllDocsQuery::new().into()));
     }
     if index_rewrite_id != index_rewrite.identity() || dv_rewrite_id != dv_rewrite.identity() {
       Ok(Some(
-        IndexOrDocValuesQuery::new(index_rewrite, dv_rewrite).into(),
+        IndexOrDocValuesQuery::new(index_rewrite.into_owned(), dv_rewrite.into_owned()).into(),
       ))
     } else {
       Ok(None)

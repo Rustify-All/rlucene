@@ -71,7 +71,7 @@ use crate::core::util::packed::direct_monotonic_reader::{DirectMonotonicReader, 
 use crate::core::util::packed::direct_reader::{DirectPackedEnum, DirectReader, FromSlice};
 use crate::core::util::{ToInt, TryIntoInt};
 use std::borrow::Cow;
-use std::collections::{HashMap, hash_map::Entry};
+use std::collections::{HashMap, HashSet, hash_map::Entry};
 use std::sync::Arc;
 
 pub struct Lucene90DocValuesProducer<I> {
@@ -294,7 +294,7 @@ where
   where
     II: IndexInput,
   {
-    let mut tables = (infos.size() >= 64).then(HashMap::new);
+    let mut tables = (infos.size() >= 64).then(HashSet::new);
     loop {
       let field_number = meta.read_int()?;
       if field_number == -1 {
@@ -1127,16 +1127,16 @@ where
     )?))
   }
 }
-type NumericTableCache = HashMap<Box<[i64]>, Arc<Vec<i64>>>;
+type NumericTableCache = HashSet<Arc<Vec<i64>>>;
 
 fn share_numeric_table(entry: &mut NumericEntry, cache: Option<&mut NumericTableCache>) {
   let (Some(table), Some(cache)) = (&mut entry.table, cache) else {
     return;
   };
-  if let Some(existing) = cache.get(table.as_slice()) {
+  if let Some(existing) = cache.get(table.as_ref()) {
     *table = Arc::clone(existing);
   } else if cache.len() < 64 {
-    cache.insert(table.as_slice().into(), Arc::clone(table));
+    cache.insert(Arc::clone(table));
   }
 }
 

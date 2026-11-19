@@ -56,12 +56,12 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct LatLonDocValuesQuery {
   id: Identity,
-  field: String,
   data: Arc<LatLonDocValuesQueryData>,
   query_relation: QueryRelation,
 }
 
 struct LatLonDocValuesQueryData {
+  field: String,
   geometries: Box<[LatLonGeometryEnum]>,
   component2d: Arc<LatLonGeometryType<<LatLonGeometryEnum as Geometry>::Component2D>>,
 }
@@ -94,12 +94,12 @@ impl LatLonDocValuesQuery {
     }
     let component2d = Arc::new(lat_lon_geometry::create(geometries.as_slice())?);
     let data = Arc::new(LatLonDocValuesQueryData {
+      field,
       geometries: geometries.into_boxed_slice(),
       component2d,
     });
     Ok(Self {
       id: Identity::new(),
-      field,
       data,
       query_relation,
     })
@@ -109,7 +109,7 @@ impl LatLonDocValuesQuery {
 impl Debug for LatLonDocValuesQuery {
   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
     f.debug_struct("LatLonDocValuesQuery")
-      .field("field", &self.field)
+      .field("field", &self.data.field)
       .field("query_relation", &self.query_relation)
       .finish()
   }
@@ -118,7 +118,7 @@ impl Debug for LatLonDocValuesQuery {
 impl PartialEq for LatLonDocValuesQuery {
   fn eq(&self, other: &Self) -> bool {
     // Preserve the original shared-geometry equality fast path.
-    self.field == other.field
+    self.data.field == other.data.field
       && self.query_relation == other.query_relation
       && (Arc::ptr_eq(&self.data, &other.data) || self.data.geometries == other.data.geometries)
   }
@@ -131,7 +131,7 @@ impl Hash for LatLonDocValuesQuery {
   where
     H: Hasher,
   {
-    self.field.hash(state);
+    self.data.field.hash(state);
     self.query_relation.hash(state);
     self.data.geometries.hash(state);
   }
@@ -152,8 +152,8 @@ impl QueryBase for LatLonDocValuesQuery {
 
   fn to_string(&self, field: &str) -> Result<String> {
     let mut sb = String::new();
-    if self.field != field {
-      sb.push_str(&self.field);
+    if self.data.field != field {
+      sb.push_str(&self.data.field);
       sb.push(':');
     }
     write!(sb, "{:?}", self.query_relation)?;
@@ -189,7 +189,7 @@ impl QueryBase for LatLonDocValuesQuery {
     QV: QueryVisitor,
   {
     let query = self.into();
-    if visitor.accept_field(&self.field) {
+    if visitor.accept_field(&self.data.field) {
       visitor.visit_leaf(query)?;
     }
     Ok(())
@@ -230,7 +230,7 @@ where
   IRC: IndexReaderContext + 'static,
 {
   fn is_cacheable(&self, ctx: &LeafReaderContext<IRCLeafReader<IRC>>) -> Result<bool> {
-    let field = [self.query.field.as_str()];
+    let field = [self.query.data.field.as_str()];
     DocValues::is_cacheable(ctx, field)
   }
 }
@@ -277,7 +277,7 @@ where
     let component2d_predicate = self.component2d_predicate.as_ref();
     match context
       .reader()
-      .get_sorted_numeric_doc_values(&self.query.field)?
+      .get_sorted_numeric_doc_values(&self.query.data.field)?
     {
       Some(values) => {
         let iterator = match self.query.query_relation {

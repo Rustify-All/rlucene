@@ -85,7 +85,7 @@ pub trait AbstractVectorSimilarityQuery: QueryBase {
   {
     let filter_weight = match self.base().filter.as_ref() {
       Some(filter) => {
-        let rewritten = searcher.rewrite((**filter).clone())?;
+        let rewritten = searcher.rewrite_borrowed(filter)?.into_owned();
         Some(searcher.create_weight(rewritten, ScoreMode::CompleteNoScores, 1.0)?)
       },
       None => None,

@@ -55,7 +55,7 @@ use std::sync::Arc;
 /// well.
 #[derive(Clone)]
 pub struct BlendedTermQuery {
-  terms: Vec<Term>,
+  terms: Vec<Arc<Term>>,
   boosts: Vec<f32>,
   contexts: Vec<Option<Arc<TermStates>>>,
   rewrite_method: RewriteMethodEnum,
@@ -63,7 +63,7 @@ pub struct BlendedTermQuery {
 }
 impl BlendedTermQuery {
   fn new(
-    mut terms: Vec<Term>,
+    mut terms: Vec<Arc<Term>>,
     mut boosts: Vec<f32>,
     mut contexts: Vec<Option<Arc<TermStates>>>,
     rewrite_method: RewriteMethodEnum,
@@ -231,6 +231,7 @@ impl QueryBase for BlendedTermQuery {
     let terms: SmallVec<[_; 8]> = self
       .terms
       .iter()
+      .map(Arc::as_ref)
       .filter(|term| visitor.accept_field(term.field()))
       .collect();
     if !terms.is_empty() {
@@ -242,13 +243,13 @@ impl QueryBase for BlendedTermQuery {
   }
 }
 struct InPlaceMergeSorterImpl<'a> {
-  terms: &'a mut [Term],
+  terms: &'a mut [Arc<Term>],
   boosts: &'a mut [f32],
   contexts: &'a mut [Option<Arc<TermStates>>],
 }
 impl<'a> InPlaceMergeSorterImpl<'a> {
   fn new(
-    terms: &'a mut [Term],
+    terms: &'a mut [Arc<Term>],
     boosts: &'a mut [f32],
     contexts: &'a mut [Option<Arc<TermStates>>],
   ) -> Self {
@@ -274,7 +275,7 @@ impl<'a> Sorter for InPlaceMergeSorterImpl<'a> {
 
 pub struct Builder {
   num_terms: usize,
-  terms: Vec<Term>,
+  terms: Vec<Arc<Term>>,
   boosts: Vec<f32>,
   contexts: Vec<Option<Arc<TermStates>>>,
   rewrite_method: RewriteMethodEnum,
@@ -348,7 +349,7 @@ impl Builder {
     if self.num_terms >= index_searcher::get_max_clause_count() {
       return Err(index_searcher::new_nested());
     }
-    self.terms.push(term);
+    self.terms.push(Arc::new(term));
     self.boosts.push(boost);
     self.contexts.push(context);
     self.num_terms += 1;

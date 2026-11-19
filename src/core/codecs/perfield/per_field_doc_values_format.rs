@@ -484,12 +484,21 @@ where
 
   // Clone each distinct producer for merge. Both readers use the same immutable slot maps.
   fn from_other(other: &Self) -> Result<Self> {
-    let mut producers = other.producers.clone();
-    for producer in &mut producers {
-      if let Some(instance) = producer.as_ref().get_merge_instance()? {
-        *producer = Arc::new(instance);
+    let merge_producer = |producer: &Arc<DVP>| -> Result<Arc<DVP>> {
+      Ok(match producer.as_ref().get_merge_instance()? {
+        Some(instance) => Arc::new(instance),
+        None => Arc::clone(producer),
+      })
+    };
+    let producers = if let [producer] = other.producers.as_slice() {
+      vec![merge_producer(producer)?]
+    } else {
+      let mut producers = Vec::with_capacity(other.producers.len());
+      for producer in &other.producers {
+        producers.push(merge_producer(producer)?);
       }
-    }
+      producers
+    };
     Ok(Self {
       fields: other.fields.clone(),
       producers,

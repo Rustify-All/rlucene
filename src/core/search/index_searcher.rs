@@ -82,7 +82,7 @@ use parking_lot::Mutex;
 use parking_lot::RwLock;
 use rayon::ThreadPool;
 use smallvec::SmallVec;
-use std::borrow::Borrow;
+use std::borrow::{Borrow, Cow};
 #[cfg(test)]
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
@@ -696,6 +696,23 @@ where
     Self: Sync,
   {
     self.hook.rewrite(self, query.into_query())
+  }
+
+  pub(crate) fn rewrite_borrowed<'a>(&self, query: &'a Query) -> Result<Cow<'a, Query>>
+  where
+    Self: Sync,
+  {
+    #[cfg(test)]
+    if !matches!(&self.hook, IndexSearcherHook::Default) {
+      return self.rewrite(query.clone()).map(Cow::Owned);
+    }
+
+    if let Some(rewritten) = query.rewrite(self)? {
+      self.rewrite(rewritten).map(Cow::Owned)
+    } else {
+      query.visit(&mut IndexSearcherDefaults::get_num_clauses_check_visitor())?;
+      Ok(Cow::Borrowed(query))
+    }
   }
 
   pub(crate) fn rewrite_with_needs_scores(
