@@ -398,14 +398,17 @@ impl FinishedSegments {
 
   pub(crate) fn finished_segment(&self, del_gen: i64) -> Result<()> {
     let mut inner = self.inner.lock();
-    inner.finished_del_gens.insert(del_gen);
-    while inner
-      .finished_del_gens
-      .contains(&(inner.completed_del_gen + 1))
-    {
-      let v = inner.completed_del_gen + 1;
-      inner.finished_del_gens.remove(&v);
-      inner.completed_del_gen += 1;
+    let Inner {
+      completed_del_gen,
+      finished_del_gens,
+    } = &mut *inner;
+    if del_gen == *completed_del_gen + 1 {
+      *completed_del_gen = del_gen;
+      while finished_del_gens.remove(&(*completed_del_gen + 1)) {
+        *completed_del_gen += 1;
+      }
+    } else {
+      finished_del_gens.insert(del_gen);
     }
     {
       if self.info_stream.is_enabled("BD") {

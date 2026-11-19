@@ -317,11 +317,6 @@ impl TieredMergePolicy {
     MC: MergeContext<D>,
     D: Directory,
   {
-    let mut seg_infos_sizes = HashMap::with_capacity(sorted_eligible.len());
-    for seg in &sorted_eligible {
-      seg_infos_sizes.insert(seg.seg_info.info.get_id_key(), *seg);
-    }
-
     let original_sorted_size = sorted_eligible.len();
     if self.verbose(merge_context) {
       self.message(
@@ -343,9 +338,9 @@ impl TieredMergePolicy {
     // pick up another
     // merge next time around.
     let mut have_one_large_merge = false;
-    let mut candidate: smallvec::SmallVec<[SegmentCommitInfoMeta<'_, D>; 4]> =
+    let mut candidate: smallvec::SmallVec<[SegmentSizeAndDocs<'_, D>; 4]> =
       smallvec::SmallVec::new();
-    let mut best: smallvec::SmallVec<[SegmentCommitInfoMeta<'_, D>; 4]> = smallvec::SmallVec::new();
+    let mut best: smallvec::SmallVec<[SegmentSizeAndDocs<'_, D>; 4]> = smallvec::SmallVec::new();
 
     loop {
       // Gather eligible segments for merging, ie segments
@@ -434,11 +429,7 @@ impl TieredMergePolicy {
             }
           }
 
-          candidate.push(SegmentCommitInfoMeta::new(
-            seg_size_docs.seg_info,
-            seg_size_docs.size_in_seg,
-            seg_size_docs.max_doc,
-          ));
+          candidate.push(*seg_size_docs);
           bytes_this_merge += seg_bytes;
           doc_count_this_merge += seg_doc_count as i64;
           idx += 1;
@@ -447,11 +438,7 @@ impl TieredMergePolicy {
         // segments, and already pre-excluded the too-large segments:
         debug_assert!(!candidate.is_empty());
 
-        let max_candidate_segment_size =
-          match seg_infos_sizes.get(candidate[0].seg_info.info.get_id_key()) {
-            Some(c) => c,
-            None => return Err(LuceneError::illegal_state("could not  find candidate")),
-          };
+        let max_candidate_segment_size = &candidate[0];
 
         if !hit_too_large
           && merge_type == MergeType::Natural
@@ -481,9 +468,10 @@ impl TieredMergePolicy {
           break;
         }
 
-        let score = self.score(&candidate, hit_too_large, &seg_infos_sizes)?;
+        let score = self.score(&candidate, hit_too_large);
         if self.verbose(merge_context) {
-          let candidate_string = Self::format_merge_segments(&candidate, merge_context)?;
+          let candidate_string =
+            Self::format_merge_segments(candidate.iter().map(|s| s.seg_info), merge_context)?;
           self.message(
             &format!(
               "  maybe={} score={} {} tooLarge={} size={:.3} MB",
@@ -521,11 +509,16 @@ impl TieredMergePolicy {
         have_one_large_merge |= best_too_large;
 
         let spec_ref = spec.get_or_insert_with(MergeSpecification::new);
-        let merge = OneMerge::from_meta(best.as_ref())?;
+        let merge = OneMerge::new(
+          best
+            .iter()
+            .map(|s| SegmentDocAndID::new(s.seg_info.info.id_key.clone(), s.max_doc)),
+        )?;
         spec_ref.add(merge);
 
         if self.verbose(merge_context) {
-          let best_string = Self::format_merge_segments(&best, merge_context)?;
+          let best_string =
+            Self::format_merge_segments(best.iter().map(|s| s.seg_info), merge_context)?;
           let best_score = best_score
             .as_ref()
             .ok_or_else(|| LuceneError::illegal_state("selected merge has no score"))?;
@@ -550,17 +543,16 @@ impl TieredMergePolicy {
     }
   }
 
-  fn format_merge_segments<D, MC>(
-    segments: &[SegmentCommitInfoMeta<'_, D>],
+  fn format_merge_segments<'a, D, MC>(
+    segments: impl Iterator<Item = &'a SegmentCommitInfo<D>>,
     merge_context: &MC,
   ) -> Result<String>
   where
-    D: Directory,
+    D: Directory + 'a,
     MC: MergeContext<D>,
   {
     let mut formatted = String::new();
-    for (i, meta) in segments.iter().enumerate() {
-      let info = meta.seg_info;
+    for (i, info) in segments.enumerate() {
       let del = merge_context.num_deleted_docs(info)? - info.get_del_count();
       if i != 0 {
         formatted.push(' ');
@@ -573,22 +565,17 @@ impl TieredMergePolicy {
   /// Expert: scores one merge; implementations may provide custom behavior.
   fn score<D>(
     &self,
-    candidate: &[SegmentCommitInfoMeta<'_, D>],
+    candidate: &[SegmentSizeAndDocs<'_, D>],
     hit_too_large: bool,
-    segments_sizes: &HashMap<&str, SegmentSizeAndDocs<'_, D>>,
-  ) -> Result<MergeScoreImpl>
-  where
-    D: Directory,
-  {
-    let mut tot_before_merge_bytes: i64 = 0;
-    let mut tot_after_merge_bytes: i64 = 0;
-    let mut tot_after_merge_bytes_floored: i64 = 0;
+  ) -> MergeScoreImpl {
+    let first_size = candidate[0].size_in_bytes;
+    let first_size_floored = self.floor_size(first_size);
+    let mut tot_before_merge_bytes = candidate[0].size_in_seg;
+    let mut tot_after_merge_bytes = first_size;
+    let mut tot_after_merge_bytes_floored = first_size_floored;
 
-    for info in candidate {
-      let seg_bytes = segments_sizes
-        .get(info.seg_info.info.get_id_key())
-        .ok_or_else(|| LuceneError::illegal_state("candidate segment size is missing"))?
-        .size_in_bytes;
+    for info in &candidate[1..] {
+      let seg_bytes = info.size_in_bytes;
       tot_after_merge_bytes += seg_bytes;
       tot_after_merge_bytes_floored += self.floor_size(seg_bytes);
       tot_before_merge_bytes += info.size_in_seg;
@@ -608,13 +595,7 @@ impl TieredMergePolicy {
       let merge_factor = std::cmp::min(self.max_merge_at_once, self.segs_per_tier as i32);
       1.0 / (merge_factor as f64)
     } else {
-      (self.floor_size(
-        segments_sizes
-          .get(candidate[0].seg_info.info.get_id_key())
-          .ok_or_else(|| LuceneError::illegal_state("candidate segment size is missing"))?
-          .size_in_bytes,
-      ) as f64)
-        / (tot_after_merge_bytes_floored as f64)
+      (first_size_floored as f64) / (tot_after_merge_bytes_floored as f64)
     };
 
     // Strongly favor merges with less skew (smaller
@@ -633,11 +614,11 @@ impl TieredMergePolicy {
 
     let final_merge_score = merge_score;
 
-    Ok(MergeScoreImpl {
+    MergeScoreImpl {
       final_merge_score,
       skew,
       non_del_ratio,
-    })
+    }
   }
   pub(crate) fn get_max_allowed_docs(&self, total_max_doc: i32, total_del_docs: i32) -> i32 {
     let v = total_max_doc - total_del_docs;
@@ -650,16 +631,11 @@ impl TieredMergePolicy {
 }
 pub struct SegmentCommitInfoMeta<'a, D> {
   pub(crate) seg_info: &'a SegmentCommitInfo<D>,
-  pub(crate) size_in_seg: i64,
   pub(crate) max_doc: i32,
 }
 impl<'a, D> SegmentCommitInfoMeta<'a, D> {
-  fn new(seg_info: &'a SegmentCommitInfo<D>, size_in_seg: i64, max_doc: i32) -> Self {
-    Self {
-      seg_info,
-      size_in_seg,
-      max_doc,
-    }
+  fn new(seg_info: &'a SegmentCommitInfo<D>, max_doc: i32) -> Self {
+    Self { seg_info, max_doc }
   }
 }
 #[derive(Clone)]
@@ -1047,7 +1023,6 @@ where
         {
           candidate.push(SegmentCommitInfoMeta::new(
             sorted_size_and_doc.seg_info,
-            sorted_size_and_doc.size_in_seg,
             sorted_size_and_doc.max_doc,
           ));
           index = current_index.checked_sub(1);
@@ -1073,7 +1048,8 @@ where
       {
         let merge = OneMerge::from_meta(candidate.as_ref())?;
         if self.verbose(merge_context) {
-          let candidate_string = Self::format_merge_segments(&candidate, merge_context)?;
+          let candidate_string =
+            Self::format_merge_segments(candidate.iter().map(|s| s.seg_info), merge_context)?;
           self.message(&format!("add merge={candidate_string}"), merge_context)?;
         }
 

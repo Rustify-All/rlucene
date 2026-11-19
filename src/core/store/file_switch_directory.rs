@@ -334,13 +334,18 @@ where
   fn rename(&self, source: &str, dest: &str) -> Result<()> {
     // won't happen with standard lucene index files since pending and commit
     // will always have the same extension ("")
-    if self.is_primary(source) == self.is_primary(dest) {
-      self.get_directory(source).rename(source, dest)
-    } else {
-      Err(LuceneError::io(Error::other(format!(
+    let source_is_primary = self.is_primary(source);
+    if source_is_primary != self.is_primary(dest) {
+      return Err(LuceneError::io(Error::other(format!(
         "{source} -> {dest}: source and dest are in different directories"
-      ))))
+      ))));
     }
+    let directory = if source_is_primary {
+      &self.primary_dir
+    } else {
+      &self.secondary_dir
+    };
+    directory.rename(source, dest)
   }
 
   type IndexInput = D::IndexInput;

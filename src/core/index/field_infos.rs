@@ -793,8 +793,8 @@ impl FieldNumbers {
     let field_name = fi.get_name();
     self.verify_soft_deleted_field_name(field_name, fi.is_soft_deletes_field())?;
     self.verify_parent_field_name(field_name, fi.is_parent_field())?;
-    if self.field_properties.contains_key(field_name) {
-      self.verify_same_schema(fi)?;
+    if let Some(field_properties) = self.field_properties.get(field_name) {
+      self.verify_same_schema(fi, field_properties)?;
     }
     Ok(())
   }
@@ -809,7 +809,7 @@ impl FieldNumbers {
     self.verify_parent_field_name(field_name, fi.is_parent_field())?;
     let number = match self.field_properties.get(field_name) {
       Some(field_properties) => {
-        self.verify_same_schema(fi)?;
+        self.verify_same_schema(fi, field_properties)?;
         field_properties.number
       },
       None => {
@@ -945,11 +945,8 @@ impl FieldNumbers {
     Ok(())
   }
 
-  fn verify_same_schema(&self, fi: &FieldInfo) -> Result<()> {
+  fn verify_same_schema(&self, fi: &FieldInfo, field_properties: &FieldProperties) -> Result<()> {
     let field_name = fi.get_name();
-    let field_properties = self.field_properties.get(field_name).ok_or_else(|| {
-      LuceneError::illegal_state(format!("field properties are missing for [{field_name}]"))
-    })?;
     FieldInfo::verify_same_index_options(
       field_name,
       &field_properties.index_options,

@@ -278,7 +278,7 @@ where
         )? {
           changed = true;
         }
-        if rld.get_num_dv_updates() == 0 {
+        if !rld.has_pending_dv_updates() {
           rld.drop_readers()?;
           if inner.reader_map.remove(&rld.info_id).is_some() {
             debug_assert_eq!(rld.ref_count(), 0);
@@ -463,7 +463,7 @@ where
     let inner = self.inner.lock();
     for rld in inner.reader_map.values() {
       // NOTE: we don't check for pending deletes because deletes carry over in RAM to NRT readers
-      if rld.get_num_dv_updates() != 0 {
+      if rld.has_pending_dv_updates() {
         return true;
       }
     }

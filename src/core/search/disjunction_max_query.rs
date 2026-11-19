@@ -43,8 +43,6 @@ use crate::core::search::weight::Weight;
 use crate::core::util::error::lucene_error::LuceneError;
 use crate::core::util::error::lucene_error::Result;
 use crate::core::util::{CoreHelper, HasIdentity};
-use smallvec::SmallVec;
-use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::Arc;
@@ -267,44 +265,15 @@ impl Hash for DisjunctionMaxQuery {
   {
     CoreHelper::hash_bits_f32_for_primitive_eq(self.tie_breaker_multiplier).hash(state);
 
-    let mut entries: SmallVec<[_; 8]> = SmallVec::with_capacity(self.disjuncts.len());
-    entries.extend(
-      self
-        .disjuncts
-        .iter()
-        .map(|(query, count)| (query, count, OnceCell::new())),
-    );
-    entries.sort_by(|a, b| {
-      // compare name
-      let cmp = a.0.name().cmp(b.0.name());
-      if cmp != std::cmp::Ordering::Equal {
-        return cmp;
-      }
-      // compare hash
-      let ah = a.2.get_or_init(|| {
-        let mut hash = DefaultHasher::new();
-        a.0.hash(&mut hash);
-        hash.finish()
-      });
-
-      let bh = b.2.get_or_init(|| {
-        let mut hash = DefaultHasher::new();
-        b.0.hash(&mut hash);
-        hash.finish()
-      });
-
-      // compare count
-      let cmp = ah.cmp(bh);
-      if cmp != std::cmp::Ordering::Equal {
-        return cmp;
-      }
-      a.1.cmp(b.1)
-    });
-
-    for (query, count, _) in entries {
-      query.hash(state);
-      count.hash(state);
+    let mut entries_hash = 0_u64;
+    for (query, count) in &self.disjuncts {
+      let mut entry = DefaultHasher::new();
+      query.hash(&mut entry);
+      count.hash(&mut entry);
+      entries_hash = entries_hash.wrapping_add(entry.finish());
     }
+    self.disjuncts.len().hash(state);
+    entries_hash.hash(state);
   }
 }
 /// the Weight for DisjunctionMaxQuery, used to normalize, score and explain these queries

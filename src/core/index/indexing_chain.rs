@@ -708,11 +708,17 @@ where
     let body_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
       segment_info.max_doc()?;
       for fi in state.field_infos.iter() {
-        let per_field_index = self.get_per_field(&fi.name);
-        debug_assert!(per_field_index.is_some());
+        #[cfg(debug_assertions)]
+        let per_field_index = {
+          let index = self.get_per_field(&fi.name);
+          debug_assert!(index.is_some());
+          index
+        };
         // we must check the final value of omitNorms for the fieldinfo: it could have
         // changed for this field since the first time we added it.
         if !fi.omits_norms() && *fi.get_index_options() != IndexOptions::None {
+          #[cfg(not(debug_assertions))]
+          let per_field_index = self.get_per_field(&fi.name);
           let per_field_index = per_field_index
             .ok_or_else(|| LuceneError::illegal_state("per-field entry is missing"))?;
           let per_field = self

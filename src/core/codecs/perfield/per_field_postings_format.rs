@@ -452,6 +452,7 @@ where
     let mut fields = Vec::new();
     let mut formats = Vec::new();
     let mut format_slots: HashMap<String, u32> = HashMap::new();
+    let mut last_route = None;
 
     let mut success = false;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
@@ -461,27 +462,36 @@ where
         }
         let field_name = &field_info.name;
         let attributes = field_info.attributes();
-        let Some(format_name) = attributes.get(PER_FIELD_FORMAT_KEY) else {
-          continue;
-        };
-        let suffix = attributes.get(PER_FIELD_SUFFIX_KEY).ok_or_else(|| {
-          LuceneError::illegal_state(format!(
-            "missing attribute: {PER_FIELD_SUFFIX_KEY} for field: {field_name}"
-          ))
-        })?;
-        let segment_suffix = get_suffix(format_name, suffix);
-        let slot = match format_slots.entry(segment_suffix) {
-          Entry::Occupied(entry) => *entry.get(),
-          Entry::Vacant(entry) => {
-            let format = PF::for_name(format_name)?;
-            let state = SegmentReadState::copy_with_suffix(read_state, entry.key());
-            let producer = Arc::new(format.fields_producer(&state, segment_info)?);
-            // Each format is opened on behalf of at least one indexed field.
-            let slot = formats.len() as u32;
-            formats.push(producer);
-            entry.insert(slot);
-            slot
-          },
+        // Field infos can share an immutable attribute snapshot.
+        let slot = if let Some((last_attributes, slot)) = &last_route
+          && Arc::ptr_eq(last_attributes, &attributes)
+        {
+          *slot
+        } else {
+          let Some(format_name) = attributes.get(PER_FIELD_FORMAT_KEY) else {
+            continue;
+          };
+          let suffix = attributes.get(PER_FIELD_SUFFIX_KEY).ok_or_else(|| {
+            LuceneError::illegal_state(format!(
+              "missing attribute: {PER_FIELD_SUFFIX_KEY} for field: {field_name}"
+            ))
+          })?;
+          let segment_suffix = get_suffix(format_name, suffix);
+          let slot = match format_slots.entry(segment_suffix) {
+            Entry::Occupied(entry) => *entry.get(),
+            Entry::Vacant(entry) => {
+              let format = PF::for_name(format_name)?;
+              let state = SegmentReadState::copy_with_suffix(read_state, entry.key());
+              let producer = Arc::new(format.fields_producer(&state, segment_info)?);
+              // Each format is opened on behalf of at least one indexed field.
+              let slot = formats.len() as u32;
+              formats.push(producer);
+              entry.insert(slot);
+              slot
+            },
+          };
+          last_route = Some((attributes, slot));
+          slot
         };
         fields.push((Arc::clone(field_info), slot));
       }

@@ -154,33 +154,23 @@ impl QueryBase for FieldExistsQuery {
     Self: Sized,
     IndexSearcher<IRC, SIM>: Sync,
   {
-    let mut all_readers_rewritable = true;
+    let reader = searcher.get_index_reader();
 
     for context in searcher.get_leaf_contexts()? {
       let leaf = context.reader();
       let field_infos = leaf.get_field_infos()?;
-      let field_info = field_infos.field_info_by_name(&self.field)?;
-
-      let field_info = match field_info {
-        Some(fi) => fi,
-        None => {
-          all_readers_rewritable = false;
-          break;
-        },
+      let Some(field_info) = field_infos.field_info_by_name(&self.field)? else {
+        return Ok(None);
       };
 
       if field_info.has_norms() {
-        // the field indexes norms
-        if searcher.get_index_reader().get_doc_count(&self.field)?
-          != searcher.get_index_reader().max_doc()?
-        {
-          all_readers_rewritable = false;
-          break;
+        // The field indexes norms.
+        if reader.get_doc_count(&self.field)? != reader.max_doc()? {
+          return Ok(None);
         }
       } else if field_info.get_vector_dimension() != 0 {
         if self.get_vector_values_size(field_info, leaf)? != leaf.max_doc()? as usize {
-          all_readers_rewritable = false;
-          break;
+          return Ok(None);
         }
       } else if *field_info.get_doc_values_type() != DocValuesType::None {
         // This optimization is possible due to LUCENE-9334 enforcing a field to always uses the
@@ -208,8 +198,7 @@ impl QueryBase for FieldExistsQuery {
           }
 
           if points_bad {
-            all_readers_rewritable = false;
-            break;
+            return Ok(None);
           }
         }
       } else {
@@ -219,11 +208,7 @@ impl QueryBase for FieldExistsQuery {
       }
     }
 
-    if all_readers_rewritable {
-      return Ok(Some(MatchAllDocsQuery::new().into()));
-    }
-
-    Ok(None)
+    Ok(Some(MatchAllDocsQuery::new().into()))
   }
 
   fn visit<QV>(&self, visitor: &mut QV) -> Result<()>

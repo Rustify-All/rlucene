@@ -196,20 +196,23 @@ impl TermCollector for TermCollectorImpl {
     debug_assert!(self.compare_to_last_term(Some(bytes))?);
 
     if self.st_queue.size() == self.max_size {
-      let (key, _) = self
+      let (key, threshold_boost) = self
         .st_queue
         .top()
         .ok_or_else(|| LuceneError::illegal_state("PriorityQueue is empty"))?;
-      let t = self
-        .st_queue
-        .compare
-        .visited_terms
-        .get(key)
-        .ok_or_else(|| LuceneError::illegal_state("term not found in visited_terms"))?;
-      if boost < t.boost {
+      debug_assert_eq!(
+        self
+          .st_queue
+          .compare
+          .visited_terms
+          .get(key)
+          .map(|term| term.boost.to_bits()),
+        Some(threshold_boost.to_bits())
+      );
+      if boost < *threshold_boost {
         return Ok(true);
       }
-      if boost == t.boost && bytes.cmp(key) == std::cmp::Ordering::Greater {
+      if boost == *threshold_boost && bytes.cmp(key) == std::cmp::Ordering::Greater {
         return Ok(true);
       }
     }
@@ -252,19 +255,22 @@ impl TermCollector for TermCollectorImpl {
       debug_assert!(self.st_queue.size() <= self.max_size);
 
       if self.st_queue.size() == self.max_size {
-        let (key, _) = self
+        let (key, threshold_boost) = self
           .st_queue
           .top()
           .ok_or_else(|| LuceneError::illegal_state("PriorityQueue is empty"))?;
-        let t = self
-          .st_queue
-          .compare
-          .visited_terms
-          .get(key)
-          .ok_or_else(|| LuceneError::illegal_state("term not found in visited_terms"))?;
+        debug_assert_eq!(
+          self
+            .st_queue
+            .compare
+            .visited_terms
+            .get(key)
+            .map(|term| term.boost.to_bits()),
+          Some(threshold_boost.to_bits())
+        );
         let result: Result<()> = (|| {
           let mut attr = terms_enum.attributes_mut()?;
-          attr.set_max_non_competitive_boost(t.boost)?;
+          attr.set_max_non_competitive_boost(*threshold_boost)?;
           attr.set_competitive_term(Some(key.as_ref().clone()))?;
           Ok(())
         })();

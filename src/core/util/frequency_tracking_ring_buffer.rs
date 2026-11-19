@@ -59,12 +59,14 @@ impl FrequencyTrackingRingBuffer {
   pub fn add(&mut self, i: i32) {
     // remove the previous value
     let removed = self.buffer[self.position];
-    let removed_from_bag = self.frequencies.remove(removed);
-    debug_assert!(removed_from_bag);
+    if removed != i {
+      let removed_from_bag = self.frequencies.remove(removed);
+      debug_assert!(removed_from_bag);
 
-    // add the new value
-    self.buffer[self.position] = i;
-    self.frequencies.add(i);
+      // add the new value
+      self.buffer[self.position] = i;
+      self.frequencies.add(i);
+    }
 
     // increment the position
     self.position += 1;

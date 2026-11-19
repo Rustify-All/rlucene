@@ -369,7 +369,7 @@ where
 pub struct MultiLeafCollector<LC> {
   collectors: Box<[Option<LC>]>,
   min_scores: Option<Box<[f32]>>,
-  skip_non_competitive_scores: bool,
+  active_collectors: usize,
 }
 
 impl<LC> MultiLeafCollector<LC> {
@@ -380,18 +380,14 @@ impl<LC> MultiLeafCollector<LC> {
       None
     };
     Self {
+      active_collectors: collectors.len(),
       collectors: collectors
         .into_iter()
         .map(Some)
         .collect::<Vec<_>>()
         .into_boxed_slice(),
       min_scores,
-      skip_non_competitive_scores,
     }
-  }
-
-  fn all_collectors_terminated(&self) -> bool {
-    self.collectors.iter().all(Option::is_none)
   }
 }
 
@@ -411,10 +407,7 @@ where
     Self: 'a;
 
   fn set_scorer<SC: Scorable + ?Sized>(&mut self, scorer: &mut SC) -> Result<()> {
-    if self.skip_non_competitive_scores {
-      let min_scores = self.min_scores.as_mut().ok_or_else(|| {
-        LuceneError::illegal_state("min scores exist when non-competitive scores are skipped")
-      })?;
+    if let Some(min_scores) = self.min_scores.as_mut() {
       for (idx, collector) in self.collectors.iter_mut().enumerate() {
         if let Some(c) = collector {
           let mut scorer = MinCompetitiveScoreAwareScorable::new(scorer, idx, min_scores);
@@ -432,10 +425,7 @@ where
 
   // NOTE: not propagating collect(DocIdStream) since DocIdStreams may only be consumed once.
   fn collect<SC: Scorable + ?Sized>(&mut self, doc: i32, scorer: &mut SC) -> Result<()> {
-    if self.skip_non_competitive_scores {
-      let min_scores = self.min_scores.as_mut().ok_or_else(|| {
-        LuceneError::illegal_state("min scores exist when non-competitive scores are skipped")
-      })?;
+    if let Some(min_scores) = self.min_scores.as_mut() {
       let collectors = &mut self.collectors;
       for idx in 0..collectors.len() {
         if let Some(collector) = collectors[idx].as_mut() {
@@ -445,7 +435,8 @@ where
             Err(error) if matches!(error.kind(), LuceneErrorKind::CollectionTerminated(_)) => {
               collector.finish()?;
               collectors[idx] = None;
-              if collectors.iter().all(Option::is_none) {
+              self.active_collectors -= 1;
+              if self.active_collectors == 0 {
                 return Err(LuceneError::collection_terminated(""));
               }
             },
@@ -462,7 +453,8 @@ where
             Err(error) if matches!(error.kind(), LuceneErrorKind::CollectionTerminated(_)) => {
               collector.finish()?;
               self.collectors[idx] = None;
-              if self.all_collectors_terminated() {
+              self.active_collectors -= 1;
+              if self.active_collectors == 0 {
                 return Err(LuceneError::collection_terminated(""));
               }
             },

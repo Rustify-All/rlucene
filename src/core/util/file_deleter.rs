@@ -18,7 +18,7 @@ use crate::core::index::IndexFileNames;
 use crate::core::index::index_writer::IndexWriterDir;
 use crate::core::store::directory::Directory;
 use crate::core::util::IOUtils;
-use crate::core::util::error::lucene_error::{LuceneError, LuceneErrorKind, Result};
+use crate::core::util::error::lucene_error::{LuceneErrorKind, Result};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -65,17 +65,18 @@ where
   }
 
   pub fn inc_ref_single(&mut self, file_name: &str) -> Result<()> {
-    let rc = Self::get_ref_count_internal(&mut self.ref_counts, file_name)?;
-    let count = rc.count;
-
-    if let Some(messenger) = &self.messenger {
-      messenger.accept_formatted(
-        MsgType::Ref,
-        format_args!("IncRef \"{file_name}\": pre-incr count is {count}"),
-      )?;
-    }
-    rc.inc_ref();
-    Ok(())
+    let messenger = &self.messenger;
+    Self::with_ref_count(&mut self.ref_counts, file_name, |rc| {
+      let count = rc.count;
+      if let Some(messenger) = messenger {
+        messenger.accept_formatted(
+          MsgType::Ref,
+          format_args!("IncRef \"{file_name}\": pre-incr count is {count}"),
+        )?;
+      }
+      rc.inc_ref();
+      Ok(())
+    })
   }
 
   /// Decrease ref counts for all provided files, delete them if ref counts down to 0, even on
@@ -102,33 +103,34 @@ where
   }
   /// Returns true if the file should be deleted
   fn dec_ref_single(&mut self, file_name: &str) -> Result<bool> {
-    let rc = Self::get_ref_count_internal(&mut self.ref_counts, file_name)?;
-    let count = rc.count;
-    if let Some(ref mut messenger) = self.messenger {
-      messenger.accept_formatted(
-        MsgType::Ref,
-        format_args!("DecRef \"{file_name}\": pre-decr count is {count}"),
-      )?;
-    }
-    if rc.dec_ref() == 0 {
+    let messenger = &mut self.messenger;
+    let should_delete = Self::with_ref_count(&mut self.ref_counts, file_name, |rc| {
+      let count = rc.count;
+      if let Some(messenger) = messenger {
+        messenger.accept_formatted(
+          MsgType::Ref,
+          format_args!("DecRef \"{file_name}\": pre-decr count is {count}"),
+        )?;
+      }
+      Ok(rc.dec_ref() == 0)
+    })?;
+    if should_delete {
       self.ref_counts.remove(file_name);
-      Ok(true)
-    } else {
-      Ok(false)
     }
+    Ok(should_delete)
   }
-  fn get_ref_count_internal<'a>(
-    ref_counts: &'a mut HashMap<String, RefCount>,
+  fn with_ref_count<T>(
+    ref_counts: &mut HashMap<String, RefCount>,
     file_name: &str,
-  ) -> Result<&'a mut RefCount> {
-    if !ref_counts.contains_key(file_name) {
-      ref_counts.insert(file_name.to_string(), RefCount::for_file(file_name));
-    }
-    ref_counts.get_mut(file_name).ok_or_else(|| {
-      LuceneError::illegal_state(format!(
-        "reference count is missing for file \"{file_name}\""
-      ))
-    })
+    action: impl FnOnce(&mut RefCount) -> Result<T>,
+  ) -> Result<T> {
+    let rc = match ref_counts.get_mut(file_name) {
+      Some(rc) => rc,
+      None => ref_counts
+        .entry(file_name.to_owned())
+        .or_insert_with_key(|name| RefCount::for_file(name)),
+    };
+    action(rc)
   }
   /// If the file is not yet recorded, this method will create a new RefCount object with count 0
   pub fn init_ref_count(&mut self, file_name: &str) {

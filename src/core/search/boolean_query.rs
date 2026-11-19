@@ -273,25 +273,47 @@ impl Hash for BooleanQuery {
   {
     self.minimum_number_should_match.hash(state);
     // FILTER and MUST_NOT clauses may have been deduplicated in clause_sets.
-    let mut hs = SmallVec::<[u64; 8]>::with_capacity(self.clause_sets.iter().map(Vec::len).sum());
+    let mut clause_count = 0;
+    let mut clauses_hash = 0_u64;
     for occur in [Occur::Must, Occur::Filter, Occur::Should, Occur::MustNot] {
       let indices = self.get_clauses_idx(occur);
+      clause_count += indices.len();
       for &idx in indices {
         let mut h = DefaultHasher::new();
         occur.hash(&mut h);
         self.clauses[idx].query.hash(&mut h);
-        hs.push(h.finish());
+        clauses_hash = clauses_hash.wrapping_add(h.finish());
       }
     }
-    hs.sort_unstable();
-    hs.hash(state);
+    clause_count.hash(state);
+    clauses_hash.hash(state);
   }
 }
 
 impl PartialEq for BooleanQuery {
+  #[cfg_attr(test, allow(clippy::mutable_key_type))]
   fn eq(&self, other: &Self) -> bool {
-    self.minimum_number_should_match == other.minimum_number_should_match
-      && self.as_counts_map() == other.as_counts_map()
+    if self.minimum_number_should_match != other.minimum_number_should_match
+      || self
+        .clause_sets
+        .iter()
+        .zip(&other.clause_sets)
+        .any(|(left, right)| left.len() != right.len())
+    {
+      return false;
+    }
+
+    let mut remaining = self.as_counts_map();
+    for occur in [Occur::Must, Occur::Filter, Occur::Should, Occur::MustNot] {
+      for &idx in other.get_clauses_idx(occur) {
+        let query = &other.clauses[idx].query;
+        match remaining.get_mut(&(occur, query)) {
+          Some(count) if *count != 0 => *count -= 1,
+          _ => return false,
+        }
+      }
+    }
+    true
   }
 }
 

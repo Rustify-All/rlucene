@@ -238,13 +238,12 @@ where
     Ok(())
   }
 
-  pub(crate) fn get_num_dv_updates(&self) -> usize {
+  pub(crate) fn has_pending_dv_updates(&self) -> bool {
     let inner = self.inner.lock();
-    let mut count = 0usize;
-    for updates in inner.pending_dv_updates.values() {
-      count += updates.len();
-    }
-    count
+    inner
+      .pending_dv_updates
+      .values()
+      .any(|updates| !updates.is_empty())
   }
 
   pub fn release(&self, sr: &SegmentReader<D>, inner: Option<&Inner<D>>) -> Result<()> {
