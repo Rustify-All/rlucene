@@ -38,7 +38,7 @@ use std::fmt::{Display, Formatter};
 use std::io::{Cursor, Error, ErrorKind};
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU64, AtomicUsize, Ordering};
 
 pub type CustomByteBuffersDirectoryOutputToInput =
   Arc<dyn Fn(&str, ByteBuffersDataOutput) -> Result<ByteBuffersIndexInputOwned> + Send + Sync>;
@@ -196,7 +196,7 @@ where
   LF: LockFactory,
 {
   temp_file_name: ByteBuffersDirectoryTempFileName,
-  files: Mutex<HashMap<Arc<str>, Arc<RwLock<FileEntry>>>>,
+  files: Mutex<HashMap<Arc<str>, Arc<FileEntry>>>,
 
   /// Conversion between a buffered index output and the corresponding index
   /// input for a given file.
@@ -298,15 +298,27 @@ where
         Error::new(ErrorKind::NotFound, name.to_string()),
       ));
     };
-    entry.write().deleted = true;
+    entry.state.write().deleted = true;
     Ok(())
   }
 
   fn file_length(&self, name: &str) -> Result<usize> {
     self.ensure_open()?;
-    let file = self.files.lock().get(name).cloned();
+    let file = {
+      let files = self.files.lock();
+      match files.get(name) {
+        Some(file) => {
+          let length = file.cached_length.load(Ordering::Acquire);
+          if length != 0 {
+            return Ok(length);
+          }
+          Some(Arc::clone(file))
+        },
+        None => None,
+      }
+    };
     match file {
-      Some(file) => Ok(file.read().length()),
+      Some(file) => Ok(file.length()),
       None => Err(LuceneError::io_with_path(
         name,
         Error::new(ErrorKind::NotFound, name.to_string()),
@@ -330,7 +342,7 @@ where
           ));
         },
         Entry::Vacant(vacant) => {
-          let entry = Arc::new(RwLock::new(FileEntry::new(vacant.key().clone())));
+          let entry = Arc::new(FileEntry::new(vacant.key().clone()));
           vacant.insert(entry.clone());
           entry
         },
@@ -361,7 +373,7 @@ where
         match files.entry(name) {
           Entry::Occupied(_) => continue,
           Entry::Vacant(vacant) => {
-            let entry = Arc::new(RwLock::new(FileEntry::new(vacant.key().clone())));
+            let entry = Arc::new(FileEntry::new(vacant.key().clone()));
             vacant.insert(entry.clone());
             entry
           },
@@ -408,7 +420,7 @@ where
     self.ensure_open()?;
     let file = self.files.lock().get(name).cloned();
     match file {
-      Some(file) => file.read().open_input(),
+      Some(file) => file.open_input(),
       None => Err(LuceneError::io_with_path(
         name,
         Error::new(ErrorKind::NotFound, name.to_string()),
@@ -437,7 +449,15 @@ where
 {
   fn close(&self) -> Result<()> {
     self.base.close();
-    self.files.lock().clear();
+    let files = {
+      let mut files = self.files.lock();
+      if files.capacity() == 0 {
+        return Ok(());
+      }
+      let empty = HashMap::with_hasher(files.hasher().clone());
+      std::mem::replace(&mut *files, empty)
+    };
+    drop(files);
     Ok(())
   }
 }
@@ -476,8 +496,12 @@ where
 
 struct FileEntry {
   file_name: Arc<str>,
+  cached_length: AtomicUsize,
+  state: RwLock<FileEntryState>,
+}
+
+struct FileEntryState {
   content: Option<ByteBuffersIndexInputOwned>,
-  cached_length: usize,
   deleted: bool,
 }
 
@@ -485,19 +509,24 @@ impl FileEntry {
   fn new(name: Arc<str>) -> Self {
     Self {
       file_name: name,
-      content: None,
-      cached_length: 0,
-      deleted: false,
+      cached_length: AtomicUsize::new(0),
+      state: RwLock::new(FileEntryState {
+        content: None,
+        deleted: false,
+      }),
     }
   }
 
   fn length(&self) -> usize {
-    // We return 0 length until the IndexOutput is closed and flushed.
-    self.cached_length
+    // An NRT close can update cache accounting before publishing its length.
+    // Keep the lock for zero so deletion still waits for such a close.
+    let _state = self.state.read();
+    self.cached_length.load(Ordering::Relaxed)
   }
 
   fn open_input(&self) -> Result<ByteBuffersIndexInputOwned> {
-    let Some(content) = &self.content else {
+    let state = self.state.read();
+    let Some(content) = &state.content else {
       return Err(LuceneError::io_with_path(
         self.file_name.as_ref(),
         Error::new(
@@ -514,12 +543,12 @@ impl FileEntry {
 }
 
 pub struct ByteBuffersDirectoryOutputOnClose {
-  entry: Arc<RwLock<FileEntry>>,
+  entry: Arc<FileEntry>,
   output_to_input: BBOutputToInput,
 }
 
 impl ByteBuffersDirectoryOutputOnClose {
-  fn new(entry: Arc<RwLock<FileEntry>>, output_to_input: BBOutputToInput) -> Self {
+  fn new(entry: Arc<FileEntry>, output_to_input: BBOutputToInput) -> Self {
     Self {
       entry,
       output_to_input,
@@ -529,60 +558,60 @@ impl ByteBuffersDirectoryOutputOnClose {
 
 impl ByteBuffersIndexOutputOnClose for ByteBuffersDirectoryOutputOnClose {
   fn on_close(&mut self, mut output: ByteBuffersDataOutput) -> Result<()> {
-    let mut entry = self.entry.write();
-    // Defensive check for an output that was deleted before it was closed. The
-    // NRT-specific strategy must not publish deleted content or update cache
-    // accounting, while ordinary custom strategies still receive their close
-    // callback.
-    if entry.deleted
-      && matches!(
-        self.output_to_input,
-        BBOutputToInput::NRTCachingDirectory(_)
-      )
-    {
-      return Ok(());
-    }
+    // The NRT strategy must serialize its accounting and publication with
+    // deletion. Other strategies only need this lock to publish the result.
+    let state = if matches!(
+      self.output_to_input,
+      BBOutputToInput::NRTCachingDirectory(_)
+    ) {
+      let state = self.entry.state.write();
+      if state.deleted {
+        return Ok(());
+      }
+      Some(state)
+    } else {
+      None
+    };
+    let file_name = &self.entry.file_name;
     let (content, cached_length) = if matches!(self.output_to_input, BBOutputToInput::Custom(_)) {
       // Java invokes the conversion before publishing content. User code may
       // query this directory, so it must not run under the file entry's lock.
-      let file_name = Arc::clone(&entry.file_name);
-      drop(entry);
       let size = output.observe_size();
-      let content = self.output_to_input.to_input(&file_name, output)?;
+      let content = self.output_to_input.to_input(file_name, output)?;
       let cached_length = size.load(Ordering::Relaxed);
-      entry = self.entry.write();
       (content, cached_length)
     } else {
       let cached_length = output.size();
       (
-        self.output_to_input.to_input(&entry.file_name, output)?,
+        self.output_to_input.to_input(file_name, output)?,
         cached_length,
       )
     };
-    entry.content = Some(content);
-    entry.cached_length = cached_length;
+    let mut state = state.unwrap_or_else(|| self.entry.state.write());
+    state.content = Some(content);
+    self
+      .entry
+      .cached_length
+      .store(cached_length, Ordering::Release);
     Ok(())
   }
 }
 
 fn create_output(
-  entry: Arc<RwLock<FileEntry>>,
+  entry: Arc<FileEntry>,
   bb_output_supplier: &BBOutputSupplier,
   output_to_input: BBOutputToInput,
 ) -> Result<DirectoryByteBuffersIndexOutput> {
-  let file_name = {
-    let entry = entry.read();
-    if entry.content.is_some() {
-      return Err(LuceneError::io_with_path(
-        entry.file_name.as_ref(),
-        Error::new(
-          ErrorKind::AlreadyExists,
-          format!("Can only write to a file once: {}", entry.file_name),
-        ),
-      ));
-    }
-    entry.file_name.to_string()
-  };
+  if entry.state.read().content.is_some() {
+    return Err(LuceneError::io_with_path(
+      entry.file_name.as_ref(),
+      Error::new(
+        ErrorKind::AlreadyExists,
+        format!("Can only write to a file once: {}", entry.file_name),
+      ),
+    ));
+  }
+  let file_name = entry.file_name.to_string();
   let output_name = format!("ByteBuffersDirectory output (file={file_name})");
   let output = bb_output_supplier.new_output();
   let on_close = ByteBuffersDirectoryOutputOnClose::new(entry, output_to_input);

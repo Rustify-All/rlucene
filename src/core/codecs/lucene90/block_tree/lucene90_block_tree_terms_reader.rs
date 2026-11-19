@@ -382,11 +382,11 @@ where
   PR: PostingsReaderBase + Display,
 {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    let field_count = self.field_map.read().len();
     write!(
       f,
       "Lucene90BlockTreeTermsReader(fields={}, delegate={})",
-      self.field_map.read().len(),
-      self.terms_reader.postings_reader
+      field_count, self.terms_reader.postings_reader
     )
   }
 }

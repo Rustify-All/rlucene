@@ -671,9 +671,11 @@ impl LRUQueryCache {
 
   /// Remove all cache entries for the given core cache key.
   pub(crate) fn clear_core_cache_key(&self, core_key: &CacheKey) {
+    let leaf_cache;
     let mut inner = self.inner.write();
+    leaf_cache = inner.cache.remove(core_key);
 
-    if let Some(leaf_cache) = inner.cache.remove(core_key) {
+    if let Some(leaf_cache) = &leaf_cache {
       self.ram_bytes_used.fetch_sub(
         HASHTABLE_RAM_BYTES_PER_ENTRY,
         std::sync::atomic::Ordering::SeqCst,
@@ -682,23 +684,14 @@ impl LRUQueryCache {
       let num_entries = leaf_cache.cache.len();
       debug_assert!(num_entries <= i64::MAX as usize);
       if num_entries > 0 {
-        self.on_doc_id_set_eviction(
-          core_key,
-          num_entries as i64,
-          leaf_cache
-            .ram_bytes_used
-            .load(std::sync::atomic::Ordering::SeqCst),
-        );
+        self.on_doc_id_set_eviction(core_key, num_entries as i64, leaf_cache.ram_bytes_used);
       } else {
         debug_assert_eq!(num_entries, 0);
-        debug_assert_eq!(
-          leaf_cache
-            .ram_bytes_used
-            .load(std::sync::atomic::Ordering::SeqCst),
-          0
-        );
+        debug_assert_eq!(leaf_cache.ram_bytes_used, 0);
       }
     }
+    drop(inner);
+    drop(leaf_cache);
   }
   /// Remove all cache entries for the given query.
   pub fn clear_query(&self, query: &Query) -> Result<()> {
@@ -893,26 +886,22 @@ where
 pub(crate) struct LeafCache {
   key: CacheKey,
   cache: HashMap<Identity, Arc<CacheAndCountEnum>>,
-  ram_bytes_used: AtomicI64,
+  ram_bytes_used: i64,
 }
 impl LeafCache {
   pub(crate) fn new(key: CacheKey) -> Self {
     Self {
       key,
       cache: HashMap::new(),
-      ram_bytes_used: AtomicI64::new(0),
+      ram_bytes_used: 0,
     }
   }
-  pub(crate) fn on_doc_id_set_cache(&self, ram_bytes_used: i64, parent: &LRUQueryCache) {
-    self
-      .ram_bytes_used
-      .fetch_add(ram_bytes_used, std::sync::atomic::Ordering::SeqCst);
+  pub(crate) fn on_doc_id_set_cache(&mut self, ram_bytes_used: i64, parent: &LRUQueryCache) {
+    self.ram_bytes_used = self.ram_bytes_used.wrapping_add(ram_bytes_used);
     parent.on_doc_id_set_cache(&self.key, ram_bytes_used);
   }
-  pub(crate) fn on_doc_id_set_eviction(&self, ram_bytes_used: i64, parent: &LRUQueryCache) {
-    self
-      .ram_bytes_used
-      .fetch_sub(ram_bytes_used, std::sync::atomic::Ordering::SeqCst);
+  pub(crate) fn on_doc_id_set_eviction(&mut self, ram_bytes_used: i64, parent: &LRUQueryCache) {
+    self.ram_bytes_used = self.ram_bytes_used.wrapping_sub(ram_bytes_used);
     parent.on_doc_id_set_eviction(&self.key, 1, ram_bytes_used);
   }
 
@@ -963,7 +952,7 @@ impl LeafCache {
 }
 impl Accountable for LeafCache {
   fn ram_bytes_used(&self) -> Result<i64> {
-    Ok(self.ram_bytes_used.load(Ordering::SeqCst))
+    Ok(self.ram_bytes_used)
   }
 }
 pub struct CachingWrapperWeight<
@@ -1084,10 +1073,11 @@ where
   where
     IndexSearcher<IRC, SIM>: Sync,
   {
-    if self
-      .used
-      .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-      .is_ok()
+    if !self.used.load(Ordering::SeqCst)
+      && self
+        .used
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_ok()
     {
       self.policy.on_use(self.query.as_ref());
     }
@@ -1169,10 +1159,11 @@ where
       return self.in_.count(context, searcher);
     }
 
-    if self
-      .used
-      .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-      .is_ok()
+    if !self.used.load(Ordering::SeqCst)
+      && self
+        .used
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_ok()
     {
       self.policy.on_use(self.query.as_ref());
     }

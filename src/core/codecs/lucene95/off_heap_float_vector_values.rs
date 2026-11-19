@@ -246,11 +246,11 @@ where
   where
     Self: Sized,
   {
-    let inner = self.base.inner.lock();
+    let slice = self.base.inner.lock().slice.try_clone()?;
     Self::new(
       self.base.dimension,
       self.base.size,
-      inner.slice.try_clone()?,
+      slice,
       self.base.byte_size,
       self.base.flat_vectors_scorer.clone(),
       self.base.similarity_function,
@@ -278,11 +278,11 @@ where
   type KnnVectorValues = Self;
 
   fn copy(&self) -> Result<Self::KnnVectorValues> {
-    let inner = self.base.inner.lock();
+    let slice = self.base.inner.lock().slice.try_clone()?;
     Self::new(
       self.base.dimension,
       self.base.size,
-      inner.slice.try_clone()?,
+      slice,
       self.base.byte_size,
       self.base.flat_vectors_scorer.clone(),
       self.base.similarity_function,
@@ -357,10 +357,11 @@ where
   type FloatVectorValues = Self;
 
   fn float_copy(&self) -> Result<Option<Self::FloatVectorValues>> {
+    let slice = self.base.inner.lock().slice.try_clone()?;
     Ok(Some(Self::new(
       self.base.dimension,
       self.base.size,
-      self.base.inner.lock().slice.try_clone()?,
+      slice,
       self.base.byte_size,
       self.base.flat_vectors_scorer.clone(),
       self.base.similarity_function,

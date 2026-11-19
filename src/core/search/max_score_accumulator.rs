@@ -55,10 +55,11 @@ impl MaxScoreAccumulator {
     debug_assert!(doc_id >= 0 && score >= 0.0);
     let encode: i64 =
       ((BitUtil::float_to_int_bits(score) as i64) << 32) | (doc_id as i64 & 0xffffffff);
-    self
+    let _ = self
       .acc
-      .update(Ordering::Relaxed, Ordering::Relaxed, |prev| {
-        Self::max_encode(prev, encode)
+      .try_update(Ordering::Relaxed, Ordering::Relaxed, |prev| {
+        let next = Self::max_encode(prev, encode);
+        (next != prev).then_some(next)
       });
   }
 

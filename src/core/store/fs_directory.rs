@@ -120,7 +120,6 @@ where
       entries.push(name);
     }
 
-    entries.sort_unstable();
     Ok(entries)
   }
   pub fn maybe_delete_pending_files(
@@ -285,8 +284,12 @@ where
 {
   fn list_all(&self) -> Result<Vec<String>> {
     self.ensure_open()?;
-    let pending_deletes = self.pending_deletes.lock();
-    Self::list_all(&self.directory, Some(&pending_deletes))
+    let mut entries = {
+      let pending_deletes = self.pending_deletes.lock();
+      Self::list_all(&self.directory, Some(&pending_deletes))?
+    };
+    entries.sort_unstable();
+    Ok(entries)
   }
 
   fn delete_file(&self, name: &str) -> Result<()> {

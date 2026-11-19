@@ -38,7 +38,6 @@ thread_local! {
 /// [`ApproximatePriorityQueue`]s that are locked independently. The number of
 /// subs is computed dynamically based on hardware concurrency.
 pub struct ConcurrentApproximatePriorityQueue<T> {
-  concurrency: usize,
   pub(crate) queues: Vec<Mutex<ApproximatePriorityQueue<T>>>,
 }
 
@@ -71,10 +70,7 @@ impl<T> ConcurrentApproximatePriorityQueue<T> {
     for _ in 0..concurrency {
       queues.push(Mutex::new(ApproximatePriorityQueue::new()));
     }
-    Ok(Self {
-      concurrency,
-      queues,
-    })
+    Ok(Self { queues })
   }
 
   fn thread_hash() -> usize {
@@ -89,16 +85,15 @@ where
   T: IdentityId,
 {
   pub(crate) fn add(&self, entry: T, weight: i64) {
-    let thread_hash = Self::thread_hash();
-    for i in 0..self.concurrency {
-      let index = (thread_hash + i) % self.concurrency;
-      if let Some(mut queue) = self.queues[index].try_lock() {
+    let start = Self::thread_hash() % self.queues.len();
+    let (before, after) = self.queues.split_at(start);
+    for queue in after.iter().chain(before) {
+      if let Some(mut queue) = queue.try_lock() {
         queue.add(entry, weight);
         return;
       }
     }
-    let index = thread_hash % self.concurrency;
-    let mut queue = self.queues[index].lock();
+    let mut queue = self.queues[start].lock();
     queue.add(entry, weight)
   }
 
@@ -106,18 +101,17 @@ where
   where
     F: Fn(&T) -> bool,
   {
-    let thread_hash = Self::thread_hash();
-    for i in 0..self.concurrency {
-      let index = (thread_hash + i) % self.concurrency;
-      if let Some(mut queue) = self.queues[index].try_lock()
+    let start = Self::thread_hash() % self.queues.len();
+    let (before, after) = self.queues.split_at(start);
+    for queue in after.iter().chain(before) {
+      if let Some(mut queue) = queue.try_lock()
         && let Some(entry) = queue.poll(&predicate)
       {
         return Some(entry);
       }
     }
-    for i in 0..self.concurrency {
-      let index = (thread_hash + i) % self.concurrency;
-      let mut queue = self.queues[index].lock();
+    for queue in after.iter().chain(before) {
+      let mut queue = queue.lock();
       if let Some(entry) = queue.poll(&predicate) {
         return Some(entry);
       }

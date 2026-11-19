@@ -81,7 +81,7 @@ use crate::core::util::merged_iterator::MergedIterator;
 use crate::core::util::{CoreHelper, TryIntoInt};
 use parking_lot::Mutex;
 use std::borrow::Cow;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::rc::Rc;
@@ -1542,7 +1542,7 @@ where
   codec_readers: Arc<[CR]>,
   producers: Vec<Option<CRDocValuesProducer<CR>>>,
   doc_starts: Arc<Vec<usize>>,
-  cached_ord_maps: Mutex<HashMap<String, Arc<OrdinalMap>>>,
+  cached_ord_maps: RefCell<HashMap<String, Arc<OrdinalMap>>>,
 }
 
 impl<CR> SlowCompositeDocValuesProducerWrapper<CR>
@@ -1558,7 +1558,7 @@ where
       codec_readers,
       producers,
       doc_starts,
-      cached_ord_maps: Mutex::new(HashMap::new()),
+      cached_ord_maps: RefCell::new(HashMap::new()),
     })
   }
 }
@@ -1605,7 +1605,8 @@ where
   type SortedDocValues = MultiSortedDocValuesType<MultiReader<CR>>;
 
   fn get_sorted(&self, field: &Arc<FieldInfo>) -> Result<Self::SortedDocValues> {
-    if let Some(map) = self.cached_ord_maps.lock().get(&field.name).cloned() {
+    let cached_map = self.cached_ord_maps.borrow().get(&field.name).cloned();
+    if let Some(map) = cached_map {
       let mut values = Vec::with_capacity(self.codec_readers.len());
       let mut total_cost = 0;
 
@@ -1642,7 +1643,7 @@ where
     if let SortedDocValuesEnum2WithUnsupportedSecondPostingsAndAttributes::B(ref multi) = dv {
       self
         .cached_ord_maps
-        .lock()
+        .borrow_mut()
         .insert(field.name.clone(), multi.mapping.clone());
     }
 
@@ -1665,7 +1666,8 @@ where
   type SortedSetDocValues = MultiSortedSetDocValuesType<MultiReader<CR>>;
 
   fn get_sorted_set(&self, field: &Arc<FieldInfo>) -> Result<Self::SortedSetDocValues> {
-    if let Some(map) = self.cached_ord_maps.lock().get(&field.name).cloned() {
+    let cached_map = self.cached_ord_maps.borrow().get(&field.name).cloned();
+    if let Some(map) = cached_map {
       let mut values = Vec::with_capacity(self.codec_readers.len());
       let mut total_cost = 0;
 
@@ -1700,7 +1702,7 @@ where
     if let SingletonOrMultiSortedSetDocValuesEnum::Multi(ref multi) = dv {
       self
         .cached_ord_maps
-        .lock()
+        .borrow_mut()
         .insert(field.name.clone(), multi.mapping.clone());
     }
 

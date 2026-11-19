@@ -879,7 +879,6 @@ where
   }
 
   fn slice(&self, slice_description: &str, offset: usize, length: usize) -> Result<Self> {
-    let _state = self.state.lock();
     self
       .sub_index_input
       .slice(slice_description, offset, length)

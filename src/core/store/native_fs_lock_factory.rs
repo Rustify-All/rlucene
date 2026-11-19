@@ -266,7 +266,8 @@ impl CloseableRef for NativeFSLock {
     let _guard = self.close_lock.lock();
     if !self.closed.load(Ordering::SeqCst) {
       let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
-        if let Some(file) = self.file.write().take() {
+        let file = self.file.write().take();
+        if let Some(file) = file {
           let unlock_result =
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<()> {
               let unlock_result = if self.lock_valid.swap(false, Ordering::SeqCst) {
