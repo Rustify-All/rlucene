@@ -254,8 +254,24 @@ where
         dropped.push(i);
       }
     }
-    for (removed, original_index) in dropped.into_iter().enumerate() {
-      segment_infos.remove(original_index - removed);
+    match dropped.as_slice() {
+      [] => {},
+      [index] => segment_infos.remove(*index),
+      [first, .., last] => {
+        let mut index = *first;
+        let range = index..=*last;
+        let mut dropped = dropped.into_iter().peekable();
+        let removed = segment_infos.segments.extract_if(range, |_| {
+          let remove = dropped.next_if_eq(&index).is_some();
+          index += 1;
+          remove
+        });
+        for info in removed {
+          segment_infos
+            .dropped_segment_commit_infos
+            .insert(Arc::clone(&info.info.id_key), info);
+        }
+      },
     }
     let leaf_sorter = writer.get_config()?.get_leaf_sorter().cloned();
     writer.inc_ref_deleter(&segment_infos, Some(inner))?;

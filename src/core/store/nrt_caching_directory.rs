@@ -230,17 +230,36 @@ where
   D: Directory,
 {
   fn list_all(&self) -> Result<Vec<String>> {
-    let _guard = self.lock.lock();
-    let mut files = self.cache_directory.list_all()?;
-    let delegate_files = self.delegate.list_all()?;
+    let (mut files, mut delegate_files) = {
+      let _guard = self.lock.lock();
+      let files = self.cache_directory.list_all()?;
+      let delegate_files = self.delegate.list_all()?;
+      (files, delegate_files)
+    };
     if files.is_empty() {
-      files = delegate_files;
-    } else {
-      files.extend(delegate_files);
+      delegate_files.dedup();
+      return Ok(delegate_files);
     }
-    files.sort_unstable();
-    files.dedup();
-    Ok(files)
+    if delegate_files.is_empty() {
+      files.dedup();
+      return Ok(files);
+    }
+
+    // Directory::list_all returns names in UTF-8 order. Merge the two sorted runs.
+    let mut combined = Vec::with_capacity(files.len() + delegate_files.len());
+    let mut files = files.into_iter().peekable();
+    let mut delegate_files = delegate_files.into_iter().peekable();
+    while let (Some(cached), Some(delegate)) = (files.peek(), delegate_files.peek()) {
+      combined.extend(if cached <= delegate {
+        files.next()
+      } else {
+        delegate_files.next()
+      });
+    }
+    combined.extend(files);
+    combined.extend(delegate_files);
+    combined.dedup();
+    Ok(combined)
   }
 
   fn delete_file(&self, name: &str) -> Result<()> {

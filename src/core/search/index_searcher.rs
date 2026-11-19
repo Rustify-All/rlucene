@@ -990,38 +990,40 @@ where
     );
   }
 
-  let mut grouped_leaves: SmallVec<[Vec<&LeafReaderContext<LR>>; 4]> = SmallVec::new();
+  // Leaves for a slice are consecutive in the sorted list. Keep grouping
+  // separate from partition construction so reader calls retain their order.
+  let mut grouped_leaves: SmallVec<[std::ops::Range<usize>; 4]> = SmallVec::new();
   let mut doc_sum: i64 = 0;
-  let mut group: Option<Vec<&LeafReaderContext<LR>>> = None;
+  let mut group_start = 0;
 
-  for (ctx, _) in sorted_leaves {
+  for (index, (ctx, _)) in sorted_leaves.iter().enumerate() {
     let ctx_max_doc = ctx.reader().max_doc()?;
+    let group_end = index + 1;
 
     if ctx_max_doc > max_docs_per_slice {
-      debug_assert!(group.is_none());
-      grouped_leaves.push(vec![ctx]);
+      debug_assert_eq!(group_start, index);
+      grouped_leaves.push(index..group_end);
+      group_start = group_end;
     } else {
-      let group_ref = group.get_or_insert_default();
-      group_ref.push(ctx);
       doc_sum += ctx_max_doc as i64;
 
-      if group_ref.len() >= max_segments_per_slice || doc_sum > max_docs_per_slice as i64 {
-        grouped_leaves.push(std::mem::take(group_ref));
-        group = None;
+      if group_end - group_start >= max_segments_per_slice || doc_sum > max_docs_per_slice as i64 {
+        grouped_leaves.push(group_start..group_end);
+        group_start = group_end;
         doc_sum = 0;
       }
     }
   }
 
-  if let Some(g) = group.take() {
-    grouped_leaves.push(g);
+  if group_start < sorted_leaves.len() {
+    grouped_leaves.push(group_start..sorted_leaves.len());
   }
 
   let mut slices = Vec::with_capacity(grouped_leaves.len());
 
-  for contexts in grouped_leaves {
-    let mut partitions = Vec::with_capacity(contexts.len());
-    for ctx in contexts {
+  for group in grouped_leaves {
+    let mut partitions = Vec::with_capacity(group.len());
+    for (ctx, _) in &sorted_leaves[group] {
       let partition = LeafReaderContextPartition::create_for_entire_segment(ctx)?;
       partitions.push(partition);
     }

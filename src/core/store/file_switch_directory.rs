@@ -219,14 +219,10 @@ where
       },
       Err(err) => return Err(err),
     }
-    match self.secondary_dir.list_all() {
+    let secondary_files = match self.secondary_dir.list_all() {
       Ok(mut secondary_files) => {
         secondary_files.retain(|file| !self.primary_extensions.contains(get_extension(file)));
-        if files.is_empty() {
-          files = secondary_files;
-        } else {
-          files.extend(secondary_files);
-        }
+        secondary_files
       },
       Err(err) if Self::is_no_such_file(&err) => {
         // Both directories returned a not-found I/O error.
@@ -239,18 +235,38 @@ where
         if files.is_empty() {
           return Err(err);
         }
+        return Ok(files);
       },
       Err(err) => return Err(err),
-    }
+    };
     // The primary directory returned a not-found I/O error,
     // and the secondary is empty.
     if let Some(exc) = exc
-      && files.is_empty()
+      && secondary_files.is_empty()
     {
       return Err(exc);
     }
-    files.sort_unstable();
-    Ok(files)
+    if files.is_empty() {
+      return Ok(secondary_files);
+    }
+    if secondary_files.is_empty() {
+      return Ok(files);
+    }
+
+    // Filtering preserves the sorted order guaranteed by Directory::list_all.
+    let mut combined = Vec::with_capacity(files.len() + secondary_files.len());
+    let mut primary = files.into_iter().peekable();
+    let mut secondary = secondary_files.into_iter().peekable();
+    while let (Some(p), Some(s)) = (primary.peek(), secondary.peek()) {
+      combined.extend(if p <= s {
+        primary.next()
+      } else {
+        secondary.next()
+      });
+    }
+    combined.extend(primary);
+    combined.extend(secondary);
+    Ok(combined)
   }
 
   fn delete_file(&self, name: &str) -> Result<()> {
