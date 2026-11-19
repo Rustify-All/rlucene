@@ -671,9 +671,11 @@ impl LRUQueryCache {
 
   /// Remove all cache entries for the given core cache key.
   pub(crate) fn clear_core_cache_key(&self, core_key: &CacheKey) {
-    let leaf_cache;
-    let mut inner = self.inner.write();
-    leaf_cache = inner.cache.remove(core_key);
+    // Drop the guard before the removed cache, including on unwind.
+    let (leaf_cache, inner) = {
+      let mut inner = self.inner.write();
+      (inner.cache.remove(core_key), inner)
+    };
 
     if let Some(leaf_cache) = &leaf_cache {
       self.ram_bytes_used.fetch_sub(
