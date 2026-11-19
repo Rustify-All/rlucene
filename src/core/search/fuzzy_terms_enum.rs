@@ -32,6 +32,7 @@ use crate::core::util::automation::compiled_automaton::CompiledAutomaton;
 use crate::core::util::bytes_ref_iterator::BytesRefIterator;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::{CoreHelper, ToInt};
+use std::sync::OnceLock;
 /// [`TermsEnum`] implementation that enumerates terms similar to the specified filter term.
 ///
 /// Term enumerations are always ordered by [`BytesRef::cmp`]. Each term in the
@@ -81,7 +82,7 @@ where
     transpositions: bool,
   ) -> Result<Self> {
     let text = term.text()?.into_owned();
-    Self::with_builder(terms, term.bytes, || {
+    Self::with_builder(terms, term.bytes, None, || {
       FuzzyAutomatonBuilder::new(text, max_edits, prefix_length, transpositions)
     })
   }
@@ -110,18 +111,37 @@ where
     max_edits: i32,
     prefix_length: usize,
     transpositions: bool,
+    rewrite_automata: Option<&OnceLock<AutomatonAttributeImpl>>,
   ) -> Result<Self> {
-    let text = term.text()?.into_owned();
-    Self::with_builder(terms, term.bytes().clone(), || {
-      FuzzyAutomatonBuilder::new(text, max_edits, prefix_length, transpositions)
+    Self::with_builder(terms, term.bytes().clone(), rewrite_automata, || {
+      FuzzyAutomatonBuilder::new(
+        term.text()?.into_owned(),
+        max_edits,
+        prefix_length,
+        transpositions,
+      )
     })
   }
-  fn with_builder<B>(terms: T, term: BytesRef<Vec<u8>>, automaton_builder: B) -> Result<Self>
+  fn with_builder<B>(
+    terms: T,
+    term: BytesRef<Vec<u8>>,
+    rewrite_automata: Option<&OnceLock<AutomatonAttributeImpl>>,
+    automaton_builder: B,
+  ) -> Result<Self>
   where
     B: FnOnce() -> Result<FuzzyAutomatonBuilder<'static>>,
   {
     let mut attrs = FuzzyTermsEnumAttributeSource::new();
-    attrs.automaton_att.init(automaton_builder)?;
+    if let Some(automata) = rewrite_automata.and_then(OnceLock::get) {
+      // Each enumeration needs its own transition scratch state. The DFA tables
+      // inside these compiled automata are already shared by their clones.
+      attrs.automaton_att = automata.clone();
+    } else {
+      attrs.automaton_att.init(automaton_builder)?;
+      if let Some(rewrite_automata) = rewrite_automata {
+        let _ = rewrite_automata.set(attrs.automaton_att.clone());
+      }
+    }
 
     let automata = attrs.automaton_att.get_automata();
     let term_length = attrs.automaton_att.get_term_length();
@@ -475,6 +495,7 @@ pub trait AutomatonAttribute: Attribute {
     B: FnOnce() -> Result<FuzzyAutomatonBuilder<'static>>;
 }
 
+#[derive(Clone)]
 pub struct AutomatonAttributeImpl {
   automata: Box<[CompiledAutomaton]>,
   term_length: usize,

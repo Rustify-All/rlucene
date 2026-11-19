@@ -28,7 +28,7 @@ use crate::core::index::terms::{Terms, TermsIntersect, TermsPosting, TermsTE};
 use crate::core::index::terms_enum::{SeekStatus, TermsEnum};
 use crate::core::index::{BytesRef, BytesRefValue, BytesRefValueEnum};
 use crate::core::search::fuzzy_automaton_builder::FuzzyAutomatonBuilder;
-use crate::core::search::fuzzy_terms_enum::FuzzyTermsEnum;
+use crate::core::search::fuzzy_terms_enum::{AutomatonAttributeImpl, FuzzyTermsEnum};
 use crate::core::search::index_searcher::IndexSearcher;
 use crate::core::search::multi_term_query::{
   MultiTermQuery, MultiTermQuerySet, RewriteMethod, RewriteMethodEnum,
@@ -46,6 +46,7 @@ use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::{CoreHelper, HasIdentity};
 use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
+use std::sync::{Arc, OnceLock};
 
 /// Implements the fuzzy search query. The similarity measurement is based on the
 /// Damerau-Levenshtein (optimal string alignment) algorithm, though you can explicitly choose
@@ -73,6 +74,7 @@ pub struct FuzzyQuery {
   prefix_length: usize,
   term: Term,
   rewrite_method: RewriteMethodEnum,
+  rewrite_automata: Option<Arc<OnceLock<AutomatonAttributeImpl>>>,
   id: Identity,
 }
 
@@ -186,6 +188,7 @@ impl FuzzyQuery {
       transpositions,
       max_expansions,
       rewrite_method: rewrite_method.into(),
+      rewrite_automata: None,
       id: Identity::default(),
     })
   }
@@ -311,7 +314,24 @@ impl QueryBase for FuzzyQuery {
     Self: Sized,
     IndexSearcher<IRC, SIM>: Sync,
   {
-    self.rewrite_method.rewrite(searcher, self).map(Some)
+    // These rewrites collect terms synchronously across all leaves. Keep their automata
+    // on a local query copy, as Lucene does with a per-rewrite AttributeSource.
+    if self.max_edits > 0
+      && matches!(
+        self.rewrite_method,
+        RewriteMethodEnum::ConstantScoreBoolean(_)
+          | RewriteMethodEnum::ScoringBoolean(_)
+          | RewriteMethodEnum::TopTermsBlendedFreqScoring(_)
+          | RewriteMethodEnum::TopTermsBoostOnlyBoolean(_)
+          | RewriteMethodEnum::TopTermsScoringBoolean(_)
+      )
+    {
+      let mut query = self.clone();
+      query.rewrite_automata = Some(Arc::new(OnceLock::new()));
+      self.rewrite_method.rewrite(searcher, &query).map(Some)
+    } else {
+      self.rewrite_method.rewrite(searcher, self).map(Some)
+    }
   }
 
   fn visit<QV>(&self, visitor: &mut QV) -> Result<()>
@@ -581,6 +601,7 @@ impl MultiTermQuery for FuzzyQuery {
       self.max_edits,
       self.prefix_length,
       self.transpositions,
+      self.rewrite_automata.as_deref(),
     )?))
   }
 
