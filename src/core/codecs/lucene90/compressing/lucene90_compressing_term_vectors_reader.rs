@@ -572,7 +572,7 @@ where
       let bytes = Self::slice(&mut self.vectors_stream)?;
       let length = bytes.len();
       let all_field_num_offs = DirectReader::get_instance(
-        ByteBuffersDataInput::new(vec![Cursor::new(bytes)], length)?,
+        ByteBuffersDataInput::from_cursor(Cursor::new(bytes), length)?,
         bits_per_off,
       )?;
       let v = self.vectors_stream.read_vint()?;
@@ -582,7 +582,7 @@ where
           let length = self.vectors_stream.read_vint()?.try_convert()?;
           let bytes = self.vectors_stream.get_bytes(length)?;
           let field_flags = DirectReader::get_instance(
-            ByteBuffersDataInput::new(vec![Cursor::new(bytes.as_ref())], length)?,
+            ByteBuffersDataInput::from_cursor(Cursor::new(bytes.as_ref()), length)?,
             *FLAGS_BITS,
           )?;
           expanded_flags.reserve_exact(total_fields);
@@ -597,7 +597,7 @@ where
           let bytes = Self::slice(&mut self.vectors_stream)?;
           let length = bytes.len();
           Some(DirectReader::get_instance(
-            ByteBuffersDataInput::new(vec![Cursor::new(bytes)], length)?,
+            ByteBuffersDataInput::from_cursor(Cursor::new(bytes), length)?,
             *FLAGS_BITS,
           )?)
         },
@@ -619,7 +619,7 @@ where
       let length = self.vectors_stream.read_vint()?.try_convert()?;
       let bytes = self.vectors_stream.get_bytes(length)?;
       let packed_num_terms = DirectReader::get_instance(
-        ByteBuffersDataInput::new(vec![Cursor::new(bytes.as_ref())], length)?,
+        ByteBuffersDataInput::from_cursor(Cursor::new(bytes.as_ref()), length)?,
         bits_required,
       )?;
       let mut sum = 0;
@@ -679,9 +679,15 @@ where
 
       #[allow(clippy::needless_range_loop)] // Preserve indexed failure timing for malformed chunks.
       for i in 0..skip {
-        let term_count = num_terms[i];
-        for _ in 0..term_count {
-          doc_off += self.reader.next_value(&mut self.vectors_stream)? as usize;
+        let mut remaining = num_terms[i];
+        while remaining > 0 {
+          let next = self
+            .reader
+            .next_batch(remaining, &mut self.vectors_stream)?;
+          for &length in &next.longs[next.offset..][..next.length] {
+            doc_off += length as usize;
+          }
+          remaining -= next.length;
         }
       }
 
@@ -707,9 +713,15 @@ where
       total_len = doc_off + doc_len;
       #[allow(clippy::needless_range_loop)] // Preserve indexed failure timing for malformed chunks.
       for i in (skip + num_fields)..total_fields {
-        let term_count = num_terms[i];
-        for _ in 0..term_count {
-          total_len += self.reader.next_value(&mut self.vectors_stream)? as usize;
+        let mut remaining = num_terms[i];
+        while remaining > 0 {
+          let next = self
+            .reader
+            .next_batch(remaining, &mut self.vectors_stream)?;
+          for &length in &next.longs[next.offset..][..next.length] {
+            total_len += length as usize;
+          }
+          remaining -= next.length;
         }
       }
     }
@@ -736,7 +748,7 @@ where
     let mut total_positions = 0;
     let mut total_offsets = 0;
     let mut total_payloads = 0;
-    let mut term_index = 0;
+    let mut term_index = 0usize;
     let mut all_flags = expanded_flags;
     if flags.is_some() {
       all_flags.reserve_exact(total_fields);
@@ -751,17 +763,24 @@ where
         all_flags[i]
       };
       let term_count = num_terms[i];
-      for _ in 0..term_count {
-        let freq = term_freqs[term_index] as usize;
-        term_index += 1;
-        if (i32::from(f) & POSITIONS) != 0 {
-          total_positions += freq;
-        }
-        if (i32::from(f) & OFFSETS) != 0 {
-          total_offsets += freq;
-        }
-        if (i32::from(f) & PAYLOADS) != 0 {
-          total_payloads += freq;
+      if i32::from(f) & (POSITIONS | OFFSETS | PAYLOADS) == 0
+        && let Some(end) = term_index.checked_add(term_count)
+        && end <= term_freqs.len()
+      {
+        term_index = end;
+      } else {
+        for _ in 0..term_count {
+          let freq = term_freqs[term_index] as usize;
+          term_index += 1;
+          if (i32::from(f) & POSITIONS) != 0 {
+            total_positions += freq;
+          }
+          if (i32::from(f) & OFFSETS) != 0 {
+            total_offsets += freq;
+          }
+          if (i32::from(f) & PAYLOADS) != 0 {
+            total_payloads += freq;
+          }
         }
       }
       debug_assert!(i != total_fields - 1 || term_index == total_terms);

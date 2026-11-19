@@ -162,7 +162,7 @@ fn output_as_one_buffer(
 ) -> Result<ByteBuffersIndexInputOwned> {
   let bytes = output.into_array();
   let length = bytes.len();
-  let data_input = ByteBuffersDataInput::new(vec![Cursor::new(Arc::new(bytes))], length)?;
+  let data_input = ByteBuffersDataInput::from_cursor(Cursor::new(Arc::new(bytes)), length)?;
   let input_name = format!(
     "{} (file={}, buffers={})",
     std::any::type_name::<ByteBuffersIndexInputOwned>()

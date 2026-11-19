@@ -90,14 +90,13 @@ impl<T> BufferedIndexInput<T> {
     resource_desc: impl Into<Arc<str>>,
     buffer_size: usize,
   ) -> Result<BufferedIndexInput<T>> {
-    let buffer = Cursor::new(vec![0u8; buffer_size]);
     check_buffer_size(buffer_size)?;
     Ok(BufferedIndexInput {
       buffer_size,
       resource_desc: resource_desc.into(),
       sub_index_input,
       state: Mutex::new(BufferedIndexInputState {
-        buffer,
+        buffer: Cursor::new(Vec::new()),
         buffer_start: 0,
         pos: 0,
         length: 0,
@@ -211,8 +210,7 @@ where
     }
 
     if self.buffer.get_ref().is_empty() {
-      let buffer_size = self.buffer_size;
-      self.buffer.get_mut().resize(buffer_size, 0);
+      *self.buffer.get_mut() = vec![0; self.buffer_size];
     }
     // valid data length in buffer
     self.length = new_length + remain_unaligned_bytes;

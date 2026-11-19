@@ -19,6 +19,7 @@ use crate::core::store::data_input_ext::DataInputExt;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::io::Cursor;
+use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -66,7 +67,7 @@ impl ByteBuffersDataInputBlock for Arc<Vec<u8>> {
 /// A [`DataInput`] implementing [`RandomAccessInput`]
 /// and reading data from a list of [`Cursor<Vec<u8>>`](Cursor).
 pub struct ByteBuffersDataInput<B> {
-  pub(crate) blocks: Box<[Cursor<B>]>,
+  pub(crate) blocks: InputBlocks<B>,
   block_mask: usize,
   block_bits: usize,
   length: usize,
@@ -74,6 +75,33 @@ pub struct ByteBuffersDataInput<B> {
   pos: usize,
   scratch: Vec<u8>,
 }
+pub(crate) enum InputBlocks<B> {
+  Single(Cursor<B>),
+  Boxed(Box<[Cursor<B>]>),
+}
+
+impl<B> InputBlocks<B> {
+  #[inline]
+  fn get(&self, index: usize) -> Option<&Cursor<B>> {
+    match self {
+      Self::Boxed(blocks) => blocks.get(index),
+      Self::Single(block) if index == 0 => Some(block),
+      Self::Single(_) => None,
+    }
+  }
+}
+
+impl<B> Deref for InputBlocks<B> {
+  type Target = [Cursor<B>];
+
+  fn deref(&self) -> &Self::Target {
+    match self {
+      Self::Single(block) => std::slice::from_ref(block),
+      Self::Boxed(blocks) => blocks,
+    }
+  }
+}
+
 /// Reads data from a set of contiguous buffers.
 /// All data buffers except for the last one must have an identical number of
 /// remaining bytes (which must be a power of two). The last buffer can have an
@@ -84,6 +112,14 @@ impl<B: ByteBuffersDataInputBlock> ByteBuffersDataInput<B> {
     I: IntoIterator<Item = Cursor<B>>,
   {
     let blocks = blocks.into_iter().collect::<Vec<_>>();
+    Self::from_blocks(InputBlocks::Boxed(blocks.into_boxed_slice()), length)
+  }
+
+  pub(crate) fn from_cursor(block: Cursor<B>, length: usize) -> Result<Self> {
+    Self::from_blocks(InputBlocks::Single(block), length)
+  }
+
+  fn from_blocks(blocks: InputBlocks<B>, length: usize) -> Result<Self> {
     let (block_bits, block_mask) = if blocks.len() <= 1 {
       (32, !0)
     } else {
@@ -98,7 +134,7 @@ impl<B: ByteBuffersDataInputBlock> ByteBuffersDataInput<B> {
       .map_or(0, |block| block.position())
       .try_convert()?;
     Ok(Self {
-      blocks: blocks.into_boxed_slice(),
+      blocks,
       block_mask,
       block_bits,
       length,
@@ -283,8 +319,13 @@ where
         offset, length, self.length
       )));
     }
+    if let [block] = &*self.blocks {
+      let mut cursor = Cursor::new(block.get_ref().clone());
+      cursor.set_position(block.position() + offset as u64);
+      return Self::from_cursor(cursor, length);
+    }
     let blocks = Self::slice_buffer_list(&self.blocks, offset, length);
-    Self::new(blocks, length)
+    Self::from_blocks(InputBlocks::Boxed(blocks.into_boxed_slice()), length)
   }
   pub fn slice_buffer_list(blocks: &[Cursor<B>], offset: usize, length: usize) -> Vec<Cursor<B>> {
     // A zero-length slice at the end of a full block may have no blocks.
@@ -362,6 +403,7 @@ impl<B> DataInput for ByteBuffersDataInput<B>
 where
   B: ByteBuffersDataInputBlock,
 {
+  #[inline(always)]
   fn read_byte(&mut self) -> Result<u8> {
     if self.pos >= self.length + self.offset {
       return Err(LuceneError::eof(format!("{}", self.pos)));
@@ -777,7 +819,7 @@ where
 impl Accountable for ByteBuffersDataInput<Vec<u8>> {
   fn ram_bytes_used(&self) -> Result<i64> {
     let mut size = size_of_slice(&self.blocks).saturating_add(size_of_vec(&self.scratch));
-    for block in &self.blocks {
+    for block in self.blocks.iter() {
       size = size.saturating_add(size_of_vec(block.get_ref()));
     }
     Ok(size)
@@ -793,7 +835,7 @@ impl Accountable for ByteBuffersDataInput<&[u8]> {
 impl Accountable for ByteBuffersDataInput<Rc<Vec<u8>>> {
   fn ram_bytes_used(&self) -> Result<i64> {
     let mut size = size_of_slice(&self.blocks).saturating_add(size_of_vec(&self.scratch));
-    for block in &self.blocks {
+    for block in self.blocks.iter() {
       size = size
         .saturating_add(std::mem::size_of_val(block.get_ref().as_ref()) as i64)
         .saturating_add(size_of_vec(block.get_ref().as_ref()));
@@ -805,7 +847,7 @@ impl Accountable for ByteBuffersDataInput<Rc<Vec<u8>>> {
 impl Accountable for ByteBuffersDataInput<Arc<Vec<u8>>> {
   fn ram_bytes_used(&self) -> Result<i64> {
     let mut size = size_of_slice(&self.blocks).saturating_add(size_of_vec(&self.scratch));
-    for block in &self.blocks {
+    for block in self.blocks.iter() {
       size = size
         .saturating_add(std::mem::size_of_val(block.get_ref().as_ref()) as i64)
         .saturating_add(size_of_vec(block.get_ref().as_ref()));
