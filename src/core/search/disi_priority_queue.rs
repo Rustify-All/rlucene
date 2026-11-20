@@ -309,28 +309,31 @@ impl DisiPriorityQueue {
     let node = self.heap[0];
     let mut j = Self::left_node(i);
 
-    if j < size {
-      let mut k = Self::right_node(j);
-
-      if k < size && wrappers[self.heap[k]].doc < wrappers[self.heap[j]].doc {
+    while j < size {
+      let k = Self::right_node(j);
+      let right = (k < size).then(|| {
+        let child = self.heap[k];
+        (child, wrappers[child].doc)
+      });
+      let left = self.heap[j];
+      let left_doc = wrappers[left].doc;
+      let (child, child_doc) = if let Some((right, right_doc)) = right
+        && right_doc < left_doc
+      {
         j = k;
+        (right, right_doc)
+      } else {
+        (left, left_doc)
+      };
+      if child_doc >= wrappers[node].doc {
+        break;
       }
-
-      if wrappers[self.heap[j]].doc < wrappers[node].doc {
-        loop {
-          self.heap[i] = self.heap[j];
-          i = j;
-          j = Self::left_node(i);
-          k = Self::right_node(j);
-          if k < size && wrappers[self.heap[k]].doc < wrappers[self.heap[j]].doc {
-            j = k;
-          }
-          if j >= size || wrappers[self.heap[j]].doc >= wrappers[node].doc {
-            break;
-          }
-        }
-        self.heap[i] = node;
-      }
+      self.heap[i] = child;
+      i = j;
+      j = Self::left_node(i);
+    }
+    if i != 0 {
+      self.heap[i] = node;
     }
   }
   pub fn iter(&self) -> impl Iterator<Item = usize> + '_ {
