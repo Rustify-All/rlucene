@@ -65,7 +65,8 @@ where
   terms_reader: Arc<TermsReader<I, PR>>,
   // Open input to the terms index file (_X.tip)
   index_in: Arc<I>,
-  field_map: RwLock<HashMap<i32, Box<FieldReader<I, PR>>>>,
+  // The readers use the same field-name order as field_list.
+  field_readers: RwLock<Box<[Box<FieldReader<I, PR>>]>>,
   field_list: Vec<Arc<FieldInfo>>,
   field_infos: Arc<FieldInfos>,
 }
@@ -312,7 +313,13 @@ where
           field_reader,
         )?;
       }
-      let field_list = sort_field_names(&field_map, &state.field_infos)?;
+      let mut field_readers: Vec<_> = field_map.into_values().collect();
+      field_readers
+        .sort_unstable_by(|left, right| left.field_info.name.cmp(&right.field_info.name));
+      let field_list = field_readers
+        .iter()
+        .map(|reader| Arc::clone(&reader.field_info))
+        .collect();
       reader = Some(Lucene90BlockTreeTermsReader {
         terms_reader: terms_reader
           .take()
@@ -320,7 +327,7 @@ where
         index_in: shared_index_in
           .take()
           .ok_or_else(|| LuceneError::illegal_state("terms index input is missing"))?,
-        field_map: RwLock::new(field_map),
+        field_readers: RwLock::new(field_readers.into_boxed_slice()),
         field_list,
         field_infos: Arc::clone(&state.field_infos),
       });
@@ -361,19 +368,24 @@ where
   type Terms = FieldReader<I, PR>;
 
   fn terms(&self, field: &str) -> Result<Option<Self::Terms>> {
-    let Some(field_info) = self.field_infos.field_info_by_name(field)? else {
+    let Ok(index) = self
+      .field_list
+      .binary_search_by(|field_info| field_info.name.as_str().cmp(field))
+    else {
+      // A filtered FieldInfos can reject fields outside the merge context.
+      self.field_infos.field_info_by_name(field)?;
       return Ok(None);
     };
     self
-      .field_map
+      .field_readers
       .read()
-      .get(&field_info.number)
+      .get(index)
       .map(|reader| reader.as_ref().try_clone())
       .transpose()
   }
 
   fn size(&self) -> Result<i32> {
-    self.field_map.read().len().try_convert()
+    self.field_readers.read().len().try_convert()
   }
 }
 impl<I, PR> Display for Lucene90BlockTreeTermsReader<I, PR>
@@ -382,7 +394,7 @@ where
   PR: PostingsReaderBase + Display,
 {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    let field_count = self.field_map.read().len();
+    let field_count = self.field_readers.read().len();
     write!(
       f,
       "Lucene90BlockTreeTermsReader(fields={}, delegate={})",
@@ -405,11 +417,7 @@ where
     }));
 
     // Clear so refs to terms index are releasable even if the caller hangs onto us.
-    let fields = {
-      let mut fields = self.field_map.write();
-      let empty = HashMap::with_hasher(fields.hasher().clone());
-      std::mem::replace(&mut *fields, empty)
-    };
+    let fields = std::mem::take(&mut *self.field_readers.write());
     drop(fields);
     unwrap_caught_result!(close_result)
   }
@@ -516,28 +524,4 @@ fn read_bytes_ref_len<I: IndexInput>(input: &mut I) -> Result<usize> {
     )));
   }
   Ok(num_bytes as usize)
-}
-fn sort_field_names<I, PR>(
-  field_map: &HashMap<i32, Box<FieldReader<I, PR>>>,
-  field_infos: &FieldInfos,
-) -> Result<Vec<Arc<FieldInfo>>>
-where
-  I: IndexInput,
-  PR: PostingsReaderBase,
-{
-  let mut field_names = Vec::with_capacity(field_map.len());
-
-  for field_number in field_map.keys() {
-    let field_info = field_infos
-      .field_info_by_number(*field_number)?
-      .ok_or_else(|| {
-        LuceneError::illegal_state(format!(
-          "Missing field info for field number {field_number}"
-        ))
-      })?;
-    field_names.push(Arc::clone(field_info));
-  }
-
-  field_names.sort_unstable_by(|left, right| left.name.cmp(&right.name));
-  Ok(field_names)
 }
