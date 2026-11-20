@@ -124,6 +124,7 @@ pub(crate) struct TermCollectorImpl {
   #[cfg(debug_assertions)]
   last_term: Option<BytesRefBuilder<Vec<u8>>>,
   st_queue: PriorityQueue<ScoreTermQueueEntry, ScoreTermCmp>,
+  reusable_term: Option<ScoreTerm>,
   max_size: usize,
   ord: usize,
 }
@@ -135,6 +136,7 @@ impl TermCollectorImpl {
       #[cfg(debug_assertions)]
       last_term: None,
       st_queue,
+      reusable_term: None,
       max_size,
       ord: 0,
     })
@@ -227,7 +229,12 @@ impl TermCollector for TermCollectorImpl {
         terms_enum.total_term_freq()?,
       );
     } else {
-      let mut st = ScoreTerm::new(TermStates::new(top_reader_context)?);
+      let mut st = if let Some(mut st) = self.reusable_term.take() {
+        st.term_state.rebind_cleared(top_reader_context)?;
+        st
+      } else {
+        ScoreTerm::new(TermStates::new(top_reader_context)?)
+      };
       st.boost = boost;
       debug_assert!(st.term_state.doc_freq()? == 0);
       st.term_state.register_with_stats(
@@ -249,7 +256,10 @@ impl TermCollector for TermCollectorImpl {
           .st_queue
           .pop()?
           .ok_or_else(|| LuceneError::illegal_state("PriorityQueue is empty"))?;
-        self.st_queue.compare.visited_terms.remove(&dropped.0);
+        self.reusable_term = self.st_queue.compare.visited_terms.remove(&dropped.0);
+        if let Some(st) = &mut self.reusable_term {
+          st.term_state.clear();
+        }
       }
 
       debug_assert!(self.st_queue.size() <= self.max_size);

@@ -109,6 +109,19 @@ impl TermStates {
       slot.take();
     }
   }
+
+  /// Prepare an already cleared rewrite term for the next reader context.
+  pub(crate) fn rebind_cleared<IRC>(&mut self, context: &IRC) -> Result<()>
+  where
+    IRC: IndexReaderContext,
+  {
+    debug_assert!(context.base().is_top_level);
+    let num_leaves = context.leaves()?.len();
+    self.states.resize_with(num_leaves, OnceLock::new);
+    self.top_reader_context_identity = context.base().identity.clone();
+    Ok(())
+  }
+
   /// Registers and associates a TermState with an leaf ordinal.
   /// The leaf ordinal should be derived from a IndexReaderContext's leaf ord.
   pub fn register_with_stats(
