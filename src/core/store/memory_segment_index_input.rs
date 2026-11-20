@@ -45,6 +45,8 @@ use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 struct MappedFile {
   resource_desc: Box<str>,
   segments: Box<[Mmap]>,
+  #[cfg(unix)]
+  consecutive_prefetch_hit_count: AtomicI32,
 }
 
 /// An immutable native-float view retaining its indexed-file mapping.
@@ -98,16 +100,13 @@ impl SegmentState {
     let first = start >> power;
     let offset = start & mask;
     let single = (offset + length) >> power == 0;
-    let begin = if single { offset } else { 0 };
-    let end = if single {
-      begin + length
-    } else {
-      file.segments.get(first).map_or(0, |m| m.len())
-    };
-    let current_slice = file
-      .segments
-      .get(first)
-      .map_or(&[][..], |mapping| &mapping[begin..end]);
+    let current_slice = file.segments.get(first).map_or(&[][..], |mapping| {
+      if single {
+        &mapping[offset..offset + length]
+      } else {
+        &mapping[..]
+      }
+    });
     // SAFETY: callers retain file in the enclosing input. Mmap allocations are
     // immutable and stable; the private view is not exposed with its extended
     // lifetime. Public/current_slice borrows stay tied to the retaining input.
@@ -547,6 +546,8 @@ impl MemorySegmentIndexInput {
     let file = Arc::new(MappedFile {
       resource_desc: resource_desc.into_boxed_str(),
       segments: segments.into_boxed_slice(),
+      #[cfg(unix)]
+      consecutive_prefetch_hit_count: AtomicI32::new(0),
     });
     let power = chunk_size_power;
     let single_segment = last == 0;
@@ -604,8 +605,8 @@ impl MemorySegmentIndexInput {
     }
   }
   // Primitive arrays use byte copies on little-endian targets; this helper
-  // itself preserves bytes on every target. Small copies use constant widths
-  // to avoid a library call; larger copies retain platform memcpy.
+  // itself preserves bytes on every target. Small copies and 256-byte
+  // blocks use constant widths to avoid a library call.
   #[inline]
   fn copy_bytes(src: &[u8], dst: &mut [u8]) {
     let len = src.len();
@@ -638,8 +639,13 @@ impl MemorySegmentIndexInput {
           }
         },
       }
+    } else if len <= 128 {
+      dst[..64].copy_from_slice(&src[..64]);
+      dst[len - 64..].copy_from_slice(&src[len - 64..]);
+    } else if len == 256 {
+      dst[..256].copy_from_slice(&src[..256]);
     } else {
-      dst[..len].copy_from_slice(src);
+      dst.copy_from_slice(src);
     }
   }
   // The three primitive callers use i32/f32 with N=4, or i64 with N=8,
@@ -818,30 +824,41 @@ impl MemorySegmentIndexInput {
     }
     advice(map, physical_offset, length).map_err(LuceneError::io)
   }
+  #[cfg(unix)]
+  #[cold]
+  fn prefetch_range(&self, pos: usize, len: usize, hit_count: &AtomicI32) -> Result<()> {
+    let mut miss = false;
+    let result = self.advise_first(pos, len, |map, offset, length| {
+      if !self.native_access.is_loaded(map, offset, length)? {
+        miss = true;
+        map.advise_range(Advice::WillNeed, offset, length)?;
+      }
+      Ok(())
+    });
+    if miss {
+      hit_count.store(0, Ordering::Relaxed);
+    }
+    result
+  }
   fn prefetch_impl(&self, pos: usize, len: usize) -> Result<()> {
     #[cfg(unix)]
     {
       CoreHelper::check_from_index_size(pos, len, self.length)?;
-      let hits = self
-        .consecutive_prefetch_hit_count
-        .fetch_add(1, Ordering::Relaxed);
+      // Whole-file clones share one mapping and one history. Each slice has its
+      // own visible range and keeps a local history.
+      let hit_count = if matches!(
+        self.resource_desc_suffix,
+        ResourceDescriptionSuffix::Inline { len: 0, .. }
+      ) {
+        &self.file.consecutive_prefetch_hit_count
+      } else {
+        &self.consecutive_prefetch_hit_count
+      };
+      let hits = hit_count.fetch_add(1, Ordering::Relaxed);
       if !BitUtil::is_zero_or_power_of_two(hits) {
         return Ok(());
       }
-      let mut miss = false;
-      let result = self.advise_first(pos, len, |map, offset, length| {
-        if !self.native_access.is_loaded(map, offset, length)? {
-          miss = true;
-          map.advise_range(Advice::WillNeed, offset, length)?;
-        }
-        Ok(())
-      });
-      if miss {
-        self
-          .consecutive_prefetch_hit_count
-          .store(0, Ordering::Relaxed);
-      }
-      result
+      self.prefetch_range(pos, len, hit_count)
     }
     #[cfg(not(unix))]
     {
@@ -990,69 +1007,45 @@ impl DataInput for MemorySegmentIndexInput {
   }
   #[inline]
   fn read_short(&mut self) -> Result<i16> {
-    if self.single_segment {
-      let position = self.position.get_mut();
-      let data = self.state.get_mut().current;
-      if let Some(bytes) = data.get(*position..).and_then(|s| s.first_chunk::<2>()) {
-        let value = i16::from_le_bytes(*bytes);
-        *position += 2;
-        return Ok(value);
-      }
-      return Err(LuceneErrorKind::Eof(self.read_single_scalar_eof()).into());
-    }
     let position = self.position.get_mut();
-    let state = self.state.get_mut();
-    let segment = state.current_slice();
+    let segment = self.state.get_mut().current_slice();
     if let Some(bytes) = segment.get(*position..).and_then(|s| s.first_chunk::<2>()) {
       let value = i16::from_le_bytes(*bytes);
       *position += 2;
       return Ok(value);
+    }
+    if self.single_segment {
+      return Err(LuceneErrorKind::Eof(self.read_single_scalar_eof()).into());
     }
     Ok(i16::from_le_bytes(self.read_scalar_boundary::<2>()?))
   }
 
   #[inline]
   fn read_int(&mut self) -> Result<i32> {
-    if self.single_segment {
-      let position = self.position.get_mut();
-      let data = self.state.get_mut().current;
-      if let Some(bytes) = data.get(*position..).and_then(|s| s.first_chunk::<4>()) {
-        let value = i32::from_le_bytes(*bytes);
-        *position += 4;
-        return Ok(value);
-      }
-      return Err(LuceneErrorKind::Eof(self.read_single_scalar_eof()).into());
-    }
     let position = self.position.get_mut();
-    let state = self.state.get_mut();
-    let segment = state.current_slice();
+    let segment = self.state.get_mut().current_slice();
     if let Some(bytes) = segment.get(*position..).and_then(|s| s.first_chunk::<4>()) {
       let value = i32::from_le_bytes(*bytes);
       *position += 4;
       return Ok(value);
+    }
+    if self.single_segment {
+      return Err(LuceneErrorKind::Eof(self.read_single_scalar_eof()).into());
     }
     Ok(i32::from_le_bytes(self.read_scalar_boundary::<4>()?))
   }
 
   #[inline]
   fn read_long(&mut self) -> Result<i64> {
-    if self.single_segment {
-      let position = self.position.get_mut();
-      let data = self.state.get_mut().current;
-      if let Some(bytes) = data.get(*position..).and_then(|s| s.first_chunk::<8>()) {
-        let value = i64::from_le_bytes(*bytes);
-        *position += 8;
-        return Ok(value);
-      }
-      return Err(LuceneErrorKind::Eof(self.read_single_scalar_eof()).into());
-    }
     let position = self.position.get_mut();
-    let state = self.state.get_mut();
-    let segment = state.current_slice();
+    let segment = self.state.get_mut().current_slice();
     if let Some(bytes) = segment.get(*position..).and_then(|s| s.first_chunk::<8>()) {
       let value = i64::from_le_bytes(*bytes);
       *position += 8;
       return Ok(value);
+    }
+    if self.single_segment {
+      return Err(LuceneErrorKind::Eof(self.read_single_scalar_eof()).into());
     }
     Ok(i64::from_le_bytes(self.read_scalar_boundary::<8>()?))
   }
@@ -1142,7 +1135,8 @@ impl IntReader for MemorySegmentIndexInput {
     // Every input already caches its visible mapping range.
     let state = self.state.get_mut();
     let bytes = state
-      .current_range(pos, 4)
+      .current
+      .get(pos..)
       .and_then(|s| s.first_chunk::<4>())
       .ok_or_else(Self::eof)?;
     Ok(i32::from_le_bytes(*bytes))
@@ -1260,13 +1254,13 @@ impl IndexInput for MemorySegmentIndexInput {
       return Ok(());
     }
     // An exclusive borrow already protects the segment index and position.
-    let position = if self.single_segment {
-      *position
-    } else {
-      ((state.index << self.power) + *position)
-        .wrapping_sub(self.start & ((1usize << self.power) - 1))
-    };
-    self.seek(position + num_bytes)
+    if self.single_segment {
+      let target = *position + num_bytes;
+      return self.seek(target);
+    }
+    let position = ((state.index << self.power) + *position)
+      .wrapping_sub(self.start & ((1usize << self.power) - 1));
+    self.seek_outside_current(position + num_bytes)
   }
   fn length(&self) -> Result<usize> {
     Ok(self.length)
@@ -1394,7 +1388,7 @@ impl RandomAccessInput for MemorySegmentIndexInput {
           data[pos..pos + 2].try_into().map_err(|_| Self::eof())?,
         ));
       }
-      return Err(LuceneErrorKind::Eof(Self::scalar_eof()).into());
+      return Err(Self::eof());
     }
     Ok(i16::from_le_bytes(self.read_small_multi::<2, false>(pos)?))
   }
@@ -1409,7 +1403,7 @@ impl RandomAccessInput for MemorySegmentIndexInput {
           data[pos..pos + 4].try_into().map_err(|_| Self::eof())?,
         ));
       }
-      return Err(LuceneErrorKind::Eof(Self::scalar_eof()).into());
+      return Err(Self::eof());
     }
     Ok(i32::from_le_bytes(self.read_small_multi::<4, false>(pos)?))
   }
@@ -1424,7 +1418,7 @@ impl RandomAccessInput for MemorySegmentIndexInput {
           data[pos..pos + 8].try_into().map_err(|_| Self::eof())?,
         ));
       }
-      return Err(LuceneErrorKind::Eof(Self::scalar_eof()).into());
+      return Err(Self::eof());
     }
     Ok(i64::from_le_bytes(self.read_small_multi::<8, false>(pos)?))
   }
