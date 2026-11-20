@@ -410,12 +410,17 @@ where
   }
 }
 
+struct DocFrequencyBlock {
+  docs: [i32; ForUtil::BLOCK_SIZE],
+  frequencies: [i32; ForUtil::BLOCK_SIZE],
+}
+
 pub struct BlockPostingsEnum<I> {
   doc_in_identity: Identity,
   for_delta_util: Option<ForDeltaUtil>,
   pfor_util: Option<PForUtil>,
 
-  doc_buffer: [i32; ForUtil::BLOCK_SIZE],
+  doc_frequency_block: Box<DocFrequencyBlock>,
   doc: i32,
 
   level0_last_doc_id: i32,
@@ -440,7 +445,6 @@ pub struct BlockPostingsEnum<I> {
 
   doc_in_util: Option<PostingDecodingUtil<I>>,
 
-  freq_buffer: [i32; ForUtil::BLOCK_SIZE],
   pos_delta_buffer: Box<[i32]>,
   payload_length_buffer: Box<[i32]>,
   payload_bytes: Vec<u8>,
@@ -604,7 +608,10 @@ where
       doc_in_identity: reader.doc_in_identity.clone(),
       for_delta_util: None,
       pfor_util: None,
-      doc_buffer: [0; ForUtil::BLOCK_SIZE],
+      doc_frequency_block: Box::new(DocFrequencyBlock {
+        docs: [0; ForUtil::BLOCK_SIZE],
+        frequencies: freq_buffer,
+      }),
       doc: -1,
       level0_last_doc_id: 0,
       level0_doc_end_fp: 0,
@@ -619,7 +626,6 @@ where
       doc_buffer_size: 0,
       doc_buffer_upto: 0,
       doc_in_util: None,
-      freq_buffer,
       pos_delta_buffer: pos_delta_buffer.into_boxed_slice(),
       payload_length_buffer: payload_length_buffer.into_boxed_slice(),
       offset_start_delta_buffer: offset_start_delta_buffer.into_boxed_slice(),
@@ -801,7 +807,7 @@ where
     for_delta_util.decode_and_prefix_sum(
       &mut *doc_in_util,
       self.prev_doc_id,
-      &mut self.doc_buffer,
+      &mut self.doc_frequency_block.docs,
     )?;
     if self.index_has_freq {
       let doc_in = &mut self
@@ -816,7 +822,7 @@ where
     }
 
     self.doc_count_left -= ForUtil::BLOCK_SIZE as i32;
-    self.prev_doc_id = self.doc_buffer[ForUtil::BLOCK_SIZE - 1];
+    self.prev_doc_id = self.doc_frequency_block.docs[ForUtil::BLOCK_SIZE - 1];
     self.doc_buffer_upto = 0;
     self.pos_doc_buffer_upto = 0;
     Ok(())
@@ -827,9 +833,9 @@ where
     debug_assert!(self.doc_count_left >= 0 && doc_count < ForUtil::BLOCK_SIZE);
 
     if self.doc_freq == 1 {
-      self.doc_buffer[0] = self.singleton_doc_id;
-      self.freq_buffer[0] = self.total_term_freq as i32;
-      self.doc_buffer[1] = NO_MORE_DOCS;
+      self.doc_frequency_block.docs[0] = self.singleton_doc_id;
+      self.doc_frequency_block.frequencies[0] = self.total_term_freq as i32;
+      self.doc_frequency_block.docs[1] = NO_MORE_DOCS;
       debug_assert!(self.freq_fp.is_none());
       self.doc_count_left = 0;
       self.doc_buffer_size = 1;
@@ -841,23 +847,30 @@ where
         .input;
       PostingsUtil::read_vint_block(
         doc_in,
-        &mut self.doc_buffer,
-        &mut self.freq_buffer,
+        &mut self.doc_frequency_block.docs,
+        &mut self.doc_frequency_block.frequencies,
         doc_count,
         self.index_has_freq,
         self.needs_freq,
       )?;
 
-      prefix_sum(&mut self.doc_buffer, doc_count, self.prev_doc_id);
-      self.doc_buffer[doc_count] = NO_MORE_DOCS;
+      prefix_sum(
+        &mut self.doc_frequency_block.docs,
+        doc_count,
+        self.prev_doc_id,
+      );
+      self.doc_frequency_block.docs[doc_count] = NO_MORE_DOCS;
       self.freq_fp = None;
       self.doc_buffer_size = doc_count;
       self.doc_count_left = 0;
     }
-    self.prev_doc_id = self.doc_buffer[ForUtil::BLOCK_SIZE - 1];
+    self.prev_doc_id = self.doc_frequency_block.docs[ForUtil::BLOCK_SIZE - 1];
     self.doc_buffer_upto = 0;
     self.pos_doc_buffer_upto = 0;
-    debug_assert_eq!(self.doc_buffer[self.doc_buffer_size], NO_MORE_DOCS);
+    debug_assert_eq!(
+      self.doc_frequency_block.docs[self.doc_buffer_size],
+      NO_MORE_DOCS
+    );
     Ok(())
   }
   fn refill_docs(&mut self) -> Result<()> {
@@ -943,7 +956,7 @@ where
       } else {
         debug_assert!(self.freq_fp.is_none());
         self.pos_pending_count += sum_over_range(
-          &self.freq_buffer,
+          &self.doc_frequency_block.frequencies,
           self.pos_doc_buffer_upto,
           ForUtil::BLOCK_SIZE,
         );
@@ -1013,7 +1026,7 @@ where
         IndexInput::skip_bytes(doc_in, level0_num_bytes)?;
       }
       self.refill_full_block()?;
-      self.level0_last_doc_id = self.doc_buffer[ForUtil::BLOCK_SIZE - 1];
+      self.level0_last_doc_id = self.doc_frequency_block.docs[ForUtil::BLOCK_SIZE - 1];
     } else {
       self.do_move_to_next_level0_block()?;
     }
@@ -1054,7 +1067,7 @@ where
       self.pos_buffer_upto = ForUtil::BLOCK_SIZE;
     } else {
       self.pos_pending_count += sum_over_range(
-        &self.freq_buffer,
+        &self.doc_frequency_block.frequencies,
         self.pos_doc_buffer_upto,
         ForUtil::BLOCK_SIZE,
       );
@@ -1385,7 +1398,7 @@ where
       freq
     } else {
       sum_over_range(
-        &self.freq_buffer,
+        &self.doc_frequency_block.frequencies,
         self.pos_doc_buffer_upto,
         self.doc_buffer_upto,
       )
@@ -1441,10 +1454,10 @@ where
         .pfor_util
         .as_mut()
         .ok_or_else(|| LuceneError::illegal_state("PFor decoder is missing"))?;
-      pfor_util.decode(doc_in_util, &mut self.freq_buffer)?;
+      pfor_util.decode(doc_in_util, &mut self.doc_frequency_block.frequencies)?;
       self.freq_fp = None;
     }
-    Ok(self.freq_buffer[self.doc_buffer_upto - 1])
+    Ok(self.doc_frequency_block.frequencies[self.doc_buffer_upto - 1])
   }
 
   #[inline(always)]
@@ -1535,13 +1548,13 @@ where
 
   #[inline]
   fn next_doc(&mut self) -> Result<i32> {
-    let doc = if let Some(&doc) = self.doc_buffer.get(self.doc_buffer_upto) {
+    let doc = if let Some(&doc) = self.doc_frequency_block.docs.get(self.doc_buffer_upto) {
       doc
     } else {
       if self.doc_buffer_upto == ForUtil::BLOCK_SIZE {
         self.move_to_next_level0_block()?;
       }
-      self.doc_buffer[self.doc_buffer_upto]
+      self.doc_frequency_block.docs[self.doc_buffer_upto]
     };
     self.doc = doc;
     self.doc_buffer_upto += 1;
@@ -1558,12 +1571,12 @@ where
       self.needs_refilling = false;
     }
     let next = VECTOR_UTIL.find_next_geq(
-      &self.doc_buffer,
+      &self.doc_frequency_block.docs,
       target,
       self.doc_buffer_upto,
       self.doc_buffer_size,
     );
-    self.doc = self.doc_buffer[next];
+    self.doc = self.doc_frequency_block.docs[next];
     self.doc_buffer_upto = next + 1;
     Ok(self.doc)
   }
