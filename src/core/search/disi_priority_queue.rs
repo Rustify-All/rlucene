@@ -87,8 +87,8 @@ impl DisiPriorityQueue {
     wrappers[list_index].next = None;
 
     if self.size >= 3 {
-      list_index = self.top_list(list_index, heap, wrappers, self.size, 1);
-      list_index = self.top_list(list_index, heap, wrappers, self.size, 2);
+      list_index = self.prepend_matching_subtree(list_index, heap, wrappers, self.size, 1);
+      list_index = self.prepend_matching_subtree(list_index, heap, wrappers, self.size, 2);
     } else if self.size == 2 {
       let child = heap[1];
       if wrappers[child].doc == wrappers[list_index].doc {
@@ -106,6 +106,21 @@ impl DisiPriorityQueue {
     w1_index
   }
   pub fn top_list<S>(
+    &self,
+    list: usize,
+    heap: &[usize],
+    wrappers: &mut [DisiWrapper<S>],
+    size: usize,
+    i: usize,
+  ) -> usize
+  where
+    S: Scorer,
+  {
+    self.prepend_matching_subtree(list, heap, wrappers, size, i)
+  }
+
+  #[inline(always)]
+  fn prepend_matching_subtree<S>(
     &self,
     mut list: usize,
     heap: &[usize],
