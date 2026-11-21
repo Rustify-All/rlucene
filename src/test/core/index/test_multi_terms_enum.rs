@@ -734,22 +734,10 @@ where
     ))
   }
 
-  fn prepare_seek_exact<BS: ByteSource>(&mut self, text: &BytesRef<BS>) -> Result<Option<()>> {
-    match self {
-      Self::Delegate(terms) => terms.prepare_seek_exact(text),
-      Self::Filtered(terms) => terms.prepare_seek_exact(text),
-    }
-  }
-
-  fn get_prepare_seek_exact_status<BS: ByteSource>(
-    &mut self,
-    target: &BytesRef<BS>,
-  ) -> Result<bool> {
-    match self {
-      Self::Delegate(terms) => terms.get_prepare_seek_exact_status(target),
-      Self::Filtered(terms) => terms.get_prepare_seek_exact_status(target),
-    }
-  }
+  crate::core::index::terms_enum::prepare_seek_exact_enum!(
+    Delegate(TE) => A,
+    Filtered(FilteredTermsEnum<TE, ValueFilteredTermsEnumBase>) => B,
+  );
 
   fn seek_ceil<BS: ByteSource>(&mut self, _term: &BytesRef<BS>) -> Result<SeekStatus> {
     Err(LuceneError::unsupported_operation(

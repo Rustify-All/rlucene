@@ -97,6 +97,7 @@ use crate::core::util::error::lucene_error::{
   CaughtResult, CaughtResultExt, LuceneError, LuceneErrorKind, Result,
 };
 use crate::core::util::fixed_bit_set::FixedBitSet;
+use crate::core::util::io_boolean_supplier::IOBooleanSupplier;
 use crate::core::util::iterator::IteratorExt;
 use crate::core::util::long_bit_set::LongBitSet;
 use crate::core::util::string_helper::StringHelper;
@@ -4566,8 +4567,10 @@ impl CheckIndex<DirectoryEnum, LockEnum, Sink> {
                   postings_terms_enum.seek_exact(&term)?
                 } else {
                   seek_exact_counter += 1;
-                  postings_terms_enum.prepare_seek_exact(&term)?.is_some()
-                    && postings_terms_enum.get_prepare_seek_exact_status(&term)?
+                  match postings_terms_enum.prepare_seek_exact(&term)? {
+                    Some(seek) => seek.get(&mut postings_terms_enum, &term)?,
+                    None => false,
+                  }
                 };
                 if !term_exists {
                   return Err(LuceneError::corrupt_index(format!(

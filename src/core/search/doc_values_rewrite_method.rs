@@ -870,17 +870,22 @@ where
     dispatch_doc_values_terms_enum!(self, |terms_enum| terms_enum.seek_exact(text))
   }
 
-  fn prepare_seek_exact<BS: ByteSource>(&mut self, text: &BytesRef<BS>) -> Result<Option<()>> {
-    dispatch_doc_values_terms_enum!(self, |terms_enum| terms_enum.prepare_seek_exact(text))
-  }
+  #[cfg(not(test))]
+  crate::core::index::terms_enum::prepare_seek_exact_enum!(
+    Automaton(<AutomatonQuery as MultiTermQuery>::TermsEnum<DocValuesTerms<S, V>>) => A,
+    Fuzzy(<FuzzyQuery as MultiTermQuery>::TermsEnum<DocValuesTerms<S, V>>) => B,
+    TermInSet(<TermInSetQuery as MultiTermQuery>::TermsEnum<DocValuesTerms<S, V>>) => C,
+  );
 
-  fn get_prepare_seek_exact_status<BS: ByteSource>(
-    &mut self,
-    target: &BytesRef<BS>,
-  ) -> Result<bool> {
-    dispatch_doc_values_terms_enum!(self, |terms_enum| terms_enum
-      .get_prepare_seek_exact_status(target))
-  }
+  #[cfg(test)]
+  crate::core::index::terms_enum::prepare_seek_exact_enum!(
+    Automaton(<AutomatonQuery as MultiTermQuery>::TermsEnum<DocValuesTerms<S, V>>) => A,
+    Fuzzy(<FuzzyQuery as MultiTermQuery>::TermsEnum<DocValuesTerms<S, V>>) => B,
+    TermInSet(<TermInSetQuery as MultiTermQuery>::TermsEnum<DocValuesTerms<S, V>>) => C,
+    BoostChecking(<crate::test_framework::core::search::multi_term::BoostCheckingQuery as MultiTermQuery>::TermsEnum<DocValuesTerms<S, V>>) => D,
+    DumbPrefix(<crate::test_framework::core::search::multi_term::DumbPrefixQuery as MultiTermQuery>::TermsEnum<DocValuesTerms<S, V>>) => E,
+    DumbRegexp(<crate::test_framework::core::search::multi_term::DumbRegexpQuery as MultiTermQuery>::TermsEnum<DocValuesTerms<S, V>>) => F,
+  );
 
   fn seek_ceil<BS: ByteSource>(&mut self, text: &BytesRef<BS>) -> Result<SeekStatus> {
     dispatch_doc_values_terms_enum!(self, |terms_enum| terms_enum.seek_ceil(text))

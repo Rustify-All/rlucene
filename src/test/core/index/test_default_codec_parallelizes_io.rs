@@ -30,6 +30,7 @@ use crate::core::store::byte_buffers_directory::ByteBuffersDirectory;
 use crate::core::store::single_instance_lock_factory::SingleInstanceLockFactory;
 use crate::core::util::IOUtils;
 use crate::core::util::error::lucene_error::Result;
+use crate::core::util::io_boolean_supplier::IOBooleanSupplier;
 use crate::test_framework::core::store::serial_io_counting_directory::SerialIOCountingDirectory;
 use crate::test_framework::core::util::line_file_docs::LineFileDocs;
 use crate::test_framework::core::util::lucene_test_case::{
@@ -109,16 +110,16 @@ impl TestDefaultCodecParallelizesIO {
     for term_value in term_values {
       let mut terms_enum = terms.iterator()?;
       let term = BytesRef::<Vec<u8>>::from_string(term_value);
-      if TermsEnum::prepare_seek_exact(&mut terms_enum, &term)?.is_some() {
-        suppliers.push(Some((terms_enum, term)));
+      if let Some(seek) = TermsEnum::prepare_seek_exact(&mut terms_enum, &term)? {
+        suppliers.push(Some((terms_enum, term, seek)));
       } else {
         suppliers.push(None);
       }
     }
     let mut non_null_io_suppliers = 0;
-    for supplier in suppliers.iter_mut().flatten() {
+    for (cursor, target, seek) in suppliers.iter_mut().flatten() {
       non_null_io_suppliers += 1;
-      supplier.0.get_prepare_seek_exact_status(&supplier.1)?;
+      seek.get(cursor, target)?;
     }
 
     assert!(non_null_io_suppliers > 0);

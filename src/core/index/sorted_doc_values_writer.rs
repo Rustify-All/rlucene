@@ -126,22 +126,10 @@ impl<'a, V: Borrow<PackedLongValues> + 'a, M: Borrow<Vec<i32>> + 'a> TermsEnum
     }
   }
 
-  fn prepare_seek_exact<BS: ByteSource>(&mut self, text: &BytesRef<BS>) -> Result<Option<()>> {
-    match self {
-      Self::Buffered(terms) => terms.prepare_seek_exact(text),
-      Self::Sorting(terms) => terms.prepare_seek_exact(text),
-    }
-  }
-
-  fn get_prepare_seek_exact_status<BS: ByteSource>(
-    &mut self,
-    target: &BytesRef<BS>,
-  ) -> Result<bool> {
-    match self {
-      Self::Buffered(terms) => terms.get_prepare_seek_exact_status(target),
-      Self::Sorting(terms) => terms.get_prepare_seek_exact_status(target),
-    }
-  }
+  crate::core::index::terms_enum::prepare_seek_exact_enum!(
+    Buffered(<BufferedWriterSortedDocValues<V> as SortedDocValues>::TermsEnum<'a>) => A,
+    Sorting(<SortingSortedDocValues<BufferedWriterSortedDocValues<V>, M> as SortedDocValues>::TermsEnum<'a>) => B,
+  );
 
   fn seek_ceil<BS: ByteSource>(&mut self, term: &BytesRef<BS>) -> Result<SeekStatus> {
     match self {

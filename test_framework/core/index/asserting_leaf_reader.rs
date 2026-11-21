@@ -563,39 +563,47 @@ where
     Ok(result)
   }
 
-  fn prepare_seek_exact<BS: ByteSource>(&mut self, text: &BytesRef<BS>) -> Result<Option<()>> {
-    if !self.asserting {
-      return self.in_.prepare_seek_exact(text);
+  type PreparedSeek<BS: ByteSource> = crate::core::util::io_boolean_supplier::MappedBooleanSupplier<
+    Self,
+    BS,
+    <TE as TermsEnum>::PreparedSeek<BS>,
+  >;
+
+  fn prepare_seek_exact<BS: ByteSource>(
+    &mut self,
+    text: &BytesRef<BS>,
+  ) -> Result<Option<Self::PreparedSeek<BS>>> {
+    use crate::core::util::io_boolean_supplier::{IOBooleanSupplier, MappedBooleanSupplier};
+
+    if self.asserting {
+      assert_thread("Terms enums", self.creation_thread);
+      assert_ne!(
+        self.state,
+        AssertingTermsEnumState::TwoPhaseSeeking,
+        "Unfinished two-phase seeking"
+      );
+      assert!(text.is_valid()?);
     }
-    assert_thread("Terms enums", self.creation_thread);
-    assert_ne!(
-      self.state,
-      AssertingTermsEnumState::TwoPhaseSeeking,
-      "Unfinished two-phase seeking"
-    );
-    assert!(text.is_valid()?);
     let result = self.in_.prepare_seek_exact(text)?;
-    if result.is_some() {
+    if self.asserting && result.is_some() {
       self.state = AssertingTermsEnumState::TwoPhaseSeeking;
     }
-    Ok(result)
-  }
-
-  fn get_prepare_seek_exact_status<BS: ByteSource>(
-    &mut self,
-    target: &BytesRef<BS>,
-  ) -> Result<bool> {
-    if !self.asserting {
-      return self.in_.get_prepare_seek_exact_status(target);
-    }
-    assert_thread("Terms enums", self.creation_thread);
-    let result = self.in_.get_prepare_seek_exact_status(target)?;
-    self.state = if result {
-      AssertingTermsEnumState::Positioned
-    } else {
-      AssertingTermsEnumState::Unpositioned
-    };
-    Ok(result)
+    Ok(result.map(|delegate| MappedBooleanSupplier {
+      delegate,
+      get: |seek, cursor: &mut Self, target| {
+        if !cursor.asserting {
+          return seek.get(&mut cursor.in_, target);
+        }
+        assert_thread("Terms enums", cursor.creation_thread);
+        let result = seek.get(&mut cursor.in_, target)?;
+        cursor.state = if result {
+          AssertingTermsEnumState::Positioned
+        } else {
+          AssertingTermsEnumState::Unpositioned
+        };
+        Ok(result)
+      },
+    }))
   }
 
   fn seek_ceil<BS: ByteSource>(&mut self, term: &BytesRef<BS>) -> Result<SeekStatus> {

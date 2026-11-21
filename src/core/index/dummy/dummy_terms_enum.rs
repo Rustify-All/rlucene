@@ -58,14 +58,12 @@ impl TermsEnum for DummyTermsEnum {
     dummy_unreachable!()
   }
 
-  fn prepare_seek_exact<BS: ByteSource>(&mut self, _text: &BytesRef<BS>) -> Result<Option<()>> {
-    dummy_unreachable!()
-  }
+  type PreparedSeek<BS: ByteSource> = crate::core::index::terms_enum::SeekExact;
 
-  fn get_prepare_seek_exact_status<BS: ByteSource>(
+  fn prepare_seek_exact<BS: ByteSource>(
     &mut self,
-    _target: &BytesRef<BS>,
-  ) -> Result<bool> {
+    _text: &BytesRef<BS>,
+  ) -> Result<Option<Self::PreparedSeek<BS>>> {
     dummy_unreachable!()
   }
 

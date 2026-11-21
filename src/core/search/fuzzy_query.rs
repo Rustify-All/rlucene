@@ -465,22 +465,10 @@ where
     }
   }
 
-  fn prepare_seek_exact<BS: ByteSource>(&mut self, text: &BytesRef<BS>) -> Result<Option<()>> {
-    match self {
-      Self::Single(t) => t.prepare_seek_exact(text),
-      Self::Fuzzy(t) => t.prepare_seek_exact(text),
-    }
-  }
-
-  fn get_prepare_seek_exact_status<BS: ByteSource>(
-    &mut self,
-    target: &BytesRef<BS>,
-  ) -> Result<bool> {
-    match self {
-      Self::Single(t) => t.get_prepare_seek_exact_status(target),
-      Self::Fuzzy(t) => t.get_prepare_seek_exact_status(target),
-    }
-  }
+  crate::core::index::terms_enum::prepare_seek_exact_enum!(
+    Single(FilteredTermsEnum<TermsTE<T>, SingleTermsEnum>) => A,
+    Fuzzy(FuzzyTermsEnum<T>) => B,
+  );
 
   fn seek_ceil<BS: ByteSource>(&mut self, term: &BytesRef<BS>) -> Result<SeekStatus> {
     match self {

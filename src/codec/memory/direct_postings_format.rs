@@ -1143,15 +1143,13 @@ impl TermsEnum for DirectTermsEnum {
     }
   }
 
-  fn prepare_seek_exact<BS: ByteSource>(&mut self, _text: &BytesRef<BS>) -> Result<Option<()>> {
-    Ok(Some(()))
-  }
+  type PreparedSeek<BS: ByteSource> = crate::core::index::terms_enum::SeekExact;
 
-  fn get_prepare_seek_exact_status<BS: ByteSource>(
+  fn prepare_seek_exact<BS: ByteSource>(
     &mut self,
-    target: &BytesRef<BS>,
-  ) -> Result<bool> {
-    self.seek_exact(target)
+    _text: &BytesRef<BS>,
+  ) -> Result<Option<Self::PreparedSeek<BS>>> {
+    Ok(Some(crate::core::index::terms_enum::SeekExact))
   }
 
   fn seek_ceil<BS: ByteSource>(&mut self, term: &BytesRef<BS>) -> Result<SeekStatus> {
@@ -1672,15 +1670,13 @@ impl TermsEnum for DirectIntersectTermsEnum {
     Err(LuceneError::unsupported_operation(""))
   }
 
-  fn prepare_seek_exact<BS: ByteSource>(&mut self, _text: &BytesRef<BS>) -> Result<Option<()>> {
-    Ok(Some(()))
-  }
+  type PreparedSeek<BS: ByteSource> = crate::core::index::terms_enum::SeekExact;
 
-  fn get_prepare_seek_exact_status<BS: ByteSource>(
+  fn prepare_seek_exact<BS: ByteSource>(
     &mut self,
-    target: &BytesRef<BS>,
-  ) -> Result<bool> {
-    self.seek_exact(target)
+    _text: &BytesRef<BS>,
+  ) -> Result<Option<Self::PreparedSeek<BS>>> {
+    Ok(Some(crate::core::index::terms_enum::SeekExact))
   }
 
   fn seek_ceil<BS: ByteSource>(&mut self, _term: &BytesRef<BS>) -> Result<SeekStatus> {

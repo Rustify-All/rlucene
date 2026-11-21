@@ -223,22 +223,30 @@ where
     }
   }
 
-  fn prepare_seek_exact<BS: ByteSource>(&mut self, text: &BytesRef<BS>) -> Result<Option<()>> {
-    match &self.hook {
-      FilteredTermsEnumHook::Default => self.tenum.prepare_seek_exact(text),
-      FilteredTermsEnumHook::Filtered(_) => Err(LuceneError::unsupported_operation(format!(
-        "{} does not support seeking",
-        std::any::type_name::<F>()
-      ))),
-    }
-  }
+  type PreparedSeek<BS: ByteSource> = crate::core::util::io_boolean_supplier::MappedBooleanSupplier<
+    Self,
+    BS,
+    <T as TermsEnum>::PreparedSeek<BS>,
+  >;
 
-  fn get_prepare_seek_exact_status<BS: ByteSource>(
+  fn prepare_seek_exact<BS: ByteSource>(
     &mut self,
-    target: &BytesRef<BS>,
-  ) -> Result<bool> {
+    text: &BytesRef<BS>,
+  ) -> Result<Option<Self::PreparedSeek<BS>>> {
+    use crate::core::util::io_boolean_supplier::{IOBooleanSupplier, MappedBooleanSupplier};
+
     match &self.hook {
-      FilteredTermsEnumHook::Default => self.tenum.get_prepare_seek_exact_status(target),
+      FilteredTermsEnumHook::Default => {
+        Ok(
+          self
+            .tenum
+            .prepare_seek_exact(text)?
+            .map(|delegate| MappedBooleanSupplier {
+              delegate,
+              get: |seek, cursor: &mut Self, target| seek.get(&mut cursor.tenum, target),
+            }),
+        )
+      },
       FilteredTermsEnumHook::Filtered(_) => Err(LuceneError::unsupported_operation(format!(
         "{} does not support seeking",
         std::any::type_name::<F>()

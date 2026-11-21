@@ -74,7 +74,46 @@ impl CompressionModeBase for DeflateWithPresetDictCompressionMode {
 }
 
 pub struct DeflateWithPresetDictDecompressor {
-  decoder: Option<Decompress>,
+  decoder: Option<Box<DeflateDecoder>>,
+}
+
+struct DeflateDecoder {
+  inner: Decompress,
+  dictionary: DictionaryCache,
+}
+
+#[derive(Default)]
+struct DictionaryCache {
+  compressed: Vec<u8>,
+  decoded: Vec<u8>,
+  output_len: usize,
+}
+
+impl DictionaryCache {
+  // DEFLATE's history window bounds the size worth retaining between reads.
+  const MAX_BYTES: usize = 32 * 1024;
+
+  fn restore(&self, compressed: &[u8], len: usize, bytes: &mut BytesRef<Vec<u8>>) -> bool {
+    if self.decoded.len() != len
+      || self.output_len != bytes.bytes.len()
+      || self.compressed != compressed
+    {
+      return false;
+    }
+    bytes.bytes[..len].copy_from_slice(&self.decoded);
+    bytes.length = len;
+    true
+  }
+
+  fn remember(&mut self, compressed: &[u8], bytes: &BytesRef<Vec<u8>>, len: usize) {
+    if bytes.length == len && len <= Self::MAX_BYTES && compressed.len() <= Self::MAX_BYTES {
+      self.compressed.clear();
+      self.compressed.extend_from_slice(compressed);
+      self.decoded.clear();
+      self.decoded.extend_from_slice(&bytes.bytes[..len]);
+      self.output_len = bytes.bytes.len();
+    }
+  }
 }
 
 impl DeflateWithPresetDictDecompressor {
@@ -86,6 +125,7 @@ impl DeflateWithPresetDictDecompressor {
     input: &mut DI,
     decompressor: &mut Decompress,
     bytes: &mut BytesRef<Vec<u8>>,
+    dictionary: Option<(&mut DictionaryCache, usize)>,
   ) -> Result<()>
   where
     DI: DataInput,
@@ -107,6 +147,11 @@ impl DeflateWithPresetDictDecompressor {
     // Preserve the original length error before reading the payload.
     ArrayUtil::oversize(padded_length, 1)?;
     let compressed = input.get_bytes(compressed_length)?;
+    if let Some((cache, len)) = &dictionary
+      && cache.restore(&compressed, *len, bytes)
+    {
+      return Ok(());
+    }
     // Extra "dummy byte"
     let total_out = decompressor.total_out();
     let total_in = decompressor.total_in();
@@ -133,6 +178,9 @@ impl DeflateWithPresetDictDecompressor {
       return Err(LuceneError::corrupt_index(format!(
         "Invalid decoder state: status={status:?} (resource={input})"
       )));
+    }
+    if let Some((cache, len)) = dictionary {
+      cache.remember(&compressed, bytes, len);
     }
     Ok(())
   }
@@ -168,11 +216,22 @@ impl LuceneDecompressor for DeflateWithPresetDictDecompressor {
     bytes.offset = 0;
     bytes.length = 0;
 
-    let decompressor = self.decoder.get_or_insert_with(|| Decompress::new(false));
+    let decoder = self.decoder.get_or_insert_with(|| {
+      Box::new(DeflateDecoder {
+        inner: Decompress::new(false),
+        dictionary: DictionaryCache::default(),
+      })
+    });
+    let decompressor = &mut decoder.inner;
     decompressor.reset(false);
 
-    // Read the dictionary
-    Self::do_decompress(input, decompressor, bytes)?;
+    // Reuse a validated dictionary when repeated reads see the same compressed bytes.
+    Self::do_decompress(
+      input,
+      decompressor,
+      bytes,
+      Some((&mut decoder.dictionary, dict_length_usize)),
+    )?;
     if dict_length_usize != bytes.length {
       return Err(LuceneError::corrupt_index(format!(
         "Unexpected dict length (resource={input})"
@@ -197,7 +256,7 @@ impl LuceneDecompressor for DeflateWithPresetDictDecompressor {
       decompressor
         .set_dictionary(&bytes.bytes[..dict_length_usize])
         .map_err(|error| LuceneError::from(std::io::Error::other(error)))?;
-      Self::do_decompress(input, decompressor, bytes)?;
+      Self::do_decompress(input, decompressor, bytes, None)?;
       offset_in_block += block_length;
     }
 

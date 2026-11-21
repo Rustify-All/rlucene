@@ -431,16 +431,7 @@ where
     self.in_.seek_exact(term)
   }
 
-  fn prepare_seek_exact<BS: ByteSource>(&mut self, text: &BytesRef<BS>) -> Result<Option<()>> {
-    self.in_.prepare_seek_exact(text)
-  }
-
-  fn get_prepare_seek_exact_status<BS: ByteSource>(
-    &mut self,
-    target: &BytesRef<BS>,
-  ) -> Result<bool> {
-    self.in_.get_prepare_seek_exact_status(target)
-  }
+  crate::core::index::terms_enum::prepare_seek_exact_delegate!(T => in_);
 
   fn seek_ceil<BS: ByteSource>(&mut self, term: &BytesRef<BS>) -> Result<SeekStatus> {
     self.in_.seek_ceil(term)

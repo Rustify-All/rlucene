@@ -36,8 +36,6 @@ use std::fmt;
 use std::fmt::Display;
 use std::sync::Arc;
 
-type FieldReaders<I, PR> = Box<[Box<FieldReader<I, PR>>]>;
-
 /// A block-based terms index and dictionary that assigns terms to variable
 /// length blocks according to how they share prefixes. The terms index is a
 /// prefix trie whose leaves are term blocks. The advantage of this approach is
@@ -68,7 +66,7 @@ where
   // Open input to the terms index file (_X.tip)
   index_in: Arc<I>,
   // The readers use the same field-name order as field_list.
-  field_readers: RwLock<FieldReaders<I, PR>>,
+  field_readers: RwLock<Box<[FieldReader<I, PR>]>>,
   field_list: Vec<Arc<FieldInfo>>,
   field_infos: Arc<FieldInfos>,
 }
@@ -152,7 +150,8 @@ where
         &state.segment_suffix,
       )?;
 
-      let mut field_map = HashMap::new();
+      let mut field_indices = HashMap::new();
+      let mut field_readers = Vec::new();
       let mut index_length = -1i64;
       let mut terms_length = -1i64;
       let mut meta_in = state.with_file_name(segment, TERMS_META_EXTENSION, |name| {
@@ -252,8 +251,8 @@ where
               max_term,
             )?;
 
-            if field_map
-              .insert(field_info.get_field_number(), Box::new(field_reader))
+            if field_indices
+              .insert(field_info.get_field_number(), field_readers.len())
               .is_some()
             {
               return Err(LuceneError::corrupt_index(format!(
@@ -261,6 +260,7 @@ where
                 field_info.name
               )));
             }
+            field_readers.push(field_reader);
           }
 
           index_length = meta_in.read_long()?;
@@ -305,7 +305,8 @@ where
         Some(Arc::new(index_in.take().ok_or_else(|| {
           LuceneError::illegal_state("terms index input is missing")
         })?));
-      for field_reader in field_map.values_mut() {
+      for index in field_indices.into_values() {
+        let field_reader = &mut field_readers[index];
         field_reader.parent = terms_reader.as_ref().map(Arc::clone);
         FieldReader::init_field_reader(
           shared_index_in
@@ -315,7 +316,6 @@ where
           field_reader,
         )?;
       }
-      let mut field_readers: Vec<_> = field_map.into_values().collect();
       field_readers
         .sort_unstable_by(|left, right| left.field_info.name.cmp(&right.field_info.name));
       let field_list = field_readers
@@ -382,7 +382,7 @@ where
       .field_readers
       .read()
       .get(index)
-      .map(|reader| reader.as_ref().try_clone())
+      .map(TryClone::try_clone)
       .transpose()
   }
 

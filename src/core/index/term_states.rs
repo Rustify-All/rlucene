@@ -28,6 +28,7 @@ use crate::core::search::similarities_impl::similarities::Similarity;
 use crate::core::util::accountable::Accountable;
 use crate::core::util::array_util::ArrayUtil;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
+use crate::core::util::io_boolean_supplier::IOBooleanSupplier;
 use crate::core::util::ram_usage_estimator::size_of_slice;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
@@ -182,40 +183,44 @@ impl TermStates {
     LR: LeafReader,
   {
     let ctx_ord = ctx.ord;
-    if ctx_ord >= self.states.len() {
+    let Some(state_slot) = self.states.get(ctx_ord) else {
       return Err(LuceneError::illegal_argument(format!(
         "leaf ordinal {ctx_ord} is out of bounds for {} states",
         self.states.len()
       )));
-    }
+    };
 
     let Some(term) = self.term.as_ref() else {
-      return Ok(if self.states[ctx_ord].get().is_none() {
+      return Ok(if state_slot.get().is_none() {
         None
       } else {
         Some(PrepareState::Ready(ctx_ord))
       });
     };
 
-    if self.states[ctx_ord].get().is_none() {
+    let Some(state) = state_slot.get() else {
       let Some(terms) = ctx.reader().terms(term.field())? else {
         // Another reader may have published the same immutable leaf result.
-        let _ = self.states[ctx_ord].set(Arc::clone(&EMPTY_TERM_STATE));
+        let _ = state_slot.set(Arc::clone(&EMPTY_TERM_STATE));
         return Ok(None);
       };
 
-      let mut te = terms.iterator()?;
-      let io_boolean_supplier = te.prepare_seek_exact(term.bytes())?;
-      if io_boolean_supplier.is_none() {
+      let mut iterator = terms.iterator();
+      let te = match iterator {
+        Ok(ref mut te) => te,
+        Err(error) => return Err(error),
+      };
+      let Some(seek) = te.prepare_seek_exact(term.bytes())? else {
         // Another reader may have published the same immutable leaf result.
-        let _ = self.states[ctx_ord].set(Arc::clone(&EMPTY_TERM_STATE));
+        let _ = state_slot.set(Arc::clone(&EMPTY_TERM_STATE));
         return Ok(None);
-      }
-      return Ok(Some(PrepareState::Pending(term.clone(), ctx_ord, te)));
-    }
-    let state = self.states[ctx_ord]
-      .get()
-      .ok_or_else(|| LuceneError::illegal_state("term state is missing"))?;
+      };
+      let term = term.clone();
+      return match iterator {
+        Ok(te) => Ok(Some(PrepareState::Pending(term, ctx_ord, te, seek))),
+        Err(error) => Err(error),
+      };
+    };
     if matches!(state.as_ref(), TermStateEnum::Empty(_)) {
       Ok(None)
     } else {
@@ -236,15 +241,17 @@ impl TermStates {
         ))
       }),
 
-      PrepareState::Pending(term, ord, te) => {
+      PrepareState::Pending(term, ord, te, seek) => {
         let state_count = self.states.len();
         let state_slot = self.states.get(*ord).ok_or_else(|| {
           LuceneError::illegal_argument(format!(
             "leaf ordinal {ord} is out of bounds for {state_count} states"
           ))
         })?;
-        if state_slot.get().is_none() {
-          let state = if te.get_prepare_seek_exact_status(term.bytes())? {
+        let state = if let Some(state) = state_slot.get() {
+          state
+        } else {
+          let state = if seek.get(te, term.bytes())? {
             Arc::new(te.term_state()?)
           } else {
             Arc::clone(&EMPTY_TERM_STATE)
@@ -252,10 +259,10 @@ impl TermStates {
           // Publish only after successful I/O. A competing lookup may finish first;
           // all callers below use the state retained in this leaf's shared slot.
           let _ = state_slot.set(state);
-        }
-        let state = state_slot
-          .get()
-          .ok_or_else(|| LuceneError::illegal_state("resolved term state is missing"))?;
+          state_slot
+            .get()
+            .ok_or_else(|| LuceneError::illegal_state("resolved term state is missing"))?
+        };
         if matches!(state.as_ref(), TermStateEnum::Empty(_)) {
           Ok(None)
         } else {
@@ -354,9 +361,9 @@ impl TermState for EmptyTermState {
   }
 }
 
-pub enum PrepareState<TE> {
+pub enum PrepareState<TE: TermsEnum> {
   Ready(usize),
-  Pending(Arc<Term>, usize, TE),
+  Pending(Arc<Term>, usize, TE, TE::PreparedSeek<Vec<u8>>),
 }
 
 pub fn build<IRC, T, SIM>(
@@ -400,7 +407,7 @@ where
       },
       Some(t) => {
         let mut terms_enum = t.iterator()?;
-        if terms_enum.prepare_seek_exact(term.bytes())?.is_some() {
+        if let Some(seek) = terms_enum.prepare_seek_exact(term.bytes())? {
           if pending_term_lookups.capacity() == 0 {
             pending_term_lookups.reserve_exact(leaves.len());
           }
@@ -408,22 +415,26 @@ where
           if pending_term_lookups.len() <= ord {
             ArrayUtil::grow_with(&mut pending_term_lookups, ord + 1, || None)?;
           }
-          pending_term_lookups[ord] = Some(terms_enum);
+          pending_term_lookups[ord] = Some((terms_enum, Some(seek)));
         }
       },
     }
   }
 
-  for (ord, mut pending) in pending_term_lookups.into_iter().enumerate() {
-    if let Some(ref mut terms_enum) = pending
-      && terms_enum.get_prepare_seek_exact_status(term.bytes())?
-    {
-      per_reader_term_state.register_with_stats(
-        terms_enum.term_state()?,
-        ord,
-        terms_enum.doc_freq()?,
-        terms_enum.total_term_freq()?,
-      );
+  for (ord, pending) in pending_term_lookups.iter_mut().enumerate() {
+    if let Some((terms_enum, seek)) = pending {
+      // Move only the supplier so it is released before the cursor.
+      if let Some(seek) = seek.take()
+        && seek.get(terms_enum, term.bytes())?
+      {
+        per_reader_term_state.register_with_stats(
+          terms_enum.term_state()?,
+          ord,
+          terms_enum.doc_freq()?,
+          terms_enum.total_term_freq()?,
+        );
+      }
+      *pending = None;
     }
   }
   Ok(per_reader_term_state)

@@ -30,6 +30,7 @@ use crate::core::util::attribute_source::AttributeSourceEnum2;
 use crate::core::util::bytes_ref_iterator::BytesRefIterator;
 use crate::core::util::dummy::dummy_attribute_source::DummyAttributeSource;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
+use crate::core::util::io_boolean_supplier::IOBooleanSupplier;
 use std::marker::PhantomData;
 
 /// Iterator to seek [`seek_ceil(BytesRef)`](TermsEnum::seek_ceil),
@@ -61,31 +62,22 @@ pub trait TermsEnum: BytesRefIterator {
   /// Returns `true` if the term is found; `false` if the enum is
   /// unpositioned.
   fn seek_exact<BS: ByteSource>(&mut self, term: &BytesRef<BS>) -> Result<bool>;
-  /// Two-phase [`seek_exact`](TermsEnum::seek_exact). The first phase
-  /// typically calls [`IndexInput::prefetch`](crate::core::store::index_input::IndexInput::prefetch)
-  /// on the relevant bytes. The second phase,
-  /// [`get_prepare_seek_exact_status`](Self::get_prepare_seek_exact_status),
-  /// actually seeks the term within those bytes.
+  type PreparedSeek<BS: ByteSource>: IOBooleanSupplier<Self, BS>;
+
+  /// Two-phase [`seek_exact`](TermsEnum::seek_exact). The first phase typically
+  /// prefetches the relevant bytes. The returned supplier completes the seek.
   ///
   /// Prepare multiple terms enums before completing their seeks to allow
   /// their I/O to run in parallel.
   ///
-  /// Returns `None` if the term can be ruled out without performing I/O.
-  /// Returns `Some(())` when a second phase is available; this does not mean
-  /// that the term has been found.
+  /// Returns `None` if the term can be ruled out during preparation.
   ///
-  /// After `Some(())`, complete the seek on the same thread with the same
-  /// target term before calling other methods on this terms enum. A `None`
-  /// result has no second phase to complete.
-  fn prepare_seek_exact<BS: ByteSource>(&mut self, text: &BytesRef<BS>) -> Result<Option<()>>;
-  /// Executes a prepared seek and returns whether the target term exists.
-  ///
-  /// This may perform I/O and is not a cached-status accessor. The target
-  /// must be the same term passed to [`prepare_seek_exact`](Self::prepare_seek_exact).
-  fn get_prepare_seek_exact_status<BS: ByteSource>(
+  /// Complete the seek on the same thread, with the original cursor and target,
+  /// before calling other methods on this cursor.
+  fn prepare_seek_exact<BS: ByteSource>(
     &mut self,
-    target: &BytesRef<BS>,
-  ) -> Result<bool>;
+    text: &BytesRef<BS>,
+  ) -> Result<Option<Self::PreparedSeek<BS>>>;
 
   /// Seeks to the specified term, if it exists, or to the next (ceiling)
   /// term. Returns [`SeekStatus`] to indicate whether the exact term was
@@ -205,11 +197,87 @@ pub enum SeekStatus {
   NotFound,
 }
 
-pub enum PrepareSeekStatus {
-  Pending,
-  Found,
-  NotFound,
+/// Deferred ordinary seek for cursors without a preparation step.
+pub struct SeekExact;
+
+impl<T: TermsEnum + ?Sized, BS: ByteSource> IOBooleanSupplier<T, BS> for SeekExact {
+  fn get(&self, cursor: &mut T, target: &BytesRef<BS>) -> Result<bool> {
+    cursor.seek_exact(target)
+  }
 }
+
+#[doc(hidden)]
+pub enum SeekSupplierEnum<A, B, C = (), D = (), E = (), F = ()> {
+  A(A),
+  B(B),
+  C(C),
+  D(D),
+  E(E),
+  F(F),
+}
+
+macro_rules! prepare_seek_exact_enum {
+  ($($variant:ident($cursor:ty) => $case:ident),+ $(,)?) => {
+    type PreparedSeek<BS: ByteSource> = $crate::core::util::io_boolean_supplier::MappedBooleanSupplier<
+      Self,
+      BS,
+      $crate::core::index::terms_enum::SeekSupplierEnum<
+        $(<$cursor as TermsEnum>::PreparedSeek<BS>),+
+      >
+    >;
+
+    fn prepare_seek_exact<BS: ByteSource>(
+      &mut self,
+      text: &BytesRef<BS>,
+    ) -> Result<Option<Self::PreparedSeek<BS>>> {
+      use $crate::core::index::terms_enum::SeekSupplierEnum;
+      use $crate::core::util::io_boolean_supplier::{IOBooleanSupplier, MappedBooleanSupplier};
+
+      let delegate = match self {
+        $(Self::$variant(cursor) => cursor.prepare_seek_exact(text)?.map(SeekSupplierEnum::$case),)+
+      };
+      Ok(delegate.map(|delegate| MappedBooleanSupplier {
+        delegate,
+        get: |delegate, cursor, target| match (delegate, cursor) {
+          $((SeekSupplierEnum::$case(seek), Self::$variant(cursor)) => seek.get(cursor, target),)+
+          _ => Err($crate::core::util::error::lucene_error::LuceneError::illegal_state(
+            "prepared seek does not match the cursor",
+          )),
+        },
+      }))
+    }
+  };
+}
+pub(crate) use prepare_seek_exact_enum;
+
+macro_rules! prepare_seek_exact_delegate {
+  ($cursor:ty => $field:ident) => {
+    type PreparedSeek<BS: ByteSource> =
+      $crate::core::util::io_boolean_supplier::MappedBooleanSupplier<
+        Self,
+        BS,
+        <$cursor as TermsEnum>::PreparedSeek<BS>,
+      >;
+
+    fn prepare_seek_exact<BS: ByteSource>(
+      &mut self,
+      text: &BytesRef<BS>,
+    ) -> Result<Option<Self::PreparedSeek<BS>>> {
+      use $crate::core::util::io_boolean_supplier::{IOBooleanSupplier, MappedBooleanSupplier};
+
+      Ok(
+        self
+          .$field
+          .prepare_seek_exact(text)?
+          .map(|delegate| MappedBooleanSupplier {
+            delegate,
+            get: |seek, cursor: &mut Self, target| seek.get(&mut cursor.$field, target),
+          }),
+      )
+    }
+  };
+}
+pub(crate) use prepare_seek_exact_delegate;
 #[derive(Default)]
 pub struct EmptyTermsEnum;
 impl BytesRefIterator for EmptyTermsEnum {
@@ -245,15 +313,13 @@ impl TermsEnum for EmptyTermsEnum {
     Ok(self.seek_ceil(term)? == SeekStatus::Found)
   }
 
-  fn prepare_seek_exact<BS: ByteSource>(&mut self, _text: &BytesRef<BS>) -> Result<Option<()>> {
-    Ok(Some(()))
-  }
+  type PreparedSeek<BS: ByteSource> = SeekExact;
 
-  fn get_prepare_seek_exact_status<BS: ByteSource>(
+  fn prepare_seek_exact<BS: ByteSource>(
     &mut self,
-    target: &BytesRef<BS>,
-  ) -> Result<bool> {
-    self.seek_exact(target)
+    _text: &BytesRef<BS>,
+  ) -> Result<Option<Self::PreparedSeek<BS>>> {
+    Ok(Some(SeekExact))
   }
 
   fn seek_ceil<BS: ByteSource>(&mut self, _term: &BytesRef<BS>) -> Result<SeekStatus> {
@@ -374,15 +440,13 @@ where
     Ok(self.seek_ceil(term)? == SeekStatus::Found)
   }
 
-  fn prepare_seek_exact<BS: ByteSource>(&mut self, _text: &BytesRef<BS>) -> Result<Option<()>> {
-    Ok(Some(()))
-  }
+  type PreparedSeek<BS: ByteSource> = SeekExact;
 
-  fn get_prepare_seek_exact_status<BS: ByteSource>(
+  fn prepare_seek_exact<BS: ByteSource>(
     &mut self,
-    target: &BytesRef<BS>,
-  ) -> Result<bool> {
-    self.seek_exact(target)
+    _text: &BytesRef<BS>,
+  ) -> Result<Option<Self::PreparedSeek<BS>>> {
+    Ok(Some(SeekExact))
   }
 
   fn seek_ceil<BS: ByteSource>(&mut self, _term: &BytesRef<BS>) -> Result<SeekStatus> {
@@ -484,17 +548,26 @@ where
     (**self).seek_exact(term)
   }
 
-  #[inline]
-  fn prepare_seek_exact<BS: ByteSource>(&mut self, text: &BytesRef<BS>) -> Result<Option<()>> {
-    (**self).prepare_seek_exact(text)
-  }
+  type PreparedSeek<BS: ByteSource> = crate::core::util::io_boolean_supplier::MappedBooleanSupplier<
+    Self,
+    BS,
+    <T as TermsEnum>::PreparedSeek<BS>,
+  >;
 
-  #[inline]
-  fn get_prepare_seek_exact_status<BS: ByteSource>(
+  fn prepare_seek_exact<BS: ByteSource>(
     &mut self,
-    target: &BytesRef<BS>,
-  ) -> Result<bool> {
-    (**self).get_prepare_seek_exact_status(target)
+    text: &BytesRef<BS>,
+  ) -> Result<Option<Self::PreparedSeek<BS>>> {
+    use crate::core::util::io_boolean_supplier::{IOBooleanSupplier, MappedBooleanSupplier};
+
+    Ok(
+      (**self)
+        .prepare_seek_exact(text)?
+        .map(|delegate| MappedBooleanSupplier {
+          delegate,
+          get: |seek, cursor: &mut Self, target| seek.get(&mut **cursor, target),
+        }),
+    )
   }
 
   #[inline]
@@ -635,22 +708,10 @@ where
     }
   }
 
-  fn prepare_seek_exact<BS: ByteSource>(&mut self, text: &BytesRef<BS>) -> Result<Option<()>> {
-    match self {
-      Self::WithPostings(terms) => terms.prepare_seek_exact(text),
-      Self::WithoutPostings(terms) => terms.prepare_seek_exact(text),
-    }
-  }
-
-  fn get_prepare_seek_exact_status<BS: ByteSource>(
-    &mut self,
-    target: &BytesRef<BS>,
-  ) -> Result<bool> {
-    match self {
-      Self::WithPostings(terms) => terms.get_prepare_seek_exact_status(target),
-      Self::WithoutPostings(terms) => terms.get_prepare_seek_exact_status(target),
-    }
-  }
+  crate::core::index::terms_enum::prepare_seek_exact_enum!(
+    WithPostings(A) => A,
+    WithoutPostings(B) => B,
+  );
 
   fn seek_ceil<BS: ByteSource>(&mut self, term: &BytesRef<BS>) -> Result<SeekStatus> {
     match self {
@@ -811,22 +872,10 @@ where
     }
   }
 
-  fn prepare_seek_exact<BS: ByteSource>(&mut self, text: &BytesRef<BS>) -> Result<Option<()>> {
-    match self {
-      Self::WithAttributes(terms) => terms.prepare_seek_exact(text),
-      Self::WithoutAttributes(terms) => terms.prepare_seek_exact(text),
-    }
-  }
-
-  fn get_prepare_seek_exact_status<BS: ByteSource>(
-    &mut self,
-    target: &BytesRef<BS>,
-  ) -> Result<bool> {
-    match self {
-      Self::WithAttributes(terms) => terms.get_prepare_seek_exact_status(target),
-      Self::WithoutAttributes(terms) => terms.get_prepare_seek_exact_status(target),
-    }
-  }
+  crate::core::index::terms_enum::prepare_seek_exact_enum!(
+    WithAttributes(A) => A,
+    WithoutAttributes(B) => B,
+  );
 
   fn seek_ceil<BS: ByteSource>(&mut self, term: &BytesRef<BS>) -> Result<SeekStatus> {
     match self {
@@ -991,22 +1040,10 @@ where
     }
   }
 
-  fn prepare_seek_exact<BS: ByteSource>(&mut self, text: &BytesRef<BS>) -> Result<Option<()>> {
-    match self {
-      Self::WithPostingsAndAttributes(terms) => terms.prepare_seek_exact(text),
-      Self::WithoutPostingsAndAttributes(terms) => terms.prepare_seek_exact(text),
-    }
-  }
-
-  fn get_prepare_seek_exact_status<BS: ByteSource>(
-    &mut self,
-    target: &BytesRef<BS>,
-  ) -> Result<bool> {
-    match self {
-      Self::WithPostingsAndAttributes(terms) => terms.get_prepare_seek_exact_status(target),
-      Self::WithoutPostingsAndAttributes(terms) => terms.get_prepare_seek_exact_status(target),
-    }
-  }
+  crate::core::index::terms_enum::prepare_seek_exact_enum!(
+    WithPostingsAndAttributes(A) => A,
+    WithoutPostingsAndAttributes(B) => B,
+  );
 
   fn seek_ceil<BS: ByteSource>(&mut self, term: &BytesRef<BS>) -> Result<SeekStatus> {
     match self {
@@ -1165,22 +1202,10 @@ where
     }
   }
 
-  fn prepare_seek_exact<BS: ByteSource>(&mut self, text: &BytesRef<BS>) -> Result<Option<()>> {
-    match self {
-      Self::WithPostingsAndAttributes(terms) => terms.prepare_seek_exact(text),
-      Self::WithoutPostingsAndAttributes(terms) => terms.prepare_seek_exact(text),
-    }
-  }
-
-  fn get_prepare_seek_exact_status<BS: ByteSource>(
-    &mut self,
-    target: &BytesRef<BS>,
-  ) -> Result<bool> {
-    match self {
-      Self::WithPostingsAndAttributes(terms) => terms.get_prepare_seek_exact_status(target),
-      Self::WithoutPostingsAndAttributes(terms) => terms.get_prepare_seek_exact_status(target),
-    }
-  }
+  crate::core::index::terms_enum::prepare_seek_exact_enum!(
+    WithPostingsAndAttributes(T) => A,
+    WithoutPostingsAndAttributes(EmptyTermsEnum) => B,
+  );
 
   fn seek_ceil<BS: ByteSource>(&mut self, term: &BytesRef<BS>) -> Result<SeekStatus> {
     match self {
@@ -1340,22 +1365,10 @@ where
     }
   }
 
-  fn prepare_seek_exact<BS: ByteSource>(&mut self, text: &BytesRef<BS>) -> Result<Option<()>> {
-    match self {
-      Self::WithPostingsAndAttributes(terms) => terms.prepare_seek_exact(text),
-      Self::WithoutPostingsAndAttributes(terms) => terms.prepare_seek_exact(text),
-    }
-  }
-
-  fn get_prepare_seek_exact_status<BS: ByteSource>(
-    &mut self,
-    target: &BytesRef<BS>,
-  ) -> Result<bool> {
-    match self {
-      Self::WithPostingsAndAttributes(terms) => terms.get_prepare_seek_exact_status(target),
-      Self::WithoutPostingsAndAttributes(terms) => terms.get_prepare_seek_exact_status(target),
-    }
-  }
+  crate::core::index::terms_enum::prepare_seek_exact_enum!(
+    WithPostingsAndAttributes(T) => A,
+    WithoutPostingsAndAttributes(FilteredTermsEnum<EmptyTermsEnum, AutomatonTermsEnum>) => B,
+  );
 
   fn seek_ceil<BS: ByteSource>(&mut self, term: &BytesRef<BS>) -> Result<SeekStatus> {
     match self {
@@ -1531,26 +1544,12 @@ where
     }
   }
 
-  fn prepare_seek_exact<BS: ByteSource>(&mut self, text: &BytesRef<BS>) -> Result<Option<()>> {
-    match self {
-      Self::None(terms) => terms.prepare_seek_exact(text),
-      Self::All(terms) => terms.prepare_seek_exact(text),
-      Self::Single(terms) => terms.prepare_seek_exact(text),
-      Self::Normal(terms) => terms.prepare_seek_exact(text),
-    }
-  }
-
-  fn get_prepare_seek_exact_status<BS: ByteSource>(
-    &mut self,
-    target: &BytesRef<BS>,
-  ) -> Result<bool> {
-    match self {
-      Self::None(terms) => terms.get_prepare_seek_exact_status(target),
-      Self::All(terms) => terms.get_prepare_seek_exact_status(target),
-      Self::Single(terms) => terms.get_prepare_seek_exact_status(target),
-      Self::Normal(terms) => terms.get_prepare_seek_exact_status(target),
-    }
-  }
+  crate::core::index::terms_enum::prepare_seek_exact_enum!(
+    None(EmptyTermsEnum) => A,
+    All(T) => B,
+    Single(FilteredTermsEnum<T, SingleTermsEnum>) => C,
+    Normal(FilteredTermsEnum<T, AutomatonTermsEnum>) => D,
+  );
 
   fn seek_ceil<BS: ByteSource>(&mut self, term: &BytesRef<BS>) -> Result<SeekStatus> {
     match self {
@@ -1723,15 +1722,14 @@ macro_rules! define_terms_enum_enum {
                 }
             }
 
-            fn prepare_seek_exact<BS: ByteSource>(&mut self, text: &BytesRef<BS>) -> Result<Option<()>> {
-                match self {
-                    $(Self::$V(t) => t.prepare_seek_exact(text),)+
-                }
-            }
+            type PreparedSeek<BS: ByteSource> = $enum_name<$($V::PreparedSeek<BS>),+>;
 
-            fn get_prepare_seek_exact_status<BS: ByteSource>(&mut self, target: &BytesRef<BS>) -> Result<bool> {
+            fn prepare_seek_exact<BS: ByteSource>(
+              &mut self,
+              text: &BytesRef<BS>,
+            ) -> Result<Option<Self::PreparedSeek<BS>>> {
                 match self {
-                    $(Self::$V(t) => t.get_prepare_seek_exact_status(target),)+
+                    $(Self::$V(t) => Ok(t.prepare_seek_exact(text)?.map($enum_name::$V)),)+
                 }
             }
 
@@ -1822,6 +1820,20 @@ macro_rules! define_terms_enum_enum {
             fn term_state(&mut self) -> Result<TermStateEnum> {
                 match self {
                     $(Self::$V(t) => t.term_state(),)+
+                }
+            }
+        }
+
+        impl<BS, $($V),+> IOBooleanSupplier<$enum_name<$($V),+>, BS>
+            for $enum_name<$($V::PreparedSeek<BS>),+>
+        where
+            BS: ByteSource,
+            $($V: TermsEnum,)+
+        {
+            fn get(&self, cursor: &mut $enum_name<$($V),+>, target: &BytesRef<BS>) -> Result<bool> {
+                match (self, cursor) {
+                    $((Self::$V(seek), $enum_name::$V(cursor)) => seek.get(cursor, target),)+
+                    _ => Err(LuceneError::illegal_state("prepared seek does not match the cursor")),
                 }
             }
         }

@@ -27,7 +27,7 @@ use crate::core::search::query_scorer::{
 };
 use crate::core::search::req_excl_bulk_scorer::ReqExclBulkScorer;
 use crate::core::search::scorable::Scorable;
-use crate::core::search::scorer::Scorer;
+use crate::core::search::scorer::{Scorer, TwoPhaseState};
 use crate::core::search::scorer_types::ScorerTypes;
 use crate::core::search::two_phase_iterator::TwoPhaseIterator;
 use crate::core::search::weight::DefaultBulkScorer;
@@ -89,11 +89,11 @@ macro_rules! bulk_nodes {
           BulkNode::RequiredExcluded { required, excluded } => {
             let mut upto = min;
             let mut excluded_doc = excluded.approx_doc_id();
+            let excluded_has_two_phase = excluded.has_two_phase_iterator() == TwoPhaseState::Yes;
             while upto < max {
               if excluded_doc < upto { excluded_doc = excluded.approx_advance(upto)?; }
               if excluded_doc == upto {
-                let is_excluded = excluded.matches()?;
-                if is_excluded { upto += 1; }
+                if !excluded_has_two_phase || excluded.matches()? { upto += 1; }
                 excluded_doc = excluded.approx_next_doc()?;
               } else {
                 upto = required.score_internal(collector, accept_docs, upto, excluded_doc.min(max), overlay)?;

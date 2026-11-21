@@ -1141,22 +1141,10 @@ where
     }
   }
 
-  fn prepare_seek_exact<BS: ByteSource>(&mut self, text: &BytesRef<BS>) -> Result<Option<()>> {
-    match self {
-      Self::Original(terms) => terms.prepare_seek_exact(text),
-      Self::Sorting(terms) => terms.prepare_seek_exact(text),
-    }
-  }
-
-  fn get_prepare_seek_exact_status<BS: ByteSource>(
-    &mut self,
-    target: &BytesRef<BS>,
-  ) -> Result<bool> {
-    match self {
-      Self::Original(terms) => terms.get_prepare_seek_exact_status(target),
-      Self::Sorting(terms) => terms.get_prepare_seek_exact_status(target),
-    }
-  }
+  crate::core::index::terms_enum::prepare_seek_exact_enum!(
+    Original(S::TermsEnum<'a>) => A,
+    Sorting(SortedDocValuesTermsEnum<&'a mut SortingSortedDocValues<S>>) => B,
+  );
 
   fn seek_ceil<BS: ByteSource>(&mut self, term: &BytesRef<BS>) -> Result<SeekStatus> {
     match self {
@@ -1442,22 +1430,10 @@ where
     }
   }
 
-  fn prepare_seek_exact<BS: ByteSource>(&mut self, text: &BytesRef<BS>) -> Result<Option<()>> {
-    match self {
-      Self::Original(terms) => terms.prepare_seek_exact(text),
-      Self::Sorting(terms) => terms.prepare_seek_exact(text),
-    }
-  }
-
-  fn get_prepare_seek_exact_status<BS: ByteSource>(
-    &mut self,
-    target: &BytesRef<BS>,
-  ) -> Result<bool> {
-    match self {
-      Self::Original(terms) => terms.get_prepare_seek_exact_status(target),
-      Self::Sorting(terms) => terms.get_prepare_seek_exact_status(target),
-    }
-  }
+  crate::core::index::terms_enum::prepare_seek_exact_enum!(
+    Original(S::TermsEnum<'a>) => A,
+    Sorting(SortedSetDocValuesTermsEnum<&'a mut SortingSortedSetDocValues<S, Arc<DocOrds>>>) => B,
+  );
 
   fn seek_ceil<BS: ByteSource>(&mut self, term: &BytesRef<BS>) -> Result<SeekStatus> {
     match self {
@@ -3659,22 +3635,10 @@ where
     }
   }
 
-  fn prepare_seek_exact<BS: ByteSource>(&mut self, text: &BytesRef<BS>) -> Result<Option<()>> {
-    match self {
-      Self::Original(terms) => terms.prepare_seek_exact(text),
-      Self::Sorting(terms) => terms.prepare_seek_exact(text),
-    }
-  }
-
-  fn get_prepare_seek_exact_status<BS: ByteSource>(
-    &mut self,
-    target: &BytesRef<BS>,
-  ) -> Result<bool> {
-    match self {
-      Self::Original(terms) => terms.get_prepare_seek_exact_status(target),
-      Self::Sorting(terms) => terms.get_prepare_seek_exact_status(target),
-    }
-  }
+  crate::core::index::terms_enum::prepare_seek_exact_enum!(
+    Original(T) => A,
+    Sorting(SortingTermsEnum<T, DM>) => B,
+  );
 
   fn seek_ceil<BS: ByteSource>(&mut self, term: &BytesRef<BS>) -> Result<SeekStatus> {
     match self {

@@ -232,20 +232,16 @@ impl MemorySegmentIndexInput {
     if index > last {
       return Err(Self::eof());
     }
-    let physical = first + index;
-    let start = if last == 0 { offset } else { 0 };
-    let end = if last == 0 {
-      start + length
-    } else if index == last {
-      (offset + length) & mask
-    } else {
-      file.segments.get(physical).map_or(0, |m| m.len())
-    };
     // Resolve first: a failed directory advance must retain the old mapping.
-    let current_slice = file
-      .segments
-      .get(physical)
-      .map_or(&[][..], |mapping| &mapping[start..end]);
+    let current_slice = file.segments.get(first + index).map_or(&[][..], |mapping| {
+      if last == 0 {
+        &mapping[offset..offset + length]
+      } else if index == last {
+        &mapping[..(offset + length) & mask]
+      } else {
+        &mapping[..]
+      }
+    });
     // SAFETY: the input or local file borrow retains every mapping used by this
     // private cursor. Replacing the view never changes the backing allocation;
     // any returned public slice has the lifetime of the retaining input borrow.
@@ -391,20 +387,76 @@ impl MemorySegmentIndexInput {
       self.position.get_mut(),
     )
   }
-  fn copy(
-    segment: &SegmentState,
-    pos: usize,
-    b: &mut [u8],
-    offset: usize,
-    len: usize,
-  ) -> Result<()> {
-    let source = segment.current_range(pos, len).ok_or_else(Self::eof)?;
+  fn copy(source: &[u8], b: &mut [u8], offset: usize) -> Result<()> {
+    let len = source.len();
     let target = b
       .get_mut(offset..)
       .and_then(|s| s.get_mut(..len))
       .ok_or_else(|| LuceneError::illegal_argument("destination range out of bounds"))?;
     target.copy_from_slice(source);
     Ok(())
+  }
+  #[cold]
+  fn get_bytes_crossing(&mut self, len: usize) -> Result<Cow<'_, [u8]>> {
+    if self.scratch.len() < len && self.grow_scratch_for_crossing(len)? {
+      return Ok(Cow::Borrowed(self.scratch.as_slice()));
+    }
+    // The current range check already ruled out readBytes's single-segment path.
+    let scratch = &mut self.scratch[..len];
+    Self::read_bytes_from_segments(
+      &self.file,
+      (self.start, self.length, self.power),
+      self.state.get_mut(),
+      self.position.get_mut(),
+      (scratch, 0, len),
+    )?;
+    Ok(Cow::Borrowed(scratch))
+  }
+
+  // Returns true when growing the buffer also completed the read.
+  #[cold]
+  fn grow_scratch_for_crossing(&mut self, len: usize) -> Result<bool> {
+    if len / 2 >= self.scratch.capacity() {
+      // Avoid zeroing a replacement that will be overwritten in full. Short
+      // requests and requests spanning many mappings keep the original path.
+      if len >= 4096 && len <= (1usize << self.power) {
+        self.scratch = Vec::with_capacity(len);
+        let mut remaining = len;
+        loop {
+          let state = self.state.get_mut();
+          let available = state
+            .current
+            .len()
+            .checked_sub(*self.position.get_mut())
+            .ok_or_else(|| {
+              LuceneError::array_index_out_of_bounds("source position out of bounds")
+            })?;
+          let chunk = remaining.min(available);
+          self.scratch.extend_from_slice(
+            state
+              .current_range(*self.position.get_mut(), chunk)
+              .ok_or_else(Self::eof)?,
+          );
+          if remaining <= available {
+            *self.position.get_mut() += remaining;
+            return Ok(true);
+          }
+          remaining -= available;
+          Self::advance_segment(state);
+          let range = (self.start, self.length, self.power);
+          let last = ((range.0 & ((1usize << range.2) - 1)) + range.1) >> range.2;
+          if state.index > last {
+            return Err(Self::eof());
+          }
+          Self::load_segment(&self.file, range, state, state.index)?;
+          *self.position.get_mut() = 0;
+        }
+      }
+      self.scratch = vec![0; len];
+    } else {
+      self.scratch.resize(len, 0);
+    }
+    Ok(false)
   }
   #[cold]
   fn read_bytes_from_segments(
@@ -415,25 +467,20 @@ impl MemorySegmentIndexInput {
     destination: (&mut [u8], usize, usize),
   ) -> Result<()> {
     let (b, mut offset, mut len) = destination;
-    let last = ((range.0 & ((1usize << range.2) - 1)) + range.1) >> range.2;
     loop {
-      let available = state
+      let source = state
         .current
-        .len()
-        .checked_sub(*position)
+        .get(*position..)
         .ok_or_else(|| LuceneError::array_index_out_of_bounds("source position out of bounds"))?;
-      if len <= available {
-        Self::copy(state, *position, b, offset, len)?;
+      if len <= source.len() {
+        Self::copy(&source[..len], b, offset)?;
         *position += len;
         return Ok(());
       }
-      Self::copy(state, *position, b, offset, available)?;
-      len -= available;
-      offset += available;
+      Self::copy(source, b, offset)?;
+      len -= source.len();
+      offset += source.len();
       Self::advance_segment(state);
-      if state.index > last {
-        return Err(Self::eof());
-      }
       Self::load_segment(file, range, state, state.index)?;
       *position = 0;
     }
@@ -905,57 +952,7 @@ impl DataInput for MemorySegmentIndexInput {
       *self.position.get_mut() = len;
       return Ok(Cow::Borrowed(&self.state.get_mut().current_slice()[..len]));
     }
-    if self.scratch.len() < len {
-      if len / 2 >= self.scratch.capacity() {
-        // Avoid zeroing a replacement that will be overwritten in full. Short
-        // requests and requests spanning many mappings keep the original path.
-        if len >= 4096 && len <= (1usize << self.power) {
-          self.scratch = Vec::with_capacity(len);
-          let mut remaining = len;
-          loop {
-            let state = self.state.get_mut();
-            let available = state
-              .current
-              .len()
-              .checked_sub(*self.position.get_mut())
-              .ok_or_else(|| {
-                LuceneError::array_index_out_of_bounds("source position out of bounds")
-              })?;
-            let chunk = remaining.min(available);
-            self.scratch.extend_from_slice(
-              state
-                .current_range(*self.position.get_mut(), chunk)
-                .ok_or_else(Self::eof)?,
-            );
-            if remaining <= available {
-              *self.position.get_mut() += remaining;
-              return Ok(Cow::Borrowed(self.scratch.as_slice()));
-            }
-            remaining -= available;
-            Self::advance_segment(state);
-            let range = (self.start, self.length, self.power);
-            let last = ((range.0 & ((1usize << range.2) - 1)) + range.1) >> range.2;
-            if state.index > last {
-              return Err(Self::eof());
-            }
-            Self::load_segment(&self.file, range, state, state.index)?;
-            *self.position.get_mut() = 0;
-          }
-        }
-        self.scratch = vec![0; len];
-      } else {
-        self.scratch.resize(len, 0);
-      }
-    }
-    // The current range check already ruled out readBytes's single-segment path.
-    Self::read_bytes_from_segments(
-      &self.file,
-      (self.start, self.length, self.power),
-      self.state.get_mut(),
-      self.position.get_mut(),
-      (&mut self.scratch, 0, len),
-    )?;
-    Ok(Cow::Borrowed(&self.scratch[..len]))
+    self.get_bytes_crossing(len)
   }
 
   #[inline]

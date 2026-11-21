@@ -743,26 +743,12 @@ where
     }
   }
 
-  fn prepare_seek_exact<BS: ByteSource>(&mut self, text: &BytesRef<BS>) -> Result<Option<()>> {
-    match self {
-      Self::Empty(t) => t.prepare_seek_exact(text),
-      Self::TE(t) => t.prepare_seek_exact(text),
-      Self::Single(t) => t.prepare_seek_exact(text),
-      Self::Intersect(t) => t.prepare_seek_exact(text),
-    }
-  }
-
-  fn get_prepare_seek_exact_status<BS: ByteSource>(
-    &mut self,
-    target: &BytesRef<BS>,
-  ) -> Result<bool> {
-    match self {
-      Self::Empty(t) => t.get_prepare_seek_exact_status(target),
-      Self::TE(t) => t.get_prepare_seek_exact_status(target),
-      Self::Single(t) => t.get_prepare_seek_exact_status(target),
-      Self::Intersect(t) => t.get_prepare_seek_exact_status(target),
-    }
-  }
+  crate::core::index::terms_enum::prepare_seek_exact_enum!(
+    Empty(EmptyTermsEnumTermsWrapper<T>) => A,
+    TE(TermsTE<T>) => B,
+    Single(FilteredTermsEnum<TermsTE<T>, SingleTermsEnum>) => C,
+    Intersect(TermsIntersect<T>) => D,
+  );
 
   fn seek_ceil<BS: ByteSource>(&mut self, term: &BytesRef<BS>) -> Result<SeekStatus> {
     match self {

@@ -1047,22 +1047,10 @@ where
     }
   }
 
-  fn prepare_seek_exact<BS: ByteSource>(&mut self, text: &BytesRef<BS>) -> Result<Option<()>> {
-    match self {
-      Self::WithPostingsAndAttributes(terms) => terms.prepare_seek_exact(text),
-      Self::WithoutPostingsAndAttributes(terms) => terms.prepare_seek_exact(text),
-    }
-  }
-
-  fn get_prepare_seek_exact_status<BS: ByteSource>(
-    &mut self,
-    target: &BytesRef<BS>,
-  ) -> Result<bool> {
-    match self {
-      Self::WithPostingsAndAttributes(terms) => terms.get_prepare_seek_exact_status(target),
-      Self::WithoutPostingsAndAttributes(terms) => terms.get_prepare_seek_exact_status(target),
-    }
-  }
+  crate::core::index::terms_enum::prepare_seek_exact_enum!(
+    WithPostingsAndAttributes(T) => A,
+    WithoutPostingsAndAttributes(SortedDocValuesTermsEnum<&'a mut EmptySorted>) => B,
+  );
 
   fn seek_ceil<BS: ByteSource>(&mut self, term: &BytesRef<BS>) -> Result<SeekStatus> {
     match self {

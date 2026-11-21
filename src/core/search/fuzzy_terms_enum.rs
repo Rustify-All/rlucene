@@ -357,16 +357,7 @@ where
     self.actual_enum.seek_exact(term)
   }
 
-  fn prepare_seek_exact<BS: ByteSource>(&mut self, text: &BytesRef<BS>) -> Result<Option<()>> {
-    self.actual_enum.prepare_seek_exact(text)
-  }
-
-  fn get_prepare_seek_exact_status<BS: ByteSource>(
-    &mut self,
-    target: &BytesRef<BS>,
-  ) -> Result<bool> {
-    self.actual_enum.get_prepare_seek_exact_status(target)
-  }
+  crate::core::index::terms_enum::prepare_seek_exact_delegate!(T::IntersectIter => actual_enum);
 
   fn seek_ceil<BS: ByteSource>(&mut self, term: &BytesRef<BS>) -> Result<SeekStatus> {
     self.actual_enum.seek_ceil(term)

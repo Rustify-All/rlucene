@@ -407,26 +407,20 @@ where
       },
       "The top-reader used to create Weight is not the same as the current reader's top-reader"
     );
-    let state_supplier = self.term_states.get(context)?;
-    let parent_query = &self.parent_query;
-
-    match state_supplier {
-      None => Ok(None),
-      Some(v) => {
-        let sim_scorer = self
-          .sim_scorer
-          .as_ref()
-          .ok_or_else(|| LuceneError::illegal_state("term scorer is missing"))?;
-        let v = TermScorerSupplier::new(
+    match self.term_states.get(context) {
+      Ok(None) => Ok(None),
+      Ok(Some(prepare_state)) if let Some(sim_scorer) = self.sim_scorer.as_ref() => {
+        Ok(Some(TermScorerSupplier::new(
           false,
           self.term_states.clone(),
-          v,
-          parent_query.term.clone(),
+          prepare_state,
+          self.parent_query.term.clone(),
           sim_scorer.clone(),
           self.score_mode,
-        );
-        Ok(Some(v))
+        )))
       },
+      Ok(Some(_)) => Err(LuceneError::illegal_state("term scorer is missing")),
+      Err(error) => Err(error),
     }
   }
 

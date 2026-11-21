@@ -30,7 +30,7 @@ use crate::core::codecs::lucene90::block_tree::segment_terms_enum_frame::Segment
 use crate::core::codecs::lucene90::block_tree::stats::Stats;
 use crate::core::codecs::postings_reader_base::PostingsReaderBase;
 use crate::core::index::terms::Terms;
-use crate::core::index::terms_enum::{PrepareSeekStatus, SeekStatus, TermsEnum};
+use crate::core::index::terms_enum::{SeekStatus, TermsEnum};
 use crate::core::index::{BytesRef, BytesRefBuilder};
 use crate::core::store::{ByteArrayDataInput, DataInput, IndexInput};
 use crate::core::util::ToInt;
@@ -42,6 +42,7 @@ use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::fst_impl::fst::Arc;
 use crate::core::util::fst_impl::reverse_random_access_reader::ReverseRandomAccessReader;
 use crate::core::util::group_vint_util::GroupVIntUtil;
+use crate::core::util::io_boolean_supplier::IOBooleanSupplier;
 
 pub(crate) const STATIC_FRAME_IDX: usize = usize::MAX;
 
@@ -66,7 +67,6 @@ where
   pub(crate) term: BytesRefBuilder<Vec<u8>>,
   fst_reader: Option<ReverseRandomAccessReader<I::RandomAccessSlice>>,
   arcs: Vec<IndexArc>,
-  prepare_seek_status: PrepareSeekStatus,
 }
 
 impl<I, PR> SegmentTermsEnum<I, PR>
@@ -107,7 +107,6 @@ where
       term: BytesRefBuilder::new(),
       fst_reader,
       arcs,
-      prepare_seek_status: PrepareSeekStatus::NotFound,
     })
   }
   pub(crate) fn init_index_input(&mut self) -> Result<()> {
@@ -309,7 +308,7 @@ where
     &mut self,
     target: &BytesRef<BS>,
     prefetch: bool,
-  ) -> Result<Option<()>> {
+  ) -> Result<Option<SegmentPreparedSeek>> {
     if self.fr.index.is_none() {
       return Err(LuceneError::illegal_state("terms index was not loaded"));
     }
@@ -327,7 +326,6 @@ where
           .to_int()
           > 0)
     {
-      self.prepare_seek_status = PrepareSeekStatus::NotFound;
       return Ok(None);
     }
     self.term.grow(1 + target.length)?;
@@ -411,8 +409,7 @@ where
       } else {
         debug_assert_eq!(self.term.length(), target.length);
         if self.term_exists {
-          self.prepare_seek_status = PrepareSeekStatus::Found;
-          return Ok(Some(()));
+          return Ok(Some(SegmentPreparedSeek::Found));
         }
       }
     } else {
@@ -485,15 +482,13 @@ where
           self.term_exists = false;
           self.term.set_byte_at(target_upto, target_label as u8);
           self.term.set_length(target_upto + 1);
-          self.prepare_seek_status = PrepareSeekStatus::NotFound;
           return Ok(None);
         }
 
         if prefetch {
           SegmentTermsEnumFrame::prefetch_block(self.current_frame_idx, self)?;
         }
-        self.prepare_seek_status = PrepareSeekStatus::Pending;
-        return Ok(Some(()));
+        return Ok(Some(SegmentPreparedSeek::LoadBlock));
       } else {
         arc_index = next_arc_idx;
 
@@ -526,15 +521,37 @@ where
     if !self.stack[self.current_frame_idx].has_terms {
       self.term_exists = false;
       self.term.set_length(target_upto);
-      self.prepare_seek_status = PrepareSeekStatus::NotFound;
       return Ok(None);
     }
 
     if prefetch {
       SegmentTermsEnumFrame::prefetch_block(self.current_frame_idx, self)?;
     }
-    self.prepare_seek_status = PrepareSeekStatus::Pending;
-    Ok(Some(()))
+    Ok(Some(SegmentPreparedSeek::LoadBlock))
+  }
+}
+
+pub enum SegmentPreparedSeek {
+  Found,
+  LoadBlock,
+}
+
+impl<I, PR, BS> IOBooleanSupplier<SegmentTermsEnum<I, PR>, BS> for SegmentPreparedSeek
+where
+  I: IndexInput,
+  PR: PostingsReaderBase,
+  BS: ByteSource,
+{
+  fn get(&self, cursor: &mut SegmentTermsEnum<I, PR>, target: &BytesRef<BS>) -> Result<bool> {
+    match self {
+      Self::Found => Ok(true),
+      Self::LoadBlock => {
+        SegmentTermsEnumFrame::load_block(cursor.current_frame_idx, cursor)?;
+        let result =
+          SegmentTermsEnumFrame::scan_to_term(cursor.current_frame_idx, target, true, cursor)?;
+        Ok(result == SeekStatus::Found)
+      },
+    }
   }
 }
 
@@ -676,28 +693,18 @@ where
 
   fn seek_exact<BS: ByteSource>(&mut self, target: &BytesRef<BS>) -> Result<bool> {
     match self.prepare_seek_exact(target, false)? {
-      Some(_) => self.get_prepare_seek_exact_status(target),
+      Some(seek) => seek.get(self, target),
       None => Ok(false),
     }
   }
 
-  fn prepare_seek_exact<BS: ByteSource>(&mut self, target: &BytesRef<BS>) -> Result<Option<()>> {
-    self.prepare_seek_exact(target, true)
-  }
-  fn get_prepare_seek_exact_status<BS: ByteSource>(
+  type PreparedSeek<BS: ByteSource> = SegmentPreparedSeek;
+
+  fn prepare_seek_exact<BS: ByteSource>(
     &mut self,
     target: &BytesRef<BS>,
-  ) -> Result<bool> {
-    match self.prepare_seek_status {
-      PrepareSeekStatus::NotFound => Ok(false),
-      PrepareSeekStatus::Found => Ok(true),
-      PrepareSeekStatus::Pending => {
-        SegmentTermsEnumFrame::load_block(self.current_frame_idx, self)?;
-        let result =
-          SegmentTermsEnumFrame::scan_to_term(self.current_frame_idx, target, true, self)?;
-        Ok(result == SeekStatus::Found)
-      },
-    }
+  ) -> Result<Option<Self::PreparedSeek<BS>>> {
+    self.prepare_seek_exact(target, true)
   }
 
   fn seek_ceil<BS: ByteSource>(&mut self, target: &BytesRef<BS>) -> Result<SeekStatus> {

@@ -14,8 +14,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use crate::core::index::BytesRef;
+use crate::core::util::access::ByteSource;
 use crate::core::util::error::lucene_error::Result;
-pub trait IOBooleanSupplier {
-  fn get(&self) -> Result<bool>;
-  fn get_mut(&mut self) -> Result<bool>;
+
+/// Completes a prepared seek on its original cursor and target.
+pub trait IOBooleanSupplier<T: ?Sized, BS: ByteSource> {
+  fn get(&self, cursor: &mut T, target: &BytesRef<BS>) -> Result<bool>;
+}
+
+/// Adapts a delegate's supplier to a cursor wrapper.
+pub struct MappedBooleanSupplier<T: ?Sized, BS, S> {
+  pub(crate) delegate: S,
+  pub(crate) get: fn(&S, &mut T, &BytesRef<BS>) -> Result<bool>,
+}
+
+impl<T: ?Sized, BS: ByteSource, S> IOBooleanSupplier<T, BS> for MappedBooleanSupplier<T, BS, S> {
+  fn get(&self, cursor: &mut T, target: &BytesRef<BS>) -> Result<bool> {
+    (self.get)(&self.delegate, cursor, target)
+  }
 }
