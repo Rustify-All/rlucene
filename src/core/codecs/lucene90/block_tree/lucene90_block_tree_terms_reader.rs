@@ -36,6 +36,8 @@ use std::fmt;
 use std::fmt::Display;
 use std::sync::Arc;
 
+type FieldReaders<I, PR> = Box<[Box<FieldReader<I, PR>>]>;
+
 /// A block-based terms index and dictionary that assigns terms to variable
 /// length blocks according to how they share prefixes. The terms index is a
 /// prefix trie whose leaves are term blocks. The advantage of this approach is
@@ -66,7 +68,7 @@ where
   // Open input to the terms index file (_X.tip)
   index_in: Arc<I>,
   // The readers use the same field-name order as field_list.
-  field_readers: RwLock<Box<[Box<FieldReader<I, PR>>]>>,
+  field_readers: RwLock<FieldReaders<I, PR>>,
   field_list: Vec<Arc<FieldInfo>>,
   field_infos: Arc<FieldInfos>,
 }

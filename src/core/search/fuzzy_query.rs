@@ -38,6 +38,7 @@ use crate::core::search::query::{Query, QueryBase, QueryWeight};
 use crate::core::search::query_visitor::QueryVisitor;
 use crate::core::search::score_mode::ScoreMode;
 use crate::core::util::access::ByteSource;
+use crate::core::util::accountable::Accountable;
 use crate::core::util::attribute_source::AttributeSourceEnum2;
 use crate::core::util::automation::compiled_automaton::CompiledAutomaton;
 use crate::core::util::automation::levenshtein_automata::LevenshteinAutomata;
@@ -46,7 +47,7 @@ use crate::core::util::error::lucene_error::{LuceneError, Result};
 use crate::core::util::{CoreHelper, HasIdentity};
 use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
 /// Implements the fuzzy search query. The similarity measurement is based on the
 /// Damerau-Levenshtein (optimal string alignment) algorithm, though you can explicitly choose
@@ -74,7 +75,6 @@ pub struct FuzzyQuery {
   prefix_length: usize,
   term: Term,
   rewrite_method: RewriteMethodEnum,
-  rewrite_automata: Option<Arc<OnceLock<AutomatonAttributeImpl>>>,
   id: Identity,
 }
 
@@ -188,7 +188,6 @@ impl FuzzyQuery {
       transpositions,
       max_expansions,
       rewrite_method: rewrite_method.into(),
-      rewrite_automata: None,
       id: Identity::default(),
     })
   }
@@ -314,8 +313,8 @@ impl QueryBase for FuzzyQuery {
     Self: Sized,
     IndexSearcher<IRC, SIM>: Sync,
   {
-    // These rewrites collect terms synchronously across all leaves. Keep their automata
-    // on a local query copy, as Lucene does with a per-rewrite AttributeSource.
+    // These rewrites collect terms synchronously across all leaves. Share automata
+    // for this rewrite, as Lucene does with its per-rewrite AttributeSource.
     if self.max_edits > 0
       && matches!(
         self.rewrite_method,
@@ -326,8 +325,11 @@ impl QueryBase for FuzzyQuery {
           | RewriteMethodEnum::TopTermsScoringBoolean(_)
       )
     {
-      let mut query = self.clone();
-      query.rewrite_automata = Some(Arc::new(OnceLock::new()));
+      let automata = OnceLock::new();
+      let query = FuzzyRewriteQuery {
+        query: self,
+        automata: &automata,
+      };
       self.rewrite_method.rewrite(searcher, &query).map(Some)
     } else {
       self.rewrite_method.rewrite(searcher, self).map(Some)
@@ -601,7 +603,7 @@ impl MultiTermQuery for FuzzyQuery {
       self.max_edits,
       self.prefix_length,
       self.transpositions,
-      self.rewrite_automata.as_deref(),
+      None,
     )?))
   }
 
@@ -610,8 +612,96 @@ impl MultiTermQuery for FuzzyQuery {
   }
 }
 
-impl crate::core::util::accountable::Accountable for FuzzyQuery {
-  fn ram_bytes_used(&self) -> crate::core::util::error::lucene_error::Result<i64> {
+impl Accountable for FuzzyQuery {
+  fn ram_bytes_used(&self) -> Result<i64> {
     Ok(crate::core::util::ram_usage_estimator::QUERY_DEFAULT_RAM_BYTES_USED)
+  }
+}
+
+// The lazy cache belongs to term collection. Converting this view to a query
+// retains only the original fuzzy query, which is also used as a hash-map key.
+#[derive(Clone)]
+struct FuzzyRewriteQuery<'a> {
+  query: &'a FuzzyQuery,
+  automata: &'a OnceLock<AutomatonAttributeImpl>,
+}
+
+impl Debug for FuzzyRewriteQuery<'_> {
+  fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    Debug::fmt(self.query, f)
+  }
+}
+
+impl HasIdentity for FuzzyRewriteQuery<'_> {
+  fn identity(&self) -> &Identity {
+    self.query.identity()
+  }
+}
+
+impl Accountable for FuzzyRewriteQuery<'_> {
+  fn ram_bytes_used(&self) -> Result<i64> {
+    self.query.ram_bytes_used()
+  }
+}
+
+impl QueryBase for FuzzyRewriteQuery<'_> {
+  type Weight<IRC, SIM>
+    = QueryWeight<IRC, SIM>
+  where
+    SIM: Similarity,
+    IRC: IndexReaderContext + 'static;
+
+  fn to_string(&self, field: &str) -> Result<String> {
+    self.query.to_string(field)
+  }
+
+  fn create_weight<IRC, SIM>(
+    self,
+    _searcher: &IndexSearcher<IRC, SIM>,
+    _score_mode: &ScoreMode,
+    _boost: f32,
+  ) -> Result<Self::Weight<IRC, SIM>>
+  where
+    SIM: Similarity,
+    IRC: IndexReaderContext + 'static,
+    IndexSearcher<IRC, SIM>: Sync,
+  {
+    Err(LuceneError::unsupported_operation(""))
+  }
+
+  fn visit<QV: QueryVisitor>(&self, visitor: &mut QV) -> Result<()> {
+    self.query.visit(visitor)
+  }
+}
+
+impl MultiTermQuery for FuzzyRewriteQuery<'_> {
+  fn get_field(&self) -> &str {
+    self.query.get_field()
+  }
+
+  type TermsEnum<T>
+    = FuzzyTermsEnum<T>
+  where
+    T: Terms;
+
+  fn get_terms_enum<T: Terms + Clone>(&self, terms: T) -> Result<Self::TermsEnum<T>> {
+    FuzzyTermsEnum::new_with_attrs(
+      terms,
+      &self.query.term,
+      self.query.max_edits,
+      self.query.prefix_length,
+      self.query.transpositions,
+      Some(self.automata),
+    )
+  }
+
+  fn to_query(&self) -> Query {
+    self.query.to_query()
+  }
+}
+
+impl From<FuzzyRewriteQuery<'_>> for MultiTermQuerySet {
+  fn from(rewrite: FuzzyRewriteQuery<'_>) -> Self {
+    Self::Fuzzy(rewrite.query.clone())
   }
 }
