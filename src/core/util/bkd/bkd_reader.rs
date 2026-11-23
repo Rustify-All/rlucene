@@ -323,13 +323,10 @@ pub struct BKDPointTree<I: IndexInput> {
   leaf_nodes: Arc<Mutex<I>>,
   /// Node positions and bounds at each level, including the leaf sentinel level.
   levels: Box<[BKDLevelState]>,
-  /// True if the per-dimension delta we read for the node at this level is a
-  /// negative offset versus the last split on this dimension.
-  /// This is a packed 2D array, i.e., to access `array[level][dim]`,
-  /// you read from `negative_deltas[level * num_dims + dim]`.
-  /// This will be true if the last time we split on this dimension,
-  /// we next pushed to the left sub-tree.
-  negative_deltas: Box<[bool]>,
+  // Each level uses one bit per indexed dimension (at most eight).
+  // The bit is set when that dimension last split toward the left child.
+  // floor(log2(num_leaves)) + 2 fits in i32::BITS for a positive i32 leaf count.
+  negative_deltas: [u8; i32::BITS as usize],
   /// Minimum then maximum value of the current node, each packed_index_bytes_length bytes.
   packed_bounds: Box<[u8]>,
   /// Tree parameters.
@@ -419,7 +416,6 @@ where
     } else {
       last_leaf_node_point_count
     };
-    let negative_deltas_len = config.num_index_dims * tree_depth;
 
     Ok(BKDPointTree {
       config,
@@ -435,7 +431,7 @@ where
         .concat()
         .into_boxed_slice(),
       levels: vec![BKDLevelState::default(); tree_depth + 1].into_boxed_slice(),
-      negative_deltas: vec![false; negative_deltas_len].into_boxed_slice(),
+      negative_deltas: [0; i32::BITS as usize],
       point_count,
       right_most_leaf_node,
       last_leaf_node_point_count,
@@ -747,16 +743,12 @@ where
     }
 
     if !self.is_leaf_node() {
-      let num_index_dims = self.config.num_index_dims;
-
-      // Copy the negative deltas from the previous level
-      let prev_offset = (self.level - 1) * num_index_dims;
-      let curr_offset = self.level * num_index_dims;
-      self
-        .negative_deltas
-        .copy_within(prev_offset..prev_offset + num_index_dims, curr_offset);
-      self.negative_deltas
-        [curr_offset + self.levels[self.level - 1].dimension / self.config.bytes_per_dim] = is_left;
+      let parent = self.level - 1;
+      let parent_dimension = self.levels[parent].dimension / self.config.bytes_per_dim;
+      let mask = 1u8 << parent_dimension;
+      let negative_deltas = &mut self.negative_deltas[..self.levels.len() - 1];
+      let signs = (negative_deltas[parent] & !mask) | if is_left { mask } else { 0 };
+      negative_deltas[self.level] = signs;
 
       // Clone or copy the previous level's split values
       if self.levels[self.level].split_values.is_empty() {
@@ -778,7 +770,7 @@ where
 
       if suffix > 0 {
         let mut first_diff_byte_delta = (code / (1 + self.config.bytes_per_dim)) as i32;
-        if self.negative_deltas[curr_offset + split_dim] {
+        if signs & (1u8 << split_dim) != 0 {
           first_diff_byte_delta = -first_diff_byte_delta;
         }
         let start_pos = self.levels[self.level].dimension + prefix;
@@ -1145,7 +1137,6 @@ where
     )?;
 
     let level = self.level;
-    let dims = self.config.num_index_dims;
 
     index.levels[level].leaf_block_fp = self.levels[level].leaf_block_fp;
 
@@ -1154,9 +1145,8 @@ where
       index.levels[level].read_node_data = self.levels[level].read_node_data;
       index.levels[level].split_values = self.levels[level].split_values.clone();
 
-      let src = level * dims;
-      let copy_source = &self.negative_deltas[src..src + dims];
-      index.negative_deltas[src..][..copy_source.len()].copy_from_slice(copy_source);
+      let history_depth = self.levels.len() - 1;
+      index.negative_deltas[level] = self.negative_deltas[..history_depth][level];
 
       index.levels[level].dimension = self.levels[level].dimension;
     }
