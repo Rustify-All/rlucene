@@ -27,7 +27,7 @@ pub struct MultiLeafFieldComparator<LR>
 where
   LR: LeafReader,
 {
-  first_comparator: Box<LeafFieldComparatorEnum<LR>>,
+  first_comparator: LeafFieldComparatorEnum<LR>,
   first_reverse_mul: i32,
   comparators: Vec<LeafFieldComparatorEnum<LR>>,
 }
@@ -49,7 +49,7 @@ where
     }
 
     let mut leaf = Self {
-      first_comparator: Box::new(comparators[0].get_leaf_comparator(context)?),
+      first_comparator: comparators[0].get_leaf_comparator(context)?,
       first_reverse_mul: reverse_mul[0],
       comparators: Vec::with_capacity(comparators.len() - 1),
     };
