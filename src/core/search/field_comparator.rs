@@ -758,7 +758,7 @@ impl FieldComparator for FieldComparatorEnum {
         .map(LeafFieldComparatorEnum::TermVal),
       FieldComparatorEnum::TermOrdValue(comparator) => comparator
         .get_leaf_comparator(context)
-        .map(LeafFieldComparatorEnum::TermOrdVal),
+        .map(LeafFieldComparatorEnum::TermOrdSorted),
       FieldComparatorEnum::SortedNumericInt(comparator) => comparator
         .get_leaf_comparator(context)
         .map(LeafFieldComparatorEnum::Int),
@@ -771,9 +771,9 @@ impl FieldComparator for FieldComparatorEnum {
       FieldComparatorEnum::SortedNumericDouble(comparator) => comparator
         .get_leaf_comparator(context)
         .map(LeafFieldComparatorEnum::Double),
-      FieldComparatorEnum::SortedDocValuesTermOrdVal(comparator) => comparator
-        .get_leaf_comparator(context)
-        .map(LeafFieldComparatorEnum::TermOrdVal),
+      FieldComparatorEnum::SortedDocValuesTermOrdVal(comparator) => {
+        comparator.get_leaf_comparator(context)
+      },
       FieldComparatorEnum::LatLonPointDistance(comparator) => comparator
         .get_leaf_comparator(context)
         .map(LeafFieldComparatorEnum::LatLonPointDistance),

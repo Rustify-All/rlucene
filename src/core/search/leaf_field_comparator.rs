@@ -16,8 +16,9 @@
  */
 use crate::core::document::lat_lon_point_distance_comparator::LatLonPointDistanceLeafComparator;
 use crate::core::document::xy_point_distance_comparator::XYPointDistanceLeafComparator;
-use crate::core::index::doc_values::{Binary, SortedNumeric};
+use crate::core::index::doc_values::{Binary, Sorted, SortedNumeric, SortedSet};
 use crate::core::index::leaf_reader::LeafReader;
+use crate::core::index::sorted_set_doc_values::SortedSetDocValues;
 use crate::core::search::comparators::doc_comparator::{DocComparatorIterator, DocLeafComparator};
 use crate::core::search::comparators::double_comparator::DoubleLeafComparator;
 use crate::core::search::comparators::float_comparator::FloatLeafComparator;
@@ -32,6 +33,9 @@ use crate::core::search::field_comparator::{
   FieldComparator, FieldComparatorEnum, RelevanceLeafComparator, TermValLeafComparator,
 };
 use crate::core::search::scorable::Scorable;
+use crate::core::search::sorted_set_selector::{
+  MaxValue, MiddleMaxValue, MiddleMinValue, MinValue,
+};
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 
 /// Expert: comparator that gets instantiated on each leaf from a top-level
@@ -227,6 +231,14 @@ where
   Long(LongLeafComparator<LR>),
   TermVal(TermValLeafComparator<Binary<LR>>),
   TermOrdVal(TermOrdValLeafComparator<LR>),
+  TermOrdSorted(TermOrdValLeafComparator<LR, Sorted<LR>>),
+  TermOrdSetSingleton(
+    TermOrdValLeafComparator<LR, <SortedSet<LR> as SortedSetDocValues>::SortedDocValues>,
+  ),
+  TermOrdSetMin(TermOrdValLeafComparator<LR, MinValue<SortedSet<LR>>>),
+  TermOrdSetMax(TermOrdValLeafComparator<LR, MaxValue<SortedSet<LR>>>),
+  TermOrdSetMiddleMin(TermOrdValLeafComparator<LR, MiddleMinValue<SortedSet<LR>>>),
+  TermOrdSetMiddleMax(TermOrdValLeafComparator<LR, MiddleMaxValue<SortedSet<LR>>>),
   XYPointDistance(XYPointDistanceLeafComparator<SortedNumeric<LR>>),
 }
 
@@ -264,10 +276,31 @@ where
       (Self::TermOrdVal(comparator), FieldComparatorEnum::TermOrdValue(c)) => {
         comparator.set_bottom(slot, c)
       },
+      (Self::TermOrdSorted(comparator), FieldComparatorEnum::TermOrdValue(c)) => {
+        comparator.set_bottom(slot, c)
+      },
 
       (Self::TermOrdVal(comparator), FieldComparatorEnum::SortedDocValuesTermOrdVal(c)) => {
         comparator.set_bottom(slot, &mut c.base)
       },
+      (
+        Self::TermOrdSetSingleton(comparator),
+        FieldComparatorEnum::SortedDocValuesTermOrdVal(c),
+      ) => comparator.set_bottom(slot, &mut c.base),
+      (Self::TermOrdSetMin(comparator), FieldComparatorEnum::SortedDocValuesTermOrdVal(c)) => {
+        comparator.set_bottom(slot, &mut c.base)
+      },
+      (Self::TermOrdSetMax(comparator), FieldComparatorEnum::SortedDocValuesTermOrdVal(c)) => {
+        comparator.set_bottom(slot, &mut c.base)
+      },
+      (
+        Self::TermOrdSetMiddleMin(comparator),
+        FieldComparatorEnum::SortedDocValuesTermOrdVal(c),
+      ) => comparator.set_bottom(slot, &mut c.base),
+      (
+        Self::TermOrdSetMiddleMax(comparator),
+        FieldComparatorEnum::SortedDocValuesTermOrdVal(c),
+      ) => comparator.set_bottom(slot, &mut c.base),
       (Self::LatLonPointDistance(comparator), FieldComparatorEnum::LatLonPointDistance(c)) => {
         comparator.set_bottom(slot, c)
       },
@@ -324,10 +357,31 @@ where
       (Self::TermOrdVal(comparator), FieldComparatorEnum::TermOrdValue(c)) => {
         comparator.compare_bottom(doc, scorer, c)
       },
+      (Self::TermOrdSorted(comparator), FieldComparatorEnum::TermOrdValue(c)) => {
+        comparator.compare_bottom(doc, scorer, c)
+      },
 
       (Self::TermOrdVal(comparator), FieldComparatorEnum::SortedDocValuesTermOrdVal(c)) => {
         comparator.compare_bottom(doc, scorer, &mut c.base)
       },
+      (
+        Self::TermOrdSetSingleton(comparator),
+        FieldComparatorEnum::SortedDocValuesTermOrdVal(c),
+      ) => comparator.compare_bottom(doc, scorer, &mut c.base),
+      (Self::TermOrdSetMin(comparator), FieldComparatorEnum::SortedDocValuesTermOrdVal(c)) => {
+        comparator.compare_bottom(doc, scorer, &mut c.base)
+      },
+      (Self::TermOrdSetMax(comparator), FieldComparatorEnum::SortedDocValuesTermOrdVal(c)) => {
+        comparator.compare_bottom(doc, scorer, &mut c.base)
+      },
+      (
+        Self::TermOrdSetMiddleMin(comparator),
+        FieldComparatorEnum::SortedDocValuesTermOrdVal(c),
+      ) => comparator.compare_bottom(doc, scorer, &mut c.base),
+      (
+        Self::TermOrdSetMiddleMax(comparator),
+        FieldComparatorEnum::SortedDocValuesTermOrdVal(c),
+      ) => comparator.compare_bottom(doc, scorer, &mut c.base),
       (Self::LatLonPointDistance(comparator), FieldComparatorEnum::LatLonPointDistance(c)) => {
         comparator.compare_bottom(doc, scorer, c)
       },
@@ -384,10 +438,31 @@ where
       (Self::TermOrdVal(comparator), FieldComparatorEnum::TermOrdValue(c)) => {
         comparator.compare_top(doc, scorer, c)
       },
+      (Self::TermOrdSorted(comparator), FieldComparatorEnum::TermOrdValue(c)) => {
+        comparator.compare_top(doc, scorer, c)
+      },
 
       (Self::TermOrdVal(comparator), FieldComparatorEnum::SortedDocValuesTermOrdVal(c)) => {
         comparator.compare_top(doc, scorer, &mut c.base)
       },
+      (
+        Self::TermOrdSetSingleton(comparator),
+        FieldComparatorEnum::SortedDocValuesTermOrdVal(c),
+      ) => comparator.compare_top(doc, scorer, &mut c.base),
+      (Self::TermOrdSetMin(comparator), FieldComparatorEnum::SortedDocValuesTermOrdVal(c)) => {
+        comparator.compare_top(doc, scorer, &mut c.base)
+      },
+      (Self::TermOrdSetMax(comparator), FieldComparatorEnum::SortedDocValuesTermOrdVal(c)) => {
+        comparator.compare_top(doc, scorer, &mut c.base)
+      },
+      (
+        Self::TermOrdSetMiddleMin(comparator),
+        FieldComparatorEnum::SortedDocValuesTermOrdVal(c),
+      ) => comparator.compare_top(doc, scorer, &mut c.base),
+      (
+        Self::TermOrdSetMiddleMax(comparator),
+        FieldComparatorEnum::SortedDocValuesTermOrdVal(c),
+      ) => comparator.compare_top(doc, scorer, &mut c.base),
       (Self::LatLonPointDistance(comparator), FieldComparatorEnum::LatLonPointDistance(c)) => {
         comparator.compare_top(doc, scorer, c)
       },
@@ -441,10 +516,31 @@ where
       (Self::TermOrdVal(comparator), FieldComparatorEnum::TermOrdValue(c)) => {
         comparator.copy(slot, doc, scorer, c)
       },
+      (Self::TermOrdSorted(comparator), FieldComparatorEnum::TermOrdValue(c)) => {
+        comparator.copy(slot, doc, scorer, c)
+      },
 
       (Self::TermOrdVal(comparator), FieldComparatorEnum::SortedDocValuesTermOrdVal(c)) => {
         comparator.copy(slot, doc, scorer, &mut c.base)
       },
+      (
+        Self::TermOrdSetSingleton(comparator),
+        FieldComparatorEnum::SortedDocValuesTermOrdVal(c),
+      ) => comparator.copy(slot, doc, scorer, &mut c.base),
+      (Self::TermOrdSetMin(comparator), FieldComparatorEnum::SortedDocValuesTermOrdVal(c)) => {
+        comparator.copy(slot, doc, scorer, &mut c.base)
+      },
+      (Self::TermOrdSetMax(comparator), FieldComparatorEnum::SortedDocValuesTermOrdVal(c)) => {
+        comparator.copy(slot, doc, scorer, &mut c.base)
+      },
+      (
+        Self::TermOrdSetMiddleMin(comparator),
+        FieldComparatorEnum::SortedDocValuesTermOrdVal(c),
+      ) => comparator.copy(slot, doc, scorer, &mut c.base),
+      (
+        Self::TermOrdSetMiddleMax(comparator),
+        FieldComparatorEnum::SortedDocValuesTermOrdVal(c),
+      ) => comparator.copy(slot, doc, scorer, &mut c.base),
       (Self::LatLonPointDistance(comparator), FieldComparatorEnum::LatLonPointDistance(c)) => {
         comparator.copy(slot, doc, scorer, c)
       },
@@ -488,9 +584,30 @@ where
       (Self::TermOrdVal(comparator), FieldComparatorEnum::TermOrdValue(c)) => {
         comparator.set_scorer(scorer, c)
       },
+      (Self::TermOrdSorted(comparator), FieldComparatorEnum::TermOrdValue(c)) => {
+        comparator.set_scorer(scorer, c)
+      },
       (Self::TermOrdVal(comparator), FieldComparatorEnum::SortedDocValuesTermOrdVal(c)) => {
         comparator.set_scorer(scorer, &mut c.base)
       },
+      (
+        Self::TermOrdSetSingleton(comparator),
+        FieldComparatorEnum::SortedDocValuesTermOrdVal(c),
+      ) => comparator.set_scorer(scorer, &mut c.base),
+      (Self::TermOrdSetMin(comparator), FieldComparatorEnum::SortedDocValuesTermOrdVal(c)) => {
+        comparator.set_scorer(scorer, &mut c.base)
+      },
+      (Self::TermOrdSetMax(comparator), FieldComparatorEnum::SortedDocValuesTermOrdVal(c)) => {
+        comparator.set_scorer(scorer, &mut c.base)
+      },
+      (
+        Self::TermOrdSetMiddleMin(comparator),
+        FieldComparatorEnum::SortedDocValuesTermOrdVal(c),
+      ) => comparator.set_scorer(scorer, &mut c.base),
+      (
+        Self::TermOrdSetMiddleMax(comparator),
+        FieldComparatorEnum::SortedDocValuesTermOrdVal(c),
+      ) => comparator.set_scorer(scorer, &mut c.base),
       (Self::LatLonPointDistance(comparator), FieldComparatorEnum::LatLonPointDistance(c)) => {
         comparator.set_scorer(scorer, c)
       },
@@ -543,12 +660,43 @@ where
       (Self::TermOrdVal(comparator), FieldComparatorEnum::TermOrdValue(c)) => comparator
         .competitive_iterator(c)
         .map(|opt| opt.map(DocIdSetIteratorEnum3::C)),
+      (Self::TermOrdSorted(comparator), FieldComparatorEnum::TermOrdValue(c)) => comparator
+        .competitive_iterator(c)
+        .map(|opt| opt.map(DocIdSetIteratorEnum3::C)),
 
       (Self::TermOrdVal(comparator), FieldComparatorEnum::SortedDocValuesTermOrdVal(c)) => {
         comparator
           .competitive_iterator(&mut c.base)
           .map(|opt| opt.map(DocIdSetIteratorEnum3::C))
       },
+      (
+        Self::TermOrdSetSingleton(comparator),
+        FieldComparatorEnum::SortedDocValuesTermOrdVal(c),
+      ) => comparator
+        .competitive_iterator(&mut c.base)
+        .map(|opt| opt.map(DocIdSetIteratorEnum3::C)),
+      (Self::TermOrdSetMin(comparator), FieldComparatorEnum::SortedDocValuesTermOrdVal(c)) => {
+        comparator
+          .competitive_iterator(&mut c.base)
+          .map(|opt| opt.map(DocIdSetIteratorEnum3::C))
+      },
+      (Self::TermOrdSetMax(comparator), FieldComparatorEnum::SortedDocValuesTermOrdVal(c)) => {
+        comparator
+          .competitive_iterator(&mut c.base)
+          .map(|opt| opt.map(DocIdSetIteratorEnum3::C))
+      },
+      (
+        Self::TermOrdSetMiddleMin(comparator),
+        FieldComparatorEnum::SortedDocValuesTermOrdVal(c),
+      ) => comparator
+        .competitive_iterator(&mut c.base)
+        .map(|opt| opt.map(DocIdSetIteratorEnum3::C)),
+      (
+        Self::TermOrdSetMiddleMax(comparator),
+        FieldComparatorEnum::SortedDocValuesTermOrdVal(c),
+      ) => comparator
+        .competitive_iterator(&mut c.base)
+        .map(|opt| opt.map(DocIdSetIteratorEnum3::C)),
       (Self::LatLonPointDistance(_comparator), FieldComparatorEnum::LatLonPointDistance(_c)) => {
         Ok(None)
       },
@@ -595,10 +743,31 @@ where
       (Self::TermOrdVal(comparator), FieldComparatorEnum::TermOrdValue(c)) => {
         comparator.set_hits_threshold_reached(c)
       },
+      (Self::TermOrdSorted(comparator), FieldComparatorEnum::TermOrdValue(c)) => {
+        comparator.set_hits_threshold_reached(c)
+      },
 
       (Self::TermOrdVal(comparator), FieldComparatorEnum::SortedDocValuesTermOrdVal(c)) => {
         comparator.set_hits_threshold_reached(&mut c.base)
       },
+      (
+        Self::TermOrdSetSingleton(comparator),
+        FieldComparatorEnum::SortedDocValuesTermOrdVal(c),
+      ) => comparator.set_hits_threshold_reached(&mut c.base),
+      (Self::TermOrdSetMin(comparator), FieldComparatorEnum::SortedDocValuesTermOrdVal(c)) => {
+        comparator.set_hits_threshold_reached(&mut c.base)
+      },
+      (Self::TermOrdSetMax(comparator), FieldComparatorEnum::SortedDocValuesTermOrdVal(c)) => {
+        comparator.set_hits_threshold_reached(&mut c.base)
+      },
+      (
+        Self::TermOrdSetMiddleMin(comparator),
+        FieldComparatorEnum::SortedDocValuesTermOrdVal(c),
+      ) => comparator.set_hits_threshold_reached(&mut c.base),
+      (
+        Self::TermOrdSetMiddleMax(comparator),
+        FieldComparatorEnum::SortedDocValuesTermOrdVal(c),
+      ) => comparator.set_hits_threshold_reached(&mut c.base),
       (Self::LatLonPointDistance(comparator), FieldComparatorEnum::LatLonPointDistance(c)) => {
         comparator.set_hits_threshold_reached(c)
       },

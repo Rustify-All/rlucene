@@ -541,6 +541,7 @@ impl<S> DocValuesIterator for SortedDocValuesWrap<S>
 where
   S: SortedSetDocValues,
 {
+  #[inline(always)]
   fn advance_exact(&mut self, target: i32) -> Result<bool> {
     match self {
       SortedDocValuesWrap::Singleton(single) => single.advance_exact(target),

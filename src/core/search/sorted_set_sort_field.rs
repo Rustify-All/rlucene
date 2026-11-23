@@ -25,6 +25,7 @@ use crate::core::search::comparators::term_ord_val_comparator::{
   TermOrdValComparator, TermOrdValDocValues, TermOrdValLeafComparator,
 };
 use crate::core::search::field_comparator::FieldComparator;
+use crate::core::search::leaf_field_comparator::LeafFieldComparatorEnum;
 use crate::core::search::pruning::Pruning;
 use crate::core::search::sort_field::{MissingValueEnum, SortField, SortFieldType, SortFiledBase};
 use crate::core::search::sort_field_enum::SortFieldEnum;
@@ -327,7 +328,7 @@ impl FieldComparator for SortedDocValuesTermOrdValComparator {
   }
 
   type LeafFieldComparator<LR>
-    = TermOrdValLeafComparator<LR>
+    = LeafFieldComparatorEnum<LR>
   where
     LR: LeafReader;
 
@@ -339,13 +340,30 @@ impl FieldComparator for SortedDocValuesTermOrdValComparator {
     LR: LeafReader,
   {
     self.base.current_reader_gen += 1;
-    let c = |context: &LeafReaderContext<LR>, field: &str| -> Result<TermOrdValDocValues<LR>> {
-      Ok(TermOrdValDocValues::A(SortedSetSelector::wrap(
+    let selector = self.selector;
+    let get_values = |context: &LeafReaderContext<LR>, field: &str| {
+      SortedSetSelector::wrap(
         DocValues::get_sorted_set(context.reader(), field)?,
-        self.selector,
-      )?))
+        selector,
+      )
     };
-    TermOrdValLeafComparator::new(context, c, &mut self.base)
+    let docs_with_field = |context: &LeafReaderContext<LR>, field: &str| {
+      get_values(context, field).map(TermOrdValDocValues::A)
+    };
+
+    macro_rules! selected {
+      ($values:ident, $variant:ident) => {
+        TermOrdValLeafComparator::new(context, $values, docs_with_field, &mut self.base)
+          .map(LeafFieldComparatorEnum::$variant)
+      };
+    }
+    match get_values(context, &self.base.field)? {
+      SortedDocValuesWrap::Singleton(values) => selected!(values, TermOrdSetSingleton),
+      SortedDocValuesWrap::Min(values) => selected!(values, TermOrdSetMin),
+      SortedDocValuesWrap::Max(values) => selected!(values, TermOrdSetMax),
+      SortedDocValuesWrap::MiddleMin(values) => selected!(values, TermOrdSetMiddleMin),
+      SortedDocValuesWrap::MiddleMax(values) => selected!(values, TermOrdSetMiddleMax),
+    }
   }
 
   fn compare_values(&self, first: Option<&Self::V>, second: Option<&Self::V>) -> Result<i32> {

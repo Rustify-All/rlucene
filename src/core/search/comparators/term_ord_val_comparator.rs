@@ -148,7 +148,7 @@ impl FieldComparator for TermOrdValComparator {
   }
 
   type LeafFieldComparator<LR>
-    = TermOrdValLeafComparator<LR>
+    = TermOrdValLeafComparator<LR, Sorted<LR>>
   where
     LR: LeafReader;
 
@@ -160,12 +160,13 @@ impl FieldComparator for TermOrdValComparator {
     LR: LeafReader,
   {
     self.current_reader_gen += 1;
-    let c = |context: &LeafReaderContext<LR>, field: &str| -> Result<TermOrdValDocValues<LR>> {
-      Ok(TermOrdValDocValues::B(get_sorted_doc_values(
-        context, field,
-      )?))
-    };
-    TermOrdValLeafComparator::new(context, c, self)
+    let terms_index = get_sorted_doc_values(context, &self.field)?;
+    TermOrdValLeafComparator::new(
+      context,
+      terms_index,
+      |context, field| get_sorted_doc_values(context, field).map(TermOrdValDocValues::B),
+      self,
+    )
   }
 
   fn compare_values(&self, val1: Option<&Self::V>, val2: Option<&Self::V>) -> Result<i32> {
@@ -192,12 +193,13 @@ where
 {
   DocValues::get_sorted(context.reader(), field)
 }
-pub struct TermOrdValLeafComparator<LR>
+pub struct TermOrdValLeafComparator<LR, D = TermOrdValDocValues<LR>>
 where
   LR: LeafReader,
+  D: SortedDocValues,
 {
   /// Current reader's doc ord/values.
-  pub(crate) terms_index: TermOrdValDocValues<LR>,
+  pub(crate) terms_index: D,
   /// True if current bottom slot matches the current reader.
   pub(crate) bottom_same_reader: bool,
   /// Bottom ord (same as ords[bottomSlot] once bottomSlot is set).  Cached for faster compares.
@@ -209,19 +211,20 @@ where
   competitive_iterator: Option<TermOrdValCompetitiveIterator<LR>>,
   dense: bool,
 }
-impl<LR> TermOrdValLeafComparator<LR>
+impl<LR, D> TermOrdValLeafComparator<LR, D>
 where
   LR: LeafReader,
+  D: SortedDocValues,
 {
   pub fn new<F>(
     context: &LeafReaderContext<LR>,
+    mut terms_index: D,
     doc_value_producer: F,
     comparator: &mut TermOrdValComparator,
   ) -> Result<Self>
   where
     F: Fn(&LeafReaderContext<LR>, &str) -> Result<TermOrdValDocValues<LR>>,
   {
-    let mut terms_index = doc_value_producer(context, &comparator.field)?;
     let missing_ord = if comparator.sort_missing_last {
       i32::MAX
     } else {
@@ -414,24 +417,17 @@ where
     Ok(())
   }
   fn get_ord_for_doc(&mut self, doc: i32) -> Result<i32> {
-    macro_rules! read_ord {
-      ($values:expr) => {
-        if $values.advance_exact(doc)? {
-          $values.ord_value()
-        } else {
-          Ok(-1)
-        }
-      };
-    }
-    match &mut self.terms_index {
-      TermOrdValDocValues::A(values) => read_ord!(values),
-      TermOrdValDocValues::B(values) => read_ord!(values),
+    if self.terms_index.advance_exact(doc)? {
+      self.terms_index.ord_value()
+    } else {
+      Ok(-1)
     }
   }
 }
-impl<LR> LeafFieldComparator for TermOrdValLeafComparator<LR>
+impl<LR, D> LeafFieldComparator for TermOrdValLeafComparator<LR, D>
 where
   LR: LeafReader,
+  D: SortedDocValues,
 {
   type FieldComparator = TermOrdValComparator;
   fn set_bottom(
@@ -553,7 +549,7 @@ where
     } else {
       debug_assert!(ord >= 0);
 
-      let value = self.terms_index.lookup_ord(ord)?;
+      let value = self.terms_index.lookup_ord(ord)?.into_value();
       match (&value, comparator.values[slot].as_mut()) {
         (
           BytesRefValueEnum::Buffer(Cow::Borrowed(_)) | BytesRefValueEnum::Slice(_),
@@ -585,7 +581,8 @@ where
   type DocIdSetIteratorRef<'a>
     = &'a mut TermOrdValCompetitiveIterator<LR>
   where
-    LR: 'a;
+    LR: 'a,
+    D: 'a;
 
   fn competitive_iterator(
     &mut self,
@@ -646,7 +643,7 @@ where
   /// Update this iterator to only match postings whose term has an ordinal between `minOrd` included and `maxOrd` included.
   fn update(
     &mut self,
-    doc_values: &mut TermOrdValDocValues<LR>,
+    doc_values: &mut impl SortedDocValues,
     min_ord: i32,
     max_ord: i32,
   ) -> Result<()> {
@@ -698,7 +695,7 @@ where
   /// and create a priority queue out of them.
   fn init(
     &mut self,
-    doc_values: &mut TermOrdValDocValues<LR>,
+    doc_values: &mut impl SortedDocValues,
     min_ord: i32,
     max_ord: i32,
   ) -> Result<()> {
