@@ -595,7 +595,9 @@ where
         }
         if entry.block_shift >= 0 {
           let vbpv_reader = VaryingBPVReader::new(entry, slice, self.data.as_ref(), self.merging)?;
-          DenseNumericDocValuesSubEnum::Dense1(DenseNumericDocValuesBaseImpl1 { vbpv_reader })
+          DenseNumericDocValuesSubEnum::Dense1(DenseNumericDocValuesBaseImpl1 {
+            vbpv_reader: Box::new(vbpv_reader),
+          })
         } else {
           let values = get_direct_reader_instance(
             self.merging,
@@ -653,7 +655,12 @@ where
         }
         if entry.block_shift >= 0 {
           SparseNumericDocValuesSubEnum::Sparse1(SparseNumericDocValuesBaseImpl1 {
-            vbpv_reader: VaryingBPVReader::new(entry, slice, self.data.as_ref(), self.merging)?,
+            vbpv_reader: Box::new(VaryingBPVReader::new(
+              entry,
+              slice,
+              self.data.as_ref(),
+              self.merging,
+            )?),
           })
         } else {
           let values = get_direct_reader_instance(
@@ -709,7 +716,12 @@ where
       }
       if entry.block_shift >= 0 {
         LongValuesEnums::Block(LongValuesImpl1 {
-          vbpv_reader: VaryingBPVReader::new(entry, slice, self.data.as_ref(), self.merging)?,
+          vbpv_reader: Box::new(VaryingBPVReader::new(
+            entry,
+            slice,
+            self.data.as_ref(),
+            self.merging,
+          )?),
         })
       } else {
         let values = get_direct_reader_instance(
@@ -1784,7 +1796,7 @@ impl DenseNumericDocValuesBase for DenseNumericDocValuesBaseImpl {
   }
 }
 pub struct DenseNumericDocValuesBaseImpl1<R> {
-  vbpv_reader: VaryingBPVReader<R>,
+  vbpv_reader: Box<VaryingBPVReader<R>>,
 }
 impl<R> DenseNumericDocValuesBase for DenseNumericDocValuesBaseImpl1<R>
 where
@@ -1860,7 +1872,7 @@ where
   }
 }
 pub struct SparseNumericDocValuesBaseImpl1<R> {
-  vbpv_reader: VaryingBPVReader<R>,
+  vbpv_reader: Box<VaryingBPVReader<R>>,
 }
 impl<I> SparseNumericDocValuesBase<I> for SparseNumericDocValuesBaseImpl1<I::RandomAccessSlice>
 where
@@ -1938,7 +1950,7 @@ impl LongValues for LongValuesImpl {
   }
 }
 pub struct LongValuesImpl1<R> {
-  vbpv_reader: VaryingBPVReader<R>,
+  vbpv_reader: Box<VaryingBPVReader<R>>,
 }
 impl<R> LongValues for LongValuesImpl1<R>
 where
