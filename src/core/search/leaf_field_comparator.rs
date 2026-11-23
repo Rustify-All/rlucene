@@ -16,8 +16,9 @@
  */
 use crate::core::document::lat_lon_point_distance_comparator::LatLonPointDistanceLeafComparator;
 use crate::core::document::xy_point_distance_comparator::XYPointDistanceLeafComparator;
-use crate::core::index::doc_values::{Binary, Sorted, SortedNumeric, SortedSet};
+use crate::core::index::doc_values::{Binary, EmptyNumeric, Sorted, SortedNumeric, SortedSet};
 use crate::core::index::leaf_reader::LeafReader;
+use crate::core::index::sorted_numeric_doc_values::SortedNumericDocValues;
 use crate::core::index::sorted_set_doc_values::SortedSetDocValues;
 use crate::core::search::comparators::doc_comparator::{DocComparatorIterator, DocLeafComparator};
 use crate::core::search::comparators::double_comparator::DoubleLeafComparator;
@@ -33,6 +34,9 @@ use crate::core::search::field_comparator::{
   FieldComparator, FieldComparatorEnum, RelevanceLeafComparator, TermValLeafComparator,
 };
 use crate::core::search::scorable::Scorable;
+use crate::core::search::sorted_numeric_selector::{
+  MaxValue as NumericMax, MinValue as NumericMin,
+};
 use crate::core::search::sorted_set_selector::{
   MaxValue, MiddleMaxValue, MiddleMinValue, MinValue,
 };
@@ -229,6 +233,16 @@ where
   Int(IntLeafComparator<LR>),
   LatLonPointDistance(LatLonPointDistanceLeafComparator<SortedNumeric<LR>>),
   Long(LongLeafComparator<LR>),
+  LongSelectedSingleton(
+    LongLeafComparator<
+      LR,
+      <LR::SortedNumericDocValues as SortedNumericDocValues>::NumericDocValues,
+    >,
+  ),
+  LongSelectedNumeric(LongLeafComparator<LR, LR::NumericDocValues>),
+  LongSelectedEmpty(LongLeafComparator<LR, EmptyNumeric>),
+  LongSelectedMin(LongLeafComparator<LR, NumericMin<SortedNumeric<LR>>>),
+  LongSelectedMax(LongLeafComparator<LR, NumericMax<SortedNumeric<LR>>>),
   TermVal(TermValLeafComparator<Binary<LR>>),
   TermOrdVal(TermOrdValLeafComparator<LR>),
   TermOrdSorted(TermOrdValLeafComparator<LR, Sorted<LR>>),
@@ -268,6 +282,21 @@ where
       },
       (Self::Long(comparator), FieldComparatorEnum::Long(c)) => comparator.set_bottom(slot, c),
       (Self::Long(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.set_bottom(slot, &mut c.base)
+      },
+      (Self::LongSelectedSingleton(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.set_bottom(slot, &mut c.base)
+      },
+      (Self::LongSelectedNumeric(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.set_bottom(slot, &mut c.base)
+      },
+      (Self::LongSelectedEmpty(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.set_bottom(slot, &mut c.base)
+      },
+      (Self::LongSelectedMin(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.set_bottom(slot, &mut c.base)
+      },
+      (Self::LongSelectedMax(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
         comparator.set_bottom(slot, &mut c.base)
       },
       (Self::TermVal(comparator), FieldComparatorEnum::TermVal(c)) => {
@@ -351,6 +380,21 @@ where
       (Self::Long(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
         comparator.compare_bottom(doc, scorer, &mut c.base)
       },
+      (Self::LongSelectedSingleton(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.compare_bottom(doc, scorer, &mut c.base)
+      },
+      (Self::LongSelectedNumeric(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.compare_bottom(doc, scorer, &mut c.base)
+      },
+      (Self::LongSelectedEmpty(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.compare_bottom(doc, scorer, &mut c.base)
+      },
+      (Self::LongSelectedMin(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.compare_bottom(doc, scorer, &mut c.base)
+      },
+      (Self::LongSelectedMax(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.compare_bottom(doc, scorer, &mut c.base)
+      },
       (Self::TermVal(comparator), FieldComparatorEnum::TermVal(c)) => {
         comparator.compare_bottom(doc, scorer, c)
       },
@@ -432,6 +476,21 @@ where
       (Self::Long(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
         comparator.compare_top(doc, scorer, &mut c.base)
       },
+      (Self::LongSelectedSingleton(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.compare_top(doc, scorer, &mut c.base)
+      },
+      (Self::LongSelectedNumeric(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.compare_top(doc, scorer, &mut c.base)
+      },
+      (Self::LongSelectedEmpty(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.compare_top(doc, scorer, &mut c.base)
+      },
+      (Self::LongSelectedMin(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.compare_top(doc, scorer, &mut c.base)
+      },
+      (Self::LongSelectedMax(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.compare_top(doc, scorer, &mut c.base)
+      },
       (Self::TermVal(comparator), FieldComparatorEnum::TermVal(c)) => {
         comparator.compare_top(doc, scorer, c)
       },
@@ -510,6 +569,21 @@ where
       (Self::Long(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
         comparator.copy(slot, doc, scorer, &mut c.base)
       },
+      (Self::LongSelectedSingleton(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.copy(slot, doc, scorer, &mut c.base)
+      },
+      (Self::LongSelectedNumeric(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.copy(slot, doc, scorer, &mut c.base)
+      },
+      (Self::LongSelectedEmpty(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.copy(slot, doc, scorer, &mut c.base)
+      },
+      (Self::LongSelectedMin(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.copy(slot, doc, scorer, &mut c.base)
+      },
+      (Self::LongSelectedMax(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.copy(slot, doc, scorer, &mut c.base)
+      },
       (Self::TermVal(comparator), FieldComparatorEnum::TermVal(c)) => {
         comparator.copy(slot, doc, scorer, c)
       },
@@ -576,6 +650,21 @@ where
       },
       (Self::Long(comparator), FieldComparatorEnum::Long(c)) => comparator.set_scorer(scorer, c),
       (Self::Long(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.set_scorer(scorer, &mut c.base)
+      },
+      (Self::LongSelectedSingleton(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.set_scorer(scorer, &mut c.base)
+      },
+      (Self::LongSelectedNumeric(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.set_scorer(scorer, &mut c.base)
+      },
+      (Self::LongSelectedEmpty(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.set_scorer(scorer, &mut c.base)
+      },
+      (Self::LongSelectedMin(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.set_scorer(scorer, &mut c.base)
+      },
+      (Self::LongSelectedMax(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
         comparator.set_scorer(scorer, &mut c.base)
       },
       (Self::TermVal(comparator), FieldComparatorEnum::TermVal(c)) => {
@@ -654,6 +743,27 @@ where
         .competitive_iterator(c)
         .map(|opt| opt.map(DocIdSetIteratorEnum3::B)),
       (Self::Long(comparator), FieldComparatorEnum::SortedNumericLong(c)) => comparator
+        .competitive_iterator(&mut c.base)
+        .map(|opt| opt.map(DocIdSetIteratorEnum3::B)),
+      (Self::LongSelectedSingleton(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator
+          .competitive_iterator(&mut c.base)
+          .map(|opt| opt.map(DocIdSetIteratorEnum3::B))
+      },
+      (Self::LongSelectedNumeric(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator
+          .competitive_iterator(&mut c.base)
+          .map(|opt| opt.map(DocIdSetIteratorEnum3::B))
+      },
+      (Self::LongSelectedEmpty(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator
+          .competitive_iterator(&mut c.base)
+          .map(|opt| opt.map(DocIdSetIteratorEnum3::B))
+      },
+      (Self::LongSelectedMin(comparator), FieldComparatorEnum::SortedNumericLong(c)) => comparator
+        .competitive_iterator(&mut c.base)
+        .map(|opt| opt.map(DocIdSetIteratorEnum3::B)),
+      (Self::LongSelectedMax(comparator), FieldComparatorEnum::SortedNumericLong(c)) => comparator
         .competitive_iterator(&mut c.base)
         .map(|opt| opt.map(DocIdSetIteratorEnum3::B)),
       (Self::TermVal(_comparator), FieldComparatorEnum::TermVal(_c)) => Ok(None),
@@ -735,6 +845,21 @@ where
         comparator.set_hits_threshold_reached(c)
       },
       (Self::Long(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.set_hits_threshold_reached(&mut c.base)
+      },
+      (Self::LongSelectedSingleton(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.set_hits_threshold_reached(&mut c.base)
+      },
+      (Self::LongSelectedNumeric(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.set_hits_threshold_reached(&mut c.base)
+      },
+      (Self::LongSelectedEmpty(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.set_hits_threshold_reached(&mut c.base)
+      },
+      (Self::LongSelectedMin(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
+        comparator.set_hits_threshold_reached(&mut c.base)
+      },
+      (Self::LongSelectedMax(comparator), FieldComparatorEnum::SortedNumericLong(c)) => {
         comparator.set_hits_threshold_reached(&mut c.base)
       },
       (Self::TermVal(comparator), FieldComparatorEnum::TermVal(c)) => {

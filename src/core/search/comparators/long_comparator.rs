@@ -14,8 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::core::index::doc_values::NumericDocValuesEnum3WithEmpty;
-use crate::core::index::doc_values_iterator::DocValuesIterator;
 use crate::core::index::index_reader_context::IndexReaderContext;
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::leaf_reader_context::LeafReaderContext;
@@ -28,9 +26,6 @@ use crate::core::search::field_comparator::FieldComparator;
 use crate::core::search::leaf_field_comparator::LeafFieldComparator;
 use crate::core::search::pruning::Pruning;
 use crate::core::search::scorable::Scorable;
-use crate::core::search::sorted_numeric_selector::{
-  SelectedNumericDocValues, SortedNumericSelectorWrap,
-};
 use crate::core::util::ToInt;
 use crate::core::util::bit_util::BitUtil;
 use crate::core::util::error::lucene_error::Result;
@@ -105,7 +100,9 @@ impl FieldComparator for LongComparator {
   where
     LR: LeafReader,
   {
-    LongLeafComparator::new(self, context, None, None)
+    let (doc_values, candidate, context_reader) =
+      prepare_numeric_doc_values!(self.base, context, None, None);
+    LongLeafComparator::new(self, context, doc_values, candidate, context_reader)
   }
 
   fn disable_skipping(&mut self) {
@@ -116,34 +113,36 @@ impl FieldComparator for LongComparator {
     self.base.set_single_sort();
   }
 }
-pub struct LongLeafComparator<LR>
+pub struct LongLeafComparator<LR, D = NumericLeafComparatorDocValues<LR>>
 where
   LR: LeafReader,
+  D: NumericDocValues,
 {
   context_reader: Option<LR>,
   base: NumericLeafComparator<
     <LR as LeafReader>::PointValues,
-    NumericLeafComparatorDocValues<LR>,
+    D,
     LongConverter,
+    NumericLeafComparatorDocValues<LR>,
   >,
 }
-impl<LR> LongLeafComparator<LR>
+impl<LR, D> LongLeafComparator<LR, D>
 where
   LR: LeafReader,
+  D: NumericDocValues,
 {
   pub fn new(
     comparator: &mut LongComparator,
     context: &LeafReaderContext<LR>,
-    doc_values: Option<NumericLeafComparatorDocValues<LR>>,
+    doc_values: D,
     candidate: Option<NumericLeafComparatorDocValues<LR>>,
+    context_reader: Option<LR>,
   ) -> Result<Self> {
-    let (doc_value, candidate, context_reader) =
-      prepare_numeric_doc_values!(comparator.base, context, doc_values, candidate);
     let top_value = comparator.top_value;
     let base = NumericLeafComparator::with_candidate(
       context,
       &mut comparator.base,
-      doc_value,
+      doc_values,
       candidate,
       LongConverter,
       top_value,
@@ -158,35 +157,18 @@ where
     doc: i32,
     comparator: &mut NumericComparator<i64>,
   ) -> Result<i64> {
-    let doc_values = &mut self.base.doc_values;
-    macro_rules! read {
-      ($values:expr) => {
-        if $values.advance_exact(doc)? {
-          $values.long_value()
-        } else {
-          Ok(comparator.missing_value)
-        }
-      };
+    if self.base.doc_values.advance_exact(doc)? {
+      self.base.doc_values.long_value()
+    } else {
+      Ok(comparator.missing_value)
     }
-    // The raw singleton and its enum only forward to their underlying cursor.
-    // Resolve both before advancing and then reading that same cursor.
-    if let NumericLeafComparatorDocValues::A(SortedNumericSelectorWrap::Raw(
-      SelectedNumericDocValues::Single(values),
-    )) = doc_values
-    {
-      return match values {
-        NumericDocValuesEnum3WithEmpty::A(values) => read!(values),
-        NumericDocValuesEnum3WithEmpty::B(values) => read!(values),
-        NumericDocValuesEnum3WithEmpty::C(values) => read!(values),
-      };
-    }
-    read!(doc_values)
   }
 }
 
-impl<LR> LeafFieldComparator for LongLeafComparator<LR>
+impl<LR, D> LeafFieldComparator for LongLeafComparator<LR, D>
 where
   LR: LeafReader,
+  D: NumericDocValues,
 {
   type FieldComparator = LongComparator;
   fn set_bottom(&mut self, slot: usize, comparator: &mut Self::FieldComparator) -> Result<()> {
@@ -256,7 +238,8 @@ where
   type DocIdSetIteratorRef<'a>
     = &'a mut NumericCompetitiveIterator<LR>
   where
-    LR: 'a;
+    LR: 'a,
+    D: 'a;
 
   fn competitive_iterator(
     &mut self,

@@ -149,7 +149,7 @@ macro_rules! prepare_numeric_doc_values {
 pub(crate) use prepare_numeric_doc_values;
 
 #[allow(clippy::type_complexity)]
-pub struct NumericLeafComparator<PV, N, T>
+pub struct NumericLeafComparator<PV, N, T, C = N>
 where
   PV: PointValues,
   T: ToLong,
@@ -164,7 +164,7 @@ where
   leaf_top_set: bool,
   min_value_as_long: i64,
   max_value_as_long: i64,
-  competitive_iterator: Option<CompetitiveIterator<CompetitiveIteratorType<N>>>,
+  competitive_iterator: Option<CompetitiveIterator<CompetitiveIteratorType<C>>>,
   iterator_cost: i64,
   max_doc_visited: i32,
   update_counter: i32,
@@ -172,20 +172,21 @@ where
   // helps to be conservative about increasing the sampling interval
   try_update_fail_count: i32,
   // An explicit cursor supplied by a caller. Reader-based comparators open it on demand.
-  skip_doc_values: Option<Box<N>>,
+  skip_doc_values: Option<Box<C>>,
   convert: T,
 }
-impl<PV, N, T> NumericLeafComparator<PV, N, T>
+impl<PV, N, T, C> NumericLeafComparator<PV, N, T, C>
 where
   PV: PointValues,
   N: NumericDocValues,
+  C: NumericDocValues,
   T: ToLong,
 {
   pub fn new<LR>(
     context: &LeafReaderContext<LR>,
     parent: &mut NumericComparator<T::V>,
     doc_values: N,
-    candidate: N,
+    candidate: C,
     v_to_long: T,
     top: T::V,
   ) -> Result<Self>
@@ -199,7 +200,7 @@ where
     context: &LeafReaderContext<LR>,
     parent: &mut NumericComparator<T::V>,
     doc_values: N,
-    candidate: Option<N>,
+    candidate: Option<C>,
     v_to_long: T,
     top: T::V,
   ) -> Result<Self>
@@ -282,7 +283,7 @@ where
     bottom: T::V,
     top: T::V,
     comparator: &mut NumericComparator<T::V>,
-    open_doc_values: impl FnOnce(&NumericComparator<T::V>) -> Result<N>,
+    open_doc_values: impl FnOnce(&NumericComparator<T::V>) -> Result<C>,
   ) -> Result<()> {
     if !self.enable_skipping
       || !comparator.hits_threshold_reached
@@ -487,7 +488,7 @@ where
     bottom: T::V,
     top: T::V,
     comparator: &mut NumericComparator<T::V>,
-    open_doc_values: impl FnOnce(&NumericComparator<T::V>) -> Result<N>,
+    open_doc_values: impl FnOnce(&NumericComparator<T::V>) -> Result<C>,
   ) -> Result<()> {
     comparator.queue_full = true; // if we are setting bottom, it means that we have collected enough hits
     self.update_competitive_iterator(bottom, top, comparator, open_doc_values)?; // update an iterator if we set a new bottom
@@ -505,7 +506,7 @@ where
     bottom: T::V,
     top: T::V,
     comparator: &mut NumericComparator<T::V>,
-    open_doc_values: impl FnOnce(&NumericComparator<T::V>) -> Result<N>,
+    open_doc_values: impl FnOnce(&NumericComparator<T::V>) -> Result<C>,
   ) -> Result<()>
   where
     S: Scorable + ?Sized,
@@ -527,7 +528,7 @@ where
 
   pub(crate) fn competitive_iterator(
     &mut self,
-  ) -> Option<&mut CompetitiveIterator<CompetitiveIteratorType<N>>> {
+  ) -> Option<&mut CompetitiveIterator<CompetitiveIteratorType<C>>> {
     self.competitive_iterator.as_mut()
   }
 
@@ -536,7 +537,7 @@ where
     bottom: T::V,
     top: T::V,
     comparator: &mut NumericComparator<T::V>,
-    open_doc_values: impl FnOnce(&NumericComparator<T::V>) -> Result<N>,
+    open_doc_values: impl FnOnce(&NumericComparator<T::V>) -> Result<C>,
   ) -> Result<()> {
     comparator.hits_threshold_reached = true;
     self.update_competitive_iterator(bottom, top, comparator, open_doc_values)
