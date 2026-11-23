@@ -206,6 +206,10 @@ impl TermStates {
       };
 
       let mut iterator = terms.iterator();
+      #[allow(
+        clippy::question_mark,
+        reason = "Borrow the cursor in place until seek preparation succeeds."
+      )]
       let te = match iterator {
         Ok(ref mut te) => te,
         Err(error) => return Err(error),
