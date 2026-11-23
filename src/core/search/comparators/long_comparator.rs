@@ -14,6 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+use crate::core::index::doc_values::NumericDocValuesEnum3WithEmpty;
 use crate::core::index::doc_values_iterator::DocValuesIterator;
 use crate::core::index::index_reader_context::IndexReaderContext;
 use crate::core::index::leaf_reader::LeafReader;
@@ -158,23 +159,28 @@ where
     comparator: &mut NumericComparator<i64>,
   ) -> Result<i64> {
     let doc_values = &mut self.base.doc_values;
-    // The raw singleton selector only forwards to the underlying numeric cursor.
-    // Resolve it once for the pair of operations, keeping the same cursor and read order.
+    macro_rules! read {
+      ($values:expr) => {
+        if $values.advance_exact(doc)? {
+          $values.long_value()
+        } else {
+          Ok(comparator.missing_value)
+        }
+      };
+    }
+    // The raw singleton and its enum only forward to their underlying cursor.
+    // Resolve both before advancing and then reading that same cursor.
     if let NumericLeafComparatorDocValues::A(SortedNumericSelectorWrap::Raw(
       SelectedNumericDocValues::Single(values),
     )) = doc_values
     {
-      return if values.advance_exact(doc)? {
-        values.long_value()
-      } else {
-        Ok(comparator.missing_value)
+      return match values {
+        NumericDocValuesEnum3WithEmpty::A(values) => read!(values),
+        NumericDocValuesEnum3WithEmpty::B(values) => read!(values),
+        NumericDocValuesEnum3WithEmpty::C(values) => read!(values),
       };
     }
-    if doc_values.advance_exact(doc)? {
-      Ok(doc_values.long_value()?)
-    } else {
-      Ok(comparator.missing_value)
-    }
+    read!(doc_values)
   }
 }
 

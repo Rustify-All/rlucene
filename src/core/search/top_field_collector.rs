@@ -219,17 +219,29 @@ impl TopFieldCollector {
       && let [comparator] = one.one_comparator.as_ref()
       && let [reverse] = one.one_reverse_mul.as_ref()
     {
-      macro_rules! update {
-        ($comparator:expr) => {
+      macro_rules! sift {
+        ($comparator:expr, $direction:expr) => {
           down_heap_by!(&mut pq.heap, size, 1, |a: &Entry, b: &Entry| {
             debug_assert_ne!(a.slot, b.slot);
-            let comparison = *reverse * $comparator.compare(a.slot, b.slot);
+            let comparison = $direction * $comparator.compare(a.slot, b.slot);
             Ok::<bool, LuceneError>(if comparison != 0 {
               comparison > 0
             } else {
               a.base.doc > b.base.doc
             })
           })
+        };
+      }
+      macro_rules! update {
+        ($comparator:expr) => {
+          match *reverse {
+            1 => sift!($comparator, 1),
+            -1 => {
+              let direction = -1;
+              sift!($comparator, direction);
+            },
+            direction => sift!($comparator, direction),
+          }
         };
       }
       match comparator {

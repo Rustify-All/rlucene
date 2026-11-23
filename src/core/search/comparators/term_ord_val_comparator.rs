@@ -414,10 +414,18 @@ where
     Ok(())
   }
   fn get_ord_for_doc(&mut self, doc: i32) -> Result<i32> {
-    if self.terms_index.advance_exact(doc)? {
-      Ok(self.terms_index.ord_value()?)
-    } else {
-      Ok(-1)
+    macro_rules! read_ord {
+      ($values:expr) => {
+        if $values.advance_exact(doc)? {
+          $values.ord_value()
+        } else {
+          Ok(-1)
+        }
+      };
+    }
+    match &mut self.terms_index {
+      TermOrdValDocValues::A(values) => read_ord!(values),
+      TermOrdValDocValues::B(values) => read_ord!(values),
     }
   }
 }
