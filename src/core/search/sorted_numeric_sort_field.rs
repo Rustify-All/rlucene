@@ -17,7 +17,6 @@
 use crate::core::index::index_sorter::ComparableProvidersVisitor;
 
 use crate::core::index::doc_values::{DocValues, SortedNumeric};
-use crate::core::index::index_reader_context::IndexReaderContext;
 use crate::core::index::index_sorter::{
   CPEnumType2, ComparableProviderEnum4, DocComparatorImpl, DoubleSorter, FloatSorter, IndexSorter,
   IntSorter, LongSorter, NumericDocValuesProvider,
@@ -30,7 +29,6 @@ use crate::core::search::comparators::double_comparator::{DoubleComparator, Doub
 use crate::core::search::comparators::float_comparator::{FloatComparator, FloatLeafComparator};
 use crate::core::search::comparators::int_comparator::{IntComparator, IntLeafComparator};
 use crate::core::search::comparators::long_comparator::{LongComparator, LongLeafComparator};
-use crate::core::search::comparators::numeric_comparator::NumericLeafComparatorDocValues;
 use crate::core::search::field_comparator::{FieldComparator, FieldComparatorEnum};
 use crate::core::search::pruning::Pruning;
 use crate::core::search::sort_field::{MissingValueEnum, SortField, SortFieldType, SortFiledBase};
@@ -576,17 +574,16 @@ macro_rules! impl_sorted_numeric_comparator {
   ($name:ident, $base:ty, $leaf:ident) => {
     pub struct $name {
       pub(crate) base: $base,
-      selector: SortedNumericSelectorType,
-      type_: SortFieldType,
     }
 
     impl $name {
-      pub fn new(base: $base, selector: SortedNumericSelectorType, type_: SortFieldType) -> Self {
-        Self {
-          base,
-          selector,
-          type_,
-        }
+      pub fn new(
+        mut base: $base,
+        selector: SortedNumericSelectorType,
+        type_: SortFieldType,
+      ) -> Self {
+        base.base.selector = Some((selector, type_));
+        Self { base }
       }
     }
 
@@ -617,19 +614,7 @@ macro_rules! impl_sorted_numeric_comparator {
       where
         LR: LeafReader,
       {
-        let selector_a = NumericLeafComparatorDocValues::A(SortedNumericSelector::wrap(
-          DocValues::get_sorted_numeric(context.reader(), &self.base.base.field)?,
-          self.selector,
-          self.type_,
-        )?);
-
-        let selector_b = NumericLeafComparatorDocValues::A(SortedNumericSelector::wrap(
-          DocValues::get_sorted_numeric(context.reader(), &self.base.base.field)?,
-          self.selector,
-          self.type_,
-        )?);
-
-        $leaf::new(&mut self.base, context, Some(selector_a), Some(selector_b))
+        $leaf::new(&mut self.base, context, None, None)
       }
 
       fn compare_values(&self, first: Option<&Self::V>, second: Option<&Self::V>) -> Result<i32> {

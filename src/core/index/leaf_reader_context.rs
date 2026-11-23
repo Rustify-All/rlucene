@@ -27,6 +27,8 @@ pub struct LeafReaderContext<LR> {
   /// The reader's absolute doc base
   pub doc_base: usize,
   reader: LR,
+  // Composite contexts already require a clonable leaf reader.
+  clone_reader: Option<fn(&LR) -> LR>,
   base: IndexReaderContextBase,
   pub(crate) top_parent: TopParentMeta,
 }
@@ -44,11 +46,15 @@ impl<LR> LeafReaderContext<LR> {
     leaf_ord: usize,
     leaf_doc_base: usize,
     parent: TopParentMeta,
-  ) -> Self {
+  ) -> Self
+  where
+    LR: Clone,
+  {
     Self {
       ord: leaf_ord,
       doc_base: leaf_doc_base,
       reader,
+      clone_reader: Some(LR::clone),
       base: IndexReaderContextBase::new(true, ord, doc_base),
       top_parent: parent,
     }
@@ -68,6 +74,7 @@ impl<LR> LeafReaderContext<LR> {
       ord: 0,
       doc_base: 0,
       reader,
+      clone_reader: None,
       base,
       top_parent,
     })
@@ -96,6 +103,10 @@ where
 }
 
 impl<LR> LeafReaderContext<LR> {
+  pub(crate) fn clone_reader(&self) -> Option<LR> {
+    self.clone_reader.map(|clone| clone(&self.reader))
+  }
+
   pub fn top_parent(&self) -> &TopParentMeta {
     &self.top_parent
   }

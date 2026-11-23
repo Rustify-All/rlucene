@@ -14,7 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::core::index::doc_values::DocValues;
 use crate::core::index::doc_values_iterator::DocValuesIterator;
 use crate::core::index::index_reader_context::IndexReaderContext;
 use crate::core::index::leaf_reader::LeafReader;
@@ -22,7 +21,7 @@ use crate::core::index::leaf_reader_context::LeafReaderContext;
 use crate::core::index::numeric_doc_values::NumericDocValues;
 use crate::core::search::comparators::numeric_comparator::{
   NumericComparator, NumericCompetitiveIterator, NumericLeafComparator,
-  NumericLeafComparatorDocValues, ToLong,
+  NumericLeafComparatorDocValues, ToLong, prepare_numeric_doc_values,
 };
 use crate::core::search::field_comparator::FieldComparator;
 use crate::core::search::leaf_field_comparator::LeafFieldComparator;
@@ -30,7 +29,7 @@ use crate::core::search::pruning::Pruning;
 use crate::core::search::scorable::Scorable;
 use crate::core::util::ToInt;
 use crate::core::util::bit_util::BitUtil;
-use crate::core::util::error::lucene_error::{LuceneError, Result};
+use crate::core::util::error::lucene_error::Result;
 use crate::core::util::numeric_utils::NumericUtils;
 
 /// Comparator based on i32 for numHits.
@@ -116,6 +115,7 @@ pub struct IntLeafComparator<LR>
 where
   LR: LeafReader,
 {
+  context_reader: Option<LR>,
   base: NumericLeafComparator<
     <LR as LeafReader>::PointValues,
     NumericLeafComparatorDocValues<LR>,
@@ -132,27 +132,10 @@ where
     doc_values: Option<NumericLeafComparatorDocValues<LR>>,
     candidate: Option<NumericLeafComparatorDocValues<LR>>,
   ) -> Result<Self> {
-    let (doc_value, candidate) = match (doc_values, candidate) {
-      (Some(v1), Some(v2)) => (v1, v2),
-      (None, None) => {
-        let v1 = NumericLeafComparatorDocValues::B(DocValues::get_numeric(
-          context.reader(),
-          &comparator.base.field,
-        )?);
-        let v2 = NumericLeafComparatorDocValues::B(DocValues::get_numeric(
-          context.reader(),
-          &comparator.base.field,
-        )?);
-        (v1, v2)
-      },
-      _ => {
-        return Err(LuceneError::illegal_state(
-          "doc_values and candidate must be both Some or None",
-        ));
-      },
-    };
+    let (doc_value, candidate, context_reader) =
+      prepare_numeric_doc_values!(comparator.base, context, doc_values, candidate);
     let top_value = comparator.top_value;
-    let base = NumericLeafComparator::new(
+    let base = NumericLeafComparator::with_candidate(
       context,
       &mut comparator.base,
       doc_value,
@@ -160,7 +143,10 @@ where
       IntConverter,
       top_value,
     )?;
-    Ok(Self { base })
+    Ok(Self {
+      context_reader,
+      base,
+    })
   }
   fn get_value_for_doc(
     &mut self,
@@ -186,6 +172,7 @@ where
       comparator.bottom,
       comparator.top_value,
       &mut comparator.base,
+      |comparator| comparator.get_numeric_doc_values(self.context_reader.as_ref()),
     )
   }
 
@@ -239,6 +226,7 @@ where
       comparator.bottom,
       comparator.top_value,
       &mut comparator.base,
+      |comparator| comparator.get_numeric_doc_values(self.context_reader.as_ref()),
     )
   }
 
@@ -259,6 +247,7 @@ where
       comparator.bottom,
       comparator.top_value,
       &mut comparator.base,
+      |comparator| comparator.get_numeric_doc_values(self.context_reader.as_ref()),
     )
   }
 }

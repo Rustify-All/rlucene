@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::core::index::doc_values::{Numeric, SortedNumeric};
+use crate::core::index::doc_values::{DocValues, Numeric, SortedNumeric};
 use crate::core::index::doc_values_iterator::DocValuesIterator;
 use crate::core::index::index_reader_context::IndexReaderContext;
 use crate::core::index::leaf_reader::LeafReader;
@@ -26,7 +26,10 @@ use crate::core::index::point_values::{
 use crate::core::search::doc_id_set_iterator::{AllDISI, DocIdSetIterator, DocIdSetIteratorEnum3};
 use crate::core::search::pruning::Pruning;
 use crate::core::search::scorable::Scorable;
-use crate::core::search::sorted_numeric_selector::SortedNumericSelectorWrap;
+use crate::core::search::sort_field::SortFieldType;
+use crate::core::search::sorted_numeric_selector::{
+  SortedNumericSelector, SortedNumericSelectorType, SortedNumericSelectorWrap,
+};
 use crate::core::util::ToInt;
 use crate::core::util::doc_id_set_builder::{DocIdSetBuilder, OwnedDocIdSetBuilderIterator};
 use crate::core::util::error::lucene_error::{LuceneError, LuceneErrorKind, Result};
@@ -46,6 +49,7 @@ const MAX_SKIP_INTERVAL: i32 = 8192;
 #[derive(Default)]
 pub struct NumericComparator<V> {
   pub(crate) field: String,
+  pub(crate) selector: Option<(SortedNumericSelectorType, SortFieldType)>,
   missing_value_as_long: i64,
   pub(crate) reverse: bool,
   bytes_count: usize, // how many bytes are used to encode this number
@@ -72,6 +76,7 @@ impl<V> NumericComparator<V> {
     let field = field.into();
     Self {
       field,
+      selector: None,
       missing_value_as_long,
       reverse,
       bytes_count,
@@ -83,6 +88,27 @@ impl<V> NumericComparator<V> {
       pruning,
     }
   }
+  pub(crate) fn get_numeric_doc_values<LR: LeafReader>(
+    &self,
+    reader: Option<&LR>,
+  ) -> Result<NumericLeafComparatorDocValues<LR>> {
+    let reader =
+      reader.ok_or_else(|| LuceneError::illegal_state("skip doc values are not initialized"))?;
+    match self.selector {
+      Some((selector, type_)) => Ok(NumericLeafComparatorDocValues::A(
+        SortedNumericSelector::wrap(
+          DocValues::get_sorted_numeric(reader, &self.field)?,
+          selector,
+          type_,
+        )?,
+      )),
+      None => Ok(NumericLeafComparatorDocValues::B(DocValues::get_numeric(
+        reader,
+        &self.field,
+      )?)),
+    }
+  }
+
   pub(crate) fn set_top_value(&mut self) {
     self.top_value_set = true;
   }
@@ -94,6 +120,33 @@ impl<V> NumericComparator<V> {
     self.pruning = Pruning::None;
   }
 }
+
+// Keep the shared cursor preparation in the concrete constructors that consume it.
+macro_rules! prepare_numeric_doc_values {
+  ($parent:expr, $context:expr, $doc_values:expr, $candidate:expr) => {{
+    match ($doc_values, $candidate) {
+      (Some(doc_value), Some(candidate)) => (doc_value, Some(candidate), None),
+      (None, None) => {
+        let doc_value = ($parent).get_numeric_doc_values(Some(($context).reader()))?;
+        let context_reader = ($context).clone_reader();
+        let candidate = if context_reader.is_none() {
+          Some(($parent).get_numeric_doc_values(Some(($context).reader()))?)
+        } else {
+          None
+        };
+        (doc_value, candidate, context_reader)
+      },
+      _ => {
+        return Err(
+          $crate::core::util::error::lucene_error::LuceneError::illegal_state(
+            "doc_values and candidate must be both Some or None",
+          ),
+        );
+      },
+    }
+  }};
+}
+pub(crate) use prepare_numeric_doc_values;
 
 #[allow(clippy::type_complexity)]
 pub struct NumericLeafComparator<PV, N, T>
@@ -118,7 +171,8 @@ where
   current_skip_interval: i32,
   // helps to be conservative about increasing the sampling interval
   try_update_fail_count: i32,
-  skip_doc_values: Option<N>,
+  // An explicit cursor supplied by a caller. Reader-based comparators open it on demand.
+  skip_doc_values: Option<Box<N>>,
   convert: T,
 }
 impl<PV, N, T> NumericLeafComparator<PV, N, T>
@@ -132,6 +186,20 @@ where
     parent: &mut NumericComparator<T::V>,
     doc_values: N,
     candidate: N,
+    v_to_long: T,
+    top: T::V,
+  ) -> Result<Self>
+  where
+    LR: LeafReader<PointValues = PV>,
+  {
+    Self::with_candidate(context, parent, doc_values, Some(candidate), v_to_long, top)
+  }
+
+  pub(crate) fn with_candidate<LR>(
+    context: &LeafReaderContext<LR>,
+    parent: &mut NumericComparator<T::V>,
+    doc_values: N,
+    candidate: Option<N>,
     v_to_long: T,
     top: T::V,
   ) -> Result<Self>
@@ -201,7 +269,7 @@ where
       update_counter: 0,
       current_skip_interval: MIN_SKIP_INTERVAL,
       try_update_fail_count: 0,
-      skip_doc_values: Some(candidate),
+      skip_doc_values: candidate.map(Box::new),
       convert: v_to_long,
     };
     if v.point_values.is_some() && v.leaf_top_set {
@@ -214,6 +282,7 @@ where
     bottom: T::V,
     top: T::V,
     comparator: &mut NumericComparator<T::V>,
+    open_doc_values: impl FnOnce(&NumericComparator<T::V>) -> Result<N>,
   ) -> Result<()> {
     if !self.enable_skipping
       || !comparator.hits_threshold_reached
@@ -270,10 +339,10 @@ where
           .as_ref()
           .ok_or_else(|| LuceneError::illegal_state("point values are not initialized"))?;
         if (pv.get_doc_count()? as i64) < self.iterator_cost {
-          let skip_doc_values = self
-            .skip_doc_values
-            .take()
-            .ok_or_else(|| LuceneError::illegal_state("skip doc values are not initialized"))?;
+          let skip_doc_values = match self.skip_doc_values.take() {
+            Some(doc_values) => *doc_values,
+            None => open_doc_values(comparator)?,
+          };
           self.competitive_iterator = Some(CompetitiveIterator::new(CompetitiveIteratorType::B(
             skip_doc_values,
           )));
@@ -418,9 +487,10 @@ where
     bottom: T::V,
     top: T::V,
     comparator: &mut NumericComparator<T::V>,
+    open_doc_values: impl FnOnce(&NumericComparator<T::V>) -> Result<N>,
   ) -> Result<()> {
     comparator.queue_full = true; // if we are setting bottom, it means that we have collected enough hits
-    self.update_competitive_iterator(bottom, top, comparator)?; // update an iterator if we set a new bottom
+    self.update_competitive_iterator(bottom, top, comparator, open_doc_values)?; // update an iterator if we set a new bottom
     Ok(())
   }
 
@@ -435,6 +505,7 @@ where
     bottom: T::V,
     top: T::V,
     comparator: &mut NumericComparator<T::V>,
+    open_doc_values: impl FnOnce(&NumericComparator<T::V>) -> Result<N>,
   ) -> Result<()>
   where
     S: Scorable + ?Sized,
@@ -449,7 +520,7 @@ where
           _ => return Err(e),
         },
       };
-      self.update_competitive_iterator(bottom, top, comparator)?;
+      self.update_competitive_iterator(bottom, top, comparator, open_doc_values)?;
     }
     Ok(())
   }
@@ -468,9 +539,10 @@ where
     bottom: T::V,
     top: T::V,
     comparator: &mut NumericComparator<T::V>,
+    open_doc_values: impl FnOnce(&NumericComparator<T::V>) -> Result<N>,
   ) -> Result<()> {
     comparator.hits_threshold_reached = true;
-    self.update_competitive_iterator(bottom, top, comparator)
+    self.update_competitive_iterator(bottom, top, comparator, open_doc_values)
   }
 }
 pub struct CompetitiveIterator<D> {
