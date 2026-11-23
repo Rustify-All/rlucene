@@ -78,6 +78,7 @@ impl LongComparator {
 impl FieldComparator for LongComparator {
   type V = i64;
 
+  #[inline(always)]
   fn compare(&self, slot1: usize, slot2: usize) -> i32 {
     self.values[slot1].cmp(&self.values[slot2]) as i32
   }
