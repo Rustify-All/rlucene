@@ -470,6 +470,7 @@ impl<R> FromSliceShared<R> for DirectPackedReader12<R>
 where
   R: RandomAccessInput,
 {
+  #[inline(always)]
   fn read_from_slice_shared(&self, index: usize, slice: Option<&R>) -> Result<i64> {
     let off = (index * 12) >> 3;
     let shift = (index & 1) << 2;
@@ -517,6 +518,7 @@ impl<R> FromSliceShared<R> for DirectPackedReader16<R>
 where
   R: RandomAccessInput,
 {
+  #[inline(always)]
   fn read_from_slice_shared(&self, index: usize, slice: Option<&R>) -> Result<i64> {
     let slice = match slice {
       Some(slice) => slice,
@@ -923,6 +925,7 @@ impl<R> LongValues for DirectPackedEnum<R>
 where
   R: RandomAccessInput,
 {
+  #[inline(always)]
   fn get_mut(&mut self, index: usize) -> Result<i64> {
     match self {
       Self::Direct1(reader) => reader.get(index),
