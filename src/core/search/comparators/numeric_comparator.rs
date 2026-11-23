@@ -528,10 +528,7 @@ where
   pub(crate) fn competitive_iterator(
     &mut self,
   ) -> Option<&mut CompetitiveIterator<CompetitiveIteratorType<N>>> {
-    match self.enable_skipping {
-      true => self.competitive_iterator.as_mut(),
-      false => None,
-    }
+    self.competitive_iterator.as_mut()
   }
 
   pub(crate) fn set_hits_threshold_reached(
