@@ -80,6 +80,9 @@ macro_rules! bulk_nodes {
           $( $(#[$attrs])* BulkNode::$variant(scorer) => scorer.score(&mut OverlayCollector { collector, overlay, fake: crate::core::search::score::Score::new(0.0) }, accept_docs, min, max), )+
           $( BulkNode::$inline(scorer) => scorer.score(&mut OverlayCollector { collector, overlay, fake: crate::core::search::score::Score::new(0.0) }, accept_docs, min, max), )+
           #[cfg(test)] BulkNode::Fixture(scorer) => scorer.score(&mut OverlayCollector { collector, overlay, fake: crate::core::search::score::Score::new(0.0) }, accept_docs, min, max),
+          BulkNode::Default(scorer) if !overlay.disabled && overlay.fixed_score.is_none() => {
+            scorer.score(collector, accept_docs, min, max)
+          },
           BulkNode::Default(scorer) => scorer.score(&mut OverlayCollector { collector, overlay, fake: crate::core::search::score::Score::new(0.0) }, accept_docs, min, max),
           BulkNode::Constant { inner, score } => {
             let overlay = overlay.with_constant(*score);
