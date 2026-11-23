@@ -426,8 +426,8 @@ where
       }
     }
 
-    let leaf_comparators = base.pq_mut().get_leaf_comparator(context)?;
-    let comparator = MultiLeafFieldComparator::new(leaf_comparators, base.pq().get_reverse_mul())?;
+    let (comparators, reverse_mul) = base.pq_mut().get_comparators_and_reverse_mul();
+    let comparator = MultiLeafFieldComparator::new(comparators, reverse_mul, context)?;
 
     Ok(Self {
       base,

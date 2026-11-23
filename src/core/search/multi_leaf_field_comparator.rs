@@ -15,7 +15,8 @@
  * limitations under the License.
  */
 use crate::core::index::leaf_reader::LeafReader;
-use crate::core::search::field_comparator::FieldComparatorEnum;
+use crate::core::index::leaf_reader_context::LeafReaderContext;
+use crate::core::search::field_comparator::{FieldComparator, FieldComparatorEnum};
 use crate::core::search::leaf_field_comparator::{
   LeafFieldComparator, LeafFieldComparatorDocIdSetIteratorRef, LeafFieldComparatorEnum,
 };
@@ -35,8 +36,9 @@ where
   LR: LeafReader,
 {
   pub(crate) fn new(
-    mut comparators: Vec<LeafFieldComparatorEnum<LR>>,
+    comparators: &mut [FieldComparatorEnum],
     reverse_mul: &[i32],
+    context: &LeafReaderContext<LR>,
   ) -> Result<Self> {
     if comparators.len() != reverse_mul.len() {
       return Err(LuceneError::illegal_argument(format!(
@@ -46,17 +48,17 @@ where
       )));
     }
 
-    let first_comparator = comparators.remove(0);
-    let first_reverse_mul = reverse_mul[0];
-    if comparators.is_empty() {
-      comparators = Vec::new();
+    let mut leaf = Self {
+      first_comparator: comparators[0].get_leaf_comparator(context)?,
+      first_reverse_mul: reverse_mul[0],
+      comparators: Vec::with_capacity(comparators.len() - 1),
+    };
+    for comparator in &mut comparators[1..] {
+      leaf
+        .comparators
+        .push(comparator.get_leaf_comparator(context)?);
     }
-
-    Ok(Self {
-      first_comparator,
-      first_reverse_mul,
-      comparators,
-    })
+    Ok(leaf)
   }
   pub(crate) fn set_bottom(
     &mut self,
