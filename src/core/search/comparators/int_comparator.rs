@@ -14,7 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::core::index::doc_values_iterator::DocValuesIterator;
 use crate::core::index::index_reader_context::IndexReaderContext;
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::leaf_reader_context::LeafReaderContext;
@@ -99,7 +98,9 @@ impl FieldComparator for IntComparator {
   where
     LR: LeafReader,
   {
-    IntLeafComparator::new(self, context, None, None)
+    let (doc_values, candidate, context_reader) =
+      prepare_numeric_doc_values!(self.base, context, None, None);
+    IntLeafComparator::new(self, context, doc_values, candidate, context_reader)
   }
 
   fn disable_skipping(&mut self) {
@@ -111,34 +112,36 @@ impl FieldComparator for IntComparator {
   }
 }
 
-pub struct IntLeafComparator<LR>
+pub struct IntLeafComparator<LR, D = NumericLeafComparatorDocValues<LR>>
 where
   LR: LeafReader,
+  D: NumericDocValues,
 {
   context_reader: Option<LR>,
   base: NumericLeafComparator<
     <LR as LeafReader>::PointValues,
-    NumericLeafComparatorDocValues<LR>,
+    D,
     IntConverter,
+    NumericLeafComparatorDocValues<LR>,
   >,
 }
-impl<LR> IntLeafComparator<LR>
+impl<LR, D> IntLeafComparator<LR, D>
 where
   LR: LeafReader,
+  D: NumericDocValues,
 {
   pub fn new(
     comparator: &mut IntComparator,
     context: &LeafReaderContext<LR>,
-    doc_values: Option<NumericLeafComparatorDocValues<LR>>,
+    doc_values: D,
     candidate: Option<NumericLeafComparatorDocValues<LR>>,
+    context_reader: Option<LR>,
   ) -> Result<Self> {
-    let (doc_value, candidate, context_reader) =
-      prepare_numeric_doc_values!(comparator.base, context, doc_values, candidate);
     let top_value = comparator.top_value;
     let base = NumericLeafComparator::with_candidate(
       context,
       &mut comparator.base,
-      doc_value,
+      doc_values,
       candidate,
       IntConverter,
       top_value,
@@ -161,9 +164,10 @@ where
     }
   }
 }
-impl<LR> LeafFieldComparator for IntLeafComparator<LR>
+impl<LR, D> LeafFieldComparator for IntLeafComparator<LR, D>
 where
   LR: LeafReader,
+  D: NumericDocValues,
 {
   type FieldComparator = IntComparator;
   fn set_bottom(&mut self, slot: usize, comparator: &mut Self::FieldComparator) -> Result<()> {
@@ -233,7 +237,8 @@ where
   type DocIdSetIteratorRef<'a>
     = &'a mut NumericCompetitiveIterator<LR>
   where
-    LR: 'a;
+    LR: 'a,
+    D: 'a;
 
   fn competitive_iterator(
     &mut self,

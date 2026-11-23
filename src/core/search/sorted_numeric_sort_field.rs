@@ -583,6 +583,38 @@ macro_rules! impl_sorted_numeric_comparator {
       |parent, context| { $leaf::new(&mut parent.base, context, None, None) }
     );
   };
+  (@integral $name:ident, $base:ty, $leaf:ident,
+    $other:ident, $single:ident, $numeric:ident, $empty:ident, $min:ident, $max:ident
+  ) => {
+    impl_sorted_numeric_comparator!(
+      @leaf $name, $base, LR, LeafFieldComparatorEnum<LR>, |parent, context| {
+        let (values, candidate, context_reader) =
+          prepare_numeric_doc_values!(parent.base.base, context, None, None);
+        macro_rules! selected {
+          ($values:ident, $kind:ident) => {
+            $leaf::new(&mut parent.base, context, $values, candidate, context_reader)
+              .map(LeafFieldComparatorEnum::$kind)
+          };
+        }
+
+        match values {
+          NumericLeafComparatorDocValues::A(SortedNumericSelectorWrap::Raw(view)) => {
+            match view {
+              SelectedNumericDocValues::Single(NumericDocValuesEnum3WithEmpty::A(values)) =>
+                selected!(values, $single),
+              SelectedNumericDocValues::Single(NumericDocValuesEnum3WithEmpty::B(values)) =>
+                selected!(values, $numeric),
+              SelectedNumericDocValues::Single(NumericDocValuesEnum3WithEmpty::C(values)) =>
+                selected!(values, $empty),
+              SelectedNumericDocValues::Min(values) => selected!(values, $min),
+              SelectedNumericDocValues::Max(values) => selected!(values, $max),
+            }
+          },
+          values => selected!(values, $other),
+        }
+      }
+    );
+  };
   (@leaf $name:ident, $base:ty, $reader:ident, $output:ty, |$parent:ident, $context:ident| $body:block) => {
     pub struct $name {
       pub(crate) base: $base,
@@ -649,35 +681,13 @@ macro_rules! impl_sorted_numeric_comparator {
   };
 }
 
-impl_sorted_numeric_comparator!(SortedNumericIntComparator, IntComparator, IntLeafComparator);
 impl_sorted_numeric_comparator!(
-  @leaf SortedNumericLongComparator, LongComparator, LR, LeafFieldComparatorEnum<LR>,
-  |parent, context| {
-    let (values, candidate, context_reader) =
-      prepare_numeric_doc_values!(parent.base.base, context, None, None);
-    macro_rules! selected {
-      ($values:ident, $variant:ident) => {
-        LongLeafComparator::new(&mut parent.base, context, $values, candidate, context_reader)
-          .map(LeafFieldComparatorEnum::$variant)
-      };
-    }
-
-    match values {
-      NumericLeafComparatorDocValues::A(SortedNumericSelectorWrap::Raw(view)) => {
-        match view {
-          SelectedNumericDocValues::Single(NumericDocValuesEnum3WithEmpty::A(values)) =>
-            selected!(values, LongSelectedSingleton),
-          SelectedNumericDocValues::Single(NumericDocValuesEnum3WithEmpty::B(values)) =>
-            selected!(values, LongSelectedNumeric),
-          SelectedNumericDocValues::Single(NumericDocValuesEnum3WithEmpty::C(values)) =>
-            selected!(values, LongSelectedEmpty),
-          SelectedNumericDocValues::Min(values) => selected!(values, LongSelectedMin),
-          SelectedNumericDocValues::Max(values) => selected!(values, LongSelectedMax),
-        }
-      },
-      values => selected!(values, Long),
-    }
-  }
+  @integral SortedNumericIntComparator, IntComparator, IntLeafComparator,
+  Int, IntSelectedSingleton, IntSelectedNumeric, IntSelectedEmpty, IntSelectedMin, IntSelectedMax
+);
+impl_sorted_numeric_comparator!(
+  @integral SortedNumericLongComparator, LongComparator, LongLeafComparator,
+  Long, LongSelectedSingleton, LongSelectedNumeric, LongSelectedEmpty, LongSelectedMin, LongSelectedMax
 );
 impl_sorted_numeric_comparator!(
   SortedNumericFloatComparator,
