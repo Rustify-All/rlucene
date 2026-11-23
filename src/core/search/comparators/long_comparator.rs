@@ -28,6 +28,9 @@ use crate::core::search::field_comparator::FieldComparator;
 use crate::core::search::leaf_field_comparator::LeafFieldComparator;
 use crate::core::search::pruning::Pruning;
 use crate::core::search::scorable::Scorable;
+use crate::core::search::sorted_numeric_selector::{
+  SelectedNumericDocValues, SortedNumericSelectorWrap,
+};
 use crate::core::util::ToInt;
 use crate::core::util::bit_util::BitUtil;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
@@ -168,6 +171,18 @@ where
     comparator: &mut NumericComparator<i64>,
   ) -> Result<i64> {
     let doc_values = &mut self.base.doc_values;
+    // The raw singleton selector only forwards to the underlying numeric cursor.
+    // Resolve it once for the pair of operations, keeping the same cursor and read order.
+    if let NumericLeafComparatorDocValues::A(SortedNumericSelectorWrap::Raw(
+      SelectedNumericDocValues::Single(values),
+    )) = doc_values
+    {
+      return if values.advance_exact(doc)? {
+        values.long_value()
+      } else {
+        Ok(comparator.missing_value)
+      };
+    }
     if doc_values.advance_exact(doc)? {
       Ok(doc_values.long_value()?)
     } else {
