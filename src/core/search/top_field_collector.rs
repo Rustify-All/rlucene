@@ -49,7 +49,7 @@ use crate::core::search::top_field_docs::TopFieldDocs;
 use crate::core::search::total_hits::{Relation, TotalHits};
 use crate::core::search::weight::Weight;
 use crate::core::util::error::lucene_error::{LuceneError, Result};
-use crate::core::util::priority_queue::PriorityQueue;
+use crate::core::util::priority_queue::{CompareEnum2, PriorityQueue, down_heap_by};
 use crate::core::util::{CoreHelper, TryIntoInt};
 use smallvec::SmallVec;
 use std::fmt::{Display, Formatter};
@@ -209,13 +209,51 @@ impl TopFieldCollector {
     self.queue_full = slot == self.num_hits - 1;
     Ok(())
   }
-  pub(crate) fn update_bottom(&mut self, doc: i32) -> Result<()> {
+  pub(crate) fn update_bottom(&mut self, doc: i32) -> Result<usize> {
     let global_doc = doc + self.doc_base;
     let bottom = self.bottom_mut()?;
     bottom.base.doc = global_doc;
     let pq = self.pq_mut();
-    pq.update_top()?;
-    Ok(())
+    let size = pq.size();
+    if let CompareEnum2::A(one) = &pq.compare
+      && let [comparator] = one.one_comparator.as_ref()
+      && let [reverse] = one.one_reverse_mul.as_ref()
+    {
+      macro_rules! update {
+        ($comparator:expr) => {
+          down_heap_by!(&mut pq.heap, size, 1, |a: &Entry, b: &Entry| {
+            debug_assert_ne!(a.slot, b.slot);
+            let comparison = *reverse * $comparator.compare(a.slot, b.slot);
+            Ok::<bool, LuceneError>(if comparison != 0 {
+              comparison > 0
+            } else {
+              a.base.doc > b.base.doc
+            })
+          })
+        };
+      }
+      match comparator {
+        FieldComparatorEnum::Relevance(cmp) => update!(cmp),
+        FieldComparatorEnum::Doc(cmp) => update!(cmp),
+        FieldComparatorEnum::Double(cmp) => update!(cmp),
+        FieldComparatorEnum::Float(cmp) => update!(cmp),
+        FieldComparatorEnum::Int(cmp) => update!(cmp),
+        FieldComparatorEnum::LatLonPointDistance(cmp) => update!(cmp),
+        FieldComparatorEnum::Long(cmp) => update!(cmp),
+        FieldComparatorEnum::TermVal(cmp) => update!(cmp),
+        FieldComparatorEnum::TermOrdValue(cmp) => update!(cmp),
+        FieldComparatorEnum::SortedNumericInt(cmp) => update!(cmp),
+        FieldComparatorEnum::SortedNumericLong(cmp) => update!(cmp),
+        FieldComparatorEnum::SortedNumericFloat(cmp) => update!(cmp),
+        FieldComparatorEnum::SortedNumericDouble(cmp) => update!(cmp),
+        FieldComparatorEnum::SortedDocValuesTermOrdVal(cmp) => update!(cmp),
+        FieldComparatorEnum::XYPointDistance(cmp) => update!(cmp),
+        FieldComparatorEnum::Dummy(cmp) => update!(cmp),
+      }
+    } else {
+      return Ok(pq.update_top()?.slot);
+    }
+    Ok(self.bottom()?.slot)
   }
   #[inline]
   fn bottom(&self) -> Result<&Entry> {
@@ -540,11 +578,10 @@ where
         .comparator
         .copy(bottom.slot, doc, scorer, self.base.comparators_mut())?;
     }
-    self.base.update_bottom(doc)?;
-    let bottom = self.bottom()?;
+    let bottom_slot = self.base.update_bottom(doc)?;
     self
       .comparator
-      .set_bottom(bottom.slot, self.base.comparators_mut())?;
+      .set_bottom(bottom_slot, self.base.comparators_mut())?;
     self.base.update_min_competitive_score(scorer)?;
 
     Ok(())

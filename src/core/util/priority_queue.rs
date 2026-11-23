@@ -16,6 +16,53 @@
  */
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 
+// Both queue entry points run the same downward adjustment and compare in
+// the same order. The collector can resolve its one-field comparer first.
+macro_rules! down_heap_by {
+  ($heap:expr, $size:expr, $position:expr, $compare:expr) => {{
+    let mut i = $position;
+    let size = $size;
+    let heap = $heap;
+    let compare = $compare;
+    while i * 2 <= size {
+      let mut j = i * 2;
+      let k = j + 1;
+      let (parents, children) = heap.split_at_mut(j);
+
+      let child = if k <= size {
+        let (left, right) = children.split_at_mut(1);
+        let right = right[0]
+          .as_mut()
+          .ok_or_else(|| LuceneError::illegal_state("priority queue element should exist"))?;
+        let left = left[0]
+          .as_mut()
+          .ok_or_else(|| LuceneError::illegal_state("priority queue element should exist"))?;
+        if compare(right, left)? {
+          j = k;
+          right
+        } else {
+          left
+        }
+      } else {
+        children[0]
+          .as_mut()
+          .ok_or_else(|| LuceneError::illegal_state("priority queue element should exist"))?
+      };
+      let node = parents[i]
+        .as_mut()
+        .ok_or_else(|| LuceneError::illegal_state("priority queue element should exist"))?;
+
+      if !compare(child, node)? {
+        break;
+      }
+
+      std::mem::swap(node, child);
+      i = j;
+    }
+  }};
+}
+pub(crate) use down_heap_by;
+
 /// A priority queue maintains a partial ordering of its elements such that the
 /// least element can always be found in constant time. `put()` and `pop()`
 /// operations require `O(log(size))` time, but the `remove()` operation is
@@ -35,7 +82,7 @@ use crate::core::util::error::lucene_error::{LuceneError, Result};
 pub struct PriorityQueue<T, C> {
   size: usize,
   max_size: usize,
-  heap: Vec<Option<T>>,
+  pub(crate) heap: Vec<Option<T>>,
   pub(crate) compare: C,
 }
 impl<T, C> PriorityQueue<T, C>
@@ -360,43 +407,10 @@ where
     Ok(i != orig_pos)
   }
 
-  pub fn down_heap(&mut self, mut i: usize) -> Result<()> {
-    let size = self.size;
-    while i * 2 <= size {
-      let mut j = i * 2;
-      let k = j + 1;
-      let (parents, children) = self.heap.split_at_mut(j);
-
-      let child = if k <= size {
-        let (left, right) = children.split_at_mut(1);
-        let right = right[0]
-          .as_mut()
-          .ok_or_else(|| LuceneError::illegal_state("priority queue element should exist"))?;
-        let left = left[0]
-          .as_mut()
-          .ok_or_else(|| LuceneError::illegal_state("priority queue element should exist"))?;
-        if self.compare.less_than(right, left)? {
-          j = k;
-          right
-        } else {
-          left
-        }
-      } else {
-        children[0]
-          .as_mut()
-          .ok_or_else(|| LuceneError::illegal_state("priority queue element should exist"))?
-      };
-      let node = parents[i]
-        .as_mut()
-        .ok_or_else(|| LuceneError::illegal_state("priority queue element should exist"))?;
-
-      if !self.compare.less_than(child, node)? {
-        break;
-      }
-
-      std::mem::swap(node, child);
-      i = j;
-    }
+  pub fn down_heap(&mut self, i: usize) -> Result<()> {
+    down_heap_by!(&mut self.heap, self.size, i, |left: &T, right: &T| self
+      .compare
+      .less_than(left, right));
     Ok(())
   }
 

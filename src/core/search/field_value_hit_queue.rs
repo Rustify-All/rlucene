@@ -128,8 +128,8 @@ impl fmt::Display for Entry {
 
 /// An implementation of FieldValueHitQueue which is optimized in case there is just one comparator.
 pub struct OneComparatorComparator {
-  one_comparator: Box<[FieldComparatorEnum]>,
-  one_reverse_mul: Box<[i32]>,
+  pub(crate) one_comparator: Box<[FieldComparatorEnum]>,
+  pub(crate) one_reverse_mul: Box<[i32]>,
 }
 impl OneComparatorComparator {
   pub fn new(one_comparator: Vec<FieldComparatorEnum>, one_reverse_mul: Vec<i32>) -> Self {
