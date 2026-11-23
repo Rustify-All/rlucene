@@ -415,6 +415,7 @@ where
     }
   }
 
+  #[inline(always)]
   fn set_next(&mut self) -> Result<bool> {
     if self.input.position()? < self.end {
       let code = self.input.read_vint()?;
