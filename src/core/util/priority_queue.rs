@@ -16,52 +16,39 @@
  */
 use crate::core::util::error::lucene_error::{LuceneError, Result};
 
-// Both queue entry points run the same downward adjustment and compare in
-// the same order. The collector can resolve its one-field comparer first.
-macro_rules! down_heap_by {
-  ($heap:expr, $size:expr, $position:expr, $compare:expr) => {{
-    let mut i = $position;
-    let size = $size;
-    let heap = $heap;
-    let compare = $compare;
-    while i * 2 <= size {
-      let mut j = i * 2;
-      let k = j + 1;
-      let (parents, children) = heap.split_at_mut(j);
-
-      let child = if k <= size {
-        let (left, right) = children.split_at_mut(1);
-        let right = right[0]
-          .as_mut()
-          .ok_or_else(|| LuceneError::illegal_state("priority queue element should exist"))?;
-        let left = left[0]
-          .as_mut()
-          .ok_or_else(|| LuceneError::illegal_state("priority queue element should exist"))?;
-        if compare(right, left)? {
-          j = k;
-          right
-        } else {
-          left
-        }
+// Swap only after the comparisons have succeeded so every occupied slot
+// remains filled if a comparison fails.
+#[inline]
+pub(crate) fn down_heap_by<T>(
+  heap: &mut [Option<T>],
+  size: usize,
+  mut position: usize,
+  compare: impl Fn(&T, &T) -> Result<bool>,
+) -> Result<()> {
+  let missing_node = || LuceneError::illegal_state("priority queue element should exist");
+  while position * 2 <= size {
+    let left = position * 2;
+    let right = left + 1;
+    let (child_position, child) = if right <= size {
+      let right_child = heap[right].as_ref().ok_or_else(missing_node)?;
+      let left_child = heap[left].as_ref().ok_or_else(missing_node)?;
+      if compare(right_child, left_child)? {
+        (right, right_child)
       } else {
-        children[0]
-          .as_mut()
-          .ok_or_else(|| LuceneError::illegal_state("priority queue element should exist"))?
-      };
-      let node = parents[i]
-        .as_mut()
-        .ok_or_else(|| LuceneError::illegal_state("priority queue element should exist"))?;
-
-      if !compare(child, node)? {
-        break;
+        (left, left_child)
       }
-
-      std::mem::swap(node, child);
-      i = j;
+    } else {
+      (left, heap[left].as_ref().ok_or_else(missing_node)?)
+    };
+    let node = heap[position].as_ref().ok_or_else(missing_node)?;
+    if !compare(child, node)? {
+      break;
     }
-  }};
+    heap.swap(position, child_position);
+    position = child_position;
+  }
+  Ok(())
 }
-pub(crate) use down_heap_by;
 
 /// A priority queue maintains a partial ordering of its elements such that the
 /// least element can always be found in constant time. `put()` and `pop()`
@@ -408,10 +395,9 @@ where
   }
 
   pub fn down_heap(&mut self, i: usize) -> Result<()> {
-    down_heap_by!(&mut self.heap, self.size, i, |left: &T, right: &T| self
-      .compare
-      .less_than(left, right));
-    Ok(())
+    down_heap_by(&mut self.heap, self.size, i, |left, right| {
+      self.compare.less_than(left, right)
+    })
   }
 
   /// This method returns the internal heap array as `Vec<Object>`.

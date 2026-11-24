@@ -209,27 +209,26 @@ impl TopFieldCollector {
     self.queue_full = slot == self.num_hits - 1;
     Ok(())
   }
-  pub(crate) fn update_bottom(&mut self, doc: i32) -> Result<usize> {
-    let global_doc = doc + self.doc_base;
-    let bottom = self.bottom_mut()?;
-    bottom.base.doc = global_doc;
+  pub(crate) fn update_bottom(&mut self) -> Result<usize> {
     let pq = self.pq_mut();
     let size = pq.size();
     if let CompareEnum2::A(one) = &pq.compare
       && let [comparator] = one.one_comparator.as_ref()
       && let [reverse] = one.one_reverse_mul.as_ref()
+      && size < pq.heap.len()
     {
+      let active = &mut pq.heap[..=size];
       macro_rules! sift {
         ($comparator:expr, $direction:expr) => {
-          down_heap_by!(&mut pq.heap, size, 1, |a: &Entry, b: &Entry| {
+          down_heap_by(active, size, 1, |a: &Entry, b: &Entry| {
             debug_assert_ne!(a.slot, b.slot);
             let comparison = $direction * $comparator.compare(a.slot, b.slot);
-            Ok::<bool, LuceneError>(if comparison != 0 {
+            Ok(if comparison != 0 {
               comparison > 0
             } else {
               a.base.doc > b.base.doc
             })
-          })
+          })?
         };
       }
       macro_rules! update {
@@ -273,14 +272,6 @@ impl TopFieldCollector {
       .base
       .pq
       .top()
-      .ok_or_else(|| LuceneError::illegal_state("priority queue bottom missing"))
-  }
-  #[inline]
-  fn bottom_mut(&mut self) -> Result<&mut Entry> {
-    self
-      .base
-      .pq
-      .top_mut()
       .ok_or_else(|| LuceneError::illegal_state("priority queue bottom missing"))
   }
 }
@@ -509,10 +500,8 @@ where
   where
     S: Scorable + ?Sized,
   {
-    let (comparators, reverse_mul) = self.base.pq_mut().get_comparators_and_reverse_mul();
-    self
-      .comparator
-      .compare_top(doc, scorer, comparators, reverse_mul)
+    let comparators = self.base.comparators_mut();
+    self.comparator.compare_top(doc, scorer, comparators)
   }
 
   pub(crate) fn count_hit<S>(&mut self, scorer: &mut S, _doc: i32) -> Result<()>
@@ -548,10 +537,8 @@ where
     let cmp_check = if self.collected_all_competitive_hits {
       true
     } else {
-      let (comparators, reverse_mul) = self.base.pq_mut().get_comparators_and_reverse_mul();
-      let cmp = self
-        .comparator
-        .compare_bottom(doc, scorer, comparators, reverse_mul)?;
+      let comparators = self.base.comparators_mut();
+      let cmp = self.comparator.compare_bottom(doc, scorer, comparators)?;
       cmp <= 0
     };
 
@@ -585,12 +572,21 @@ where
     S: Scorable + ?Sized,
   {
     {
-      let bottom = self.bottom()?;
+      let doc_base = self.base.doc_base;
+      let pq = self.base.pq_mut();
+      let bottom = pq.heap[1]
+        .as_mut()
+        .ok_or_else(|| LuceneError::illegal_state("priority queue bottom missing"))?;
+      let comparators = match &mut pq.compare {
+        CompareEnum2::A(one) => one.one_comparator.as_mut(),
+        CompareEnum2::B(multi) => multi.comparators.as_mut(),
+      };
       self
         .comparator
-        .copy(bottom.slot, doc, scorer, self.base.comparators_mut())?;
+        .copy(bottom.slot, doc, scorer, comparators)?;
+      bottom.base.doc = doc + doc_base;
     }
-    let bottom_slot = self.base.update_bottom(doc)?;
+    let bottom_slot = self.base.update_bottom()?;
     self
       .comparator
       .set_bottom(bottom_slot, self.base.comparators_mut())?;

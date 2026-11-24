@@ -158,7 +158,7 @@ impl Compare<Entry> for OneComparatorComparator {
 }
 /// An implementation of FieldValueHitQueue which is optimized in case there is more than one comparator.
 pub struct MultiComparatorsComparator {
-  comparators: Box<[FieldComparatorEnum]>,
+  pub(crate) comparators: Box<[FieldComparatorEnum]>,
   reverse_mul: Box<[i32]>,
 }
 

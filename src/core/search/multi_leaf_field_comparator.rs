@@ -29,7 +29,7 @@ where
 {
   first_comparator: LeafFieldComparatorEnum<LR>,
   first_reverse_mul: i32,
-  comparators: Vec<LeafFieldComparatorEnum<LR>>,
+  comparators: Vec<(LeafFieldComparatorEnum<LR>, i32)>,
 }
 impl<LR> MultiLeafFieldComparator<LR>
 where
@@ -53,10 +53,10 @@ where
       first_reverse_mul: reverse_mul[0],
       comparators: Vec::with_capacity(comparators.len() - 1),
     };
-    for comparator in &mut comparators[1..] {
+    for (comparator, &direction) in comparators[1..].iter_mut().zip(&reverse_mul[1..]) {
       leaf
         .comparators
-        .push(comparator.get_leaf_comparator(context)?);
+        .push((comparator.get_leaf_comparator(context)?, direction));
     }
     Ok(leaf)
   }
@@ -74,7 +74,7 @@ where
     self
       .first_comparator
       .set_bottom(slot, &mut comparators[0])?;
-    for (comp, c) in self
+    for ((comp, _), c) in self
       .comparators
       .iter_mut()
       .zip(comparators.iter_mut().skip(1))
@@ -91,7 +91,6 @@ where
     doc: i32,
     scorer: &mut S,
     comparators: &mut [FieldComparatorEnum],
-    reverse_mul: &[i32],
   ) -> Result<i32>
   where
     S: Scorable + ?Sized,
@@ -108,10 +107,9 @@ where
     if cmp != 0 {
       return Ok(cmp);
     }
-    for ((reverse, comp_self), comp_arg) in reverse_mul
-      .iter()
-      .skip(1)
-      .zip(self.comparators.iter_mut())
+    for ((comp_self, reverse), comp_arg) in self
+      .comparators
+      .iter_mut()
       .zip(comparators.iter_mut().skip(1))
     {
       let cmp = *reverse * comp_self.compare_bottom(doc, scorer, comp_arg)?;
@@ -128,7 +126,6 @@ where
     doc: i32,
     scorer: &mut S,
     comparators: &mut [FieldComparatorEnum],
-    reverse_mul: &[i32],
   ) -> Result<i32>
   where
     S: Scorable + ?Sized,
@@ -147,10 +144,9 @@ where
       return Ok(cmp);
     }
 
-    for ((reverse, comp_self), comp_arg) in reverse_mul
-      .iter()
-      .skip(1)
-      .zip(self.comparators.iter_mut())
+    for ((comp_self, reverse), comp_arg) in self
+      .comparators
+      .iter_mut()
       .zip(comparators.iter_mut().skip(1))
     {
       cmp = *reverse * comp_self.compare_top(doc, scorer, comp_arg)?;
@@ -181,7 +177,7 @@ where
     self
       .first_comparator
       .copy(slot, doc, scorer, &mut comparators[0])?;
-    for (comp_self, comp_arg) in self
+    for ((comp_self, _), comp_arg) in self
       .comparators
       .iter_mut()
       .zip(comparators.iter_mut().skip(1))
@@ -209,7 +205,7 @@ where
     self
       .first_comparator
       .set_scorer(scorer, &mut comparators[0])?;
-    for (comp_self, comp_arg) in self
+    for ((comp_self, _), comp_arg) in self
       .comparators
       .iter_mut()
       .zip(comparators.iter_mut().skip(1))

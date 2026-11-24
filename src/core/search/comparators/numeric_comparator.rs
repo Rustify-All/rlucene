@@ -309,13 +309,32 @@ where
       return Ok(());
     }
 
+    self.rebuild_competitive_iterator(bottom, comparator, open_doc_values)
+  }
+
+  // Rebuild only after the per-hit checks and sampling decision.
+  #[inline(never)]
+  fn rebuild_competitive_iterator(
+    &mut self,
+    bottom: T::V,
+    comparator: &mut NumericComparator<T::V>,
+    open_doc_values: impl FnOnce(&NumericComparator<T::V>) -> Result<C>,
+  ) -> Result<()> {
     if comparator.queue_full {
       self.encode_bottom(bottom, comparator);
     }
 
     let result = DocIdSetBuilder::new(self.max_doc);
 
-    self.init_point_tree()?;
+    if self.point_tree.is_none() {
+      if let Some(ref mut pv) = self.point_values {
+        self.point_tree = Some(pv.get_point_tree()?);
+      } else {
+        return Err(LuceneError::illegal_state(
+          "point_values is None but get_point_tree() was called",
+        ));
+      }
+    }
     let mut visitor = IntersectVisitorImpl::new(
       result,
       self.max_doc_visited,
@@ -365,18 +384,6 @@ where
     self.iterator_cost = it.cost()?;
     self.competitive_iterator = Some(CompetitiveIterator::new(CompetitiveIteratorType::C(it)));
     self.update_skip_interval(true);
-    Ok(())
-  }
-  fn init_point_tree(&mut self) -> Result<()> {
-    if self.point_tree.is_none() {
-      if let Some(ref mut pv) = self.point_values {
-        self.point_tree = Some(pv.get_point_tree()?);
-      } else {
-        return Err(LuceneError::illegal_state(
-          "point_values is None but get_point_tree() was called",
-        ));
-      }
-    }
     Ok(())
   }
   fn update_skip_interval(&mut self, success: bool) {
