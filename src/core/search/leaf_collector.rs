@@ -80,11 +80,7 @@ pub trait LeafCollector: Display {
     stream: &mut DS,
     scorer: &mut SC,
   ) -> Result<()> {
-    let mut consumer = CollectorConsumer {
-      collector: self,
-      scorer,
-    };
-    stream.for_each(&mut consumer)
+    collect_doc_stream(stream, scorer, |doc, scorer| self.collect(doc, scorer))
   }
   /// Optionally returns an iterator over competitive documents.
   ///
@@ -219,26 +215,37 @@ either_leaf_collector!(
     { A: A, B: B, C: C }
 );
 
-struct CollectorConsumer<'a, LC, SC>
+#[inline]
+pub(crate) fn collect_doc_stream<DS, SC, F>(
+  stream: &mut DS,
+  scorer: &mut SC,
+  collect: F,
+) -> Result<()>
 where
-  LC: ?Sized,
-  SC: ?Sized,
+  DS: DocIdStream + ?Sized,
+  SC: Scorable + ?Sized,
+  F: FnMut(i32, &mut SC) -> Result<()>,
 {
-  collector: &'a mut LC,
-  scorer: &'a mut SC,
+  stream.for_each(&mut CollectorConsumer { scorer, collect })
 }
 
-impl<'a, LC, SC> DocIdStreamConsumer for CollectorConsumer<'a, LC, SC>
+struct CollectorConsumer<'a, SC: ?Sized, F> {
+  scorer: &'a mut SC,
+  collect: F,
+}
+
+impl<SC, F> DocIdStreamConsumer for CollectorConsumer<'_, SC, F>
 where
-  LC: LeafCollector + ?Sized,
   SC: Scorable + ?Sized,
+  F: FnMut(i32, &mut SC) -> Result<()>,
 {
+  #[inline(always)]
   fn accept(&mut self, doc: i32) -> Result<()> {
-    self.collector.collect(doc, self.scorer)
+    (self.collect)(doc, self.scorer)
   }
 
   fn accept_with_score(&mut self, doc: i32, score: f32) -> Result<()> {
     self.scorer.set_score(score)?;
-    self.collector.collect(doc, self.scorer)
+    (self.collect)(doc, self.scorer)
   }
 }

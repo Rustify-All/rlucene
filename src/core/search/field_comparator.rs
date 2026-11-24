@@ -17,7 +17,9 @@
 use crate::core::document::lat_lon_point_distance_comparator::LatLonPointDistanceComparator;
 use crate::core::document::xy_point_distance_comparator::XYPointDistanceComparator;
 use crate::core::index::binary_doc_values::BinaryDocValues;
-use crate::core::index::doc_values::{Binary, DocValues, SortedNumericDocValuesEnum3WithEmpty};
+use crate::core::index::doc_values::{
+  Binary, DocValues, NumericDocValuesEnum3WithEmpty, SortedNumericDocValuesEnum3WithEmpty,
+};
 use crate::core::index::index_reader_context::IndexReaderContext;
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::leaf_reader_context::LeafReaderContext;
@@ -744,7 +746,7 @@ impl FieldComparator for FieldComparatorEnum {
     // Select the cursor once before the collector starts reading documents.
     macro_rules! floating_leaf {
       ($parent:ident, $leaf:ident, $wrapper:ident, $decoder:ident,
-       $single:ident, $min:ident, $max:ident) => {{
+       $min:ident, $max:ident) => {{
         let base = &mut $parent.base;
         let (values, candidate, context_reader) =
           prepare_numeric_doc_values!(base.base, context, None, None);
@@ -760,10 +762,24 @@ impl FieldComparator for FieldComparatorEnum {
             .map(LeafFieldComparatorEnum::$kind)
           };
         }
+        macro_rules! selected_single {
+          (Float, $values:ident) => {
+            match $values {
+              NumericDocValuesEnum3WithEmpty::A(values) => selected!(values, FloatSelectedSingle),
+              NumericDocValuesEnum3WithEmpty::B(values) => selected!(values, FloatSelectedNumeric),
+              NumericDocValuesEnum3WithEmpty::C(values) => selected!(values, FloatSelectedEmpty),
+            }
+          };
+          (Double, $values:ident) => {
+            selected!($values, DoubleSelectedSingle)
+          };
+        }
         let values = match values {
           NumericLeafComparatorDocValues::A(SortedNumericSelectorWrap::$wrapper(view)) => {
             match view.inner {
-              SelectedNumericDocValues::Single(values) => return selected!(values, $single),
+              SelectedNumericDocValues::Single(values) => {
+                return selected_single!($wrapper, values);
+              },
               SelectedNumericDocValues::Min(MinValue {
                 inner: SortedNumericDocValuesEnum3WithEmpty::A(values),
                 ..
@@ -815,7 +831,6 @@ impl FieldComparator for FieldComparatorEnum {
         FloatLeafComparator,
         Float,
         FilterNumericDocValuesImpl1,
-        FloatSelectedSingle,
         FloatSelectedMin,
         FloatSelectedMax
       ),
@@ -824,7 +839,6 @@ impl FieldComparator for FieldComparatorEnum {
         DoubleLeafComparator,
         Double,
         FilterNumericDocValuesImpl2,
-        DoubleSelectedSingle,
         DoubleSelectedMin,
         DoubleSelectedMax
       ),

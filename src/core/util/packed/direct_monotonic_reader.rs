@@ -173,11 +173,15 @@ where
   fn get_mut(&mut self, index: usize) -> Result<i64> {
     let block = index >> self.block_shift;
     let block_index = index & self.block_mask;
-    let delta = self.readers[block].read_from_slice(block_index, Some(&self.slice))?;
+    let (min, avg, bits_per_value) = self.metadata[block];
+    let delta = if bits_per_value == 0 {
+      0
+    } else {
+      self.readers[block].read_from_slice(block_index, Some(&self.slice))?
+    };
     Ok(
-      self.metadata[block]
-        .0
-        .wrapping_add((self.metadata[block].1 * (block_index as f32)) as i64)
+      min
+        .wrapping_add((avg * (block_index as f32)) as i64)
         .wrapping_add(delta),
     )
   }
@@ -186,11 +190,15 @@ where
     // Merge blocks require get_mut to update their cache.
     let block = index >> self.block_shift;
     let block_index = index & self.block_mask;
-    let delta = self.readers[block].read_from_slice_shared(block_index, Some(&self.slice))?;
+    let (min, avg, bits_per_value) = self.metadata[block];
+    let delta = if bits_per_value == 0 {
+      0
+    } else {
+      self.readers[block].read_from_slice_shared(block_index, Some(&self.slice))?
+    };
     Ok(
-      self.metadata[block]
-        .0
-        .wrapping_add((self.metadata[block].1 * (block_index as f32)) as i64)
+      min
+        .wrapping_add((avg * (block_index as f32)) as i64)
         .wrapping_add(delta),
     )
   }

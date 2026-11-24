@@ -31,7 +31,7 @@ use crate::core::search::field_value_hit_queue::{
   Entry, FieldValueHitQueueComparator, TopFieldScoreDoc,
 };
 use crate::core::search::index_searcher::IndexSearcher;
-use crate::core::search::leaf_collector::{LeafCollector, LeafCollectorEnum2};
+use crate::core::search::leaf_collector::{LeafCollector, LeafCollectorEnum2, collect_doc_stream};
 use crate::core::search::leaf_field_comparator::LeafFieldComparatorDocIdSetIteratorRef;
 use crate::core::search::max_score_accumulator::MaxScoreAccumulator;
 use crate::core::search::multi_leaf_field_comparator::MultiLeafFieldComparator;
@@ -530,19 +530,22 @@ where
     Ok(())
   }
   #[inline(always)]
-  pub(crate) fn threshold_check<S>(&mut self, doc: i32, scorer: &mut S) -> Result<bool>
+  pub(crate) fn threshold_check<const COMPARE_ONLY: bool, S>(
+    &mut self,
+    doc: i32,
+    scorer: &mut S,
+  ) -> Result<bool>
   where
     S: Scorable + ?Sized,
   {
-    let cmp_check = if self.collected_all_competitive_hits {
+    let cmp_check = if !COMPARE_ONLY && self.collected_all_competitive_hits {
       true
     } else {
       let comparators = self.base.comparators_mut();
       let cmp = self.comparator.compare_bottom(doc, scorer, comparators)?;
       cmp <= 0
     };
-
-    if cmp_check {
+    if !COMPARE_ONLY && cmp_check {
       // since docs are visited in doc Id order, if compare is 0, it means
       // this document is larger than anything else in the queue, and
       // therefore not competitive.
@@ -562,10 +565,9 @@ where
         // threshold is reached for the first time here.
         self.base.update_min_competitive_score(scorer)?;
       }
-      return Ok(true);
     }
 
-    Ok(false)
+    Ok(cmp_check)
   }
   pub(crate) fn collect_competitive_hit<S>(&mut self, doc: i32, scorer: &mut S) -> Result<()>
   where
@@ -825,6 +827,23 @@ where
     let base = TopFieldLeafCollector::new(base, sort, context)?;
     Ok(Self { base })
   }
+
+  #[inline(always)]
+  fn collect_hit<const COMPARE_ONLY: bool, S: Scorable + ?Sized>(
+    &mut self,
+    doc: i32,
+    scorer: &mut S,
+    total_hits: usize,
+  ) -> Result<()> {
+    if self.base.is_queue_full() {
+      if !self.base.threshold_check::<COMPARE_ONLY, _>(doc, scorer)? {
+        self.base.collect_competitive_hit(doc, scorer)?;
+      }
+    } else {
+      self.base.collect_any_hit(doc, total_hits, scorer)?;
+    }
+    Ok(())
+  }
 }
 
 impl<LR> Display for SimpleFieldLeafCollector<'_, LR>
@@ -852,16 +871,31 @@ where
   #[inline(always)]
   fn collect<SC: Scorable + ?Sized>(&mut self, doc: i32, scorer: &mut SC) -> Result<()> {
     self.base.count_hit(scorer, doc)?;
-    if self.base.is_queue_full() {
-      if self.base.threshold_check(doc, scorer)? {
-        return Ok(());
-      }
-      self.base.collect_competitive_hit(doc, scorer)?;
-    } else {
-      let hits_collected = self.base.total_hits();
-      self.base.collect_any_hit(doc, hits_collected, scorer)?;
+    self.collect_hit::<false, _>(doc, scorer, self.base.total_hits())
+  }
+
+  fn collect_stream<DS: DocIdStream + ?Sized, SC: Scorable + ?Sized>(
+    &mut self,
+    stream: &mut DS,
+    scorer: &mut SC,
+  ) -> Result<()> {
+    let base = &self.base.base;
+    if !base.score_mode.is_exhaustive()
+      || base.can_set_min_score
+      || base.search_sort_part_of_index_sort != Some(false)
+    {
+      return self.default_collect_stream(stream, scorer);
     }
-    Ok(())
+
+    let mut total_hits = self.base.total_hits();
+    let result = collect_doc_stream(stream, scorer, |doc, scorer| {
+      total_hits += 1;
+      debug_assert!(total_hits <= i32::MAX as usize);
+      self.collect_hit::<true, _>(doc, scorer, total_hits)
+    });
+    // The caller can still use the hits collected before early termination or a timeout.
+    self.base.base.base.total_hits = total_hits;
+    result
   }
 
   fn competitive_iterator(&mut self) -> Result<Option<Self::CompetitiveIterator<'_>>> {
@@ -1059,7 +1093,7 @@ where
 
   fn collect<SC: Scorable + ?Sized>(&mut self, doc: i32, scorer: &mut SC) -> Result<()> {
     self.base.count_hit(scorer, doc)?;
-    if self.base.is_queue_full() && self.base.threshold_check(doc, scorer)? {
+    if self.base.is_queue_full() && self.base.threshold_check::<false, _>(doc, scorer)? {
       return Ok(());
     }
 

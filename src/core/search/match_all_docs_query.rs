@@ -26,10 +26,12 @@ use crate::core::search::constant_score_scorer::ConstantScoreScorer;
 use crate::core::search::constant_score_weight::ConstantScoreWeight;
 use crate::core::search::doc_id_set_iterator::AllDISI;
 use crate::core::search::doc_id_set_iterator::NO_MORE_DOCS;
+use crate::core::search::doc_id_stream::{DocIdStream, DocIdStreamConsumer};
 use crate::core::search::explanation::Explanation;
 use crate::core::search::index_searcher::IndexSearcher;
 use crate::core::search::query::QueryBase;
 use crate::core::search::query_visitor::QueryVisitor;
+use crate::core::search::scorable::Scorable;
 use crate::core::search::score::Score;
 use crate::core::search::score_mode::ScoreMode;
 use crate::core::search::scorer_supplier::ScorerSupplier;
@@ -40,6 +42,7 @@ use crate::core::util::core_helper::HasIdentity;
 use crate::core::util::error::lucene_error::Result;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
+use std::ops::Range;
 
 /// A query that matches all documents.
 #[derive(Debug, Clone)]
@@ -272,6 +275,20 @@ impl MatchAllBulkScorer {
     Self { max_doc, score }
   }
 }
+struct ContiguousDocs(Range<i32>);
+
+impl DocIdStream for ContiguousDocs {
+  fn for_each<DC: DocIdStreamConsumer + ?Sized>(&mut self, consumer: &mut DC) -> Result<()> {
+    self.0.try_for_each(|doc| consumer.accept(doc))
+  }
+
+  fn count<SC: Scorable + ?Sized>(&mut self, _scorer: &mut SC) -> Result<i32> {
+    let count = self.0.len() as i32;
+    self.0.start = self.0.end;
+    Ok(count)
+  }
+}
+
 impl BulkScorer for MatchAllBulkScorer {
   fn score<CLC: crate::core::search::leaf_collector::LeafCollector, AB: Bits + ?Sized>(
     &mut self,
@@ -283,13 +300,14 @@ impl BulkScorer for MatchAllBulkScorer {
     let max = std::cmp::min(max, self.max_doc);
     let mut scorer = Score::new(self.score);
     collector.set_scorer(&mut scorer)?;
-    for doc in min..max {
-      if match accept_docs {
-        None => true,
-        Some(bits) => bits.get(doc as usize)?,
-      } {
-        collector.collect(doc, &mut scorer)?;
+    if let Some(bits) = accept_docs {
+      for doc in min..max {
+        if bits.get(doc as usize)? {
+          collector.collect(doc, &mut scorer)?;
+        }
       }
+    } else if min < max {
+      collector.collect_stream(&mut ContiguousDocs(min..max), &mut scorer)?;
     }
     if max == self.max_doc {
       Ok(NO_MORE_DOCS)

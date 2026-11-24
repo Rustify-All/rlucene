@@ -77,13 +77,10 @@ macro_rules! bulk_nodes {
     impl<ST: ScorerTypes> BuiltinQueryBulkScorer<ST> {
       fn score_internal<CLC: LeafCollector, AB: Bits + ?Sized>(&mut self, collector: &mut CLC, accept_docs: Option<&AB>, min: i32, max: i32, overlay: CollectorOverlay) -> Result<i32> {
         match &mut self.inner {
-          $( $(#[$attrs])* BulkNode::$variant(scorer) => scorer.score(&mut OverlayCollector { collector, overlay, fake: crate::core::search::score::Score::new(0.0) }, accept_docs, min, max), )+
-          $( BulkNode::$inline(scorer) => scorer.score(&mut OverlayCollector { collector, overlay, fake: crate::core::search::score::Score::new(0.0) }, accept_docs, min, max), )+
+          $( $(#[$attrs])* BulkNode::$variant(scorer) => overlay.score(scorer, collector, accept_docs, min, max), )+
+          $( BulkNode::$inline(scorer) => overlay.score(scorer, collector, accept_docs, min, max), )+
           #[cfg(test)] BulkNode::Fixture(scorer) => scorer.score(&mut OverlayCollector { collector, overlay, fake: crate::core::search::score::Score::new(0.0) }, accept_docs, min, max),
-          BulkNode::Default(scorer) if !overlay.disabled && overlay.fixed_score.is_none() => {
-            scorer.score(collector, accept_docs, min, max)
-          },
-          BulkNode::Default(scorer) => scorer.score(&mut OverlayCollector { collector, overlay, fake: crate::core::search::score::Score::new(0.0) }, accept_docs, min, max),
+          BulkNode::Default(scorer) => overlay.score(scorer, collector, accept_docs, min, max),
           BulkNode::Constant { inner, score } => {
             let overlay = overlay.with_constant(*score);
             inner.score_internal(collector, accept_docs, min, max, overlay)
@@ -250,6 +247,26 @@ struct CollectorOverlay {
   disabled: bool,
 }
 impl CollectorOverlay {
+  #[inline]
+  fn score<BS: BulkScorer, C: LeafCollector, AB: Bits + ?Sized>(
+    self,
+    scorer: &mut BS,
+    collector: &mut C,
+    accept_docs: Option<&AB>,
+    min: i32,
+    max: i32,
+  ) -> Result<i32> {
+    if !self.disabled && self.fixed_score.is_none() {
+      return scorer.score(collector, accept_docs, min, max);
+    }
+    let mut collector = OverlayCollector {
+      collector,
+      overlay: self,
+      fake: crate::core::search::score::Score::new(0.0),
+    };
+    scorer.score(&mut collector, accept_docs, min, max)
+  }
+
   fn with_constant(mut self, score: f32) -> Self {
     if self.fixed_score.is_none() && !self.disabled {
       self.fixed_score = Some(score);
