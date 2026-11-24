@@ -244,7 +244,7 @@ where
 }
 
 pub struct FilterNumericDocValuesImpl1<N> {
-  inner: N,
+  pub(crate) inner: N,
 }
 impl<N> FilterNumericDocValuesImpl1<N> {
   pub fn new(inner: N) -> Self {
@@ -305,7 +305,7 @@ where
   }
 }
 pub struct FilterNumericDocValuesImpl2<N> {
-  inner: N,
+  pub(crate) inner: N,
 }
 impl<N> FilterNumericDocValuesImpl2<N> {
   pub fn new(inner: N) -> Self {

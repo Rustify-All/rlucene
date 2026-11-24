@@ -14,7 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-use crate::core::index::doc_values_iterator::DocValuesIterator;
 use crate::core::index::index_reader_context::IndexReaderContext;
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::leaf_reader_context::LeafReaderContext;
@@ -136,15 +135,17 @@ impl FieldComparator for FloatComparator {
     self.base.set_single_sort();
   }
 }
-pub struct FloatLeafComparator<LR>
+pub struct FloatLeafComparator<LR, D = NumericLeafComparatorDocValues<LR>>
 where
   LR: LeafReader,
+  D: NumericDocValues,
 {
   context_reader: Option<LR>,
   base: NumericLeafComparator<
     <LR as LeafReader>::PointValues,
-    NumericLeafComparatorDocValues<LR>,
+    D,
     FloatConverter,
+    NumericLeafComparatorDocValues<LR>,
   >,
 }
 
@@ -160,6 +161,22 @@ where
   ) -> Result<Self> {
     let (doc_value, candidate, context_reader) =
       prepare_numeric_doc_values!(comparator.base, context, doc_values, candidate);
+    Self::with_doc_values(comparator, context, doc_value, candidate, context_reader)
+  }
+}
+
+impl<LR, D> FloatLeafComparator<LR, D>
+where
+  LR: LeafReader,
+  D: NumericDocValues,
+{
+  pub(crate) fn with_doc_values(
+    comparator: &mut FloatComparator,
+    context: &LeafReaderContext<LR>,
+    doc_value: D,
+    candidate: Option<NumericLeafComparatorDocValues<LR>>,
+    context_reader: Option<LR>,
+  ) -> Result<Self> {
     let top_value = comparator.top_value;
     let base = NumericLeafComparator::with_candidate(
       context,
@@ -189,9 +206,10 @@ where
   }
 }
 
-impl<LR> LeafFieldComparator for FloatLeafComparator<LR>
+impl<LR, D> LeafFieldComparator for FloatLeafComparator<LR, D>
 where
   LR: LeafReader,
+  D: NumericDocValues,
 {
   type FieldComparator = FloatComparator;
   fn set_bottom(&mut self, slot: usize, comparator: &mut Self::FieldComparator) -> Result<()> {
@@ -261,7 +279,8 @@ where
   type DocIdSetIteratorRef<'a>
     = &'a mut NumericCompetitiveIterator<LR>
   where
-    LR: 'a;
+    LR: 'a,
+    D: 'a;
 
   fn competitive_iterator(
     &mut self,

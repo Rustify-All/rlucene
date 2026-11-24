@@ -23,16 +23,23 @@ use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::leaf_reader_context::LeafReaderContext;
 use crate::core::index::{BytesRef, BytesRefValue};
 use crate::core::search::comparators::doc_comparator::DocComparator;
-use crate::core::search::comparators::double_comparator::DoubleComparator;
-use crate::core::search::comparators::float_comparator::FloatComparator;
+use crate::core::search::comparators::double_comparator::{DoubleComparator, DoubleLeafComparator};
+use crate::core::search::comparators::float_comparator::{FloatComparator, FloatLeafComparator};
 use crate::core::search::comparators::int_comparator::IntComparator;
 use crate::core::search::comparators::long_comparator::LongComparator;
+use crate::core::search::comparators::numeric_comparator::{
+  NumericLeafComparatorDocValues, prepare_numeric_doc_values,
+};
 use crate::core::search::comparators::term_ord_val_comparator::TermOrdValComparator;
 use crate::core::search::dummy::dummy_disi::DummyDISI;
 use crate::core::search::dummy::dummy_field_comparator::DummyFieldComparator;
 use crate::core::search::field_doc::FieldDoc;
 use crate::core::search::leaf_field_comparator::{LeafFieldComparator, LeafFieldComparatorEnum};
 use crate::core::search::scorable::Scorable;
+use crate::core::search::sorted_numeric_selector::{
+  FilterNumericDocValuesImpl1, FilterNumericDocValuesImpl2, SelectedNumericDocValues,
+  SortedNumericSelectorWrap,
+};
 use crate::core::search::sorted_numeric_sort_field::{
   SortedNumericDoubleComparator, SortedNumericFloatComparator, SortedNumericIntComparator,
   SortedNumericLongComparator,
@@ -734,6 +741,38 @@ impl FieldComparator for FieldComparatorEnum {
   where
     LR: LeafReader,
   {
+    // Select the cursor once before the collector starts reading documents.
+    macro_rules! floating_leaf {
+      ($parent:ident, $leaf:ident, $wrapper:ident, $decoder:ident,
+       $single:ident, $min:ident, $max:ident) => {{
+        let base = &mut $parent.base;
+        let (values, candidate, context_reader) =
+          prepare_numeric_doc_values!(base.base, context, None, None);
+        macro_rules! selected {
+          ($values:ident, $kind:ident) => {
+            $leaf::with_doc_values(
+              base,
+              context,
+              $decoder::new($values),
+              candidate,
+              context_reader,
+            )
+            .map(LeafFieldComparatorEnum::$kind)
+          };
+        }
+        match values {
+          NumericLeafComparatorDocValues::A(SortedNumericSelectorWrap::$wrapper(view)) => {
+            match view.inner {
+              SelectedNumericDocValues::Single(values) => selected!(values, $single),
+              SelectedNumericDocValues::Min(values) => selected!(values, $min),
+              SelectedNumericDocValues::Max(values) => selected!(values, $max),
+            }
+          },
+          values => $leaf::with_doc_values(base, context, values, candidate, context_reader)
+            .map(LeafFieldComparatorEnum::$wrapper),
+        }
+      }};
+    }
     match self {
       FieldComparatorEnum::Relevance(comparator) => comparator
         .get_leaf_comparator(context)
@@ -761,12 +800,24 @@ impl FieldComparator for FieldComparatorEnum {
         .map(LeafFieldComparatorEnum::TermOrdSorted),
       FieldComparatorEnum::SortedNumericInt(comparator) => comparator.get_leaf_comparator(context),
       FieldComparatorEnum::SortedNumericLong(comparator) => comparator.get_leaf_comparator(context),
-      FieldComparatorEnum::SortedNumericFloat(comparator) => comparator
-        .get_leaf_comparator(context)
-        .map(LeafFieldComparatorEnum::Float),
-      FieldComparatorEnum::SortedNumericDouble(comparator) => comparator
-        .get_leaf_comparator(context)
-        .map(LeafFieldComparatorEnum::Double),
+      FieldComparatorEnum::SortedNumericFloat(comparator) => floating_leaf!(
+        comparator,
+        FloatLeafComparator,
+        Float,
+        FilterNumericDocValuesImpl1,
+        FloatSelectedSingle,
+        FloatSelectedMin,
+        FloatSelectedMax
+      ),
+      FieldComparatorEnum::SortedNumericDouble(comparator) => floating_leaf!(
+        comparator,
+        DoubleLeafComparator,
+        Double,
+        FilterNumericDocValuesImpl2,
+        DoubleSelectedSingle,
+        DoubleSelectedMin,
+        DoubleSelectedMax
+      ),
       FieldComparatorEnum::SortedDocValuesTermOrdVal(comparator) => {
         comparator.get_leaf_comparator(context)
       },
