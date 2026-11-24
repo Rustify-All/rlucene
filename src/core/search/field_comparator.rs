@@ -17,7 +17,7 @@
 use crate::core::document::lat_lon_point_distance_comparator::LatLonPointDistanceComparator;
 use crate::core::document::xy_point_distance_comparator::XYPointDistanceComparator;
 use crate::core::index::binary_doc_values::BinaryDocValues;
-use crate::core::index::doc_values::{Binary, DocValues};
+use crate::core::index::doc_values::{Binary, DocValues, SortedNumericDocValuesEnum3WithEmpty};
 use crate::core::index::index_reader_context::IndexReaderContext;
 use crate::core::index::leaf_reader::LeafReader;
 use crate::core::index::leaf_reader_context::LeafReaderContext;
@@ -37,8 +37,8 @@ use crate::core::search::field_doc::FieldDoc;
 use crate::core::search::leaf_field_comparator::{LeafFieldComparator, LeafFieldComparatorEnum};
 use crate::core::search::scorable::Scorable;
 use crate::core::search::sorted_numeric_selector::{
-  FilterNumericDocValuesImpl1, FilterNumericDocValuesImpl2, SelectedNumericDocValues,
-  SortedNumericSelectorWrap,
+  FilterNumericDocValuesImpl1, FilterNumericDocValuesImpl2, MaxValue, MinValue,
+  SelectedNumericDocValues, SortedNumericSelectorWrap,
 };
 use crate::core::search::sorted_numeric_sort_field::{
   SortedNumericDoubleComparator, SortedNumericFloatComparator, SortedNumericIntComparator,
@@ -749,7 +749,7 @@ impl FieldComparator for FieldComparatorEnum {
         let (values, candidate, context_reader) =
           prepare_numeric_doc_values!(base.base, context, None, None);
         macro_rules! selected {
-          ($values:ident, $kind:ident) => {
+          ($values:expr, $kind:ident) => {
             $leaf::with_doc_values(
               base,
               context,
@@ -760,17 +760,27 @@ impl FieldComparator for FieldComparatorEnum {
             .map(LeafFieldComparatorEnum::$kind)
           };
         }
-        match values {
+        let values = match values {
           NumericLeafComparatorDocValues::A(SortedNumericSelectorWrap::$wrapper(view)) => {
             match view.inner {
-              SelectedNumericDocValues::Single(values) => selected!(values, $single),
-              SelectedNumericDocValues::Min(values) => selected!(values, $min),
-              SelectedNumericDocValues::Max(values) => selected!(values, $max),
+              SelectedNumericDocValues::Single(values) => return selected!(values, $single),
+              SelectedNumericDocValues::Min(MinValue {
+                inner: SortedNumericDocValuesEnum3WithEmpty::A(values),
+                ..
+              }) => return selected!(MinValue::new(values), $min),
+              SelectedNumericDocValues::Max(MaxValue {
+                inner: SortedNumericDocValuesEnum3WithEmpty::A(values),
+                ..
+              }) => return selected!(MaxValue::new(values), $max),
+              view => NumericLeafComparatorDocValues::A(SortedNumericSelectorWrap::$wrapper(
+                $decoder::new(view),
+              )),
             }
           },
-          values => $leaf::with_doc_values(base, context, values, candidate, context_reader)
-            .map(LeafFieldComparatorEnum::$wrapper),
-        }
+          values => values,
+        };
+        $leaf::with_doc_values(base, context, values, candidate, context_reader)
+          .map(LeafFieldComparatorEnum::$wrapper)
       }};
     }
     match self {

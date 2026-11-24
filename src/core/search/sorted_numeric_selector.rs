@@ -88,7 +88,7 @@ impl SortedNumericSelectorType {
 }
 
 pub struct MinValue<S> {
-  inner: S,
+  pub(crate) inner: S,
   value: i64,
 }
 impl<S> MinValue<S> {
@@ -159,7 +159,7 @@ where
 }
 /// Wraps a SortedNumericDocValues and returns the last value (max)
 pub struct MaxValue<S> {
-  inner: S,
+  pub(crate) inner: S,
   value: i64,
 }
 

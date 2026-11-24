@@ -16,7 +16,9 @@
  */
 use crate::core::index::index_sorter::ComparableProvidersVisitor;
 
-use crate::core::index::doc_values::{DocValues, NumericDocValuesEnum3WithEmpty, SortedNumeric};
+use crate::core::index::doc_values::{
+  DocValues, NumericDocValuesEnum3WithEmpty, SortedNumeric, SortedNumericDocValuesEnum3WithEmpty,
+};
 use crate::core::index::index_reader_context::IndexReaderContext;
 use crate::core::index::index_sorter::{
   CPEnumType2, ComparableProviderEnum4, DocComparatorImpl, DoubleSorter, FloatSorter, IndexSorter,
@@ -39,7 +41,7 @@ use crate::core::search::pruning::Pruning;
 use crate::core::search::sort_field::{MissingValueEnum, SortField, SortFieldType, SortFiledBase};
 use crate::core::search::sort_field_enum::SortFieldEnum;
 use crate::core::search::sorted_numeric_selector::{
-  SelectedNumericDocValues, SortedNumericSelector, SortedNumericSelectorType,
+  MaxValue, MinValue, SelectedNumericDocValues, SortedNumericSelector, SortedNumericSelectorType,
   SortedNumericSelectorWrap,
 };
 use crate::core::store::{DataInput, DataOutput};
@@ -591,27 +593,32 @@ macro_rules! impl_sorted_numeric_comparator {
         let (values, candidate, context_reader) =
           prepare_numeric_doc_values!(parent.base.base, context, None, None);
         macro_rules! selected {
-          ($values:ident, $kind:ident) => {
+          ($values:expr, $kind:ident) => {
             $leaf::new(&mut parent.base, context, $values, candidate, context_reader)
               .map(LeafFieldComparatorEnum::$kind)
           };
         }
 
-        match values {
-          NumericLeafComparatorDocValues::A(SortedNumericSelectorWrap::Raw(view)) => {
-            match view {
-              SelectedNumericDocValues::Single(NumericDocValuesEnum3WithEmpty::A(values)) =>
-                selected!(values, $single),
-              SelectedNumericDocValues::Single(NumericDocValuesEnum3WithEmpty::B(values)) =>
-                selected!(values, $numeric),
-              SelectedNumericDocValues::Single(NumericDocValuesEnum3WithEmpty::C(values)) =>
-                selected!(values, $empty),
-              SelectedNumericDocValues::Min(values) => selected!(values, $min),
-              SelectedNumericDocValues::Max(values) => selected!(values, $max),
-            }
+        let values = match values {
+          NumericLeafComparatorDocValues::A(SortedNumericSelectorWrap::Raw(view)) => match view {
+            SelectedNumericDocValues::Single(NumericDocValuesEnum3WithEmpty::A(values)) =>
+              return selected!(values, $single),
+            SelectedNumericDocValues::Single(NumericDocValuesEnum3WithEmpty::B(values)) =>
+              return selected!(values, $numeric),
+            SelectedNumericDocValues::Single(NumericDocValuesEnum3WithEmpty::C(values)) =>
+              return selected!(values, $empty),
+            // The selector has just constructed these wrappers. Numeric and empty cursors use Single.
+            SelectedNumericDocValues::Min(MinValue {
+              inner: SortedNumericDocValuesEnum3WithEmpty::A(values), ..
+            }) => return selected!(MinValue::new(values), $min),
+            SelectedNumericDocValues::Max(MaxValue {
+              inner: SortedNumericDocValuesEnum3WithEmpty::A(values), ..
+            }) => return selected!(MaxValue::new(values), $max),
+            view => NumericLeafComparatorDocValues::A(SortedNumericSelectorWrap::Raw(view)),
           },
-          values => selected!(values, $other),
-        }
+          values => values,
+        };
+        selected!(values, $other)
       }
     );
   };

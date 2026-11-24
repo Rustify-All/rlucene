@@ -237,10 +237,10 @@ where
     >,
   ),
   DoubleSelectedMin(
-    DoubleLeafComparator<LR, FilterNumericDocValuesImpl2<NumericMin<SortedNumeric<LR>>>>,
+    DoubleLeafComparator<LR, FilterNumericDocValuesImpl2<NumericMin<LR::SortedNumericDocValues>>>,
   ),
   DoubleSelectedMax(
-    DoubleLeafComparator<LR, FilterNumericDocValuesImpl2<NumericMax<SortedNumeric<LR>>>>,
+    DoubleLeafComparator<LR, FilterNumericDocValuesImpl2<NumericMax<LR::SortedNumericDocValues>>>,
   ),
   Float(FloatLeafComparator<LR>),
   FloatSelectedSingle(
@@ -250,10 +250,10 @@ where
     >,
   ),
   FloatSelectedMin(
-    FloatLeafComparator<LR, FilterNumericDocValuesImpl1<NumericMin<SortedNumeric<LR>>>>,
+    FloatLeafComparator<LR, FilterNumericDocValuesImpl1<NumericMin<LR::SortedNumericDocValues>>>,
   ),
   FloatSelectedMax(
-    FloatLeafComparator<LR, FilterNumericDocValuesImpl1<NumericMax<SortedNumeric<LR>>>>,
+    FloatLeafComparator<LR, FilterNumericDocValuesImpl1<NumericMax<LR::SortedNumericDocValues>>>,
   ),
   Int(IntLeafComparator<LR>),
   IntSelectedSingleton(
@@ -261,8 +261,8 @@ where
   ),
   IntSelectedNumeric(IntLeafComparator<LR, LR::NumericDocValues>),
   IntSelectedEmpty(IntLeafComparator<LR, EmptyNumeric>),
-  IntSelectedMin(IntLeafComparator<LR, NumericMin<SortedNumeric<LR>>>),
-  IntSelectedMax(IntLeafComparator<LR, NumericMax<SortedNumeric<LR>>>),
+  IntSelectedMin(IntLeafComparator<LR, NumericMin<LR::SortedNumericDocValues>>),
+  IntSelectedMax(IntLeafComparator<LR, NumericMax<LR::SortedNumericDocValues>>),
   LatLonPointDistance(LatLonPointDistanceLeafComparator<SortedNumeric<LR>>),
   Long(LongLeafComparator<LR>),
   LongSelectedSingleton(
@@ -273,8 +273,8 @@ where
   ),
   LongSelectedNumeric(LongLeafComparator<LR, LR::NumericDocValues>),
   LongSelectedEmpty(LongLeafComparator<LR, EmptyNumeric>),
-  LongSelectedMin(LongLeafComparator<LR, NumericMin<SortedNumeric<LR>>>),
-  LongSelectedMax(LongLeafComparator<LR, NumericMax<SortedNumeric<LR>>>),
+  LongSelectedMin(LongLeafComparator<LR, NumericMin<LR::SortedNumericDocValues>>),
+  LongSelectedMax(LongLeafComparator<LR, NumericMax<LR::SortedNumericDocValues>>),
   TermVal(TermValLeafComparator<Binary<LR>>),
   TermOrdVal(TermOrdValLeafComparator<LR>),
   TermOrdSorted(TermOrdValLeafComparator<LR, Sorted<LR>>),
