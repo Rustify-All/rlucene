@@ -849,6 +849,7 @@ where
     self.base.set_scorer(scorer)
   }
 
+  #[inline(always)]
   fn collect<SC: Scorable + ?Sized>(&mut self, doc: i32, scorer: &mut SC) -> Result<()> {
     self.base.count_hit(scorer, doc)?;
     if self.base.is_queue_full() {

@@ -1296,6 +1296,7 @@ impl<R> NumericDocValues for DenseNumericDocValues<R>
 where
   R: RandomAccessInput,
 {
+  #[inline(always)]
   fn long_value(&mut self) -> Result<i64> {
     self.sub.long_value(self.doc)
   }
@@ -3659,7 +3660,7 @@ impl<I> NumericDocValues for Lucene90NumericDocValuesEnum<I>
 where
   I: IndexInput,
 {
-  #[inline]
+  #[inline(always)]
   fn long_value(&mut self) -> Result<i64> {
     match self {
       Self::A(values) => values.long_value(),

@@ -444,6 +444,7 @@ impl<R> DenseNumericDocValuesBase for DenseNumericDocValuesSubEnum<R>
 where
   R: RandomAccessInput,
 {
+  #[inline(always)]
   fn long_value(&mut self, doc: i32) -> Result<i64> {
     match self {
       DenseNumericDocValuesSubEnum::Dense(sub) => sub.long_value(doc),

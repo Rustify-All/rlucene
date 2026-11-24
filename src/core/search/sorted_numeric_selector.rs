@@ -299,6 +299,7 @@ impl<N> NumericDocValues for FilterNumericDocValuesImpl1<N>
 where
   N: NumericDocValues,
 {
+  #[inline(always)]
   fn long_value(&mut self) -> Result<i64> {
     let v = self.inner.long_value()? as i32;
     Ok(NumericUtils::sortable_float_bits(v) as i64)

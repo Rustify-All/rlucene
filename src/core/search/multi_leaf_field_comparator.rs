@@ -85,7 +85,7 @@ where
     Ok(())
   }
 
-  #[inline]
+  #[inline(always)]
   pub(crate) fn compare_bottom<S>(
     &mut self,
     doc: i32,

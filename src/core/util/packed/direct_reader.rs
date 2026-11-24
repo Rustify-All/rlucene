@@ -693,6 +693,7 @@ impl<R> LongValues for DirectPackedReader32<R>
 where
   R: RandomAccessInput,
 {
+  #[inline(always)]
   fn get(&self, index: usize) -> Result<i64> {
     self.read_from_slice_shared(index, None)
   }
@@ -701,6 +702,7 @@ impl<R> FromSliceShared<R> for DirectPackedReader32<R>
 where
   R: RandomAccessInput,
 {
+  #[inline(always)]
   fn read_from_slice_shared(&self, index: usize, slice: Option<&R>) -> Result<i64> {
     let slice = match slice {
       Some(slice) => slice,

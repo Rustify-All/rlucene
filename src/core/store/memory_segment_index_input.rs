@@ -1488,7 +1488,7 @@ impl RandomAccessInput for MemorySegmentRandomAccessInput {
   fn read_short(&self, pos: usize) -> Result<i16> {
     RandomAccessInput::read_short(&self.input, pos)
   }
-  #[inline]
+  #[inline(always)]
   fn read_int(&self, pos: usize) -> Result<i32> {
     RandomAccessInput::read_int(&self.input, pos)
   }

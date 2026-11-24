@@ -405,6 +405,7 @@ where
     }
   }
 
+  #[inline(always)]
   fn compare_bottom<S>(
     &mut self,
     doc: i32,

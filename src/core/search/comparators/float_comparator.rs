@@ -191,6 +191,7 @@ where
       base,
     })
   }
+  #[inline(always)]
   fn get_value_for_doc(
     &mut self,
     doc: i32,
@@ -222,6 +223,7 @@ where
     )
   }
 
+  #[inline(always)]
   fn compare_bottom<S>(
     &mut self,
     doc: i32,
