@@ -510,15 +510,16 @@ where
   {
     let hit_count_so_far = self.base.increment_total_hits();
 
-    if let Some(acc) = &self.base.min_score_acc
+    if self.base.can_set_min_score
+      && let Some(acc) = &self.base.min_score_acc
       && (hit_count_so_far & acc.mod_interval) == 0
     {
       self.base.update_global_min_competitive_score(scorer)?;
     }
 
-    if !self.base.score_mode.is_exhaustive()
+    if hit_count_so_far > self.base.total_hits_threshold
+      && !self.base.score_mode.is_exhaustive()
       && self.base.total_hits_relation() == Relation::EqualTo
-      && hit_count_so_far > self.base.total_hits_threshold
     {
       let comparators = self.base.comparators_mut();
       self.comparator.set_hits_threshold_reached(comparators)?;
@@ -560,7 +561,8 @@ where
         } else {
           self.collected_all_competitive_hits = true;
         }
-      } else if self.base.total_hits_relation() == Relation::EqualTo {
+      } else if self.base.can_set_min_score && self.base.total_hits_relation() == Relation::EqualTo
+      {
         // we can start setting the min competitive score if the
         // threshold is reached for the first time here.
         self.base.update_min_competitive_score(scorer)?;
