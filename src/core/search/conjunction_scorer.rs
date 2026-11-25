@@ -258,6 +258,7 @@ impl<D: ConjunctionState> Scorable for ConjunctionScorer<D> {
     = crate::core::search::dummy::dummy_scorable::DummyScorable
   where
     Self: 'a;
+  #[inline]
   fn score(&mut self) -> Result<f32> {
     let mut sum = 0f64;
     for x in self.scoring_idx.iter() {
