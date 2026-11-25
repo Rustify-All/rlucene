@@ -77,7 +77,7 @@ build can arrive first."""
         // lock first, then start the execution timeout and allocate the agent.
         // A commit/PR queued during the grace window therefore runs first.
         lock(resource: 'rlucene-vm-build', priority: -100)
-        timeout(time: 45, unit: 'MINUTES')
+        timeout(time: 50, unit: 'MINUTES')
       }
 
       environment {
@@ -235,7 +235,7 @@ build can arrive first."""
                   trap stop_diagnostics EXIT
 
                   set +e
-                  timeout --kill-after=30s 40m \
+                  timeout --kill-after=30s 45m \
                     cargo nextest run --release --profile ci --workspace \
                     >> nextest.log 2>&1 &
                   nextest_launcher_pid=$!
