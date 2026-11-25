@@ -46,12 +46,12 @@ pub struct BooleanQuery {
   id: Identity,
   minimum_number_should_match: i32,
   pub(crate) clauses: Vec<BooleanClause>,
-  clause_sets: [Vec<usize>; 4],
+  clause_sets: [SmallVec<[usize; 4]>; 4],
 }
 
 impl BooleanQuery {
   fn new(minimum_number_should_match: i32, clauses: Vec<BooleanClause>) -> BooleanQuery {
-    let mut clause_sets: [Vec<usize>; 4] = [const { Vec::new() }; 4];
+    let mut clause_sets: [SmallVec<[usize; 4]>; 4] = std::array::from_fn(|_| SmallVec::new());
     for occur in [Occur::Should, Occur::Must] {
       let count = clauses
         .iter()
@@ -116,21 +116,13 @@ impl BooleanQuery {
       && matches!(self.clauses[1].query, Query::Term(_))
   }
   pub fn rewrite_no_scoring(&self) -> Result<Option<Query>> {
-    let mut actually_rewritten = false;
-    // Retain builder validation while borrowing clauses until a replacement is needed.
-    let mut new_query = Vec::with_capacity(self.clauses.len());
-    let mut add_clause = |query, occur| -> Result<()> {
-      if new_query.len() >= get_max_clause_count() {
-        return Err(LuceneError::too_many_clauses(""));
-      }
-      new_query.push((query, occur));
-      Ok(())
-    };
-
+    // Leave original clauses borrowed until a replacement is needed.
+    let mut changes = Vec::new();
+    let mut kept = 0;
     let keep_should = self.get_minimum_number_should_match() > 0
       || (self.get_clauses_idx(Occur::Must).len() + self.get_clauses_idx(Occur::Filter).len() == 0);
 
-    for clause in &self.clauses {
+    for (index, clause) in self.clauses().iter().enumerate() {
       let query = &clause.query;
       // NOTE: rewrite_no_scoring() should not call rewrite(), otherwise this
       // method could run in exponential time with the depth of the query as
@@ -142,40 +134,54 @@ impl BooleanQuery {
       if let Query::ConstantScore(constant_score_query) = rewritten {
         rewritten = constant_score_query.get_query();
       }
-      let rewritten = if let Query::Boolean(boolean_query) = rewritten {
-        match boolean_query.rewrite_no_scoring()? {
-          Some(query) => Cow::Owned(query),
-          None => Cow::Borrowed(rewritten),
-        }
+      let nested = if let Query::Boolean(boolean_query) = rewritten {
+        boolean_query.rewrite_no_scoring()?
       } else {
-        Cow::Borrowed(rewritten)
+        None
       };
       let occur = clause.occur;
       if occur == Occur::Should && !keep_should {
-        // ignore clause
-        actually_rewritten = true;
-      } else if occur == Occur::Must {
-        // replace MUST clauses with FILTER clauses
-        add_clause(rewritten, Occur::Filter)?;
-        actually_rewritten = true;
-      } else if query.identity() != rewritten.identity() {
-        add_clause(rewritten, occur)?;
-        actually_rewritten = true;
-      } else {
-        add_clause(Cow::Borrowed(query), occur)?;
+        changes.push((index, None));
+        continue;
+      }
+      if kept >= get_max_clause_count() {
+        return Err(LuceneError::too_many_clauses(""));
+      }
+      kept += 1;
+
+      let replacement = nested.as_ref().unwrap_or(rewritten);
+      if occur == Occur::Must
+        || (!std::ptr::eq(query, replacement) && query.identity() != replacement.identity())
+      {
+        let occur = if occur == Occur::Must {
+          Occur::Filter
+        } else {
+          occur
+        };
+        let query = match nested {
+          Some(nested) => Cow::Owned(nested),
+          None => Cow::Borrowed(rewritten),
+        };
+        changes.push((index, Some((query, occur))));
       }
     }
 
-    if !actually_rewritten {
+    if changes.is_empty() {
       return Ok(None);
     }
 
-    let clauses = new_query
-      .into_iter()
-      .map(|(query, occur)| BooleanClause::new(query.into_owned(), occur))
-      .collect();
+    let mut clauses = Vec::with_capacity(kept);
+    let mut first = 0;
+    for (index, replacement) in changes {
+      clauses.extend(self.clauses()[first..index].iter().cloned());
+      if let Some((query, occur)) = replacement {
+        clauses.push(BooleanClause::new(query.into_owned(), occur));
+      }
+      first = index + 1;
+    }
+    clauses.extend(self.clauses()[first..].iter().cloned());
     Ok(Some(
-      BooleanQuery::new(self.get_minimum_number_should_match(), clauses).into(),
+      BooleanQuery::new(self.minimum_number_should_match, clauses).into(),
     ))
   }
   #[cfg_attr(test, allow(clippy::mutable_key_type))]
@@ -430,9 +436,11 @@ impl QueryBase for BooleanQuery {
     }
     // recursively rewrite
     {
-      let mut clauses = Vec::with_capacity(self.clauses.len());
+      // Record replacements while leaving unchanged clauses in the original list.
+      let mut changes = Vec::new();
       let mut actually_rewritten = false;
-      for clause in &self.clauses {
+      let mut kept = 0;
+      for (index, clause) in self.clauses().iter().enumerate() {
         let query = &clause.query;
         let occur = clause.occur;
         let rewritten = match occur {
@@ -448,30 +456,45 @@ impl QueryBase for BooleanQuery {
           },
           _ => query.rewrite(searcher)?,
         };
-        let rewritten = match rewritten {
-          Some(query) => Cow::Owned(query),
-          None => Cow::Borrowed(query),
-        };
-        if rewritten.identity() != query.identity() || matches!(query, Query::MatchNoDocs(_)) {
+        let replacement = rewritten.as_ref().unwrap_or(query);
+        if rewritten
+          .as_ref()
+          .is_some_and(|replacement| replacement.identity() != query.identity())
+          || matches!(query, Query::MatchNoDocs(_))
+        {
           actually_rewritten = true;
-          if matches!(rewritten.as_ref(), Query::MatchNoDocs(_)) {
+          if matches!(replacement, Query::MatchNoDocs(_)) {
             match occur {
-              Occur::Should | Occur::MustNot => continue,
-              Occur::Must | Occur::Filter => return Ok(Some(rewritten.into_owned())),
+              Occur::Should | Occur::MustNot => {
+                changes.push((index, None));
+                continue;
+              },
+              Occur::Must | Occur::Filter => {
+                return Ok(Some(rewritten.unwrap_or_else(|| query.clone())));
+              },
             }
           }
         }
         // This is the same check as Builder::add_clause, at the same point in traversal.
-        if clauses.len() >= get_max_clause_count() {
+        if kept >= get_max_clause_count() {
           return Err(LuceneError::too_many_clauses(""));
         }
-        clauses.push((rewritten, occur));
+        kept += 1;
+        if rewritten.is_some() {
+          changes.push((index, rewritten));
+        }
       }
       if actually_rewritten {
-        let clauses = clauses
-          .into_iter()
-          .map(|(query, occur)| BooleanClause::new(query.into_owned(), occur))
-          .collect();
+        let mut clauses = Vec::with_capacity(kept);
+        let mut first = 0;
+        for (index, replacement) in changes {
+          clauses.extend(self.clauses()[first..index].iter().cloned());
+          if let Some(query) = replacement {
+            clauses.push(BooleanClause::new(query, self.clauses()[index].occur));
+          }
+          first = index + 1;
+        }
+        clauses.extend(self.clauses()[first..].iter().cloned());
         return Ok(Some(
           BooleanQuery::new(self.minimum_number_should_match, clauses).into(),
         ));

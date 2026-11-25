@@ -67,7 +67,7 @@ pub struct CompiledAutomaton {
   /// [`CompiledAutomaton::run_automaton`] will not be present at the same
   /// time.
   ///
-  pub(crate) nfa_run_automaton: Option<NFARunAutomaton>,
+  pub(crate) nfa_run_automaton: Option<Box<NFARunAutomaton>>,
 
   /// Shared common suffix accepted by the automaton. Only valid for
   /// [`AutomatonType::Normal`], and only when the automaton accepts an
@@ -268,7 +268,7 @@ impl CompiledAutomaton {
         term,
         run_automaton: None,
 
-        nfa_run_automaton: Some(NFARunAutomaton::with_alphabet_size(binary, 0xff)?),
+        nfa_run_automaton: Some(Box::new(NFARunAutomaton::with_alphabet_size(binary, 0xff)?)),
         common_suffix_ref,
         finite,
         sink_state: -1,
@@ -485,7 +485,7 @@ impl CompiledAutomaton {
         "Both run_automaton and nfa_run_automaton are non-null",
       )),
       (Some(run), None) => Ok(AutomatonEnum::Byte(run.clone())),
-      (None, Some(nfa)) => Ok(AutomatonEnum::NFA(Box::new(nfa.clone()))),
+      (None, Some(nfa)) => Ok(AutomatonEnum::NFA(nfa.clone())),
       (None, None) => Err(LuceneError::illegal_state(
         "Both run_automaton and nfa_run_automaton are None,, should not be called",
       )),
@@ -504,7 +504,7 @@ impl Accountable for CompiledAutomaton {
       size = size.saturating_add(run_automaton.ram_bytes_used()?);
     }
     if let Some(nfa_run_automaton) = &self.nfa_run_automaton {
-      size = size.saturating_add(nfa_run_automaton.ram_bytes_used()?);
+      size = size.saturating_add(nfa_run_automaton.as_ref().ram_bytes_used()?);
     }
     if let Some(common_suffix_ref) = &self.common_suffix_ref {
       size = size
